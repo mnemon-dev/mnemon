@@ -44,7 +44,10 @@ var NanoClawSkill []byte
 //go:embed nanoclaw/container-skill.md
 var NanoClawContainerSkill []byte
 
+//go:embed nanobot/SKILL.md
+var NanobotSkill []byte
+
 // All returns the embedded filesystem for inspection.
 //
-//go:embed claude openclaw nanoclaw
+//go:embed claude openclaw nanoclaw nanobot
 var All embed.FS

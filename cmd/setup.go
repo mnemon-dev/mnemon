@@ -22,10 +22,10 @@ var setupCmd = &cobra.Command{
 	Short: "Deploy mnemon into LLM CLI environments",
 	Long: `Detect installed LLM CLIs and deploy mnemon integration.
 
-By default, installs to project-local config (.claude/, .openclaw/).
-Use --global to install to user-wide config (~/.claude/, ~/.openclaw/).
+By default, installs to project-local config (.claude/, .openclaw/, .nanobot/).
+Use --global to install to user-wide config (~/.claude/, ~/.openclaw/, ~/.nanobot/workspace/).
 
-Supported environments: Claude Code, OpenClaw.
+Supported environments: Claude Code, OpenClaw, Nanobot.
 
 Examples:
   mnemon setup                              # Interactive: project-local install
@@ -38,7 +38,7 @@ Examples:
 }
 
 func init() {
-	setupCmd.Flags().StringVar(&setupTarget, "target", "", "target environment (claude-code, openclaw)")
+	setupCmd.Flags().StringVar(&setupTarget, "target", "", "target environment (claude-code, openclaw, nanobot)")
 	setupCmd.Flags().BoolVar(&setupEject, "eject", false, "remove mnemon integrations")
 	setupCmd.Flags().BoolVar(&setupYes, "yes", false, "auto-confirm all prompts (CI-friendly)")
 	setupCmd.Flags().BoolVar(&setupGlobal, "global", false, "install to user-wide config (~/.claude/) instead of project-local (.claude/)")
@@ -46,8 +46,8 @@ func init() {
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
-	if setupTarget != "" && setupTarget != "claude-code" && setupTarget != "openclaw" {
-		return fmt.Errorf("invalid target %q (must be claude-code or openclaw)", setupTarget)
+	if setupTarget != "" && setupTarget != "claude-code" && setupTarget != "openclaw" && setupTarget != "nanobot" {
+		return fmt.Errorf("invalid target %q (must be claude-code, openclaw, or nanobot)", setupTarget)
 	}
 
 	envs := setup.DetectEnvironments(setupGlobal)
@@ -83,7 +83,7 @@ func runInstallFlow(envs []setup.Environment) error {
 
 	if len(detected) == 0 {
 		fmt.Println("\nNo supported LLM CLI environments detected.")
-		fmt.Println("Install Claude Code or OpenClaw, then run 'mnemon setup' again.")
+		fmt.Println("Install Claude Code, OpenClaw, or Nanobot, then run 'mnemon setup' again.")
 		return nil
 	}
 
@@ -127,6 +127,8 @@ func installEnv(env *setup.Environment) error {
 		err = installClaudeCode(env)
 	case "openclaw":
 		err = installOpenClaw(env)
+	case "nanobot":
+		err = installNanobot(env)
 	}
 	if err != nil {
 		return err
@@ -397,6 +399,61 @@ func selectOpenClawOptionalHooks() setup.HookSelection {
 	return sel
 }
 
+// ─── Nanobot ────────────────────────────────────────────────────────
+
+func installNanobot(env *setup.Environment) error {
+	configDir := env.ConfigDir
+
+	// Scope selection
+	if !setupGlobal && !setupYes && setup.IsInteractive() {
+		home := setup.HomeDir()
+		localDir := ".nanobot"
+		globalDir := home + "/.nanobot/workspace"
+		idx := setup.SelectOne("Install scope",
+			[]string{
+				fmt.Sprintf("Global — all projects (%s/)", globalDir),
+				fmt.Sprintf("Local  — this project only (%s/)", localDir),
+			}, 0) // default: Global
+		if idx == 1 {
+			configDir = localDir
+		} else {
+			configDir = globalDir
+		}
+	}
+
+	fmt.Printf("\nSetting up Nanobot (%s)...\n", configDir)
+
+	// Phase 1: Skill
+	fmt.Println("\n[1/2] Skill")
+	if path, err := setup.NanobotWriteSkill(configDir); err != nil {
+		setup.StatusError(0, 0, "Skill", err)
+		return err
+	} else {
+		setup.StatusOK(0, 0, "Skill", path)
+	}
+
+	// Phase 2: Prompt files (guide.md + skill.md → ~/.mnemon/prompt/)
+	fmt.Println("\n[2/2] Prompts")
+	if path, err := setup.WritePromptFiles(); err != nil {
+		setup.StatusError(0, 0, "Prompts", err)
+		return err
+	} else {
+		setup.StatusOK(0, 0, "Prompts", path)
+	}
+
+	// Summary
+	fmt.Println()
+	fmt.Println("Setup complete!")
+	fmt.Printf("  Skill   %s/skills/mnemon/SKILL.md\n", configDir)
+	fmt.Printf("  Prompts ~/.mnemon/prompt/ (guide.md, skill.md)\n")
+	fmt.Println()
+	fmt.Println("Restart Nanobot to activate the mnemon skill.")
+	fmt.Println("Edit ~/.mnemon/prompt/guide.md to customize behavior.")
+	fmt.Println("Run 'mnemon setup --eject' to remove.")
+
+	return nil
+}
+
 // ─── Eject ──────────────────────────────────────────────────────────
 
 func runEjectFlow(envs []setup.Environment) error {
@@ -471,6 +528,13 @@ func ejectEnv(env *setup.Environment) error {
 
 	case "openclaw":
 		errs := setup.OpenClawEject(env.ConfigDir)
+		ejectMarkdown("AGENTS.md", "Remove memory guidance from ./AGENTS.md?")
+		if len(errs) > 0 {
+			return errs[0]
+		}
+
+	case "nanobot":
+		errs := setup.NanobotEject(env.ConfigDir)
 		ejectMarkdown("AGENTS.md", "Remove memory guidance from ./AGENTS.md?")
 		if len(errs) > 0 {
 			return errs[0]
