@@ -5,6 +5,8 @@
 .claude/
 .openclaw/
 .supervisor/
+.env
+.mnemon-dev/
 
 # IDE
 .idea/

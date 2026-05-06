@@ -10,11 +10,14 @@ ifeq ($(GOBIN),)
   GOBIN     := $(shell go env GOPATH)/bin
 endif
 
-.PHONY: build install uninstall test unit vet clean help
+.PHONY: deps build install uninstall test unit vet docker-build docker-run compose-up compose-down compose-dev release-snapshot clean help
 
 .DEFAULT_GOAL := help
 
 # ── Build ────────────────────────────────────────────────────────────
+
+deps: ## Download Go dependencies
+	go mod download
 
 build: ## Build the mnemon binary
 	go build -ldflags "$(LDFLAGS)" -o $(BINARY) .
@@ -41,6 +44,26 @@ unit: ## Run Go unit tests
 
 vet: ## Run go vet static analysis
 	go vet ./...
+
+# ── Containers / Deployment ──────────────────────────────────────────
+
+docker-build: ## Build runtime Docker image
+	docker build --target runtime --build-arg VERSION=$(VERSION) -t mnemon-dev/mnemon:$(VERSION) .
+
+docker-run: ## Run mnemon status in Docker with local .env
+	docker run --rm --env-file .env -v mnemon-data:/data mnemon-dev/mnemon:$(VERSION) status
+
+compose-up: ## Start mnemon with Docker Compose
+	docker compose up -d mnemon
+
+compose-down: ## Stop Docker Compose services
+	docker compose down
+
+compose-dev: ## Open a development shell in Docker Compose
+	docker compose --profile dev run --rm mnemon-dev
+
+release-snapshot: ## Build local GoReleaser snapshot artifacts
+	goreleaser release --snapshot --clean
 
 # ── Clean ────────────────────────────────────────────────────────────
 
