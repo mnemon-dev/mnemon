@@ -226,6 +226,8 @@ make help           # show all targets
 
 **Dependencies**: Go 1.24+, `modernc.org/sqlite`, `spf13/cobra`, `google/uuid`
 
+See [Development and Deployment](docs/DEPLOYMENT.md) for Docker, Compose, Ollama embedding, and release setup.
+
 ## Documentation
 
 - [Design & Architecture](docs/DESIGN.md) — philosophy, algorithms, integration design
