@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -21,11 +22,13 @@ const DefaultEndpoint = "http://localhost:11434"
 type Client struct {
 	endpoint string
 	model    string
+	dims     int // 0 means use native dimensions
 	http     *http.Client
 }
 
 // NewClient creates an Ollama embedding client.
-// It checks MNEMON_EMBED_ENDPOINT and MNEMON_EMBED_MODEL env vars.
+// It checks MNEMON_EMBED_ENDPOINT, MNEMON_EMBED_MODEL, and
+// MNEMON_EMBED_DIMENSIONS env vars.
 func NewClient() *Client {
 	endpoint := os.Getenv("MNEMON_EMBED_ENDPOINT")
 	if endpoint == "" {
@@ -35,9 +38,16 @@ func NewClient() *Client {
 	if model == "" {
 		model = DefaultModel
 	}
+	dims := 0
+	if d := os.Getenv("MNEMON_EMBED_DIMENSIONS"); d != "" {
+		if v, err := strconv.Atoi(d); err == nil && v > 0 {
+			dims = v
+		}
+	}
 	return &Client{
 		endpoint: endpoint,
 		model:    model,
+		dims:     dims,
 		http: &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
@@ -80,8 +90,9 @@ func (c *Client) Endpoint() string {
 }
 
 type embedRequest struct {
-	Model string `json:"model"`
-	Input string `json:"input"`
+	Model      string `json:"model"`
+	Input      string `json:"input"`
+	Dimensions int    `json:"dimensions,omitempty"`
 }
 
 type embedResponse struct {
@@ -90,7 +101,11 @@ type embedResponse struct {
 
 // Embed generates an embedding vector for the given text.
 func (c *Client) Embed(text string) ([]float64, error) {
-	body, err := json.Marshal(embedRequest{Model: c.model, Input: text})
+	req := embedRequest{Model: c.model, Input: text}
+	if c.dims > 0 {
+		req.Dimensions = c.dims
+	}
+	body, err := json.Marshal(req)
 	if err != nil {
 		return nil, fmt.Errorf("marshal request: %w", err)
 	}

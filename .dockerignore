@@ -1,0 +1,14 @@
+.git
+.github
+.claude
+.openclaw
+.supervisor
+.testdata
+dist
+tmp
+mnemon
+*.db
+*.db-wal
+*.db-shm
+Dockerfile
+docker-compose.yml

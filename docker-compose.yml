@@ -1,0 +1,44 @@
+services:
+  mnemon:
+    build:
+      context: .
+      target: runtime
+      args:
+        VERSION: ${VERSION:-dev}
+    image: mnemon-dev/mnemon:${VERSION:-dev}
+    env_file:
+      - .env
+    volumes:
+      - mnemon-data:/mnemon
+    command: ["status"]
+
+  mnemon-dev:
+    build:
+      context: .
+      target: dev
+    profiles:
+      - dev
+    working_dir: /workspace
+    env_file:
+      - .env
+    volumes:
+      - .:/workspace
+      - go-build-cache:/root/.cache/go-build
+      - go-mod-cache:/go/pkg/mod
+      - mnemon-data:/mnemon
+    command: ["bash"]
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles:
+      - embeddings
+    volumes:
+      - ollama-data:/root/.ollama
+    ports:
+      - "11434:11434"
+
+volumes:
+  mnemon-data:
+  go-build-cache:
+  go-mod-cache:
+  ollama-data:

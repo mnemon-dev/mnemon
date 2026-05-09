@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-05-03
+
+### Added
+- `MNEMON_EMBED_DIMENSIONS` env var for Matryoshka dimension truncation (e.g., 256-dim instead of 768)
+
 ## [0.1.1] - 2026-02-22
 
 ### Added
@@ -41,6 +46,7 @@ Initial public release.
 - Release pipeline: GoReleaser, GitHub Actions, Homebrew tap
 - Comprehensive documentation with Chinese translations
 
-[Unreleased]: https://github.com/mnemon-dev/mnemon/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/mnemon-dev/mnemon/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/mnemon-dev/mnemon/compare/v0.1.2...v0.1.3
 [0.1.1]: https://github.com/mnemon-dev/mnemon/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/mnemon-dev/mnemon/releases/tag/v0.1.0

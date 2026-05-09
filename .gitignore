@@ -4,6 +4,9 @@
 # Local LLM CLI integration (use mnemon setup --global for user-wide install)
 .claude/
 .openclaw/
+.supervisor/
+.env
+.mnemon-dev/
 
 # IDE
 .idea/
@@ -15,6 +18,9 @@
 # OS
 .DS_Store
 Thumbs.db
+
+# Local environment
+.env
 
 # Go
 vendor/
