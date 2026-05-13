@@ -178,11 +178,13 @@ func Diff(insights []*model.Insight, newContent string, opts DiffOptions) DiffRe
 	}
 }
 
-// negationWords detects potential contradictions.
+// negationWords detects clear state-change signals. Single common words like
+// "not" are intentionally excluded — they appear constantly in scientific and
+// research text and cause false CONFLICT classifications.
 var negationWords = []string{
-	"not", "no longer", "don't", "doesn't", "never", "switched from",
+	"no longer", "don't", "doesn't", "never", "switched from",
 	"instead of", "rather than", "replaced", "deprecated",
-	"不", "没有", "不再", "放弃", "替换", "取消",
+	"不再", "放弃", "替换", "取消",
 }
 
 func classifySuggestion(similarity float64, newText, existingText string) DiffSuggestion {
@@ -190,12 +192,17 @@ func classifySuggestion(similarity float64, newText, existingText string) DiffSu
 		return DiffAdd
 	}
 
-	// Check for negation/conflict signals (even at high similarity)
-	newLower := strings.ToLower(newText)
-	existLower := strings.ToLower(existingText)
-	for _, neg := range negationWords {
-		if strings.Contains(newLower, neg) || strings.Contains(existLower, neg) {
-			return DiffConflict
+	// Only check for conflict signals when texts are substantially similar.
+	// At borderline similarity (0.5–0.7) texts may share domain vocabulary
+	// without being about the same subject (e.g. two survey records from
+	// different locations with shared species names).
+	if similarity >= 0.7 {
+		newLower := strings.ToLower(newText)
+		existLower := strings.ToLower(existingText)
+		for _, neg := range negationWords {
+			if strings.Contains(newLower, neg) || strings.Contains(existLower, neg) {
+				return DiffConflict
+			}
 		}
 	}
 
