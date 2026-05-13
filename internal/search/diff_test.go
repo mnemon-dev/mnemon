@@ -105,6 +105,29 @@ func TestDiff_DuplicateOverridesOverall(t *testing.T) {
 	}
 }
 
+func TestDiff_SameDomainCosineNoOverride(t *testing.T) {
+	// Regression: same-domain facts with different locations must not trigger UPDATE.
+	// nomic-embed-text produces cosine ~0.75 for same-domain different-fact pairs.
+	// The old threshold (0.70) let cosine override token similarity and incorrectly
+	// classified as UPDATE, replacing the original insight. The fix raises it to 0.85.
+	insights := []*model.Insight{
+		{ID: "kinabalu", Content: "Dichorragia nesimachus singleton at Kinabalu Park, Sabah."},
+	}
+	// Two unit vectors with cosine similarity = 0.75: simulates same-domain different-fact embeddings.
+	newVec := []float64{1.0, 0.0}
+	existVec := []float64{0.75, 0.6614} // cos(newVec, existVec) = 0.75
+
+	result := Diff(insights,
+		"Dichorragia nesimachus first record in Bentong, Pahang.",
+		DiffOptions{
+			NewEmbedding:  newVec,
+			ExistingEmbed: []EmbeddedItem{{ID: "kinabalu", Embedding: existVec}},
+		})
+	if result.Suggestion != DiffAdd {
+		t.Errorf("cosine=0.75 (same domain, different location): want ADD, got %s", result.Suggestion)
+	}
+}
+
 func TestDiff_LimitDefault(t *testing.T) {
 	insights := make([]*model.Insight, 20)
 	for i := range insights {

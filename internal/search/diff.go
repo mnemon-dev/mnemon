@@ -76,10 +76,11 @@ func Diff(insights []*model.Insight, newContent string, opts DiffOptions) DiffRe
 			}
 		}
 
-		// Combined similarity: cosine only contributes when above 0.7
-		// (below that, same-domain but different content can produce false matches)
+		// Combined similarity: cosine only contributes when above 0.85.
+		// Below that, same-domain content (e.g. two butterfly survey locations)
+		// clusters around 0.70–0.84 and produces false UPDATE matches.
 		similarity := tokenSim
-		if cosineSim >= 0.7 && cosineSim > similarity {
+		if cosineSim >= 0.85 && cosineSim > similarity {
 			similarity = cosineSim
 		}
 
@@ -139,7 +140,7 @@ func Diff(insights []*model.Insight, newContent string, opts DiffOptions) DiffRe
 			}
 			tokenSim := ContentSimilarity(newContent, ins.Content)
 			similarity := tokenSim
-			if cp.sim >= 0.7 && cp.sim > similarity {
+			if cp.sim >= 0.85 && cp.sim > similarity {
 				similarity = cp.sim
 			}
 			suggestion := classifySuggestion(similarity, newContent, ins.Content)
