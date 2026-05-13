@@ -124,6 +124,37 @@ func TestContentSimilarity_Empty(t *testing.T) {
 	}
 }
 
+func TestJaccardSimilarity_Identical(t *testing.T) {
+	if sim := JaccardSimilarity("Go uses SQLite", "Go uses SQLite"); sim != 1.0 {
+		t.Errorf("identical: want 1.0, got %f", sim)
+	}
+}
+
+func TestJaccardSimilarity_Disjoint(t *testing.T) {
+	if sim := JaccardSimilarity("apple banana", "dog elephant"); sim != 0 {
+		t.Errorf("disjoint: want 0, got %f", sim)
+	}
+}
+
+func TestJaccardSimilarity_SameDomainDifferentFact(t *testing.T) {
+	// Same species name (shared tokens) but different location (distinct tokens).
+	// Jaccard penalises the distinct tokens; bidirectional max would not.
+	a := "Dichorragia nesimachus singleton at Kinabalu Park Sabah lowland forest elevation"
+	b := "Dichorragia nesimachus first record Raub Pahang dipterocarp forest canopy specimen"
+	sim := JaccardSimilarity(a, b)
+	if sim >= 0.5 {
+		t.Errorf("same-domain different-fact: want Jaccard < 0.5 (ADD territory), got %f", sim)
+	}
+}
+
+func TestJaccardSimilarity_OneWordChange(t *testing.T) {
+	// Same sentence with one word swapped — genuine update, Jaccard should be >= 0.5.
+	sim := JaccardSimilarity("Go uses SQLite for storage", "Go uses PostgreSQL for storage")
+	if sim < 0.5 {
+		t.Errorf("one-word-change: want Jaccard >= 0.5 (UPDATE territory), got %f", sim)
+	}
+}
+
 func TestKeywordSearch_Ranking(t *testing.T) {
 	insights := []*model.Insight{
 		{ID: "1", Content: "Go language for building CLI tools", Importance: 3},

@@ -67,7 +67,7 @@ func Diff(insights []*model.Insight, newContent string, opts DiffOptions) DiffRe
 	// Step 2: score each candidate
 	matches := make([]DiffMatch, 0, len(candidates))
 	for _, c := range candidates {
-		tokenSim := ContentSimilarity(newContent, c.Insight.Content)
+		tokenSim := JaccardSimilarity(newContent, c.Insight.Content)
 
 		var cosineSim float64
 		if opts.NewEmbedding != nil {
@@ -138,7 +138,7 @@ func Diff(insights []*model.Insight, newContent string, opts DiffOptions) DiffRe
 			if !ok {
 				continue
 			}
-			tokenSim := ContentSimilarity(newContent, ins.Content)
+			tokenSim := JaccardSimilarity(newContent, ins.Content)
 			similarity := tokenSim
 			if cp.sim >= 0.85 && cp.sim > similarity {
 				similarity = cp.sim
