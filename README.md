@@ -98,10 +98,17 @@ One command deploys skill, hook, plugin, and behavioral guide to `~/.openclaw/`.
 ### [Nanobot](https://github.com/dream-aim/nanobot)
 
 ```bash
-mnemon setup --target nanobot --yes
+mnemon setup --target nanobot --global --yes
 ```
 
 One command deploys the mnemon skill to `~/.nanobot/workspace/skills/mnemon/`. Restart Nanobot to activate. Memory is shared across all Nanobot sessions and projects.
+
+To enable semantic search, install [Ollama](https://ollama.ai), pull `nomic-embed-text`, and backfill existing insights:
+
+```bash
+ollama pull nomic-embed-text
+mnemon embed --all
+```
 
 ### [NanoClaw](https://github.com/qwibitai/nanoclaw)
 
