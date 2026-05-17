@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- `Diff` now sorts matches by `Similarity` descending before selecting the overall
+  suggestion. Previously, `KeywordSearch` ordered candidates by token overlap score,
+  so a high-keyword-score candidate classified as ADD could mask a lower-keyword-score
+  candidate with higher Jaccard similarity that should have been UPDATE or DUPLICATE.
 - Deduplication false positives on scientific and domain-specific text:
   - Removed bare `"not"` from negation words — it appears in virtually all
     scientific prose and caused unrelated records to be classified as CONFLICT.
