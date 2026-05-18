@@ -157,24 +157,63 @@ func OpenClawEject(configDir string) []error {
 	removeIfEmpty(filepath.Join(configDir, "hooks"))
 	removeIfEmpty(filepath.Join(configDir, "extensions"))
 
-	// Remove plugin entry from openclaw.json
-	cfgPath := filepath.Join(configDir, "openclaw.json")
-	if data, err := os.ReadFile(cfgPath); err == nil {
-		var cfg map[string]any
-		if json.Unmarshal(data, &cfg) == nil {
-			if plugins, ok := cfg["plugins"].(map[string]any); ok {
-				if entries, ok := plugins["entries"].(map[string]any); ok {
-					delete(entries, "mnemon")
-					plugins["entries"] = entries
-					cfg["plugins"] = plugins
-					if out, err := json.MarshalIndent(cfg, "", "  "); err == nil {
-						os.WriteFile(cfgPath, append(out, '\n'), 0600)
-					}
-				}
-			}
-		}
+	if err := removeOpenClawPluginEntry(filepath.Join(configDir, "openclaw.json")); err != nil {
+		StatusError(total+1, total+1, "Config", err)
+		errs = append(errs, err)
 	}
 
 	removeIfEmpty(configDir)
 	return errs
+}
+
+func removeOpenClawPluginEntry(cfgPath string) error {
+	data, err := os.ReadFile(cfgPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	var cfg map[string]any
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("parse openclaw.json: %w", err)
+	}
+
+	plugins, ok := cfg["plugins"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	entries, ok := plugins["entries"].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	if _, ok := entries["mnemon"]; !ok {
+		return nil
+	}
+	delete(entries, "mnemon")
+	if len(entries) == 0 {
+		delete(plugins, "entries")
+	} else {
+		plugins["entries"] = entries
+	}
+	if len(plugins) == 0 {
+		delete(cfg, "plugins")
+	} else {
+		cfg["plugins"] = plugins
+	}
+
+	if len(cfg) == 0 {
+		if err := os.Remove(cfgPath); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		return nil
+	}
+
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(cfgPath, append(out, '\n'), 0600)
 }

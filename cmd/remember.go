@@ -22,6 +22,7 @@ var (
 	remTags       string
 	remSource     string
 	remEntities   string
+	remEntityMode string
 	remNoDiff     bool
 )
 
@@ -42,6 +43,10 @@ var rememberCmd = &cobra.Command{
 		}
 		if remImportance < 1 || remImportance > 5 {
 			return fmt.Errorf("importance must be 1-5, got %d", remImportance)
+		}
+		entityMode := graph.EntityMode(remEntityMode)
+		if !graph.ValidEntityMode(entityMode) {
+			return fmt.Errorf("invalid entity mode %q; valid: merge, provided, auto", remEntityMode)
 		}
 
 		var tags []string
@@ -221,7 +226,7 @@ var rememberCmd = &cobra.Command{
 			}
 
 			// Run graph edge engine (includes auto semantic edges when embedded)
-			engine := graph.NewEngine(db, embedCache)
+			engine := graph.NewEngineWithEntityMode(db, embedCache, entityMode)
 			edgeStats = engine.OnInsightCreated(insight)
 
 			// Update entities extracted by the engine
@@ -299,6 +304,7 @@ func init() {
 	rememberCmd.Flags().StringVar(&remTags, "tags", "", "comma-separated tags")
 	rememberCmd.Flags().StringVar(&remSource, "source", "user", "source (user|agent|external)")
 	rememberCmd.Flags().StringVar(&remEntities, "entities", "", "comma-separated entities (LLM-extracted, merged with auto-extraction)")
+	rememberCmd.Flags().StringVar(&remEntityMode, "entity-mode", string(graph.EntityModeMerge), "entity handling mode (merge|provided|auto)")
 	rememberCmd.Flags().BoolVar(&remNoDiff, "no-diff", false, "skip duplicate/conflict detection")
 	rootCmd.AddCommand(rememberCmd)
 }

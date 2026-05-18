@@ -124,6 +124,60 @@ func TestSoftDeleteInsight_AlreadyDeleted(t *testing.T) {
 	}
 }
 
+// --- Store names ---
+
+func TestReadActiveRejectsInvalidStoreName(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := os.WriteFile(ActiveFile(baseDir), []byte("../outside\n"), 0o644); err != nil {
+		t.Fatalf("write active file: %v", err)
+	}
+
+	if got := ReadActive(baseDir); got != DefaultStoreName {
+		t.Fatalf("invalid active store should fall back to %q, got %q", DefaultStoreName, got)
+	}
+}
+
+func TestWriteActiveRejectsInvalidStoreName(t *testing.T) {
+	if err := WriteActive(t.TempDir(), "../outside"); err == nil {
+		t.Fatal("expected invalid store name error")
+	}
+}
+
+func TestListStoresFiltersInvalidDirectoryNames(t *testing.T) {
+	baseDir := t.TempDir()
+	for _, name := range []string{"default", "work_1", ".hidden"} {
+		dir := filepath.Join(baseDir, "data", name)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatalf("create store dir %q: %v", name, err)
+		}
+	}
+
+	names, err := ListStores(baseDir)
+	if err != nil {
+		t.Fatalf("list stores: %v", err)
+	}
+	want := []string{"default", "work_1"}
+	if len(names) != len(want) {
+		t.Fatalf("store count mismatch: want %v, got %v", want, names)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Fatalf("store names mismatch: want %v, got %v", want, names)
+		}
+	}
+}
+
+func TestStoreExistsRejectsInvalidStoreName(t *testing.T) {
+	baseDir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(baseDir, "outside"), 0o755); err != nil {
+		t.Fatalf("create outside dir: %v", err)
+	}
+
+	if StoreExists(baseDir, "../outside") {
+		t.Fatal("invalid store name must not resolve outside data directory")
+	}
+}
+
 // --- Query ---
 
 func TestQueryInsights_Filters(t *testing.T) {
@@ -647,6 +701,12 @@ func TestMigrateIfNeeded(t *testing.T) {
 	}
 	db.InsertInsight(makeInsight("mig-1", "legacy data", 3))
 	db.Close()
+	if err := os.WriteFile(filepath.Join(base, "mnemon.db-wal"), []byte("wal"), 0o644); err != nil {
+		t.Fatalf("write legacy wal: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(base, "mnemon.db-shm"), []byte("shm"), 0o644); err != nil {
+		t.Fatalf("write legacy shm: %v", err)
+	}
 
 	// Run migration
 	if err := MigrateIfNeeded(base); err != nil {
@@ -656,6 +716,24 @@ func TestMigrateIfNeeded(t *testing.T) {
 	// Old file should be gone
 	if _, err := os.Stat(filepath.Join(base, "mnemon.db")); !os.IsNotExist(err) {
 		t.Error("old mnemon.db should be moved")
+	}
+	if _, err := os.Stat(filepath.Join(base, "mnemon.db-wal")); !os.IsNotExist(err) {
+		t.Error("old WAL should be moved")
+	}
+	if _, err := os.Stat(filepath.Join(base, "mnemon.db-shm")); !os.IsNotExist(err) {
+		t.Error("old SHM should be moved")
+	}
+	if got, err := os.ReadFile(filepath.Join(StoreDir(base, DefaultStoreName), "mnemon.db-wal")); err != nil || string(got) != "wal" {
+		t.Fatalf("migrated WAL mismatch: got=%q err=%v", got, err)
+	}
+	if got, err := os.ReadFile(filepath.Join(StoreDir(base, DefaultStoreName), "mnemon.db-shm")); err != nil || string(got) != "shm" {
+		t.Fatalf("migrated SHM mismatch: got=%q err=%v", got, err)
+	}
+	if err := os.Remove(filepath.Join(StoreDir(base, DefaultStoreName), "mnemon.db-wal")); err != nil {
+		t.Fatalf("remove fake migrated WAL: %v", err)
+	}
+	if err := os.Remove(filepath.Join(StoreDir(base, DefaultStoreName), "mnemon.db-shm")); err != nil {
+		t.Fatalf("remove fake migrated SHM: %v", err)
 	}
 
 	// New location should work

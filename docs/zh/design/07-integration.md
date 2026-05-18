@@ -4,181 +4,118 @@
 
 ![集成架构](../../diagrams/08-three-layer-integration.jpg)
 
-Mnemon 通过生命周期钩子、技能文件和行为引导与 LLM CLI 集成。Claude Code 的[钩子系统](https://docs.anthropic.com/en/docs/claude-code/hooks)是参考实现 — 所有组件通过 `mnemon setup` 自动部署。
+Mnemon 以 Markdown 可安装的 memory harness 方式集成到 LLM CLI，而不是作为某个 runtime-specific agent framework。目标 runtime 继续负责对话、规划、文件编辑、工具调用和语义判断。Mnemon 提供持久记忆协议、skill 能力面、memory guideline，以及四个生命周期提醒。
 
-## 7.1 集成架构
+集成层遵循 **Hook-native, LLM-led, Protocol-constrained** 原则：
 
-四个钩子驱动记忆生命周期：
+- **Hook-native**：生命周期事件是提醒 agent 使用记忆的好位置，但 hook 应保持轻量。
+- **LLM-led**：宿主 agent 判断 recall 或 writeback 是否有用。
+- **Protocol-constrained**：Mnemon 负责确定性命令、结构化输出、provenance、link、去重和生命周期操作。
 
-```
-会话启动
-    │
-    ▼
-  Prime（SessionStart）─── prime.sh ──→ 加载 guide.md（记忆执行手册）
-    │
-    ▼
-  用户发送消息
-    │
-    ▼
-  Remind（UserPromptSubmit）─── user_prompt.sh ──→ 提醒 agent 进行 recall 和 remember
-    │
-    ▼
-  Skill（SKILL.md）── 命令语法参考（自动发现）
-    │
-    ▼
-  LLM 生成回复（遵循 guide.md 行为规则）
-    │
-    ▼
-  Nudge（Stop）─── stop.sh ──→ 提醒 agent 进行 remember
-    │
-    ▼
-  （上下文压缩时）
-  Compact（PreCompact）─── compact.sh ──→ 提取关键洞察进行 remember
-```
+## 7.1 可安装资产模型
 
-三层协同工作：
+推荐集成由三份 Markdown 资产和 Mnemon binary 组成：
 
-| 层 | 内容 | 位置 | 职责 |
-|---|------|------|------|
-| **钩子** | Claude Code 生命周期事件触发的 Shell 脚本 | `.claude/hooks/mnemon/` | Prime（引导）、Remind（recall 和 remember）、Nudge（remember）、Compact（关键保存） |
-| **技能** | `SKILL.md` — Claude Code 技能格式的命令参考 | `.claude/skills/mnemon/` | 教 LLM *怎么*使用 mnemon 命令 |
-| **引导** | `guide.md` — recall、remember、委派的详细执行手册 | `~/.mnemon/prompt/` | 教 LLM *何时*召回、*什么*值得记住、*如何*委派 |
+| 资产 | 职责 |
+|---|---|
+| `SKILL.md` | 教命令语法、输出解释和硬性 guardrail |
+| `INSTALL.md` | 告诉目标 agent 如何在自身 runtime 中安装 skill、guideline 和 hook phase |
+| `GUIDELINE.md` | 定义 recall/writeback/link/supersede/no-op 判断策略 |
+| `mnemon` binary | 执行确定性记忆操作 |
 
-## 7.2 钩子详情
+`mnemon setup` 仍然可以为已知 runtime 自动化这些步骤，但架构不应依赖 custom adapter。一个足够 capable 的 agent 应能阅读 `INSTALL.md`，并用自身 runtime 最接近的原生机制安装 Mnemon。
 
-Claude Code 在特定生命周期事件触发钩子。Mnemon 注册最多四个，各自承担记忆生命周期中的不同角色：
+## 7.2 四个 Hook Phase
 
-**Prime（SessionStart）— `prime.sh`**
+四个 hook phase 定义生命周期契约：
 
-会话启动时运行一次。加载行为引导 — 详细的 recall、remember、sub-agent 委派执行手册：
-
-```bash
-STATS=$(mnemon status 2>/dev/null)
-if [ -n "$STATS" ]; then
-  # 从 JSON 中提取计数并显示在状态行中
-  echo "[mnemon] Memory active (<insights> insights, <edges> edges)."
-else
-  echo "[mnemon] Memory active."
-fi
-[ -f ~/.mnemon/prompt/guide.md ] && cat ~/.mnemon/prompt/guide.md
+```text
+Session starts
+    |
+    v
+  Prime   -> 加载 skill/guideline 立场和当前 store 信息
+    |
+    v
+User prompt arrives
+    |
+    v
+  Remind  -> 询问 recall 是否可能改变当前任务
+    |
+    v
+Agent 仅在有用时使用 Mnemon
+    |
+    v
+  Nudge   -> 询问 durable writeback 是否有正当性
+    |
+    v
+Before context compaction
+    |
+    v
+  Compact -> 只保存关键连续性
 ```
 
-引导内容出现在 LLM 的系统上下文中，为整个会话建立 recall/remember/委派行为。
+Hook 契约是行为契约。脚本正文是 runtime-specific implementation detail。
 
-**Remind（UserPromptSubmit）— `user_prompt.sh`**
+| Phase | 典型事件 | 必须行为 | 应避免 |
+|---|---|---|---|
+| Prime | Session start / bootstrap | 让 Mnemon skill、guideline 和当前 store 可见 | 批量注入历史 memory |
+| Remind | User prompt submit / before planning | 对记忆敏感任务触发 recall 判断 | 每个 prompt 自动 recall |
+| Nudge | Stop / after response | 对 durable insight 触发 writeback 判断 | 保存普通聊天日志 |
+| Compact | Before compaction | 在上下文丢失前保存关键连续性 | 保存完整 transcript |
 
-每条用户消息时运行。轻量级 prompt 提醒，提醒 agent 在工作开始前评估是否需要 recall 和 remember：
+当 runtime 没有 hook 时，把同样检查编码成持久规则。agent 可以在任务开始、任务结束和压缩边界自检。
 
-```bash
-echo "[mnemon] Evaluate: recall needed? After responding, evaluate: remember needed?"
+## 7.3 Runtime 映射
+
+同一个 harness 在不同 runtime 中有不同安装方式：
+
+| Runtime | 自然安装机制 |
+|---|---|
+| Codex | `AGENTS.md`、skill、本地指令，以及启用后的 hooks |
+| Claude Code | `CLAUDE.md`、skill、slash command、settings hooks、project/user memory 文件 |
+| OpenClaw | Plugin hooks 和 skill，但不要求 Mnemon-specific memory engine |
+| Skill-first agents | Skill、memory guidance 和轻量提醒 |
+| Minimal CLIs | 引用 `SKILL.md` 和 `GUIDELINE.md` 的 rules 文件或 system instruction |
+
+Mnemon 应在 `INSTALL.md` 中把这些映射写成例子。它们不是独立的产品架构。
+
+## 7.4 Agent 主导的记忆工作
+
+Agent 应把 memory 当成判断，而不是反射动作：
+
+1. 任务开始时，判断过往经验是否可能改变当前工作。
+2. 如果是，运行聚焦的 `mnemon recall` 查询，并把结果当作证据。
+3. 执行任务时，当前用户指令和仓库事实优先于陈旧 memory。
+4. 任务结束时，判断本 session 是否产生 durable knowledge。
+5. 如果是，写入简洁且带 provenance 的 memory，并在关系有用时 link 或 supersede。
+6. 如果不是，什么都不做。
+
+当 runtime 支持 sub-agent 时，委派可能有用，尤其适合昂贵的 writeback review 或长 session。它是执行策略，不是架构必需品。单个 capable agent 也可以直接完成同样的记忆判断。
+
+## 7.5 Markdown 自进化
+
+集成层应主要通过经过 review 的 Markdown patch 演化：
+
+```text
+repeated experience
+  -> Mnemon recall/writeback evidence
+  -> LLM reflection
+  -> candidate patch to SKILL.md / GUIDELINE.md / INSTALL.md / project rule
+  -> review
+  -> installed behavior
 ```
 
-agent 根据 guide.md 的规则决定是否响应此提醒 — 这是建议，不是强制执行。
+这种方式让自进化可检查、可回滚。稳定 workflow 进入 skill。稳定判断变化进入 guideline。稳定 runtime 安装经验进入 install note。代码、数据库 schema 或 runtime 内核只有在 Markdown loop 证明行为有价值后再演化。
 
-**Nudge（Stop）— `stop.sh`**
+## 7.6 验证
 
-每次 LLM 回复后运行。提醒 agent 考虑是否需要 remember。如果已处理过记忆操作则保持静默：
+当目标 agent 能做到以下事情时，集成可接受：
 
-```bash
-MSG=$(echo "$INPUT" | jq -r '.last_assistant_message // ""' 2>/dev/null)
-if echo "$MSG" | grep -qi "mnemon remember\|sub-agent.*remember\|Stored.*imp="; then
-  exit 0  # 已处理
-fi
-echo "[mnemon] Consider: does this exchange warrant a remember sub-agent?"
-```
+1. 找到 Mnemon skill，并解释命令语法。
+2. 找到 memory guideline，并解释 recall/writeback 的跳过条件。
+3. 针对记忆相关任务运行 `mnemon recall`。
+4. 写入一条带 provenance 的 durable memory。
+5. 对 trivial task 跳过 memory。
+6. 当 runtime 暴露压缩生命周期点时，只在压缩前保存关键连续性。
 
-**Compact（PreCompact）— `compact.sh`（可选）**
-
-上下文窗口压缩前触发。指示 agent 提取最关键的洞察并 remember，防止上下文丢失：
-
-```bash
-echo "[mnemon] Context compaction starting. Review this session and remember the most valuable insights (up to 5) before context is compressed. Delegate to Task sub-agents now."
-```
-
-## 7.3 自动化 Setup
-
-`mnemon setup` 自动处理所有部署：
-
-```
-$ mnemon setup
-
-Detecting LLM CLI environments...
-  ✓ Claude Code (v1.x)    .claude/
-
-Select environment: Claude Code
-Install scope: Local — this project only (.claude/)
-
-[1/3] Skill
-  ✓ Skill     .claude/skills/mnemon/SKILL.md
-
-[2/3] Prompts
-  ✓ Prompts   ~/.mnemon/prompt/ (guide.md, skill.md)
-
-[3/3] Optional hooks
-  Select hooks to enable:
-    [x] Remind  — 提醒 agent 进行 recall 和 remember（推荐）
-    [x] Nudge   — 工作结束后提醒 agent 进行 remember
-    [ ] Compact — 压缩前提取关键洞察
-
-Setup complete!
-  Hooks   prime, remind, nudge
-  Prompts ~/.mnemon/prompt/ (guide.md, skill.md)
-
-Start a new Claude Code session to activate.
-Edit ~/.mnemon/prompt/guide.md to customize behavior.
-Run 'mnemon setup --eject' to remove.
-```
-
-关键 setup 选项：
-
-| 标志 | 效果 |
-|------|------|
-| `--global` | 安装到 `~/.claude/`（所有项目）而非 `.claude/`（项目级） |
-| `--target claude-code` | 非交互式，仅 Claude Code |
-| `--eject` | 移除所有 mnemon 集成 |
-| `--yes` | 自动确认所有提示（CI 友好） |
-
-Prime 钩子始终安装。Remind、Nudge、Compact 钩子可选（Remind 和 Nudge 默认启用）。
-
-## 7.4 Sub-Agent 委派
-
-记忆写入不在主对话中进行。宿主 LLM 将其委派给轻量 sub-agent：
-
-```
-主 Agent（Opus）                       Sub-Agent（Sonnet）
-┌──────────────────────┐              ┌──────────────────────┐
-│ 完整对话上下文          │  委派        │ ~1000 tokens 上下文    │
-│（~25k tokens）         │ ──────────→ │ 读取 SKILL.md         │
-│                       │              │ 执行命令              │
-│ 决定记什么              │  结果        │ 基于判断评估候选        │
-│                       │ ←────────── │                      │
-└──────────────────────┘              └──────────────────────┘
-```
-
-**为什么用 Sub-Agent？**
-
-| 维度 | 主对话 | Sub-Agent |
-|------|-------|-----------|
-| 上下文大小 | ~25,000 tokens | ~1,000 tokens |
-| 模型 | Opus（昂贵） | Sonnet（更便宜） |
-| 范围 | 完整对话 | 仅记忆任务 |
-| 执行 | 同步，阻塞用户 | 后台，非阻塞 |
-
-主 agent 只提供记什么——内容、分类、重要性、实体。Sub-agent 读取 SKILL.md，执行正确的 `mnemon remember` 命令，并基于判断而非机械规则评估 `remember` 返回的 Link 候选。
-
-这种分离意味着：
-
-- **Token 经济性**：每次记忆写入约 ~7,000 tokens，而非主对话中的 ~25,000
-- **上下文隔离**：记忆处理不会污染主对话上下文
-- **模型效率**：Sonnet 处理常规执行，Opus 专注高层决策
-
-## 7.5 适配其他 LLM CLI
-
-对于支持钩子的 CLI，复制 Claude Code 模式：注册调用 mnemon 命令的生命周期钩子，部署技能文件，提供行为引导。
-
-对于不支持钩子的 CLI，将 recall/remember 引导合并到对应的系统提示文件中：
-
-- Cursor → `.cursorrules`
-- Windsurf → `RULES.md`
-- OpenClaw → `mnemon setup --target openclaw` 部署技能 + 引导，但钩子需手动配置插件
-- 其他 → 系统提示 / 规则文件
+如果 hook 强制每个 prompt 使用 memory、memory 变成 transcript dump，或陈旧 memory 覆盖当前用户指令和仓库证据，则集成失败。

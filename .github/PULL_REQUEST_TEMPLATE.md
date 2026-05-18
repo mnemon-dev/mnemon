@@ -11,4 +11,4 @@ Link to issue or explain the motivation.
 - [ ] Tests pass (`make test` and `go test ./...`)
 - [ ] New/changed behavior is covered by tests
 - [ ] Documentation updated (USAGE.md, DESIGN.md, or README) if applicable
-- [ ] CHANGELOG.md updated under `[Unreleased]` if user-facing
+- [ ] User-facing release-note impact described in this PR, if applicable

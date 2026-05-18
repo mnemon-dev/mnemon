@@ -1,4 +1,4 @@
-# 2. Design Philosophy
+# 2. Engine Design Philosophy
 
 [< Back to Design Overview](../DESIGN.md)
 
@@ -29,6 +29,12 @@ This means:
 - **Zero additional API cost**: All computation happens locally
 - **Stronger judgment capability**: An Opus-class LLM evaluates candidate links, not gpt-4o-mini
 - **LLM swappable**: The same Binary + Skill works across Claude Code, Cursor, or any LLM CLI
+
+This engine follows the broader [Mnemon Harness](../harness/README.md) stance:
+hook-native, LLM-led, protocol-constrained, and modular around the host agent.
+The harness doctrine is kept separate from the current engine architecture so
+we can discuss principles without assuming today's binary is the final runtime
+shape.
 
 ## 2.2 Tools are Organs, Skills are Textbooks
 

@@ -27,22 +27,34 @@ func EjectMemoryBlock(filePath string) (bool, error) {
 		return false, nil
 	}
 
-	endIdx := strings.Index(s, markerEnd)
-	if endIdx < 0 {
+	endIdxRel := strings.Index(s[startIdx+len(markerStart):], markerEnd)
+	if endIdxRel < 0 {
 		return false, nil
 	}
+	endIdx := startIdx + len(markerStart) + endIdxRel
 	endIdx += len(markerEnd)
+
+	removedLeadingNewline := false
+	removedTrailingNewline := false
 
 	// Also remove a leading newline before the block if present
 	if startIdx > 0 && s[startIdx-1] == '\n' {
 		startIdx--
+		removedLeadingNewline = true
 	}
 	// Also remove a trailing newline after the block if present
 	if endIdx < len(s) && s[endIdx] == '\n' {
 		endIdx++
+		removedTrailingNewline = true
 	}
 
 	result := s[:startIdx] + s[endIdx:]
+	if removedLeadingNewline && removedTrailingNewline && startIdx > 0 && endIdx < len(s) {
+		result = s[:startIdx] + "\n" + s[endIdx:]
+	}
+	for strings.Contains(result, "\n\n\n") {
+		result = strings.ReplaceAll(result, "\n\n\n", "\n\n")
+	}
 	result = strings.TrimSpace(result)
 
 	// If nothing remains, remove the file entirely

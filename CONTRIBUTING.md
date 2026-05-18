@@ -55,7 +55,7 @@ Prefix with a verb in imperative form. The CHANGELOG filter excludes `docs:`, `t
 1. Fork the repository and create a feature branch from `master`.
 2. Make your changes and ensure `make unit` and `make test` pass.
 3. Update documentation (USAGE.md, DESIGN.md, or README) if your change affects user-facing behavior.
-4. Update `CHANGELOG.md` under `[Unreleased]` for user-facing changes.
+4. For user-facing changes, describe the release-note impact in the PR body. Maintainers update `CHANGELOG.md` during release preparation unless they explicitly ask for a changelog entry in the PR.
 5. Open a pull request against `master`.
 
 ## Releasing

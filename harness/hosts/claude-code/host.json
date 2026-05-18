@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "name": "claude-code",
+  "description": "Projects Mnemon harness modules into Claude Code skills, hooks, agents, and settings.json.",
+  "projection_surfaces": {
+    "skills": ".claude/skills",
+    "hooks": ".claude/hooks",
+    "subagents": ".claude/agents",
+    "config": ".claude/settings.json"
+  },
+  "lifecycle_mapping": {
+    "prime": "SessionStart",
+    "remind": "UserPromptSubmit",
+    "nudge": "Stop",
+    "compact": "PreCompact",
+    "maintenance": "subagent-or-manual"
+  },
+  "projector": "projector.sh"
+}

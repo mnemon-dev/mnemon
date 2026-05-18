@@ -6,181 +6,143 @@
 
 ![Integration Architecture](../diagrams/08-three-layer-integration.jpg)
 
-Mnemon integrates with LLM CLIs through lifecycle hooks, a skill file, and a behavioral guide. Claude Code's [hook system](https://docs.anthropic.com/en/docs/claude-code/hooks) is the reference implementation — all components are deployed automatically via `mnemon setup`.
+Mnemon integrates with LLM CLIs as a markdown-installable memory harness, not as
+a runtime-specific agent framework. The target runtime remains responsible for
+conversation, planning, file edits, tool use, and semantic judgment. Mnemon
+provides a durable memory protocol, a skill surface, a memory guideline, and
+four lifecycle reminders.
 
-## 7.1 Integration Architecture
+The integration layer follows the **Hook-native, LLM-led, Protocol-constrained**
+principle:
 
-Four hooks drive the memory lifecycle:
+- **Hook-native**: lifecycle events are useful places to remind the agent about
+  memory, but hooks should stay lightweight.
+- **LLM-led**: the host agent decides whether recall or writeback is useful.
+- **Protocol-constrained**: Mnemon owns deterministic commands, structured
+  output, provenance, linking, deduplication, and lifecycle operations.
 
-```
+## 7.1 Installable Artifact Model
+
+The preferred integration is three markdown artifacts plus the Mnemon binary:
+
+| Artifact | Role |
+|---|---|
+| `SKILL.md` | Teaches command syntax, output interpretation, and hard guardrails |
+| `INSTALL.md` | Tells the target agent how to install the skill, guideline, and hook phases in its own runtime |
+| `GUIDELINE.md` | Defines recall/writeback/link/supersede/no-op judgment policy |
+| `mnemon` binary | Executes deterministic memory operations |
+
+`mnemon setup` can still automate these steps for known runtimes, but the
+architecture should not depend on a custom adapter. A capable agent should be
+able to read `INSTALL.md` and install Mnemon using the closest native mechanism
+available in its runtime.
+
+## 7.2 Four Hook Phases
+
+Four hook phases define the lifecycle contract:
+
+```text
 Session starts
-    │
-    ▼
-  Prime (SessionStart) ─── prime.sh ──→ load guide.md (memory execution manual)
-    │
-    ▼
-  User sends message
-    │
-    ▼
-  Remind (UserPromptSubmit) ─── user_prompt.sh ──→ remind agent to recall & remember
-    │
-    ▼
-  Skill (SKILL.md) ── command syntax reference (auto-discovered)
-    │
-    ▼
-  LLM generates response (following guide.md behavioral rules)
-    │
-    ▼
-  Nudge (Stop) ─── stop.sh ──→ remind agent to remember
-    │
-    ▼
-  (when context compacts)
-  Compact (PreCompact) ─── compact.sh ──→ extract critical insights to remember
+    |
+    v
+  Prime   -> load skill/guideline stance and active store info
+    |
+    v
+User prompt arrives
+    |
+    v
+  Remind  -> ask whether recall could change the task
+    |
+    v
+Agent works with Mnemon only when useful
+    |
+    v
+  Nudge   -> ask whether durable writeback is justified
+    |
+    v
+Before context compaction
+    |
+    v
+  Compact -> preserve only critical continuity
 ```
 
-Three layers work together:
+The hook contract is behavioral. The script body is runtime-specific and should
+be treated as an implementation detail.
 
-| Layer | What | Where | Role |
-|-------|------|-------|------|
-| **Hooks** | Shell scripts triggered by Claude Code lifecycle events | `.claude/hooks/mnemon/` | Prime (guide), Remind (recall & remember), Nudge (remember), Compact (critical save) |
-| **Skill** | `SKILL.md` — command reference in Claude Code skill format | `.claude/skills/mnemon/` | Teaches the LLM *how* to use mnemon commands |
-| **Guide** | `guide.md` — detailed execution manual for recall, remember, and delegation | `~/.mnemon/prompt/` | Teaches the LLM *when* to recall, *what* to remember, and *how* to delegate |
+| Phase | Typical Event | Required Behavior | Should Avoid |
+|---|---|---|---|
+| Prime | Session start / bootstrap | Make the Mnemon skill, guideline, and active store visible | Bulk injecting historical memory |
+| Remind | User prompt submit / before planning | Prompt a recall decision for memory-sensitive tasks | Auto-recalling every prompt |
+| Nudge | Stop / after response | Prompt a writeback decision for durable insights | Saving ordinary chat logs |
+| Compact | Before compaction | Preserve critical continuity before context is lost | Storing the full transcript |
 
-## 7.2 Hook Details
+When hooks are unavailable, encode the same checks as persistent rules. The
+agent can self-check at task start, task end, and compaction boundaries.
 
-Claude Code fires hooks at specific lifecycle events. Mnemon registers up to four, each with a distinct role in the memory lifecycle:
+## 7.3 Runtime Mapping
 
-**Prime (SessionStart) — `prime.sh`**
+The same harness maps differently across runtimes:
 
-Runs once when a session starts. Loads the behavioral guide — a detailed execution manual that teaches the agent when to recall, what to remember, and how to delegate memory writes:
+| Runtime | Natural Installation Mechanism |
+|---|---|
+| Codex | `AGENTS.md`, skills, local instructions, and hooks when enabled |
+| Claude Code | `CLAUDE.md`, skills, slash commands, settings hooks, and project/user memory files |
+| OpenClaw | Plugin hooks and skills, without requiring a Mnemon-specific memory engine |
+| Skill-first agents | Skills, memory guidance, and lightweight reminders |
+| Minimal CLIs | A rules file or system instruction that references `SKILL.md` and `GUIDELINE.md` |
 
-```bash
-STATS=$(mnemon status 2>/dev/null)
-if [ -n "$STATS" ]; then
-  # extract counts from JSON and show in status line
-  echo "[mnemon] Memory active (<insights> insights, <edges> edges)."
-else
-  echo "[mnemon] Memory active."
-fi
-[ -f ~/.mnemon/prompt/guide.md ] && cat ~/.mnemon/prompt/guide.md
+Mnemon should document these mappings as examples in `INSTALL.md`. They are not
+separate product architectures.
+
+## 7.4 Agent-Led Memory Work
+
+The agent should treat memory as a decision, not a reflex:
+
+1. At task start, decide whether prior experience could change the work.
+2. If yes, run a focused `mnemon recall` query and treat results as evidence.
+3. Do the task using current user instructions and repository facts as higher
+   authority than stale memory.
+4. At task end, decide whether the session produced durable knowledge.
+5. If yes, write a concise memory with provenance and link/supersede related
+   memories when the relationship is useful.
+6. If no, do nothing.
+
+Delegation to a sub-agent can be useful when a runtime supports it, especially
+for expensive writeback review or long sessions. It is an execution strategy,
+not a required part of the architecture. A single capable agent may perform the
+same memory decisions directly.
+
+## 7.5 Markdown Self-Evolution
+
+The integration layer should evolve primarily through reviewed markdown
+patches:
+
+```text
+repeated experience
+  -> Mnemon recall/writeback evidence
+  -> LLM reflection
+  -> candidate patch to SKILL.md / GUIDELINE.md / INSTALL.md / project rule
+  -> review
+  -> installed behavior
 ```
 
-The guide content appears in the LLM's system context, establishing recall/remember/delegation behavior for the entire session.
+This keeps self-evolution inspectable and reversible. Stable workflows become
+skills. Stable judgment changes become guideline edits. Stable runtime setup
+knowledge becomes install notes. Code, database schema, or runtime internals
+should evolve only after the markdown loop proves that the behavior is valuable.
 
-**Remind (UserPromptSubmit) — `user_prompt.sh`**
+## 7.6 Verification
 
-Runs on every user message. A lightweight prompt that reminds the agent to evaluate whether recall and remember are needed before starting work:
+An integration is acceptable when the target agent can:
 
-```bash
-echo "[mnemon] Evaluate: recall needed? After responding, evaluate: remember needed?"
-```
+1. Locate the Mnemon skill and explain command syntax.
+2. Locate the memory guideline and explain recall/writeback skip conditions.
+3. Run `mnemon recall` for a task where memory is relevant.
+4. Write one durable memory with provenance.
+5. Skip memory for a trivial task.
+6. Preserve only critical continuity before compaction when the runtime exposes
+   that lifecycle point.
 
-The agent decides whether to act on this reminder based on the guide.md rules — it is a suggestion, not forced execution.
-
-**Nudge (Stop) — `stop.sh`**
-
-Runs after each LLM response. Reminds the agent to consider whether the exchange warrants a remember operation. Stays silent if memory was already addressed:
-
-```bash
-MSG=$(echo "$INPUT" | jq -r '.last_assistant_message // ""' 2>/dev/null)
-if echo "$MSG" | grep -qi "mnemon remember\|sub-agent.*remember\|Stored.*imp="; then
-  exit 0  # Already handled
-fi
-echo "[mnemon] Consider: does this exchange warrant a remember sub-agent?"
-```
-
-**Compact (PreCompact) — `compact.sh` (optional)**
-
-Fires before context window compression. Instructs the agent to extract the most critical insights and remember them before context is lost:
-
-```bash
-echo "[mnemon] Context compaction starting. Review this session and remember the most valuable insights (up to 5) before context is compressed. Delegate to Task sub-agents now."
-```
-
-## 7.3 Automated Setup
-
-`mnemon setup` handles all deployment automatically:
-
-```
-$ mnemon setup
-
-Detecting LLM CLI environments...
-  ✓ Claude Code (v1.x)    .claude/
-
-Select environment: Claude Code
-Install scope: Local — this project only (.claude/)
-
-[1/3] Skill
-  ✓ Skill     .claude/skills/mnemon/SKILL.md
-
-[2/3] Prompts
-  ✓ Prompts   ~/.mnemon/prompt/ (guide.md, skill.md)
-
-[3/3] Optional hooks
-  Select hooks to enable:
-    [x] Remind  — remind agent to recall & remember (recommended)
-    [x] Nudge   — remind agent to remember after work
-    [ ] Compact — extract critical insights before compaction
-
-Setup complete!
-  Hooks   prime, remind, nudge
-  Prompts ~/.mnemon/prompt/ (guide.md, skill.md)
-
-Start a new Claude Code session to activate.
-Edit ~/.mnemon/prompt/guide.md to customize behavior.
-Run 'mnemon setup --eject' to remove.
-```
-
-Key setup options:
-
-| Flag | Effect |
-|------|--------|
-| `--global` | Install to `~/.claude/` (all projects) instead of `.claude/` (project-local) |
-| `--target claude-code` | Non-interactive, Claude Code only |
-| `--eject` | Remove all mnemon integrations |
-| `--yes` | Auto-confirm all prompts (CI-friendly) |
-
-The Prime hook is always installed. Remind, Nudge, and Compact hooks are optional (Remind and Nudge enabled by default).
-
-## 7.4 Sub-Agent Delegation
-
-Memory writes don't happen in the main conversation. Instead, the host LLM delegates to a lightweight sub-agent:
-
-```
-Main Agent (Opus)                     Sub-Agent (Sonnet)
-┌──────────────────────┐              ┌──────────────────────┐
-│ Full conversation     │  delegates   │ ~1000 tokens context │
-│ context (~25k tokens) │ ──────────→ │ Reads SKILL.md       │
-│                       │              │ Executes commands    │
-│ Decides WHAT to       │  result      │ Evaluates candidates │
-│ remember              │ ←────────── │ with judgment        │
-└──────────────────────┘              └──────────────────────┘
-```
-
-**Why sub-agent?**
-
-| Dimension | Main conversation | Sub-agent |
-|-----------|-------------------|-----------|
-| Context size | ~25,000 tokens | ~1,000 tokens |
-| Model | Opus (expensive) | Sonnet (cheaper) |
-| Scope | Full conversation | Memory task only |
-| Execution | Synchronous, blocks user | Background, non-blocking |
-
-The main agent provides only WHAT to store — content, category, importance, entities. The sub-agent reads SKILL.md, executes the correct `mnemon remember` command, and evaluates `remember`'s link candidates with judgment — not mechanical rules.
-
-This separation means:
-
-- **Token economy**: ~7,000 total tokens per memory write vs ~25,000 if done in main conversation
-- **Context isolation**: Memory processing doesn't pollute the main conversation context
-- **Model efficiency**: Sonnet handles routine execution while Opus focuses on high-level decisions
-
-## 7.5 Adapting to Other LLM CLIs
-
-For CLIs with hook support, replicate the Claude Code pattern: register lifecycle hooks that call mnemon commands, deploy the skill file, and provide the behavioral guide.
-
-For CLIs without hook support, merge the recall/remember guidance into the corresponding system prompt file:
-
-- Cursor -> `.cursorrules`
-- Windsurf -> `RULES.md`
-- OpenClaw -> `mnemon setup --target openclaw` deploys skill + guide, but hooks require manual plugin configuration
-- Others -> System prompt / rules file
+The integration is failing if hooks force memory use on every prompt, if memory
+turns into a transcript dump, or if stale memory overrides current user
+instructions and repository evidence.

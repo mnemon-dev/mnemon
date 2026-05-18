@@ -484,6 +484,30 @@ func TestEngine_OnInsightCreated(t *testing.T) {
 	}
 }
 
+func TestEngine_OnInsightCreated_EntityModeProvided(t *testing.T) {
+	db := testDB(t)
+	engine := NewEngineWithEntityMode(db, nil, EntityModeProvided)
+	now := time.Now().UTC()
+
+	insertInsight(t, db, "eng-p-1", "Docker Redis prior", "user", 3, []string{"deployment-pipeline"}, now.Add(-1*time.Hour))
+	ins := insertInsight(t, db, "eng-p-2", "We deploy HttpServer on Docker with Redis", "user", 3, []string{"deployment-pipeline"}, now)
+
+	stats := engine.OnInsightCreated(ins)
+	has := make(map[string]bool, len(ins.Entities))
+	for _, e := range ins.Entities {
+		has[e] = true
+	}
+	if !has["deployment-pipeline"] {
+		t.Errorf("provided entity should remain, got %v", ins.Entities)
+	}
+	if has["HttpServer"] || has["Docker"] || has["Redis"] {
+		t.Errorf("provided mode should not enrich with extracted entities, got %v", ins.Entities)
+	}
+	if stats.Entity == 0 {
+		t.Error("want entity edges from shared provided entity")
+	}
+}
+
 // --- FindSemanticCandidates with embeddings ---
 
 func TestFindSemanticCandidates_Embedding(t *testing.T) {

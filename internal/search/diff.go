@@ -159,6 +159,14 @@ func Diff(insights []*model.Insight, newContent string, opts DiffOptions) DiffRe
 		}
 	}
 
+	// Sort by similarity descending so matches[0] is always the strongest candidate.
+	// KeywordSearch orders by token overlap score, which can differ from the final
+	// Jaccard-based Similarity — a high-keyword-score ADD would otherwise mask a
+	// lower-keyword-score UPDATE or DUPLICATE from a more similar candidate.
+	sort.Slice(matches, func(i, j int) bool {
+		return matches[i].Similarity > matches[j].Similarity
+	})
+
 	// Overall suggestion: take the strongest match
 	overall := DiffAdd
 	if len(matches) > 0 {

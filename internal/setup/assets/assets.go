@@ -20,6 +20,18 @@ var ClaudeSkill []byte
 //go:embed claude/guide.md
 var ClaudeGuide []byte
 
+//go:embed codex/SKILL.md
+var CodexSkill []byte
+
+//go:embed codex/prime.sh
+var CodexPrimeHook []byte
+
+//go:embed codex/user_prompt.sh
+var CodexUserPromptHook []byte
+
+//go:embed codex/stop.sh
+var CodexStopHook []byte
+
 //go:embed openclaw/SKILL.md
 var OpenClawSkill []byte
 
@@ -49,5 +61,5 @@ var NanobotSkill []byte
 
 // All returns the embedded filesystem for inspection.
 //
-//go:embed claude openclaw nanoclaw nanobot
+//go:embed claude codex openclaw nanoclaw nanobot
 var All embed.FS

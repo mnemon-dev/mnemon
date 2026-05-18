@@ -39,6 +39,8 @@ Insight A (2h ago) ←── backbone ──→ Insight B (1h ago) ←── bac
 2. **Technical dictionary**: 200+ common terms (Go, React, SQLite, Kubernetes...)
 3. **User-provided**: `--entities` flag for direct specification
 
+`--entity-mode` controls how these sources are combined: `merge` keeps the default hybrid behavior, `provided` uses only `--entities`, and `auto` uses only automatic extraction.
+
 **Automatically created edges**: New insight <-> up to 5 existing insights per shared entity (bidirectional), weight 1.0.
 
 ```

@@ -6,6 +6,8 @@
 
 Mnemon 是一个为 LLM agent 设计的持久化记忆系统。它采用 **LLM-Supervised** 模式：宿主 LLM 作为独立记忆 Binary 的外部编排者，通过符号化 CLI 接口交互，而 Binary 负责确定性的存储、图索引和生命周期管理。记忆以四图知识结构组织 — temporal、entity、causal、semantic 四种 edge。以单一 Go binary + SQLite 的形式实现，不依赖任何外部 API。
 
+本文档描述当前 Mnemon binary 与 engine architecture。正式 modular self-evolution harness 文档见 [Mnemon Harness](harness/README.md)，可安装 runtime 资产位于仓库根目录的 [harness](../../harness/) 目录。
+
 ---
 
 ## 目录
@@ -14,9 +16,9 @@ Mnemon 是一个为 LLM agent 设计的持久化记忆系统。它采用 **LLM-S
 
 Mnemon 存在的原因 — LLM agent 的失忆问题、传统方案的结构性瓶颈，以及与现有方案（Mem0、MemGPT、Claude Code Memory）的对比。
 
-### [2. 设计哲学](design/02-philosophy.md)
+### [2. 引擎设计哲学](design/02-philosophy.md)
 
-LLM-Supervised 模式、器官 vs 教科书隐喻、记忆网关协议（LLM↔DB 交互的 MCP 类比）、关键设计洞察，以及 RLM、MAGMA 和 Graph-LLM 结构分析的理论基础。
+当前 engine 的 LLM-Supervised 模式、Hook-native / LLM-led / Protocol-constrained 原则、器官 vs 教科书隐喻、记忆网关协议（LLM↔DB 交互的 MCP 类比）、关键设计洞察，以及 RLM、MAGMA 和 Graph-LLM 结构分析的理论基础。
 
 ### [3. 核心概念与架构](design/03-concepts.md)
 
@@ -36,7 +38,11 @@ MAGMA 四图模型（temporal、entity、causal、semantic），LLM 注意力与
 
 ### [7. LLM CLI 集成](design/07-integration.md)
 
-生命周期钩子（Prime、Remind、Nudge、Compact）、技能文件、行为指南、通过 `mnemon setup` 自动部署、子代理委托模式，以及对其他 LLM CLI 的适配。
+Markdown 可安装的 runtime 集成：`SKILL.md`、`INSTALL.md`、`GUIDELINE.md`、四个 hook phase（Prime、Remind、Nudge、Compact）、agent 主导的记忆判断、可选 setup 自动化，以及轻量 Markdown 自进化。
+
+### [Self-Evolution Harness](harness/README.md)
+
+正式 modular harness 文档，覆盖 agent-agnostic 安装挂载、memory loop、skill loop 与未来可外挂 evolution modules。
 
 ### [8. 设计决策与未来方向](design/08-decisions.md)
 

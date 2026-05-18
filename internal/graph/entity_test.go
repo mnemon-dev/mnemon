@@ -142,6 +142,36 @@ func TestMergeEntities_EmptyStringsFiltered(t *testing.T) {
 	}
 }
 
+func TestResolveEntities_MergeMode(t *testing.T) {
+	entities := ResolveEntities("We deploy HttpServer on Docker", []string{"deployment-pipeline"}, EntityModeMerge)
+	has := toSet(entities)
+	if !has["deployment-pipeline"] || !has["HttpServer"] || !has["Docker"] {
+		t.Errorf("merge mode should include provided and extracted entities, got %v", entities)
+	}
+}
+
+func TestResolveEntities_ProvidedMode(t *testing.T) {
+	entities := ResolveEntities("We deploy HttpServer on Docker", []string{"deployment-pipeline"}, EntityModeProvided)
+	has := toSet(entities)
+	if !has["deployment-pipeline"] {
+		t.Errorf("provided mode should keep provided entity, got %v", entities)
+	}
+	if has["HttpServer"] || has["Docker"] {
+		t.Errorf("provided mode should not include extracted entities, got %v", entities)
+	}
+}
+
+func TestResolveEntities_AutoMode(t *testing.T) {
+	entities := ResolveEntities("We deploy HttpServer on Docker", []string{"deployment-pipeline"}, EntityModeAuto)
+	has := toSet(entities)
+	if has["deployment-pipeline"] {
+		t.Errorf("auto mode should ignore provided entities, got %v", entities)
+	}
+	if !has["HttpServer"] || !has["Docker"] {
+		t.Errorf("auto mode should include extracted entities, got %v", entities)
+	}
+}
+
 func TestSplitWords_PreservesCasing(t *testing.T) {
 	words := splitWords("Hello World GoLang")
 	expected := []string{"Hello", "World", "GoLang"}

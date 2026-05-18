@@ -9,8 +9,8 @@ import (
 
 // Environment describes a detected LLM CLI environment.
 type Environment struct {
-	Name      string // "claude-code", "openclaw"
-	Display   string // "Claude Code", "OpenClaw"
+	Name      string // "claude-code", "codex", "openclaw"
+	Display   string // "Claude Code", "Codex", "OpenClaw"
 	Detected  bool   // CLI binary or global config dir found
 	BinPath   string // exec.LookPath result
 	Installed bool   // mnemon integration present at ConfigDir
@@ -30,6 +30,7 @@ func HomeDir() string {
 func DetectEnvironments(global bool) []Environment {
 	return []Environment{
 		detectClaude(global),
+		detectCodex(global),
 		detectOpenClaw(global),
 		detectNanobot(global),
 	}
@@ -67,6 +68,45 @@ func detectClaude(global bool) Environment {
 	}
 
 	// Get version
+	if env.BinPath != "" {
+		if out, err := exec.Command(env.BinPath, "--version").Output(); err == nil {
+			env.Version = cleanVersion(strings.TrimSpace(string(out)))
+		}
+	}
+
+	return env
+}
+
+func detectCodex(global bool) Environment {
+	home := HomeDir()
+	globalDir := filepath.Join(home, ".codex")
+	localDir := ".codex"
+
+	configDir := localDir
+	if global {
+		configDir = globalDir
+	}
+
+	env := Environment{
+		Name:      "codex",
+		Display:   "Codex",
+		ConfigDir: configDir,
+	}
+
+	// CLI detection is always global.
+	if binPath, err := exec.LookPath("codex"); err == nil {
+		env.Detected = true
+		env.BinPath = binPath
+	}
+	if _, err := os.Stat(globalDir); err == nil {
+		env.Detected = true
+	}
+
+	skillPath := filepath.Join(configDir, "skills", "mnemon", "SKILL.md")
+	if _, err := os.Stat(skillPath); err == nil {
+		env.Installed = true
+	}
+
 	if env.BinPath != "" {
 		if out, err := exec.Command(env.BinPath, "--version").Output(); err == nil {
 			env.Version = cleanVersion(strings.TrimSpace(string(out)))

@@ -29,6 +29,9 @@ var recallCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		keyword := strings.Join(args, " ")
+		if err := requirePositiveLimit("--limit", recLimit); err != nil {
+			return err
+		}
 
 		db, err := openDB()
 		if err != nil {

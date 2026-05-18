@@ -15,6 +15,28 @@ const maxEntityLinks = 5
 // Maximum total entity edges to create per insight (bounds cost of many-entity insights).
 const maxTotalEntityEdges = 50
 
+// EntityMode controls how final insight entities are derived.
+type EntityMode string
+
+const (
+	// EntityModeMerge keeps pre-provided entities and supplements them with auto extraction.
+	EntityModeMerge EntityMode = "merge"
+	// EntityModeProvided uses only pre-provided entities.
+	EntityModeProvided EntityMode = "provided"
+	// EntityModeAuto uses only auto-extracted entities.
+	EntityModeAuto EntityMode = "auto"
+)
+
+// ValidEntityMode reports whether mode is a supported entity handling mode.
+func ValidEntityMode(mode EntityMode) bool {
+	switch mode {
+	case EntityModeMerge, EntityModeProvided, EntityModeAuto:
+		return true
+	default:
+		return false
+	}
+}
+
 var entityPatterns = []*regexp.Regexp{
 	// CamelCase identifiers (e.g., MyClass, HttpServer)
 	regexp.MustCompile(`\b([A-Z][a-z]+(?:[A-Z][a-z]+)+)\b`),
@@ -118,6 +140,18 @@ func ExtractEntities(text string) []string {
 	}
 
 	return entities
+}
+
+// ResolveEntities returns the final entity list for a content/provided pair.
+func ResolveEntities(content string, provided []string, mode EntityMode) []string {
+	switch mode {
+	case EntityModeProvided:
+		return mergeEntities(provided, nil)
+	case EntityModeAuto:
+		return mergeEntities(nil, ExtractEntities(content))
+	default:
+		return mergeEntities(provided, ExtractEntities(content))
+	}
 }
 
 // splitWords splits text into ASCII-alphanumeric words preserving original casing.

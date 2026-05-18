@@ -88,6 +88,7 @@ mnemon forget <id>
 | `--imp` | `3` | Importance: 1–5 |
 | `--tags` | | Comma-separated tags |
 | `--entities` | | Comma-separated entities (merged with auto-extraction) |
+| `--entity-mode` | `merge` | Entity handling: `merge` (provided + auto), `provided` (only `--entities`), `auto` (only auto-extraction) |
 | `--source` | `user` | Source: `user`, `agent`, `external` |
 | `--no-diff` | `false` | Skip duplicate/conflict detection |
 

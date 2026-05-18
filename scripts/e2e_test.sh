@@ -722,6 +722,20 @@ echo -e "    ${DIM}entities: $(echo "$OUT" | jq -c '.entities')${RESET}"
 assert_contains "dict entity: Python" "$OUT" '"Python"'
 assert_contains "dict entity: FastAPI" "$OUT" '"FastAPI"'
 
+step "--entity-mode provided — only LLM-provided entities are used"
+OUT=$($M --data-dir "$TESTDIR9" remember --no-diff "We deploy HttpServer on Docker with Redis" --cat fact --imp 3 --entities "strict-entity" --entity-mode provided)
+echo -e "    ${DIM}entities: $(echo "$OUT" | jq -c '.entities')${RESET}"
+assert_contains "provided entity present" "$OUT" '"strict-entity"'
+assert_not_contains "regex entity omitted in provided mode" "$OUT" '"HttpServer"'
+assert_not_contains "dict entity omitted in provided mode" "$OUT" '"Docker"'
+
+step "--entity-mode auto — ignores LLM-provided entities"
+OUT=$($M --data-dir "$TESTDIR9" remember --no-diff "We deploy HttpServer on Docker with Redis" --cat fact --imp 3 --entities "ignored-entity" --entity-mode auto)
+echo -e "    ${DIM}entities: $(echo "$OUT" | jq -c '.entities')${RESET}"
+assert_not_contains "provided entity ignored in auto mode" "$OUT" '"ignored-entity"'
+assert_contains "regex entity present in auto mode" "$OUT" '"HttpServer"'
+assert_contains "dict entity present in auto mode" "$OUT" '"Docker"'
+
 # ══════════════════════════════════════════════════════════════════════
 banner "Milestone 10: Auto-Prune Lifecycle"
 # ══════════════════════════════════════════════════════════════════════

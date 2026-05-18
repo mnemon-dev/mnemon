@@ -73,6 +73,9 @@ var storeSetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
+		if !store.ValidStoreName(name) {
+			return fmt.Errorf("invalid store name %q: must match [a-zA-Z0-9][a-zA-Z0-9_-]*", name)
+		}
 		if !store.StoreExists(dataDir, name) {
 			return fmt.Errorf("store %q does not exist (use 'mnemon store create %s' first)", name, name)
 		}
@@ -92,6 +95,9 @@ var storeRemoveCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
+		if !store.ValidStoreName(name) {
+			return fmt.Errorf("invalid store name %q: must match [a-zA-Z0-9][a-zA-Z0-9_-]*", name)
+		}
 		if !store.StoreExists(dataDir, name) {
 			return fmt.Errorf("store %q does not exist", name)
 		}

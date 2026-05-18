@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "name": "memory-loop",
+  "version": "0.1.0",
+  "description": "Connects prompt-facing working memory, Mnemon long-term memory, and dreaming consolidation.",
+  "lifecycle_events": [
+    "prime",
+    "remind",
+    "nudge",
+    "compact"
+  ],
+  "assets": {
+    "guide": "GUIDE.md",
+    "env": "env.sh",
+    "runtime_files": [
+      "MEMORY.md"
+    ],
+    "hooks": {
+      "prime": "hooks/prime.md",
+      "remind": "hooks/remind.md",
+      "nudge": "hooks/nudge.md",
+      "compact": "hooks/compact.md"
+    },
+    "skills": [
+      "skills/memory_get.md",
+      "skills/memory_set.md"
+    ],
+    "subagents": [
+      "subagents/dreaming.md"
+    ]
+  },
+  "state": {
+    "canonical": [
+      ".mnemon/data",
+      ".mnemon/reports",
+      ".mnemon/proposals",
+      ".mnemon/audit"
+    ],
+    "loop_runtime": [
+      "MEMORY.md"
+    ]
+  },
+  "host_adapters": {
+    "claude-code": "../../hosts/claude-code",
+    "codex": "../../hosts/codex"
+  }
+}

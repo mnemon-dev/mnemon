@@ -3,8 +3,10 @@
 
 # Local LLM CLI integration (use mnemon setup --global for user-wide install)
 .claude/
+.codex/
 .openclaw/
 .supervisor/
+.mnemon/
 .env
 .mnemon-dev/
 

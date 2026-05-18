@@ -6,6 +6,8 @@
 
 Mnemon is a persistent memory system designed for LLM agents. It adopts the **LLM-Supervised** pattern: the host LLM acts as external orchestrator of a standalone memory binary through symbolic CLI interfaces, while the binary handles deterministic storage, graph indexing, and lifecycle management. Memory is organized as a four-graph knowledge structure with temporal, entity, causal, and semantic edges. Implemented as a single Go binary + SQLite, with no external API dependencies.
 
+This document describes the current Mnemon binary and engine architecture. The formal modular self-evolution harness docs live in [Mnemon Harness](harness/README.md), with installable runtime assets under the repository-level [harness](../harness/) directory.
+
 ---
 
 ## Table of Contents
@@ -14,9 +16,9 @@ Mnemon is a persistent memory system designed for LLM agents. It adopts the **LL
 
 Why Mnemon exists — the amnesia problem in LLM agents, structural bottlenecks of traditional approaches, and a comparison with existing solutions (Mem0, MemGPT, Claude Code Memory).
 
-### [2. Design Philosophy](design/02-philosophy.md)
+### [2. Engine Design Philosophy](design/02-philosophy.md)
 
-The LLM-Supervised pattern, Organs vs Textbooks metaphor, Memory Gateway protocol (the MCP analogy for LLM↔DB interaction), key design insights, and theoretical foundations from RLM, MAGMA, and Graph-LLM structural analysis.
+The current engine's LLM-Supervised pattern, Hook-native / LLM-led / Protocol-constrained principle, Organs vs Textbooks metaphor, Memory Gateway protocol (the MCP analogy for LLM↔DB interaction), key design insights, and theoretical foundations from RLM, MAGMA, and Graph-LLM structural analysis.
 
 ### [3. Core Concepts & Architecture](design/03-concepts.md)
 
@@ -36,7 +38,11 @@ Effective Importance (EI) decay formula, immunity rules, auto-pruning, GC comman
 
 ### [7. LLM CLI Integration](design/07-integration.md)
 
-Lifecycle hooks (Prime, Remind, Nudge, Compact), skill file, behavioral guide, automated setup via `mnemon setup`, sub-agent delegation pattern, and adaptation to other LLM CLIs.
+Markdown-installable runtime integration: `SKILL.md`, `INSTALL.md`, `GUIDELINE.md`, the four hook phases (Prime, Remind, Nudge, Compact), agent-led memory decisions, optional setup automation, and lightweight markdown self-evolution.
+
+### [Self-Evolution Harness](harness/README.md)
+
+The formal modular harness docs for agent-agnostic installation, memory loop, skill loop, and future attachable evolution modules.
 
 ### [8. Design Decisions & Future Direction](design/08-decisions.md)
 

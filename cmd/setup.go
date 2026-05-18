@@ -22,10 +22,10 @@ var setupCmd = &cobra.Command{
 	Short: "Deploy mnemon into LLM CLI environments",
 	Long: `Detect installed LLM CLIs and deploy mnemon integration.
 
-By default, installs to project-local config (.claude/, .openclaw/, .nanobot/).
-Use --global to install to user-wide config (~/.claude/, ~/.openclaw/, ~/.nanobot/workspace/).
+By default, installs to project-local config (.claude/, .codex/, .openclaw/, .nanobot/).
+Use --global to install to user-wide config (~/.claude/, ~/.codex/, ~/.openclaw/, ~/.nanobot/workspace/).
 
-Supported environments: Claude Code, OpenClaw, Nanobot.
+Supported environments: Claude Code, Codex, OpenClaw, Nanobot.
 
 Examples:
   mnemon setup                              # Interactive: project-local install
@@ -38,16 +38,16 @@ Examples:
 }
 
 func init() {
-	setupCmd.Flags().StringVar(&setupTarget, "target", "", "target environment (claude-code, openclaw, nanobot)")
+	setupCmd.Flags().StringVar(&setupTarget, "target", "", "target environment (claude-code, codex, openclaw, nanobot)")
 	setupCmd.Flags().BoolVar(&setupEject, "eject", false, "remove mnemon integrations")
 	setupCmd.Flags().BoolVar(&setupYes, "yes", false, "auto-confirm all prompts (CI-friendly)")
-	setupCmd.Flags().BoolVar(&setupGlobal, "global", false, "install to user-wide config (~/.claude/) instead of project-local (.claude/)")
+	setupCmd.Flags().BoolVar(&setupGlobal, "global", false, "install to user-wide config instead of project-local config")
 	rootCmd.AddCommand(setupCmd)
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
-	if setupTarget != "" && setupTarget != "claude-code" && setupTarget != "openclaw" && setupTarget != "nanobot" {
-		return fmt.Errorf("invalid target %q (must be claude-code, openclaw, or nanobot)", setupTarget)
+	if setupTarget != "" && setupTarget != "claude-code" && setupTarget != "codex" && setupTarget != "openclaw" && setupTarget != "nanobot" {
+		return fmt.Errorf("invalid target %q (must be claude-code, codex, openclaw, or nanobot)", setupTarget)
 	}
 
 	envs := setup.DetectEnvironments(setupGlobal)
@@ -83,7 +83,7 @@ func runInstallFlow(envs []setup.Environment) error {
 
 	if len(detected) == 0 {
 		fmt.Println("\nNo supported LLM CLI environments detected.")
-		fmt.Println("Install Claude Code, OpenClaw, or Nanobot, then run 'mnemon setup' again.")
+		fmt.Println("Install Claude Code, Codex, OpenClaw, or Nanobot, then run 'mnemon setup' again.")
 		return nil
 	}
 
@@ -125,6 +125,8 @@ func installEnv(env *setup.Environment) error {
 	switch env.Name {
 	case "claude-code":
 		err = installClaudeCode(env)
+	case "codex":
+		err = installCodex(env)
 	case "openclaw":
 		err = installOpenClaw(env)
 	case "nanobot":
@@ -280,6 +282,85 @@ func selectOptionalHooks() setup.HookSelection {
 	sel.Nudge = choices[1]
 	sel.Compact = choices[2]
 	return sel
+}
+
+// ─── Codex ──────────────────────────────────────────────────────────
+
+func installCodex(env *setup.Environment) error {
+	configDir := env.ConfigDir
+
+	if !setupGlobal && !setupYes && setup.IsInteractive() {
+		home := setup.HomeDir()
+		localDir := ".codex"
+		globalDir := home + "/.codex"
+		idx := setup.SelectOne("Install scope",
+			[]string{
+				fmt.Sprintf("Local — this project only (%s/)", localDir),
+				fmt.Sprintf("Global — all projects (%s/)", globalDir),
+			}, 0)
+		if idx == 1 {
+			configDir = globalDir
+		} else {
+			configDir = localDir
+		}
+	}
+
+	fmt.Printf("\nSetting up Codex (%s)...\n", configDir)
+
+	fmt.Println("\n[1/4] Skill")
+	if path, err := setup.CodexWriteSkill(configDir); err != nil {
+		setup.StatusError(0, 0, "Skill", err)
+		return err
+	} else {
+		setup.StatusOK(0, 0, "Skill", path)
+	}
+
+	fmt.Println("\n[2/4] Prompts")
+	if path, err := setup.WritePromptFiles(); err != nil {
+		setup.StatusError(0, 0, "Prompts", err)
+		return err
+	} else {
+		setup.StatusOK(0, 0, "Prompts", path)
+	}
+
+	fmt.Println("\n[3/4] Hooks")
+	if path, err := setup.CodexWriteHook(configDir, "prime.sh", assets.CodexPrimeHook); err != nil {
+		setup.StatusError(0, 0, "Hook: prime", err)
+		return err
+	} else {
+		setup.StatusOK(0, 0, "Hook: prime", path)
+	}
+	if path, err := setup.CodexWriteHook(configDir, "user_prompt.sh", assets.CodexUserPromptHook); err != nil {
+		setup.StatusError(0, 0, "Hook: remind", err)
+		return err
+	} else {
+		setup.StatusOK(0, 0, "Hook: remind", path)
+	}
+	if path, err := setup.CodexWriteHook(configDir, "stop.sh", assets.CodexStopHook); err != nil {
+		setup.StatusError(0, 0, "Hook: stop", err)
+		return err
+	} else {
+		setup.StatusOK(0, 0, "Hook: stop", path)
+	}
+
+	fmt.Println("\n[4/4] Config")
+	if path, err := setup.CodexRegisterHooks(configDir); err != nil {
+		setup.StatusError(0, 0, "Hooks config", err)
+		return err
+	} else {
+		setup.StatusUpdated(0, 0, "Hooks config", path)
+	}
+
+	fmt.Println()
+	fmt.Println("Setup complete!")
+	fmt.Printf("  Skill   %s/skills/mnemon/SKILL.md\n", configDir)
+	fmt.Printf("  Hooks   %s/hooks.json (SessionStart, UserPromptSubmit, Stop)\n", configDir)
+	fmt.Printf("  Prompts ~/.mnemon/prompt/ (guide.md, skill.md)\n")
+	fmt.Println()
+	fmt.Println("Start a new Codex session to activate.")
+	fmt.Println("Run 'mnemon setup --eject --target codex' to remove.")
+
+	return nil
 }
 
 // ─── OpenClaw ───────────────────────────────────────────────────────
@@ -522,6 +603,13 @@ func ejectEnv(env *setup.Environment) error {
 	case "claude-code":
 		errs := setup.ClaudeEject(env.ConfigDir)
 		ejectMarkdown("CLAUDE.md", "Remove memory guidance from ./CLAUDE.md?")
+		if len(errs) > 0 {
+			return errs[0]
+		}
+
+	case "codex":
+		errs := setup.CodexEject(env.ConfigDir)
+		ejectMarkdown("AGENTS.md", "Remove memory guidance from ./AGENTS.md?")
 		if len(errs) > 0 {
 			return errs[0]
 		}

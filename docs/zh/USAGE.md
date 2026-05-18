@@ -87,6 +87,7 @@ mnemon forget <id>
 | `--imp` | `3` | 重要性：1–5 |
 | `--tags` | | 逗号分隔的标签 |
 | `--entities` | | 逗号分隔的实体（与自动提取合并） |
+| `--entity-mode` | `merge` | 实体处理模式：`merge`（传入实体 + 自动抽取）、`provided`（只用 `--entities`）、`auto`（只用自动抽取） |
 | `--source` | `user` | 来源：`user`、`agent`、`external` |
 | `--no-diff` | `false` | 跳过重复/冲突检测 |
 

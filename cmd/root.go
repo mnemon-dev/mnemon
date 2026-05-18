@@ -64,6 +64,9 @@ func truncID(id string) string {
 // openDB is a helper used by subcommands.
 func openDB() (*store.DB, error) {
 	name := resolveStoreName()
+	if !store.ValidStoreName(name) {
+		return nil, fmt.Errorf("invalid store name %q", name)
+	}
 	dir := store.StoreDir(dataDir, name)
 
 	if readOnly {

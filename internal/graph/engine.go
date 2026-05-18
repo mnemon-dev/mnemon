@@ -17,12 +17,18 @@ type EdgeStats struct {
 type Engine struct {
 	db         *store.DB
 	embedCache EmbedCache
+	entityMode EntityMode
 }
 
 // NewEngine creates a new graph edge engine.
 // If embedCache is non-nil, it is reused for semantic operations instead of querying the database.
 func NewEngine(db *store.DB, embedCache EmbedCache) *Engine {
-	return &Engine{db: db, embedCache: embedCache}
+	return NewEngineWithEntityMode(db, embedCache, EntityModeMerge)
+}
+
+// NewEngineWithEntityMode creates a graph engine with configurable entity handling.
+func NewEngineWithEntityMode(db *store.DB, embedCache EmbedCache, entityMode EntityMode) *Engine {
+	return &Engine{db: db, embedCache: embedCache, entityMode: entityMode}
 }
 
 // OnInsightCreated runs all edge generators for a newly created insight.
@@ -30,9 +36,8 @@ func NewEngine(db *store.DB, embedCache EmbedCache) *Engine {
 func (e *Engine) OnInsightCreated(insight *model.Insight) EdgeStats {
 	var stats EdgeStats
 
-	// 1. Extract entities via regex+dictionary, merge with pre-provided (LLM-extracted)
-	extracted := ExtractEntities(insight.Content)
-	insight.Entities = mergeEntities(insight.Entities, extracted)
+	// 1. Resolve entities from pre-provided values and/or regex+dictionary extraction.
+	insight.Entities = ResolveEntities(insight.Content, insight.Entities, e.entityMode)
 
 	// 2. Temporal backbone + proximity edges
 	stats.Temporal = CreateTemporalEdge(e.db, insight)

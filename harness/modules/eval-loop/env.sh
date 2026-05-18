@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+# Runtime defaults for the Mnemon eval loop. Host projectors rewrite these
+# paths when installing the loop into an isolated workspace or global config.
+
+export MNEMON_EVAL_LOOP_ENV="${MNEMON_EVAL_LOOP_ENV:-${BASH_SOURCE[0]}}"
+export MNEMON_EVAL_LOOP_DIR="${MNEMON_EVAL_LOOP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}"
+export MNEMON_EVAL_LOOP_SCRATCH_DIR="${MNEMON_EVAL_LOOP_SCRATCH_DIR:-${MNEMON_EVAL_LOOP_DIR}/scratch}"
+export MNEMON_EVAL_LOOP_CANDIDATES_DIR="${MNEMON_EVAL_LOOP_CANDIDATES_DIR:-${MNEMON_EVAL_LOOP_DIR}/candidates}"
+export MNEMON_EVAL_LOOP_REPORTS_DIR="${MNEMON_EVAL_LOOP_REPORTS_DIR:-${MNEMON_EVAL_LOOP_DIR}/reports}"
+export MNEMON_EVAL_LOOP_ARTIFACTS_DIR="${MNEMON_EVAL_LOOP_ARTIFACTS_DIR:-${MNEMON_EVAL_LOOP_DIR}/artifacts}"
+export MNEMON_EVAL_LOOP_RETIRED_DIR="${MNEMON_EVAL_LOOP_RETIRED_DIR:-${MNEMON_EVAL_LOOP_DIR}/retired}"
+export MNEMON_EVAL_LOOP_DEFAULT_HOST="${MNEMON_EVAL_LOOP_DEFAULT_HOST:-codex}"
+export MNEMON_EVAL_LOOP_DEFAULT_SUITE="${MNEMON_EVAL_LOOP_DEFAULT_SUITE:-smoke}"

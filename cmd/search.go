@@ -19,6 +19,9 @@ var searchCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		query := strings.Join(args, " ")
+		if err := requirePositiveLimit("--limit", searchLimit); err != nil {
+			return err
+		}
 
 		db, err := openDB()
 		if err != nil {

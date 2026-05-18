@@ -1,0 +1,16 @@
+{
+  "name": "regression",
+  "description": "Broader local regression suite for harness self-evolution behavior.",
+  "host": "codex",
+  "lifecycle": "promoted",
+  "scenarios": [
+    "setup/host-projection-smoke",
+    "memory/project-preference-recall",
+    "skill/skill-creation-reuse",
+    "docs/bilingual-doc-sync"
+  ],
+  "rubrics": [
+    "eval-asset-quality",
+    "interface-loop-behavior"
+  ]
+}

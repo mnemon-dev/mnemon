@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "name": "skill-loop",
+  "version": "0.1.0",
+  "description": "Manages active, stale, and archived skills through evidence, curator review, and approved lifecycle changes.",
+  "lifecycle_events": [
+    "prime",
+    "remind",
+    "nudge",
+    "compact"
+  ],
+  "assets": {
+    "guide": "GUIDE.md",
+    "env": "env.sh",
+    "hooks": {
+      "prime": "hooks/prime.md",
+      "remind": "hooks/remind.md",
+      "nudge": "hooks/nudge.md",
+      "compact": "hooks/compact.md"
+    },
+    "skills": [
+      "skills/skill_observe.md",
+      "skills/skill_curate.md",
+      "skills/skill_author.md",
+      "skills/skill_manage.md"
+    ],
+    "subagents": [
+      "subagents/curator.md"
+    ]
+  },
+  "state": {
+    "canonical": [
+      ".mnemon/data",
+      ".mnemon/reports",
+      ".mnemon/proposals",
+      ".mnemon/audit"
+    ],
+    "loop_runtime": [
+      "skills/active",
+      "skills/stale",
+      "skills/archived",
+      "skills/.usage.jsonl",
+      "proposals"
+    ]
+  },
+  "host_adapters": {
+    "claude-code": "../../hosts/claude-code",
+    "codex": "../../hosts/codex"
+  }
+}

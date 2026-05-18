@@ -26,9 +26,16 @@ Suggest mode (default):
   Immune insights (importance >= 4 or access_count >= 3) are never listed.
 
 Keep mode:
-  mnemon gc --keep <id>
+	mnemon gc --keep <id>
   Boosts an insight's retention (access_count +3, refreshes timestamp).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requirePositiveLimit("--limit", gcLimit); err != nil {
+			return err
+		}
+		if err := requireNonNegativeFloat("--threshold", gcThreshold); err != nil {
+			return err
+		}
+
 		db, err := openDB()
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)

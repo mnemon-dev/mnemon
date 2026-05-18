@@ -162,3 +162,29 @@ func TestDiff_LimitDefault(t *testing.T) {
 		t.Errorf("default limit 5: got %d matches", len(result.Matches))
 	}
 }
+
+func TestDiff_LowerKeywordScoreUpdateNotMasked(t *testing.T) {
+	// insightA: all of new's tokens are present (keyword score = 5/5 = 1.0),
+	// but Jaccard = 5/14 ≈ 0.36 → ADD. KeywordSearch puts this first.
+	insightA := &model.Insight{
+		ID:      "a",
+		Content: "project uses redis for caching database monitoring alerting logging tracing scaling replication failover clustering sharding",
+	}
+	// insightB: keyword score = 4/5 = 0.8 (ranks second), Jaccard = 4/6 ≈ 0.67 → UPDATE.
+	// Without sorting by Similarity, insightA's ADD masks this UPDATE.
+	insightB := &model.Insight{
+		ID:      "b",
+		Content: "project uses redis postgresql caching",
+	}
+
+	result := Diff(
+		[]*model.Insight{insightA, insightB},
+		"project uses redis for caching database",
+		DiffOptions{},
+	)
+
+	if result.Suggestion != DiffUpdate {
+		t.Errorf("want UPDATE (insightB is more similar by Jaccard), got %s — "+
+			"high-keyword-score ADD from insightA masked the UPDATE", result.Suggestion)
+	}
+}

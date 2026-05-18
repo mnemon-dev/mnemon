@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "name": "codex",
+  "display_name": "Codex",
+  "description": "Projects Mnemon harness modules into Codex repo-local skills and app-server readable state.",
+  "projection_surfaces": [
+    ".codex/skills",
+    ".codex/mnemon-memory-loop",
+    ".codex/mnemon-skill-loop",
+    ".mnemon/hosts/codex/manifest.json"
+  ],
+  "supports": {
+    "skills": true,
+    "hooks": false,
+    "subagents": false,
+    "app_server_eval": true
+  }
+}

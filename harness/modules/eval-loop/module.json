@@ -1,0 +1,69 @@
+{
+  "schema_version": 1,
+  "name": "eval-loop",
+  "version": "0.1.0",
+  "description": "Runs scenario-driven harness evaluations, collects evidence, and curates improvements without making eval assets canonical by default.",
+  "loop_type": "feedback",
+  "direct_interface_effect": false,
+  "primary_host": "codex",
+  "lifecycle_events": [
+    "prime",
+    "remind",
+    "nudge",
+    "compact"
+  ],
+  "assets": {
+    "guide": "GUIDE.md",
+    "env": "env.sh",
+    "runtime_files": [
+      "suites/smoke.json",
+      "suites/regression.json",
+      "rubrics/eval-asset-quality.md",
+      "rubrics/interface-loop-behavior.md",
+      "scenarios/memory/project-preference-recall.md",
+      "scenarios/skill/skill-creation-reuse.md",
+      "scenarios/docs/bilingual-doc-sync.md",
+      "scenarios/setup/host-projection-smoke.md"
+    ],
+    "hooks": {
+      "prime": "hooks/prime.md",
+      "remind": "hooks/remind.md",
+      "nudge": "hooks/nudge.md",
+      "compact": "hooks/compact.md"
+    },
+    "skills": [
+      "skills/eval_plan.md",
+      "skills/eval_run.md",
+      "skills/eval_analyze.md",
+      "skills/eval_improve.md"
+    ],
+    "subagents": [
+      "subagents/evaluator.md"
+    ]
+  },
+  "state": {
+    "canonical": [
+      ".mnemon/data",
+      ".mnemon/reports",
+      ".mnemon/proposals",
+      ".mnemon/audit"
+    ],
+    "loop_runtime": [
+      "scratch",
+      "candidates",
+      "reports",
+      "artifacts",
+      "retired"
+    ]
+  },
+  "eval_asset_lifecycle": [
+    "ephemeral",
+    "candidate",
+    "promoted",
+    "canonical",
+    "retired"
+  ],
+  "host_adapters": {
+    "codex": "../../hosts/codex"
+  }
+}

@@ -39,6 +39,8 @@ Insight A (2h ago) ←── backbone ──→ Insight B (1h ago) ←── bac
 2. **技术词典**：200+ 常见术语（Go, React, SQLite, Kubernetes...）
 3. **用户提供**：`--entities` 标志直接指定
 
+`--entity-mode` 控制这些来源如何组合：`merge` 保持默认混合行为，`provided` 只使用 `--entities`，`auto` 只使用自动抽取。
+
 **自动创建的边**：新 insight ↔ 每个共享实体最多 5 条已有 insight（双向），权重 1.0。
 
 ```

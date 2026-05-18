@@ -15,6 +15,10 @@ var logCmd = &cobra.Command{
 	Short: "Show recent operations",
 	Long:  "Display the operation log showing what mnemon has been doing (remember, recall, forget, etc).",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requirePositiveLimit("--limit", logLimit); err != nil {
+			return err
+		}
+
 		db, err := openDB()
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)

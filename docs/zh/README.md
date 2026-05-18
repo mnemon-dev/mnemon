@@ -35,7 +35,7 @@ Mnemon 为你的 LLM 提供持久的跨会话记忆 — 四图知识存储、意
 Mnemon 同时填补了协议栈中的空白。MCP 标准化了 LLM 如何发现和调用工具，ODBC/JDBC 标准化了应用如何访问数据库，但 LLM 以记忆语义与数据库交互——这一层尚无协议。Mnemon 的三个原语——`remember`、`link`、`recall`——构成一个意图原生协议：命令名称映射到 LLM 的认知词汇（`remember` 而非 INSERT，`recall` 而非 SELECT），输出是带有信号透明度的结构化 JSON，而非原始数据库行。
 
 <p align="center">
-  <img src="../diagrams/llm-supervised-concept.jpg" width="720" alt="LLM 监督式架构 — 三种模式对比，及 Mnemon 实现细节：钩子、大脑/器官分离、Sub-agent 委派" />
+  <img src="../diagrams/llm-supervised-concept.jpg" width="720" alt="LLM 监督式架构 — 三种模式对比，及 Mnemon 钩子、协议边界和确定性记忆引擎" />
   <br />
   <sub>LLM 监督式模式：钩子驱动生命周期，宿主 LLM 做判断，二进制处理确定性计算。</sub>
 </p>
@@ -113,40 +113,42 @@ mnemon setup --eject
 
 ## 工作原理
 
-设置完成后，记忆透明运作 — 你照常使用 LLM CLI。Mnemon 通过 Claude Code 的[钩子系统](https://docs.anthropic.com/en/docs/claude-code/hooks)集成，在关键生命周期节点注入记忆操作：
+设置完成后，记忆通过轻量 harness 运作：`SKILL.md` 教命令，`GUIDELINE.md` 教判断，hook 在生命周期边界提醒，`mnemon` binary 执行确定性记忆操作。已支持的 setup 命令可以自动化这些步骤，但 harness 本身仅靠 Markdown 也可安装。
 
-```
+```text
 会话启动
-    │
-    ▼
-  Prime（SessionStart）─── prime.sh ──→ 加载 guide.md（记忆执行手册）
-    │
-    ▼
-  用户发送消息
-    │
-    ▼
-  Remind（UserPromptSubmit）─── user_prompt.sh ──→ 提醒 agent 进行 recall 和 remember
-    │
-    ▼
-  LLM 生成回复（遵循技能文件 + guide.md 规则）
-    │
-    ▼
-  Nudge（Stop）─── stop.sh ──→ 提醒 agent 进行 remember
-    │
-    ▼
-  （上下文压缩时）
-  Compact（PreCompact）─── compact.sh ──→ 提取关键洞察进行 remember
+    |
+    v
+  Prime   -> 让 skill、guideline 和当前 store 可见
+    |
+    v
+用户 prompt 到达
+    |
+    v
+  Remind  -> 判断 recall 是否可能改变当前任务
+    |
+    v
+Agent 工作，并且只在有用时调用 Mnemon
+    |
+    v
+  Nudge   -> 判断 durable writeback 是否有正当性
+    |
+    v
+上下文压缩前
+    |
+    v
+  Compact -> 只保存关键连续性
 ```
 
-四个钩子驱动记忆生命周期。**Prime** 加载行为引导 — 详细的 recall、remember、sub-agent 委派执行手册。**Remind** 在工作开始前提醒 agent 评估是否需要 recall 和 remember。**Nudge** 在工作结束后提醒 agent 考虑 remember。**Compact** 在上下文压缩前指示 agent 提取并保存关键洞察。**技能文件**教会 agent 命令语法。**行为引导**（`~/.mnemon/prompt/guide.md`）定义 recall、remember、委派的详细规则。
+四个 hook phase 是提醒，不是硬 workflow。**Prime** 让 skill、guideline 和当前 store 可见。**Remind** 触发 recall 判断。**Nudge** 触发 writeback 判断。**Compact** 在上下文压缩前只保留关键连续性。
 
-你不需要自己运行 mnemon 命令。agent 会自动执行 — 由钩子驱动，受技能文件和行为引导指引。
+你不需要自己运行 mnemon 命令。Agent 会在 guideline 判断 memory 有用时执行。
 
 ## 特性
 
-- **零用户操作** — 安装一次，记忆通过钩子在后台运行
+- **零用户操作** — 安装一次；支持 hook 的 runtime 可用 hook，minimal runtime 可用持久规则
 - **LLM 监督式** — 宿主 LLM 主动决定记什么、更新什么、遗忘什么；无内嵌 LLM，无 API 密钥
-- **钩子集成** — 四个生命周期钩子：Prime（加载引导）、Remind（recall 和 remember）、Nudge（remember）、Compact（压缩前保存）
+- **Markdown 可安装 harness** — `SKILL.md`、`INSTALL.md`、`GUIDELINE.md` 和四个生命周期提醒
 - **四图架构** — 时序、实体、因果、语义四种边，不仅仅是向量相似度
 - **意图原生协议** — 三个原语（`remember`、`link`、`recall`）映射到 LLM 的认知词汇而非数据库语法；结构化 JSON 输出，带信号透明度
 - **意图感知召回** — 图遍历 + 可选向量搜索（RRF 融合），所有查询默认启用
@@ -170,7 +172,7 @@ mnemon setup --eject
   Gemini CLI ───┘
 ```
 
-基础已就绪：一个 `~/.mnemon` 数据库，任何 agent 都可以读写。Claude Code 的钩子集成是参考实现；OpenClaw 使用插件方式集成；NanoClaw 通过容器技能和卷挂载集成。同样的模式可以复制到任何支持事件钩子或系统提示的 LLM CLI。
+基础已就绪：一个 `~/.mnemon` 数据库，任何 agent 都可以读写。Claude Code setup 可自动安装 hook；OpenClaw 可以使用 plugin hooks；NanoClaw 通过容器技能和卷挂载集成。同一个 harness 可以安装到任何支持 skill、rule、system prompt 或 event hook 的 LLM CLI。
 
 更长远的方向是**记忆网关**：协议层与存储引擎解耦。当前 SQLite 后端是第一个适配器；协议面（`remember / link / recall`）可运行在 PostgreSQL、Neo4j 或任何图数据库之上。Agent 侧优化（何时召回、记什么）与存储侧优化（索引、图算法）独立演进。详见[未来方向](design/08-decisions.md#82-未来方向)。
 
@@ -194,10 +196,10 @@ MNEMON_STORE=work mnemon recall "query"  # 或按进程使用环境变量
 `mnemon setup` 默认**本地**（项目级 `.claude/`），适合大多数用户。**全局**（`mnemon setup --global`，安装到 `~/.claude/`）在所有项目中激活 mnemon — 如果想让其他框架（如 OpenClaw）通过 Claude Code CLI 共享记忆很方便，但可能增加维护开销。
 
 **如何自定义行为？**
-编辑 `~/.mnemon/prompt/guide.md`。该文件控制 agent 何时召回记忆以及什么值得记住。技能文件（`SKILL.md`）由 setup 自动部署，通常无需手动编辑。
+编辑当前 setup 流程生成的 guideline（`~/.mnemon/prompt/guide.md`），或以可安装的 [memory loop GUIDE](../../harness/modules/memory-loop/GUIDE.md) 作为来源。Skill 文件应专注于命令语法。
 
 **什么是 Sub-agent 委派？**
-记忆写入不在主对话中进行。宿主 LLM（如 Opus）决定*记什么*，然后委派实际的 `mnemon remember` 执行给轻量 sub-agent（如 Sonnet）。这节省 token 并保持记忆操作不污染主上下文。
+Sub-agent 委派是可选执行策略。当 runtime 支持时，主 agent 可以决定*记什么*，再让更便宜或隔离的 worker 执行 `mnemon remember`。它有用，但不是 Mnemon 架构必需品。
 
 ## 配置
 
@@ -227,7 +229,10 @@ make help           # 显示所有目标
 
 ## 文档
 
-- [设计与架构](DESIGN.md) — 核心概念、算法、集成设计
+- [Modular Self-Evolution Harness](harness/README.md) — modular agent、memory loop 与 skill loop 的正式 harness 文档
+- [Memory Loop Harness](../../harness/modules/memory-loop/README.md) — 可安装 memory loop 资产
+- [Skill Loop Harness](../../harness/modules/skill-loop/README.md) — 可安装 skill loop 资产
+- [设计与架构](DESIGN.md) — 当前 engine architecture、核心概念、算法、集成设计
 - [用法与参考](USAGE.md) — CLI 命令、嵌入向量支持、架构概览
 - [架构图](../diagrams/) — 系统架构、记忆/召回流程、四图模型、生命周期管理
 

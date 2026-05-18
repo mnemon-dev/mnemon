@@ -44,6 +44,16 @@ changelog:
       - "^ci:"
       - "^chore:"
       - "^Merge"
+      # Harness modules and evaluations are still experimental. Keep them out of
+      # stable release notes until their public contract is ready.
+      - "(?i)harness"
+      - "(?i)eval"
+      - "(?i)codex app-server"
+      - "(?i)skill loop"
+      - "(?i)memory loop"
+      - "(?i)modular"
+      - "(?i)self-evolution"
+      - "(?i)agent memory"
 
 brews:
   - repository:
@@ -66,3 +76,7 @@ release:
   draft: false
   prerelease: auto
   name_template: "v{{.Version}}"
+  header: |
+    v{{.Version}} focuses on stable CLI, storage, and entity-graph behavior.
+
+    Note: harness modules, harness documentation, and harness evaluation assets in this repository remain experimental and are not part of this release's public stability guarantee.

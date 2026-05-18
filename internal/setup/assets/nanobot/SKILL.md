@@ -37,16 +37,16 @@ mnemon store remove <name>
 
 ## Usage with nanobot
 
-Use the `exec` tool to run mnemon commands:
+Use the `exec` tool to run mnemon commands. Recall can run in the main conversation; delegate `remember` and `link` to a sub-agent via `spawn` to keep the main conversation clean.
 
 ```
 exec(command="mnemon recall 'user preferences'")
-exec(command="mnemon remember 'User prefers dark mode' --cat preference --imp 3 --source agent")
+exec(command="mnemon recall 'past decisions about auth'")
 ```
 
 ## Guardrails
 
-- Never run `remember` or `link` in the main conversation — always delegate to a sub-agent via `spawn`.
+- Prefer delegating `remember` and `link` to a sub-agent via `spawn` rather than running them in the main conversation.
 - Do not store secrets, passwords, or tokens.
 - Categories: `preference` · `decision` · `insight` · `fact` · `context`
 - Edge types: `temporal` · `semantic` · `causal` · `entity`

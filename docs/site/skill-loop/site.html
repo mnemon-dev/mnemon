@@ -1,0 +1,1277 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mnemon skill loop MVP entities and runtime data flow." />
+  <title>Mnemon Skill Loop MVP</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --ink: #151922;
+      --muted: #667085;
+      --line: #d9e0ea;
+      --panel: #ffffff;
+      --host: #334155;
+      --guide: #8062b5;
+      --setup: #5f6f82;
+      --hook: #b43d59;
+      --protocol: #8a5fbf;
+      --active: #2f7d55;
+      --library: #2f66b0;
+      --curator: #0f8a8a;
+      --shadow: 0 16px 38px rgba(28, 39, 57, 0.1);
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button {
+      font: inherit;
+      color: inherit;
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .shell {
+      width: min(1320px, calc(100vw - 32px));
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 30px 0 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(246, 248, 251, 0.96);
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 22px;
+    }
+
+    .language-switch {
+      display: inline-flex;
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+    }
+
+    .language-switch button {
+      min-width: 82px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      padding: 6px 11px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .language-switch button[aria-pressed="true"] {
+      background: var(--active);
+      color: #ffffff;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 26px;
+      align-items: start;
+    }
+
+    .eyebrow {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 44px;
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .summary {
+      margin: 12px 0 0;
+      max-width: 900px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .reading {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .reading h2,
+    .section-title h2 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    .reading h2 {
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      color: var(--active);
+      background: #fbfcfe;
+    }
+
+    .reading ol {
+      margin: 0;
+      padding: 12px 16px 14px 32px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .reading li + li {
+      margin-top: 6px;
+    }
+
+    main {
+      padding: 22px 0 44px;
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: end;
+      margin: 0 0 10px;
+    }
+
+    .section-title p {
+      margin: 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: right;
+    }
+
+    .inventory-layout {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 13px 15px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfe;
+      color: var(--color);
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .core-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .core {
+      min-height: 168px;
+      padding: 15px;
+      background: #ffffff;
+      border-top: 4px solid var(--color);
+      display: grid;
+      align-content: start;
+      gap: 9px;
+    }
+
+    .core b {
+      color: var(--color);
+      font-size: 16px;
+      line-height: 1.1;
+    }
+
+    .core p,
+    .asset p,
+    .rule p,
+    .detail p,
+    .matrix p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .asset-list {
+      display: grid;
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .asset {
+      display: grid;
+      grid-template-columns: 128px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 12px 14px;
+      background: #ffffff;
+      border-left: 4px solid var(--color);
+    }
+
+    .asset b {
+      color: var(--color);
+      font-size: 13px;
+      line-height: 1.2;
+    }
+
+    .rules {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .rule {
+      padding: 13px 14px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--color);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+
+    .rule b {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--color);
+      font-size: 14px;
+    }
+
+    .flow-layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .phase-nav {
+      position: sticky;
+      top: 16px;
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .phase-nav button {
+      width: 100%;
+      border: 1px solid transparent;
+      border-left: 4px solid var(--color);
+      border-radius: 6px;
+      background: #fbfcfe;
+      padding: 10px;
+      text-align: left;
+      cursor: pointer;
+      display: grid;
+      gap: 4px;
+    }
+
+    .phase-nav button[aria-pressed="true"] {
+      border-color: var(--color);
+      background: color-mix(in srgb, var(--color) 9%, white);
+    }
+
+    .phase-nav strong {
+      font-size: 13px;
+      line-height: 1.15;
+    }
+
+    .phase-nav span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .phase-view {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .phase-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: start;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfe;
+    }
+
+    .phase-head h2 {
+      margin: 0;
+      color: var(--color);
+      font-size: 24px;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    .phase-head p {
+      margin: 7px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 9px;
+      border: 1px solid color-mix(in srgb, var(--color) 32%, var(--line));
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--color) 9%, white);
+      color: var(--color);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .diagram-wrap {
+      overflow-x: auto;
+      background:
+        linear-gradient(#edf1f5 1px, transparent 1px),
+        linear-gradient(90deg, #edf1f5 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+
+    svg.diagram {
+      display: block;
+      width: 100%;
+      min-width: 1000px;
+      height: auto;
+    }
+
+    .step-trigger {
+      cursor: pointer;
+    }
+
+    .flow-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 1px;
+      background: var(--line);
+      border-top: 1px solid var(--line);
+    }
+
+    .step-button {
+      border: 0;
+      border-left: 4px solid transparent;
+      background: #ffffff;
+      padding: 11px 12px;
+      text-align: left;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 9px;
+      align-items: start;
+    }
+
+    .step-button[aria-pressed="true"] {
+      border-left-color: var(--color);
+      background: color-mix(in srgb, var(--color) 8%, white);
+    }
+
+    .step-index {
+      display: inline-grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border: 1px solid var(--color);
+      border-radius: 999px;
+      color: var(--color);
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .step-button[aria-pressed="true"] .step-index {
+      background: var(--color);
+      color: #ffffff;
+    }
+
+    .step-button strong,
+    .step-button span {
+      min-width: 0;
+    }
+
+    .step-button strong {
+      display: block;
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .step-button em {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      font-style: normal;
+      line-height: 1.25;
+    }
+
+    .details {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--line);
+      border-top: 1px solid var(--line);
+    }
+
+    .detail {
+      min-height: 86px;
+      padding: 13px 14px;
+      background: #fbfcfe;
+    }
+
+    .detail b {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--color);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .matrix {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow-x: auto;
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: minmax(132px, 0.72fr) minmax(180px, 0.95fr) minmax(0, 1.28fr) minmax(0, 1.28fr);
+      min-width: 920px;
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .matrix-cell {
+      min-width: 0;
+      min-height: 58px;
+      padding: 11px 13px;
+      background: #ffffff;
+      overflow-wrap: anywhere;
+    }
+
+    .matrix-cell.head {
+      background: #fbfcfe;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .matrix-cell b {
+      color: var(--color);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .source-note {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .source-note a {
+      color: var(--active);
+      font-weight: 800;
+      text-decoration: none;
+    }
+
+    @media (max-width: 1080px) {
+      .hero,
+      .inventory-layout,
+      .flow-layout,
+      .rules {
+        grid-template-columns: 1fr;
+      }
+
+      .section-title {
+        display: block;
+      }
+
+      .section-title p {
+        margin-top: 4px;
+        text-align: left;
+      }
+
+      .phase-nav {
+        position: static;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .shell {
+        width: min(100vw - 20px, 1320px);
+      }
+
+      .topbar {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      .core-row,
+      .details,
+      .phase-nav {
+        grid-template-columns: 1fr;
+      }
+
+      .asset {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+
+      .phase-head {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell">
+      <div class="topbar">
+        <div class="eyebrow" id="eyebrow"></div>
+        <div class="language-switch" id="language-switch" aria-label="Language">
+          <button type="button" data-lang="zh">中文</button>
+          <button type="button" data-lang="en">English</button>
+        </div>
+      </div>
+      <div class="hero">
+        <div>
+          <h1 id="page-title"></h1>
+          <p class="summary" id="page-summary"></p>
+        </div>
+        <aside class="reading" id="reading-card"></aside>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section aria-labelledby="components-title">
+      <div class="section-title">
+        <h2 id="components-title"></h2>
+        <p id="components-intro"></p>
+      </div>
+
+      <div class="inventory-layout">
+        <article class="panel" style="--color: var(--host);">
+          <div class="panel-head" id="core-heading"></div>
+          <div class="core-row" id="core-row"></div>
+        </article>
+
+        <article class="panel" style="--color: var(--protocol);">
+          <div class="panel-head" id="asset-heading"></div>
+          <div class="asset-list" id="asset-list"></div>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="rules-title">
+      <div class="section-title">
+        <h2 id="rules-title"></h2>
+        <p id="rules-intro"></p>
+      </div>
+      <div class="rules" id="rules"></div>
+    </section>
+
+    <section aria-labelledby="flow-title">
+      <div class="section-title">
+        <h2 id="flow-title"></h2>
+        <p id="flow-intro"></p>
+      </div>
+
+      <div class="flow-layout">
+        <nav class="phase-nav" aria-label="Runtime phases" id="phase-nav"></nav>
+        <article class="phase-view" id="phase-view" aria-live="polite"></article>
+      </div>
+    </section>
+
+    <section class="matrix" aria-labelledby="matrix-title">
+      <div class="panel-head" style="--color: var(--host);" id="matrix-title"></div>
+      <div class="matrix-grid" id="matrix"></div>
+    </section>
+
+    <p class="source-note" id="source-note"></p>
+  </main>
+
+  <script>
+    const COPY = {
+      zh: {
+        langAttr: "zh-CN",
+        title: "Skill Loop MVP",
+        eyebrow: "Mnemon Harness / Skill Loop",
+        summary: "第一版 skill loop 与 memory loop 使用同一套 harness 概念：GUIDE 写 policy，setup 负责安装和挂载，hook 仍按 Prime/Remind/Nudge/Compact 理解，protocol skills 记录和迁移 skill state，curator subagent 做后台审阅与提案。",
+        readingTitle: "阅读顺序",
+        reading: [
+          "先看三大核心：HostAgent、Host Skill Surface、Skill Library。",
+          "再看五类支撑概念：GUIDE、setup、hook、protocol、subagent。",
+          "最后切换阶段，看 Prime、Nudge、Observe、Curator、Manage 如何闭合成 loop。"
+        ],
+        componentsTitle: "System Components",
+        componentsIntro: "Skill loop 的核心不是冷热存储，而是可见性治理：哪些 skill 当前可被发现，哪些进入维护，哪些仅保留历史。",
+        coreHeading: "Three Core Parts",
+        assetHeading: "Five Harness Concepts",
+        cores: [
+          { name: "HostAgent", color: "var(--host)", text: "宿主 Agent 的执行引擎。它拥有 ReAct loop、hook bus、prompt assembly、tool routing 和原生 skill/subagent 调用。" },
+          { name: "Host Skill Surface", color: "var(--active)", text: "HostAgent 原生 skill 发现面，例如 `.claude/skills`。Prime 将 `.mnemon/skills/active` 单向同步或挂载到这里。" },
+          { name: ".mnemon Skill Library", color: "var(--library)", text: "canonical filesystem：`skills/active`、`skills/stale`、`skills/archived`。所有真实状态都以它为准。" }
+        ],
+        assets: [
+          { name: "GUIDE", color: "var(--guide)", text: "policy 文档：定义什么算 skill evidence、reusable workflow signal、何时 review、何时只能 proposal。" },
+          { name: "setup", color: "var(--setup)", text: "安装 hooks、protocol skills、curator subagent，并把 `.mnemon/skills/active` 绑定到宿主 skill surface。" },
+          { name: "hook", color: "var(--hook)", text: "Prime、Remind、Nudge、Compact 是统一 hook 概念；skill loop 中 Remind 通常 no-op，因为宿主已有原生 skill discovery。" },
+          { name: "protocol", color: "var(--protocol)", text: "`skill_observe.md`、`skill_manage.md`、`skill_curate.md` 是 HostAgent 调用的 protocol skills。" },
+          { name: "subagent", color: "var(--curator)", text: "curator 是低频维护 subagent，负责 review evidence，并提出 create/patch/stale/archive 方案。" }
+        ],
+        rulesTitle: "关键规则",
+        rulesIntro: "这些规则让 skill loop 保持 harness 化：不接管宿主的 skill runtime，只治理 skill 的可见性和演进状态。",
+        rules: [
+          { name: "Active 才影响行为", color: "var(--active)", text: "Prime 只同步 active skills。stale 和 archived 默认不进入 host-native skill surface，只在 review、restore 或人工查询时出现。" },
+          { name: "GUIDE 只定义 policy", color: "var(--guide)", text: "GUIDE 只说明如何判断 skill signal、review 时机和 proposal 边界，不直接生成或迁移 skill。" },
+          { name: "hook 只给时机", color: "var(--hook)", text: "Nudge 是 stop hook 的一句提醒；Prime 是同步时机；Remind 通常 no-op；Compact 可作为 curator 的低频触发边界。" },
+          { name: "subagent 做维护", color: "var(--curator)", text: "Curator 不是每次任务都执行的在线步骤。没有 scheduler 时可以手动运行；默认 proposal-first。" },
+          { name: "protocol 才修改状态", color: "var(--library)", text: "skill_manage 只更新 `.mnemon` canonical state。新的 active 集合要等下一次 Prime 再同步到 Host Skill Surface。" }
+        ],
+        flowTitle: "Runtime Flow",
+        flowIntro: "点击阶段，只显示当前阶段的数据流。图中数字对应下方步骤，点击数字或步骤可高亮对应流转。",
+        matrixTitle: "Responsibility Matrix",
+        matrixHeaders: ["Concept", "Loop Asset", "Runtime Role", "Boundary"],
+        sourceNote: "生命周期参考：",
+        sourceAnd: " 和 ",
+        sourceEnd: "。",
+        detailLabels: {
+          input: "输入",
+          trigger: "触发",
+          action: "执行",
+          boundary: "边界",
+          safety: "安全",
+          loop: "闭环"
+        },
+        actionPrefix: "动作：",
+        lanes: {
+          host: { title: "HostAgent", sub: "runtime owner" },
+          guide: { title: "GUIDE", sub: "policy" },
+          protocol: { title: "Protocol Skills", sub: "observe / manage / curate" },
+          surface: { title: "Host Skill Surface", sub: "native discovery" },
+          library: { title: ".mnemon Skills", sub: "active / stale / archived" },
+          curator: { title: "Curator", sub: "subagent + proposal" }
+        },
+        phases: {
+          prime: {
+            title: "Prime",
+            tag: "hook",
+            summary: "Prime 不把所有 skill 内容注入 prompt。它负责把 `.mnemon/skills/active` 单向同步或挂载到 HostAgent 的原生 skill 发现面，让 HostAgent 自己完成 skill discovery。",
+            short: "active skills -> host surface",
+            events: [
+              { kind: "arrow", from: "library", to: "surface", y: 94, label: "sync active skills" },
+              { kind: "arrow", from: "surface", to: "host", y: 146, label: "native discovery surface" },
+              { kind: "action", actor: "host", y: 210, label: "discover skills natively" }
+            ],
+            details: [
+              ["input", "GUIDE + `.mnemon/skills/active` + setup bindings"],
+              ["action", "Prime hook 同步、挂载或生成 host-native skill files"],
+              ["boundary", "`.mnemon` 是 source of truth；host-native 目录是 generated view"]
+            ]
+          },
+          nudge: {
+            title: "Nudge",
+            tag: "hook",
+            summary: "Nudge 是 agent loop stop 阶段的一句 hook prompt。它不写规则，只提醒 LLM 按 GUIDE 判断本轮是否产生 skill usage evidence 或 reusable workflow signal；如果有，应加载 skill_observe。",
+            short: "stop hook -> skill_observe",
+            events: [
+              { kind: "arrow", from: "surface", to: "host", y: 74, label: "native skill use outside harness" },
+              { kind: "arrow", from: "guide", to: "host", y: 126, label: "nudge prompt + policy" },
+              { kind: "arrow", from: "host", to: "protocol", y: 178, label: "decide to observe" },
+              { kind: "action", actor: "protocol", y: 236, label: "next: skill_observe" }
+            ],
+            details: [
+              ["trigger", "agent loop stop 阶段的 Nudge hook"],
+              ["action", "只提醒 LLM 按 GUIDE 判断是否需要记录 skill signal"],
+              ["boundary", "Nudge 不写 sidecar、不生成 skill、不做 review"]
+            ]
+          },
+          observe: {
+            title: "skill_observe",
+            tag: "protocol",
+            summary: "skill_observe 是在线轻量能力。它按照 GUIDE 和协议，把 skill view/use/patch evidence 或 reusable workflow signal 写入 usage sidecar 或 signal report。",
+            short: "write usage / signal",
+            events: [
+              { kind: "arrow", from: "host", to: "protocol", y: 78, label: "load skill_observe.md" },
+              { kind: "arrow", from: "guide", to: "protocol", y: 132, label: "evidence policy" },
+              { kind: "arrow", from: "protocol", to: "library", y: 184, label: "write usage sidecar" },
+              { kind: "action", actor: "library", y: 242, label: "update signal state" }
+            ],
+            details: [
+              ["input", "view/use/patch 事件、用户反馈、失败修复、重复流程"],
+              ["action", "写 `.mnemon/skills/.usage.json` 或 signal report"],
+              ["boundary", "skill_observe 只记录 evidence，不判断是否生成 skill"]
+            ]
+          },
+          curate: {
+            title: "Curator",
+            tag: "subagent",
+            summary: "Curator 是后台或手动维护入口。它读取 usage sidecar、signal reports 和 skill library，拉起 curator subagent 检查是否应 patch、consolidate、create、stale 或 archive，并默认生成 proposal/report。",
+            short: "evidence -> proposal",
+            events: [
+              { kind: "arrow", from: "host", to: "protocol", y: 78, label: "load skill_curate.md" },
+              { kind: "arrow", from: "protocol", to: "curator", y: 126, label: "spawn review subagent" },
+              { kind: "arrow", from: "guide", to: "curator", y: 176, label: "review policy" },
+              { kind: "arrow", from: "library", to: "curator", y: 224, label: "skills + usage signals" },
+              { kind: "action", actor: "curator", y: 276, label: "draft proposal / report" }
+            ],
+            details: [
+              ["trigger", "手动、compact/dreaming 边界、HostAgent scheduler 或足够强的 signal"],
+              ["action", "curator subagent 检查 evidence，生成 SKILL.md draft 或 patch proposal"],
+              ["boundary", "默认 proposal-first，不直接启用 active skill"]
+            ]
+          },
+          manage: {
+            title: "skill_manage",
+            tag: "protocol",
+            summary: "被批准的迁移由 skill_manage 执行：patch、consolidate、active -> stale、stale -> archived、restore。它只改 `.mnemon` canonical state，不直接刷新 HostAgent；新的可见 skill 集合会在下一次 Prime 同步到 host skill surface。",
+            short: "skill_manage -> next Prime",
+            events: [
+              { kind: "arrow", from: "curator", to: "protocol", y: 76, label: "approved proposal" },
+              { kind: "arrow", from: "protocol", to: "library", y: 126, label: "patch / move state" },
+              { kind: "arrow", from: "protocol", to: "library", y: 176, label: "update metadata" },
+              { kind: "arrow", from: "library", to: "surface", y: 226, label: "next Prime syncs active" },
+              { kind: "arrow", from: "surface", to: "host", y: 276, label: "next run discovers new set" }
+            ],
+            details: [
+              ["action", "skill_manage 写 `.mnemon` canonical state"],
+              ["safety", "proposal-first；protected/pinned 跳过；archive over delete"],
+              ["loop", "Manage 产生新的 canonical active set；Prime 负责把它投到 Host Skill Surface"]
+            ]
+          }
+        },
+        matrixRows: [
+          ["Host runtime", "HostAgent", "运行 ReAct loop，接收 hook，决定是否加载 protocol skill 或 curator subagent。", "不拥有 canonical skill state。", "var(--host)"],
+          ["Host-facing surface", "Host Skill Surface", "HostAgent 原生 skill discovery 读取的位置。", "由 Prime 从 `.mnemon/skills/active` 单向同步或挂载生成。", "var(--active)"],
+          ["Canonical store", ".mnemon Skill Library", "保存 active/stale/archived skills 和 `.usage.json`。", "canonical source of truth，host-native 目录只是 generated view。", "var(--library)"],
+          ["GUIDE", "GUIDE", "定义 skill evidence、review trigger、protected/pinned、proposal-first 等判断规则。", "只定义 policy，不执行迁移。", "var(--guide)"],
+          ["setup", "setup + bindings", "安装 hooks、protocol skills、curator subagent，并配置 host-native skill surface binding。", "只负责挂载，不参与每次 runtime 判断。", "var(--setup)"],
+          ["hook", "prime/remind/nudge/compact", "提供同步、观察提醒和低频 review 触发边界；Remind 通常 no-op。", "只给时机和短提醒，规则在 GUIDE 中。", "var(--hook)"],
+          ["protocol", "skill_observe / skill_manage / skill_curate", "定义 observe/manage/curate 的跨 HostAgent 操作方法。", "通过 `MNEMON_HARNESS_DIR` 定位 `.mnemon`。", "var(--protocol)"],
+          ["subagent", "curator", "低频审阅、合并、迁移和报告。", "默认 proposal-first；批准后由 skill_manage 修改状态。", "var(--curator)"]
+        ]
+      },
+      en: {
+        langAttr: "en",
+        title: "Skill Loop MVP",
+        eyebrow: "Mnemon Harness / Skill Loop",
+        summary: "The first skill loop uses the same harness vocabulary as the memory loop: GUIDE holds policy, setup installs and mounts assets, hooks provide Prime/Remind/Nudge/Compact timing, protocol skills record and migrate skill state, and the curator subagent performs background review and proposals.",
+        readingTitle: "Reading Order",
+        reading: [
+          "Start with the three core parts: HostAgent, Host Skill Surface, and Skill Library.",
+          "Then read the five harness concepts: GUIDE, setup, hook, protocol, and subagent.",
+          "Finally switch phases to see how Prime, Nudge, Observe, Curator, and Manage close the loop."
+        ],
+        componentsTitle: "System Components",
+        componentsIntro: "The skill loop is not a hot/cold storage split. It governs visibility: which skills are discoverable now, which need maintenance, and which remain historical.",
+        coreHeading: "Three Core Parts",
+        assetHeading: "Five Harness Concepts",
+        cores: [
+          { name: "HostAgent", color: "var(--host)", text: "The host agent engine. It owns the ReAct loop, hook bus, prompt assembly, tool routing, and native skill/subagent calls." },
+          { name: "Host Skill Surface", color: "var(--active)", text: "The host-native skill discovery surface, such as `.claude/skills`. Prime syncs or mounts `.mnemon/skills/active` into this surface." },
+          { name: ".mnemon Skill Library", color: "var(--library)", text: "The canonical filesystem: `skills/active`, `skills/stale`, and `skills/archived`. This is the source of truth for skill state." }
+        ],
+        assets: [
+          { name: "GUIDE", color: "var(--guide)", text: "The policy document: what counts as skill evidence, reusable workflow signal, review timing, and proposal-only boundaries." },
+          { name: "setup", color: "var(--setup)", text: "Installs hooks, protocol skills, the curator subagent, and binds `.mnemon/skills/active` into the host skill surface." },
+          { name: "hook", color: "var(--hook)", text: "Prime, Remind, Nudge, and Compact remain the shared hook vocabulary. Remind is usually a no-op because the host already has native skill discovery." },
+          { name: "protocol", color: "var(--protocol)", text: "`skill_observe.md`, `skill_manage.md`, and `skill_curate.md` are protocol skills loaded by the HostAgent." },
+          { name: "subagent", color: "var(--curator)", text: "The curator is a low-frequency maintenance subagent that reviews evidence and proposes create, patch, stale, or archive actions." }
+        ],
+        rulesTitle: "Key Rules",
+        rulesIntro: "These rules keep the skill loop harness-native: it does not replace the host skill runtime; it governs skill visibility and lifecycle state.",
+        rules: [
+          { name: "Only Active Affects Behavior", color: "var(--active)", text: "Prime syncs active skills only. Stale and archived skills stay out of the host-native skill surface unless reviewed, restored, or queried manually." },
+          { name: "GUIDE Defines Policy", color: "var(--guide)", text: "GUIDE explains how to judge skill signals, review timing, and proposal boundaries. It does not generate or migrate skills." },
+          { name: "Hooks Provide Timing", color: "var(--hook)", text: "Nudge is a one-line stop-hook reminder; Prime is the sync boundary; Remind is usually a no-op; Compact can trigger low-frequency curator review." },
+          { name: "Subagent Maintains", color: "var(--curator)", text: "Curator is not an online step for every task. Without a scheduler it can run manually; proposal-first is the default." },
+          { name: "Protocol Changes State", color: "var(--library)", text: "skill_manage updates `.mnemon` canonical state only. The new active set becomes visible after the next Prime sync." }
+        ],
+        flowTitle: "Runtime Flow",
+        flowIntro: "Select a phase to isolate its data flow. Numbers on the diagram map to the steps below; click either one to highlight the flow.",
+        matrixTitle: "Responsibility Matrix",
+        matrixHeaders: ["Concept", "Loop Asset", "Runtime Role", "Boundary"],
+        sourceNote: "Lifecycle reference: ",
+        sourceAnd: " and ",
+        sourceEnd: ".",
+        detailLabels: {
+          input: "Input",
+          trigger: "Trigger",
+          action: "Action",
+          boundary: "Boundary",
+          safety: "Safety",
+          loop: "Loop"
+        },
+        actionPrefix: "action in ",
+        lanes: {
+          host: { title: "HostAgent", sub: "runtime owner" },
+          guide: { title: "GUIDE", sub: "policy" },
+          protocol: { title: "Protocol Skills", sub: "observe / manage / curate" },
+          surface: { title: "Host Skill Surface", sub: "native discovery" },
+          library: { title: ".mnemon Skills", sub: "active / stale / archived" },
+          curator: { title: "Curator", sub: "subagent + proposal" }
+        },
+        phases: {
+          prime: {
+            title: "Prime",
+            tag: "hook",
+            summary: "Prime does not inject every skill body into the prompt. It syncs or mounts `.mnemon/skills/active` into the host-native discovery surface so the HostAgent can discover skills natively.",
+            short: "active skills -> host surface",
+            events: [
+              { kind: "arrow", from: "library", to: "surface", y: 94, label: "sync active skills" },
+              { kind: "arrow", from: "surface", to: "host", y: 146, label: "native discovery surface" },
+              { kind: "action", actor: "host", y: 210, label: "discover skills natively" }
+            ],
+            details: [
+              ["input", "GUIDE + `.mnemon/skills/active` + setup bindings"],
+              ["action", "Prime hook syncs, mounts, or generates host-native skill files"],
+              ["boundary", "`.mnemon` is the source of truth; host-native directories are generated views"]
+            ]
+          },
+          nudge: {
+            title: "Nudge",
+            tag: "hook",
+            summary: "Nudge is a one-line hook prompt at the agent-loop stop boundary. It does not carry rules; it asks the model to follow GUIDE and decide whether this turn produced skill evidence or a reusable workflow signal.",
+            short: "stop hook -> skill_observe",
+            events: [
+              { kind: "arrow", from: "surface", to: "host", y: 74, label: "native skill use outside harness" },
+              { kind: "arrow", from: "guide", to: "host", y: 126, label: "nudge prompt + policy" },
+              { kind: "arrow", from: "host", to: "protocol", y: 178, label: "decide to observe" },
+              { kind: "action", actor: "protocol", y: 236, label: "next: skill_observe" }
+            ],
+            details: [
+              ["trigger", "Nudge hook at the agent-loop stop boundary"],
+              ["action", "Only reminds the model to follow GUIDE and decide whether to record a skill signal"],
+              ["boundary", "Nudge does not write sidecars, generate skills, or run review"]
+            ]
+          },
+          observe: {
+            title: "skill_observe",
+            tag: "protocol",
+            summary: "skill_observe is the lightweight online protocol. It writes skill view/use/patch evidence or reusable workflow signals into the usage sidecar or signal report.",
+            short: "write usage / signal",
+            events: [
+              { kind: "arrow", from: "host", to: "protocol", y: 78, label: "load skill_observe.md" },
+              { kind: "arrow", from: "guide", to: "protocol", y: 132, label: "evidence policy" },
+              { kind: "arrow", from: "protocol", to: "library", y: 184, label: "write usage sidecar" },
+              { kind: "action", actor: "library", y: 242, label: "update signal state" }
+            ],
+            details: [
+              ["input", "view/use/patch events, user feedback, failure fixes, and repeated workflows"],
+              ["action", "Writes `.mnemon/skills/.usage.json` or a signal report"],
+              ["boundary", "skill_observe records evidence only; it does not decide whether to generate skills"]
+            ]
+          },
+          curate: {
+            title: "Curator",
+            tag: "subagent",
+            summary: "Curator is the background or manual maintenance entry point. It reads usage sidecars, signal reports, and the skill library, then reviews whether to patch, consolidate, create, stale, or archive.",
+            short: "evidence -> proposal",
+            events: [
+              { kind: "arrow", from: "host", to: "protocol", y: 78, label: "load skill_curate.md" },
+              { kind: "arrow", from: "protocol", to: "curator", y: 126, label: "spawn review subagent" },
+              { kind: "arrow", from: "guide", to: "curator", y: 176, label: "review policy" },
+              { kind: "arrow", from: "library", to: "curator", y: 224, label: "skills + usage signals" },
+              { kind: "action", actor: "curator", y: 276, label: "draft proposal / report" }
+            ],
+            details: [
+              ["trigger", "manual run, compact/dreaming boundary, HostAgent scheduler, or a strong signal"],
+              ["action", "Curator subagent checks evidence and drafts SKILL.md or patch proposals"],
+              ["boundary", "Proposal-first by default; it does not directly enable active skills"]
+            ]
+          },
+          manage: {
+            title: "skill_manage",
+            tag: "protocol",
+            summary: "Approved migrations are applied by skill_manage: patch, consolidate, active -> stale, stale -> archived, or restore. It changes only `.mnemon` canonical state; new visibility appears after the next Prime sync.",
+            short: "skill_manage -> next Prime",
+            events: [
+              { kind: "arrow", from: "curator", to: "protocol", y: 76, label: "approved proposal" },
+              { kind: "arrow", from: "protocol", to: "library", y: 126, label: "patch / move state" },
+              { kind: "arrow", from: "protocol", to: "library", y: 176, label: "update metadata" },
+              { kind: "arrow", from: "library", to: "surface", y: 226, label: "next Prime syncs active" },
+              { kind: "arrow", from: "surface", to: "host", y: 276, label: "next run discovers new set" }
+            ],
+            details: [
+              ["action", "skill_manage writes `.mnemon` canonical state"],
+              ["safety", "proposal-first; skip protected/pinned skills; archive over delete"],
+              ["loop", "Manage creates the new canonical active set; Prime projects it to the Host Skill Surface"]
+            ]
+          }
+        },
+        matrixRows: [
+          ["Host runtime", "HostAgent", "Runs the ReAct loop, receives hooks, and decides whether to load protocol skills or the curator subagent.", "Does not own canonical skill state.", "var(--host)"],
+          ["Host-facing surface", "Host Skill Surface", "The location read by host-native skill discovery.", "Generated or mounted by Prime from `.mnemon/skills/active`.", "var(--active)"],
+          ["Canonical store", ".mnemon Skill Library", "Stores active/stale/archived skills and `.usage.json`.", "Canonical source of truth; host-native directories are generated views.", "var(--library)"],
+          ["GUIDE", "GUIDE", "Defines skill evidence, review triggers, protected/pinned rules, and proposal-first policy.", "Defines policy only; it does not migrate state.", "var(--guide)"],
+          ["setup", "setup + bindings", "Installs hooks, protocol skills, curator subagent, and host-native skill surface bindings.", "Mounts assets only; it does not participate in each runtime decision.", "var(--setup)"],
+          ["hook", "prime/remind/nudge/compact", "Provides sync, observation reminders, and low-frequency review trigger boundaries; Remind is usually a no-op.", "Provides timing and short reminders only; rules live in GUIDE.", "var(--hook)"],
+          ["protocol", "skill_observe / skill_manage / skill_curate", "Defines cross-HostAgent methods for observe, manage, and curate.", "Locates `.mnemon` through `MNEMON_HARNESS_DIR`.", "var(--protocol)"],
+          ["subagent", "curator", "Performs low-frequency review, consolidation, migration, and reports.", "Proposal-first by default; approved changes are applied by skill_manage.", "var(--curator)"]
+        ]
+      }
+    };
+
+    const PHASE_ORDER = ["prime", "nudge", "observe", "curate", "manage"];
+    const PHASE_COLORS = {
+      prime: "var(--active)",
+      nudge: "var(--hook)",
+      observe: "var(--protocol)",
+      curate: "var(--curator)",
+      manage: "var(--protocol)"
+    };
+    const LANGUAGE_STORAGE_KEY = "mnemon-skill-loop-lang";
+    const savedLang = readStoredLanguage();
+    let lang = COPY[savedLang] ? savedLang : ((navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en");
+    let activeId = "prime";
+    let activeStepIndex = 0;
+
+    function readStoredLanguage() {
+      try {
+        return localStorage.getItem(LANGUAGE_STORAGE_KEY);
+      } catch {
+        return null;
+      }
+    }
+
+    function storeLanguage(nextLang) {
+      try {
+        localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLang);
+      } catch {
+        return;
+      }
+    }
+
+    function currentCopy() {
+      return COPY[lang];
+    }
+
+    function lanes(t) {
+      return {
+        host: { x: 100, title: t.lanes.host.title, sub: t.lanes.host.sub, color: "#334155" },
+        guide: { x: 290, title: t.lanes.guide.title, sub: t.lanes.guide.sub, color: "#8062b5" },
+        protocol: { x: 485, title: t.lanes.protocol.title, sub: t.lanes.protocol.sub, color: "#8a5fbf" },
+        surface: { x: 695, title: t.lanes.surface.title, sub: t.lanes.surface.sub, color: "#2f7d55" },
+        library: { x: 905, title: t.lanes.library.title, sub: t.lanes.library.sub, color: "#2f66b0" },
+        curator: { x: 1110, title: t.lanes.curator.title, sub: t.lanes.curator.sub, color: "#0f8a8a" }
+      };
+    }
+
+    function textLines(label, max = 24) {
+      if (label.length <= max) return [label];
+      const words = label.split(" ");
+      if (words.length > 1) {
+        const lines = [];
+        let line = "";
+        words.forEach((word) => {
+          const next = line ? `${line} ${word}` : word;
+          if (next.length > max && line) {
+            lines.push(line);
+            line = word;
+          } else {
+            line = next;
+          }
+        });
+        if (line) lines.push(line);
+        return lines.slice(0, 3);
+      }
+      const chunks = [];
+      let rest = label;
+      while (rest.length > max) {
+        chunks.push(rest.slice(0, max));
+        rest = rest.slice(max);
+      }
+      if (rest) chunks.push(rest);
+      return chunks.slice(0, 3);
+    }
+
+    function svgLabelLines(lines, x, y, color, anchor = "middle", size = 13, weight = 700) {
+      return `<text x="${x}" y="${y}" text-anchor="${anchor}" fill="${color}" font-size="${size}" font-weight="${weight}" font-family="Inter, system-ui, sans-serif">${lines.map((line, index) => `<tspan x="${x}" dy="${index === 0 ? 0 : 16}">${line}</tspan>`).join("")}</text>`;
+    }
+
+    function svgLabel(label, x, y, color, anchor = "middle", size = 13, weight = 700, max = 24) {
+      return svgLabelLines(textLines(label, max), x, y, color, anchor, size, weight);
+    }
+
+    function stepBadge(index, x, y, active) {
+      const fill = active ? "#111827" : "#ffffff";
+      const stroke = active ? "#111827" : "#253040";
+      const text = active ? "#ffffff" : "#253040";
+      return `
+        <g class="step-trigger" data-step="${index}" tabindex="0" role="button" aria-label="Step ${index + 1}">
+          <circle cx="${x}" cy="${y}" r="13" fill="${fill}" stroke="${stroke}" stroke-width="2" />
+          <text x="${x}" y="${y + 4}" text-anchor="middle" fill="${text}" font-size="12" font-weight="900" font-family="Inter, system-ui, sans-serif">${index + 1}</text>
+        </g>
+      `;
+    }
+
+    function drawArrow(event, laneMap, markerId, index, active) {
+      const from = laneMap[event.from];
+      const to = laneMap[event.to];
+      const y = event.y;
+      const direction = from.x < to.x ? 1 : -1;
+      const x1 = from.x + direction * 66;
+      const x2 = to.x - direction * 66;
+      const mid = (x1 + x2) / 2;
+      const badgeY = y;
+      return `
+        <line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${active ? "#111827" : "#253040"}" stroke-width="${active ? 3 : 2.2}" marker-end="url(#${markerId})" />
+        ${stepBadge(index, mid, badgeY, active)}
+      `;
+    }
+
+    function drawAction(event, laneMap, index, active) {
+      const lane = laneMap[event.actor];
+      const lines = textLines(event.label, 22);
+      const w = 184;
+      const h = 16 + lines.length * 16;
+      const x = lane.x - w / 2;
+      const y = event.y - h / 2;
+      const textY = event.y - ((lines.length - 1) * 8) + 4;
+      return `
+        <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="${active ? "rgba(17,24,39,0.04)" : "#ffffff"}" stroke="${active ? "#111827" : lane.color}" stroke-width="${active ? 3 : 2}" />
+        ${svgLabelLines(lines, lane.x, textY, lane.color, "middle", 12, 800)}
+        ${stepBadge(index, x + 16, y - 8, active)}
+      `;
+    }
+
+    function drawDiagram(phase, t) {
+      const markerId = `arrow-${phase.id}`;
+      const laneMap = lanes(t);
+      const laneGuides = Object.values(laneMap).map((lane) => `
+        <rect x="${lane.x - 86}" y="16" width="172" height="302" rx="8" fill="${lane.color}" opacity="0.045" />
+        <line x1="${lane.x}" y1="66" x2="${lane.x}" y2="306" stroke="${lane.color}" stroke-width="1.3" stroke-dasharray="6 7" opacity="0.52" />
+        <rect x="${lane.x - 79}" y="20" width="158" height="38" rx="19" fill="#ffffff" stroke="${lane.color}" stroke-width="2" />
+        ${svgLabel(lane.title, lane.x, 39, lane.color, "middle", 12, 900, 20)}
+        ${svgLabel(lane.sub, lane.x, 54, "#667085", "middle", 10, 700, 24)}
+      `).join("");
+
+      const events = phase.events.map((event, index) => {
+        if (event.kind === "arrow") return drawArrow(event, laneMap, markerId, index, index === activeStepIndex);
+        return drawAction(event, laneMap, index, index === activeStepIndex);
+      }).join("");
+
+      return `
+        <svg class="diagram" viewBox="0 0 1210 335" role="img" aria-label="${phase.title} 数据流">
+          <defs>
+            <marker id="${markerId}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#253040"></path>
+            </marker>
+          </defs>
+          <rect x="0" y="0" width="1210" height="335" fill="rgba(255,255,255,0.82)" />
+          ${laneGuides}
+          ${events}
+        </svg>
+      `;
+    }
+
+    function renderNav() {
+      const t = currentCopy();
+      const nav = document.getElementById("phase-nav");
+      nav.innerHTML = "";
+      PHASE_ORDER.forEach((id) => {
+        const phase = t.phases[id];
+        const button = document.createElement("button");
+        button.type = "button";
+        button.style.setProperty("--color", PHASE_COLORS[id]);
+        button.setAttribute("aria-pressed", id === activeId ? "true" : "false");
+        button.innerHTML = `<strong>${phase.title}</strong><span>${phase.short}</span>`;
+        button.addEventListener("click", () => {
+          activeId = id;
+          activeStepIndex = 0;
+          renderNav();
+          renderPhase();
+        });
+        nav.appendChild(button);
+      });
+    }
+
+    function renderPhase() {
+      const t = currentCopy();
+      const phase = t.phases[activeId];
+      if (activeStepIndex >= phase.events.length) activeStepIndex = 0;
+      const view = document.getElementById("phase-view");
+      view.style.setProperty("--color", PHASE_COLORS[activeId]);
+      view.innerHTML = `
+        <div class="phase-head">
+          <div>
+            <h2>${phase.title}</h2>
+            <p>${phase.summary}</p>
+          </div>
+          <span class="tag">${phase.tag}</span>
+        </div>
+        <div class="diagram-wrap">${drawDiagram({ ...phase, id: activeId }, t)}</div>
+        <div class="flow-steps">
+          ${phase.events.map((event, index) => `
+            <button class="step-button step-trigger" type="button" data-step="${index}" style="--color: ${PHASE_COLORS[activeId]};" aria-pressed="${index === activeStepIndex ? "true" : "false"}">
+              <span class="step-index">${index + 1}</span>
+              <span>
+                <strong>${event.label}</strong>
+                <em>${stepPath(event, t)}</em>
+              </span>
+            </button>
+          `).join("")}
+        </div>
+        <div class="details">
+          ${phase.details.map(([label, text]) => `<div class="detail"><b>${t.detailLabels[label]}</b><p>${text}</p></div>`).join("")}
+        </div>
+      `;
+      view.querySelectorAll(".step-trigger").forEach((node) => {
+        node.addEventListener("click", () => {
+          activeStepIndex = Number(node.dataset.step);
+          renderPhase();
+        });
+        node.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activeStepIndex = Number(node.dataset.step);
+            renderPhase();
+          }
+        });
+      });
+    }
+
+    function stepPath(event, t) {
+      const laneMap = lanes(t);
+      if (event.kind === "action") return `${t.actionPrefix}${laneMap[event.actor].title}`;
+      return `${laneMap[event.from].title} -> ${laneMap[event.to].title}`;
+    }
+
+    function renderMatrix() {
+      const t = currentCopy();
+      const matrix = document.getElementById("matrix");
+      matrix.innerHTML = `
+        ${t.matrixHeaders.map((label) => `<div class="matrix-cell head">${label}</div>`).join("")}
+        ${t.matrixRows.map(([concept, asset, role, boundary, color]) => `
+          <div class="matrix-cell" style="--color: ${color};"><b>${concept}</b></div>
+          <div class="matrix-cell"><p>${asset}</p></div>
+          <div class="matrix-cell"><p>${role}</p></div>
+          <div class="matrix-cell"><p>${boundary}</p></div>
+        `).join("")}
+      `;
+    }
+
+    function renderStatic() {
+      const t = currentCopy();
+      document.documentElement.lang = t.langAttr;
+      document.title = `Mnemon ${t.title}`;
+      document.getElementById("eyebrow").textContent = t.eyebrow;
+      document.getElementById("page-title").textContent = t.title;
+      document.getElementById("page-summary").textContent = t.summary;
+      document.getElementById("reading-card").innerHTML = `<h2>${t.readingTitle}</h2><ol>${t.reading.map((item) => `<li>${item}</li>`).join("")}</ol>`;
+      document.getElementById("components-title").textContent = t.componentsTitle;
+      document.getElementById("components-intro").textContent = t.componentsIntro;
+      document.getElementById("core-heading").textContent = t.coreHeading;
+      document.getElementById("asset-heading").textContent = t.assetHeading;
+      document.getElementById("rules-title").textContent = t.rulesTitle;
+      document.getElementById("rules-intro").textContent = t.rulesIntro;
+      document.getElementById("flow-title").textContent = t.flowTitle;
+      document.getElementById("flow-intro").textContent = t.flowIntro;
+      document.getElementById("matrix-title").textContent = t.matrixTitle;
+      document.getElementById("source-note").innerHTML = `${t.sourceNote}<a href="https://hermes-agent.nousresearch.com/docs/user-guide/features/skills">Hermes Skills System</a>${t.sourceAnd}<a href="https://hermes-agent.nousresearch.com/docs/user-guide/features/curator">Hermes Curator</a>${t.sourceEnd}`;
+
+      document.getElementById("core-row").innerHTML = t.cores.map((item) => `
+        <div class="core" style="--color: ${item.color};">
+          <b>${item.name}</b>
+          <p>${item.text}</p>
+        </div>
+      `).join("");
+
+      document.getElementById("asset-list").innerHTML = t.assets.map((item) => `
+        <div class="asset" style="--color: ${item.color};">
+          <b>${item.name}</b>
+          <p>${item.text}</p>
+        </div>
+      `).join("");
+
+      document.getElementById("rules").innerHTML = t.rules.map((item) => `
+        <article class="rule" style="--color: ${item.color};">
+          <b>${item.name}</b>
+          <p>${item.text}</p>
+        </article>
+      `).join("");
+    }
+
+    function renderLanguageSwitch() {
+      document.querySelectorAll("[data-lang]").forEach((button) => {
+        const pressed = button.dataset.lang === lang;
+        button.setAttribute("aria-pressed", pressed ? "true" : "false");
+        button.onclick = () => {
+          lang = button.dataset.lang;
+          storeLanguage(lang);
+          renderAll();
+        };
+      });
+    }
+
+    function renderAll() {
+      renderStatic();
+      renderLanguageSwitch();
+      renderNav();
+      renderPhase();
+      renderMatrix();
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>

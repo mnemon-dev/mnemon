@@ -1,0 +1,1252 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Mnemon Memory Loop MVP architecture, assets, hooks, and runtime data flow." />
+  <title>Mnemon Memory Loop MVP</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f6f8fb;
+      --ink: #151922;
+      --muted: #667085;
+      --line: #d9e0ea;
+      --panel: #ffffff;
+      --soft: #f1f5f9;
+      --guide: #8062b5;
+      --host: #2f7d55;
+      --hook: #b43d59;
+      --capability: #c26432;
+      --working: #2e67b1;
+      --longterm: #0f8a8a;
+      --shadow: 0 16px 38px rgba(28, 39, 57, 0.1);
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.5;
+    }
+
+    button {
+      font: inherit;
+      color: inherit;
+    }
+
+    .shell {
+      width: min(1320px, calc(100vw - 32px));
+      margin: 0 auto;
+    }
+
+    header {
+      padding: 24px 0 22px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(246, 248, 251, 0.96);
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: center;
+      margin-bottom: 22px;
+    }
+
+    .eyebrow {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .language-switch {
+      display: inline-flex;
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+    }
+
+    .language-switch button {
+      min-width: 82px;
+      border: 0;
+      border-radius: 999px;
+      background: transparent;
+      padding: 6px 11px;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .language-switch button[aria-pressed="true"] {
+      background: var(--host);
+      color: #ffffff;
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 360px;
+      gap: 26px;
+      align-items: start;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 44px;
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .summary {
+      margin: 12px 0 0;
+      max-width: 900px;
+      color: var(--muted);
+      font-size: 15px;
+    }
+
+    .reading {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .reading h2,
+    .section-title h2 {
+      margin: 0;
+      font-size: 17px;
+      letter-spacing: 0;
+    }
+
+    .reading h2 {
+      padding: 13px 14px;
+      border-bottom: 1px solid var(--line);
+      color: var(--host);
+      background: #fbfcfe;
+    }
+
+    .reading ol {
+      margin: 0;
+      padding: 12px 16px 14px 32px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .reading li + li {
+      margin-top: 6px;
+    }
+
+    main {
+      padding: 22px 0 44px;
+    }
+
+    .section-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: end;
+      margin: 0 0 10px;
+    }
+
+    .section-title p {
+      margin: 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: right;
+    }
+
+    .inventory-layout {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-head {
+      padding: 13px 15px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfe;
+      color: var(--color);
+      font-size: 15px;
+      font-weight: 800;
+    }
+
+    .core-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .core {
+      min-height: 170px;
+      padding: 15px;
+      background: #ffffff;
+      border-top: 4px solid var(--color);
+      display: grid;
+      align-content: start;
+      gap: 9px;
+    }
+
+    .core b {
+      color: var(--color);
+      font-size: 16px;
+      line-height: 1.1;
+    }
+
+    .core p,
+    .asset p,
+    .rule p,
+    .detail p,
+    .matrix p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .asset-list {
+      display: grid;
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .asset {
+      display: grid;
+      grid-template-columns: 128px minmax(0, 1fr);
+      gap: 12px;
+      align-items: start;
+      padding: 12px 14px;
+      background: #ffffff;
+      border-left: 4px solid var(--color);
+    }
+
+    .asset b {
+      color: var(--color);
+      font-size: 13px;
+      line-height: 1.2;
+    }
+
+    .rules {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .rule {
+      padding: 13px 14px;
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--color);
+      border-radius: var(--radius);
+      background: var(--panel);
+    }
+
+    .rule b {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--color);
+      font-size: 14px;
+    }
+
+    .flow-layout {
+      display: grid;
+      grid-template-columns: 260px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+      margin-bottom: 18px;
+    }
+
+    .phase-nav {
+      position: sticky;
+      top: 16px;
+      display: grid;
+      gap: 8px;
+      padding: 10px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .phase-nav button {
+      width: 100%;
+      border: 1px solid transparent;
+      border-left: 4px solid var(--color);
+      border-radius: 6px;
+      background: #fbfcfe;
+      padding: 10px;
+      text-align: left;
+      cursor: pointer;
+      display: grid;
+      gap: 4px;
+    }
+
+    .phase-nav button[aria-pressed="true"] {
+      border-color: var(--color);
+      background: color-mix(in srgb, var(--color) 9%, white);
+    }
+
+    .phase-nav strong {
+      font-size: 13px;
+      line-height: 1.15;
+    }
+
+    .phase-nav span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .phase-view {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .phase-head {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 16px;
+      align-items: start;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfe;
+    }
+
+    .phase-head h2 {
+      margin: 0;
+      color: var(--color);
+      font-size: 24px;
+      line-height: 1.08;
+      letter-spacing: 0;
+    }
+
+    .phase-head p {
+      margin: 7px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      min-height: 28px;
+      padding: 4px 9px;
+      border: 1px solid color-mix(in srgb, var(--color) 32%, var(--line));
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--color) 9%, white);
+      color: var(--color);
+      font-size: 12px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .diagram-wrap {
+      overflow-x: auto;
+      background:
+        linear-gradient(#edf1f5 1px, transparent 1px),
+        linear-gradient(90deg, #edf1f5 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+
+    svg.diagram {
+      display: block;
+      width: 100%;
+      min-width: 1000px;
+      height: auto;
+    }
+
+    .step-trigger {
+      cursor: pointer;
+    }
+
+    .flow-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      gap: 1px;
+      background: var(--line);
+      border-top: 1px solid var(--line);
+    }
+
+    .step-button {
+      border: 0;
+      border-left: 4px solid transparent;
+      background: #ffffff;
+      padding: 11px 12px;
+      text-align: left;
+      cursor: pointer;
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 9px;
+      align-items: start;
+    }
+
+    .step-button[aria-pressed="true"] {
+      border-left-color: var(--color);
+      background: color-mix(in srgb, var(--color) 8%, white);
+    }
+
+    .step-index {
+      display: inline-grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      border: 1px solid var(--color);
+      border-radius: 999px;
+      color: var(--color);
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .step-button[aria-pressed="true"] .step-index {
+      background: var(--color);
+      color: #ffffff;
+    }
+
+    .step-button strong,
+    .step-button span {
+      min-width: 0;
+    }
+
+    .step-button strong {
+      display: block;
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .step-button em {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 12px;
+      font-style: normal;
+      line-height: 1.25;
+    }
+
+    .details {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1px;
+      background: var(--line);
+      border-top: 1px solid var(--line);
+    }
+
+    .detail {
+      min-height: 86px;
+      padding: 13px 14px;
+      background: #fbfcfe;
+    }
+
+    .detail b {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--color);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .matrix {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      overflow-x: auto;
+    }
+
+    .matrix-grid {
+      display: grid;
+      grid-template-columns: minmax(132px, 0.72fr) minmax(180px, 0.95fr) minmax(0, 1.28fr) minmax(0, 1.28fr);
+      min-width: 920px;
+      gap: 1px;
+      background: var(--line);
+    }
+
+    .matrix-cell {
+      min-width: 0;
+      min-height: 58px;
+      padding: 11px 13px;
+      background: #ffffff;
+      overflow-wrap: anywhere;
+    }
+
+    .matrix-cell.head {
+      background: #fbfcfe;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .matrix-cell b {
+      color: var(--color);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    @media (max-width: 1080px) {
+      .hero,
+      .inventory-layout,
+      .flow-layout,
+      .rules {
+        grid-template-columns: 1fr;
+      }
+
+      .section-title {
+        display: block;
+      }
+
+      .section-title p {
+        margin-top: 4px;
+        text-align: left;
+      }
+
+      .phase-nav {
+        position: static;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 760px) {
+      .shell {
+        width: min(100vw - 20px, 1320px);
+      }
+
+      .topbar,
+      .phase-head {
+        display: grid;
+        grid-template-columns: 1fr;
+      }
+
+      h1 {
+        font-size: 34px;
+      }
+
+      .core-row,
+      .details,
+      .phase-nav {
+        grid-template-columns: 1fr;
+      }
+
+      .asset {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="shell">
+      <div class="topbar">
+        <div class="eyebrow" id="eyebrow"></div>
+        <div class="language-switch" id="language-switch" aria-label="Language">
+          <button type="button" data-lang="zh">中文</button>
+          <button type="button" data-lang="en">English</button>
+        </div>
+      </div>
+      <div class="hero">
+        <div>
+          <h1 id="page-title"></h1>
+          <p class="summary" id="page-summary"></p>
+        </div>
+        <aside class="reading" id="reading-card"></aside>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section aria-labelledby="components-title">
+      <div class="section-title">
+        <h2 id="components-title"></h2>
+        <p id="components-intro"></p>
+      </div>
+      <div class="inventory-layout">
+        <article class="panel" style="--color: var(--host);">
+          <div class="panel-head" id="core-heading"></div>
+          <div class="core-row" id="core-row"></div>
+        </article>
+        <article class="panel" style="--color: var(--capability);">
+          <div class="panel-head" id="asset-heading"></div>
+          <div class="asset-list" id="asset-list"></div>
+        </article>
+      </div>
+    </section>
+
+    <section aria-labelledby="rules-title">
+      <div class="section-title">
+        <h2 id="rules-title"></h2>
+        <p id="rules-intro"></p>
+      </div>
+      <div class="rules" id="rules"></div>
+    </section>
+
+    <section aria-labelledby="flow-title">
+      <div class="section-title">
+        <h2 id="flow-title"></h2>
+        <p id="flow-intro"></p>
+      </div>
+      <div class="flow-layout">
+        <nav class="phase-nav" aria-label="Runtime phases" id="phase-nav"></nav>
+        <article class="phase-view" id="phase-view" aria-live="polite"></article>
+      </div>
+    </section>
+
+    <section class="matrix" aria-labelledby="matrix-title">
+      <div class="panel-head" style="--color: var(--host);" id="matrix-title"></div>
+      <div class="matrix-grid" id="matrix"></div>
+    </section>
+  </main>
+
+  <script>
+    const COLOR = {
+      guide: "#8062b5",
+      host: "#2f7d55",
+      hook: "#b43d59",
+      capability: "#c26432",
+      working: "#2e67b1",
+      longterm: "#0f8a8a"
+    };
+
+    const COPY = {
+      zh: {
+        langAttr: "zh-CN",
+        title: "Memory Loop MVP",
+        eyebrow: "Mnemon Harness / Memory Loop",
+        summary: "第一版只实现一个清晰的记忆闭环：MEMORY.md 是模型友好的热记忆，Mnemon 是工程友好的冷记忆，GUIDE/hook/protocol/dreaming 负责二者之间的读取、积累和巩固。",
+        readingTitle: "阅读顺序",
+        reading: [
+          "先看三大核心：HostAgent、MEMORY.md、Mnemon。",
+          "再看五类支撑概念：GUIDE、setup、hook、protocol、subagent。",
+          "最后切换阶段，看每个 hook 如何把判断交给 skill 或 subagent。"
+        ],
+        componentsTitle: "系统组成",
+        componentsIntro: "这里先固定三大核心主体，再用统一的五类 harness 概念描述安装、触发、协议和后台维护。",
+        coreHeading: "三大核心主体",
+        assetHeading: "五类 Harness 概念",
+        cores: [
+          { name: "HostAgent", color: "var(--host)", text: "宿主 Agent 的核心引擎。它运行任务、接收 hook 注入，并根据 GUIDE.md 判断是否加载 skill 或启动 subagent。" },
+          { name: "MEMORY.md", color: "var(--working)", text: "热工作记忆主体。它是 LLM-native memory，Prime 直接加入 system prompt，效果最好但占用上下文。" },
+          { name: "Mnemon", color: "var(--longterm)", text: "冷长期记忆主体。它是 system-native memory，容量更大、成本更低，通过 focused recall 带回上下文。" }
+        ],
+        assets: [
+          { name: "GUIDE", color: "var(--guide)", text: "GUIDE.md 是 policy 文档，只说明何时读、何时写、何时巩固，以及什么值得保留。" },
+          { name: "setup", color: "var(--guide)", text: "setup 脚本负责安装 env、MEMORY.md、GUIDE.md、hooks、protocol skills 和 dreaming subagent。" },
+          { name: "hook", color: "var(--hook)", text: "Prime、Remind、Nudge、Compact 只提供触发时机和短提醒，不承载具体存储协议。" },
+          { name: "protocol", color: "var(--capability)", text: "memory_get.md 和 memory_set.md 是被 HostAgent 调用的 protocol skills，分别绑定 recall 与写入方法。" },
+          { name: "subagent", color: "var(--capability)", text: "dreaming 是专用维护 subagent，负责 MEMORY.md 压缩、丢弃和写入 Mnemon。" }
+        ],
+        rulesTitle: "关键规则",
+        rulesIntro: "这五类概念的边界固定后，memory loop 不会把 policy、时机、执行协议、后台维护和外部知识检索混在一起。",
+        rules: [
+          { name: "冷热分层", color: "var(--working)", text: "MEMORY.md 类似 RAM/cache，优化模型可用性；Mnemon 类似 indexed disk，优化容量、成本和持久召回。" },
+          { name: "实现可替换", color: "var(--longterm)", text: "MEMORY.md 和 Mnemon 是第一组实现。文件系统记忆可增强热侧；RAG、向量、图记忆可增强冷侧；dreaming 优化冷热交换。" },
+          { name: "GUIDE 只定义 policy", color: "var(--guide)", text: "GUIDE.md 只回答何时读记忆、何时写记忆、什么值得保留，不绑定 MEMORY.md 或 Mnemon。" },
+          { name: "hook 只给时机", color: "var(--hook)", text: "Prime、Remind、Nudge、Compact 都是宿主生命周期插槽，不直接执行复杂记忆操作。" },
+          { name: "protocol 绑定方法", color: "var(--capability)", text: "memory_get.md 负责 Mnemon recall；memory_set.md 通过 MNEMON_MEMORY_LOOP_DIR 定位并修改 MEMORY.md。" },
+          { name: "subagent 做巩固", color: "var(--working)", text: "Dreaming 不是普通 hook 或 skill。它是被启动的维护 subagent，先写 Mnemon，再整理 MEMORY.md。" },
+          { name: "知识库属于检索", color: "var(--longterm)", text: "外部 RAG、docs search、web search 默认是 retrieval tools。只有被内化为用户、项目或任务状态后才进入 memory。" }
+        ],
+        flowTitle: "运行数据流",
+        flowIntro: "点击阶段，只显示当前阶段的数据流，避免所有箭头同时出现。",
+        matrixTitle: "职责矩阵",
+        matrixHeaders: ["概念", "本 Loop 资产", "运行职责", "边界"],
+        laneSub: {
+          guide: "判断规则",
+          host: "核心引擎",
+          capability: "protocol / subagent",
+          working: "工作记忆",
+          longterm: "binary + store"
+        },
+        detailLabels: {
+          input: "输入",
+          trigger: "触发",
+          action: "执行",
+          boundary: "边界"
+        },
+        phases: {
+          prime: {
+            title: "Prime",
+            tag: "hook",
+            summary: "Prime 是唯一的直接加载路径：把 MEMORY.md 和 GUIDE.md 加入 HostAgent 的 system prompt。",
+            short: "MEMORY.md + GUIDE.md -> prompt",
+            events: [
+              { kind: "arrow", from: "working", to: "host", y: 96, label: "MEMORY.md 内容" },
+              { kind: "arrow", from: "guide", to: "host", y: 146, label: "GUIDE.md 规则" },
+              { kind: "action", actor: "host", y: 205, label: "带工作记忆启动" }
+            ],
+            details: [
+              ["input", "MEMORY.md + GUIDE.md"],
+              ["action", "直接加入 system prompt"],
+              ["boundary", "不调用 memory_get，不触发 Mnemon recall"]
+            ]
+          },
+          recall: {
+            title: "Remind / Recall",
+            tag: "hook + protocol",
+            summary: "Remind 只触发读记忆判断；如果需要读取，HostAgent 加载 memory_get.md protocol skill，并按其中协议调用 Mnemon。",
+            short: "GUIDE -> memory_get.md -> Mnemon",
+            events: [
+              { kind: "arrow", from: "guide", to: "host", y: 82, label: "是否读记忆？" },
+              { kind: "arrow", from: "host", to: "capability", y: 130, label: "加载 memory_get.md" },
+              { kind: "arrow", from: "capability", to: "longterm", y: 178, label: "mnemon recall 协议" },
+              { kind: "arrow", from: "longterm", to: "host", y: 226, label: "有界召回结果" }
+            ],
+            details: [
+              ["trigger", "Remind hook"],
+              ["action", "memory_get.md protocol skill 定义 recall 方法"],
+              ["boundary", "GUIDE.md 不需要知道长期记忆细节"]
+            ]
+          },
+          nudge: {
+            title: "Nudge / Accumulate",
+            tag: "hook + protocol",
+            summary: "Nudge 只触发写记忆判断；如果需要积累，HostAgent 加载 memory_set.md protocol skill，并按 MNEMON_MEMORY_LOOP_DIR 定位 MEMORY.md。",
+            short: "GUIDE -> memory_set.md -> $DIR/MEMORY.md",
+            events: [
+              { kind: "arrow", from: "guide", to: "host", y: 82, label: "是否写记忆？" },
+              { kind: "arrow", from: "host", to: "capability", y: 132, label: "加载 memory_set.md" },
+              { kind: "arrow", from: "capability", to: "working", y: 184, label: "patch MEMORY.md" },
+              { kind: "action", actor: "working", y: 232, label: "小型 prompt 状态" }
+            ],
+            details: [
+              ["trigger", "Nudge hook"],
+              ["action", "memory_set.md protocol skill 定义 MEMORY.md 编辑规则"],
+              ["boundary", "在线积累不直接写 Mnemon"]
+            ]
+          },
+          compact: {
+            title: "Compact",
+            tag: "hook + protocol",
+            summary: "Compact 与 Nudge 共享 memory_set.md，只是触发点在上下文压缩边界前，用来保存即将丢失的重要信息。",
+            short: "pre-compact -> memory_set.md -> $DIR/MEMORY.md",
+            events: [
+              { kind: "arrow", from: "guide", to: "host", y: 82, label: "压缩前是否保存？" },
+              { kind: "action", actor: "host", y: 130, label: "选择重要残留" },
+              { kind: "arrow", from: "host", to: "capability", y: 178, label: "加载 memory_set.md" },
+              { kind: "arrow", from: "capability", to: "working", y: 226, label: "最后写入 MEMORY.md" }
+            ],
+            details: [
+              ["trigger", "Compact hook"],
+              ["action", "复用 memory_set.md protocol skill"],
+              ["boundary", "不是 dreaming，不做全量压缩和长期写入"]
+            ]
+          },
+          dreaming: {
+            title: "Dreaming",
+            tag: "spawned subagent",
+            summary: "Dreaming 是专用维护 subagent。每次触发时通过 MNEMON_MEMORY_LOOP_DIR 读取完整 MEMORY.md，按规则写入 Mnemon，并整理工作记忆。",
+            short: "subagent -> Mnemon + MEMORY.md compact",
+            events: [
+              { kind: "arrow", from: "host", to: "capability", y: 78, label: "启动 dreaming subagent" },
+              { kind: "arrow", from: "guide", to: "capability", y: 122, label: "dreaming 规则" },
+              { kind: "arrow", from: "working", to: "capability", y: 166, label: "读取完整 MEMORY.md" },
+              { kind: "arrow", from: "capability", to: "longterm", y: 210, label: "按 Mnemon 协议写入" },
+              { kind: "arrow", from: "capability", to: "working", y: 252, label: "压缩 / 移除 MEMORY.md" }
+            ],
+            details: [
+              ["trigger", "MEMORY.md 超长、compact 前、主动要求"],
+              ["action", "启动专用 dreaming subagent"],
+              ["boundary", "负责巩固和清理，不参与每次在线读写判断"]
+            ]
+          }
+        },
+        matrixRows: [
+          ["Host runtime", "HostAgent", "运行任务，接收 hook，决定是否加载 protocol skill 或 subagent。", "不拥有记忆存储协议，只执行被安装的能力。", "var(--host)"],
+          ["Host-facing surface", "MEMORY.md", "作为 hot working memory 直接进入 system prompt。", "模型友好但昂贵；由 memory_set.md 和 dreaming subagent 维护。", "var(--working)"],
+          ["Canonical store", "Mnemon", "作为 cold long-term memory store 提供 recall 和 write。", "系统友好、容量更大；由 mnemon binary + store 承载。", "var(--longterm)"],
+          ["Memory pattern", "hot <-> cold contract", "协调 LLM-native 热记忆与 system-native 冷记忆。", "MEMORY.md 和 Mnemon 是第一组选择，不是唯一选择。", "var(--capability)"],
+          ["Retrieval tools", "web/docs/code/RAG search", "查询外部知识源，补充当前任务资料。", "默认不是 memory；只有内化为持久状态后才写入记忆。", "var(--host)"],
+          ["GUIDE", "GUIDE.md", "说明何时读写记忆、什么值得保留。", "只定义 policy，不绑定存储目标。", "var(--guide)"],
+          ["setup", "harness/setup + env.sh", "安装四个 hook、两个 protocol skills、dreaming subagent、memory 文件和环境变量。", "只负责挂载，并设置 MNEMON_MEMORY_LOOP_DIR。", "var(--guide)"],
+          ["hook", "prime/remind/nudge/compact", "提供宿主生命周期触发点。", "只给时机和短提醒，不承载记忆协议。", "var(--hook)"],
+          ["protocol", "memory_get.md / memory_set.md", "提供读长期记忆和写工作记忆的在线方法。", "绑定 Mnemon recall 与 MEMORY.md 编辑规则。", "var(--capability)"],
+          ["subagent", "dreaming", "维护、巩固和清理工作记忆。", "绑定 Mnemon write 与 MEMORY.md compact / eviction。", "var(--capability)"]
+        ]
+      },
+      en: {
+        langAttr: "en",
+        title: "Memory Loop MVP",
+        eyebrow: "Mnemon Harness / Memory Loop",
+        summary: "The first version implements one focused memory loop: MEMORY.md is model-friendly hot memory, Mnemon is system-friendly cold memory, and GUIDE/hooks/protocols/dreaming manage read, accumulation, and consolidation between them.",
+        readingTitle: "Reading Order",
+        reading: [
+          "Start with the three core parts: HostAgent, MEMORY.md, and Mnemon.",
+          "Then read the five harness concepts: GUIDE, setup, hook, protocol, and subagent.",
+          "Finally switch phases to see how each hook delegates to a skill or subagent."
+        ],
+        componentsTitle: "System Components",
+        componentsIntro: "This keeps the three core runtime parts stable, then describes installation, timing, protocol execution, and background maintenance through one shared harness vocabulary.",
+        coreHeading: "Three Core Parts",
+        assetHeading: "Five Harness Concepts",
+        cores: [
+          { name: "HostAgent", color: "var(--host)", text: "The host agent engine. It runs tasks, receives hook injections, and decides whether to load a skill or spawn a subagent according to GUIDE.md." },
+          { name: "MEMORY.md", color: "var(--working)", text: "The hot working-memory file. It is LLM-native memory: Prime injects it into the system prompt, so it is effective but context-expensive." },
+          { name: "Mnemon", color: "var(--longterm)", text: "The cold long-term memory store. It is system-native memory: larger, cheaper to keep, and paged back into context through focused recall." }
+        ],
+        assets: [
+          { name: "GUIDE", color: "var(--guide)", text: "GUIDE.md is the policy document: when to read, when to write, when to consolidate, and what is worth keeping." },
+          { name: "setup", color: "var(--guide)", text: "Setup scripts install env, MEMORY.md, GUIDE.md, hooks, protocol skills, and the dreaming subagent into the host." },
+          { name: "hook", color: "var(--hook)", text: "Prime, Remind, Nudge, and Compact provide timing and short reminders only. They do not carry storage protocols." },
+          { name: "protocol", color: "var(--capability)", text: "memory_get.md and memory_set.md are protocol skills loaded by the HostAgent for recall and working-memory writes." },
+          { name: "subagent", color: "var(--capability)", text: "Dreaming is the maintenance subagent for MEMORY.md compaction, eviction, and Mnemon writes." }
+        ],
+        rulesTitle: "Key Rules",
+        rulesIntro: "With these boundaries fixed, the memory loop does not mix policy, timing, protocol execution, background maintenance, and external knowledge retrieval.",
+        rules: [
+          { name: "Hot / Cold Split", color: "var(--working)", text: "MEMORY.md behaves like RAM/cache for model usability. Mnemon behaves like indexed disk for capacity, cost, and durable recall." },
+          { name: "Replaceable Implementations", color: "var(--longterm)", text: "MEMORY.md and Mnemon are the first choices. Filesystem memory can improve the hot side; RAG, vector, or graph memory can improve the cold side; dreaming improves the exchange." },
+          { name: "GUIDE Defines Policy", color: "var(--guide)", text: "GUIDE.md answers when to read memory, when to write memory, and what is worth keeping. It does not bind MEMORY.md or Mnemon." },
+          { name: "Hooks Provide Timing", color: "var(--hook)", text: "Prime, Remind, Nudge, and Compact are host lifecycle slots. They do not perform complex memory operations directly." },
+          { name: "Protocols Bind Methods", color: "var(--capability)", text: "memory_get.md performs Mnemon recall; memory_set.md locates and edits MEMORY.md through MNEMON_MEMORY_LOOP_DIR." },
+          { name: "Subagent Consolidates", color: "var(--working)", text: "Dreaming is not a normal hook or skill. It is a spawned maintenance subagent that writes Mnemon first, then organizes MEMORY.md." },
+          { name: "Knowledge Bases Are Retrieval", color: "var(--longterm)", text: "External RAG, docs search, and web search are retrieval tools by default. They become memory only after being internalized as durable user, project, or task state." }
+        ],
+        flowTitle: "Runtime Flow",
+        flowIntro: "Select a phase to isolate its data flow instead of showing every arrow at once.",
+        matrixTitle: "Responsibility Matrix",
+        matrixHeaders: ["Concept", "Loop Asset", "Runtime Role", "Boundary"],
+        laneSub: {
+          guide: "policy",
+          host: "core engine",
+          capability: "protocol / subagent",
+          working: "working memory",
+          longterm: "binary + store"
+        },
+        detailLabels: {
+          input: "Input",
+          trigger: "Trigger",
+          action: "Action",
+          boundary: "Boundary"
+        },
+        phases: {
+          prime: {
+            title: "Prime",
+            tag: "hook",
+            summary: "Prime is the only direct loading path: it injects MEMORY.md and GUIDE.md into the HostAgent system prompt.",
+            short: "MEMORY.md + GUIDE.md -> prompt",
+            events: [
+              { kind: "arrow", from: "working", to: "host", y: 96, label: "MEMORY.md content" },
+              { kind: "arrow", from: "guide", to: "host", y: 146, label: "GUIDE.md policy" },
+              { kind: "action", actor: "host", y: 205, label: "start with working memory" }
+            ],
+            details: [
+              ["input", "MEMORY.md + GUIDE.md"],
+              ["action", "Inject both into the system prompt"],
+              ["boundary", "Does not call memory_get or trigger Mnemon recall"]
+            ]
+          },
+          recall: {
+            title: "Remind / Recall",
+            tag: "hook + protocol",
+            summary: "Remind only prompts the read-memory decision. If recall is needed, the HostAgent loads the memory_get.md protocol skill and follows its Mnemon protocol.",
+            short: "GUIDE -> memory_get.md -> Mnemon",
+            events: [
+              { kind: "arrow", from: "guide", to: "host", y: 82, label: "read memory?" },
+              { kind: "arrow", from: "host", to: "capability", y: 130, label: "load memory_get.md" },
+              { kind: "arrow", from: "capability", to: "longterm", y: 178, label: "mnemon recall protocol" },
+              { kind: "arrow", from: "longterm", to: "host", y: 226, label: "bounded recall result" }
+            ],
+            details: [
+              ["trigger", "Remind hook"],
+              ["action", "memory_get.md protocol skill defines the recall method"],
+              ["boundary", "GUIDE.md does not need long-term storage details"]
+            ]
+          },
+          nudge: {
+            title: "Nudge / Accumulate",
+            tag: "hook + protocol",
+            summary: "Nudge only prompts the write-memory decision. If accumulation is needed, the HostAgent loads the memory_set.md protocol skill and locates MEMORY.md through MNEMON_MEMORY_LOOP_DIR.",
+            short: "GUIDE -> memory_set.md -> $DIR/MEMORY.md",
+            events: [
+              { kind: "arrow", from: "guide", to: "host", y: 82, label: "write memory?" },
+              { kind: "arrow", from: "host", to: "capability", y: 132, label: "load memory_set.md" },
+              { kind: "arrow", from: "capability", to: "working", y: 184, label: "patch MEMORY.md" },
+              { kind: "action", actor: "working", y: 232, label: "small prompt-facing state" }
+            ],
+            details: [
+              ["trigger", "Nudge hook"],
+              ["action", "memory_set.md protocol skill defines MEMORY.md editing rules"],
+              ["boundary", "Online accumulation does not write Mnemon directly"]
+            ]
+          },
+          compact: {
+            title: "Compact",
+            tag: "hook + protocol",
+            summary: "Compact shares memory_set.md with Nudge, but it runs before context compaction to preserve important information that may be lost.",
+            short: "pre-compact -> memory_set.md -> $DIR/MEMORY.md",
+            events: [
+              { kind: "arrow", from: "guide", to: "host", y: 82, label: "save before compact?" },
+              { kind: "action", actor: "host", y: 130, label: "select important residue" },
+              { kind: "arrow", from: "host", to: "capability", y: 178, label: "load memory_set.md" },
+              { kind: "arrow", from: "capability", to: "working", y: 226, label: "last MEMORY.md patch" }
+            ],
+            details: [
+              ["trigger", "Compact hook"],
+              ["action", "Reuse the memory_set.md protocol skill"],
+              ["boundary", "Not dreaming; no full cleanup or long-term write"]
+            ]
+          },
+          dreaming: {
+            title: "Dreaming",
+            tag: "spawned subagent",
+            summary: "Dreaming is a dedicated maintenance subagent. On each trigger it reads the full MEMORY.md through MNEMON_MEMORY_LOOP_DIR, writes durable material to Mnemon, then compacts working memory.",
+            short: "subagent -> Mnemon + MEMORY.md compact",
+            events: [
+              { kind: "arrow", from: "host", to: "capability", y: 78, label: "spawn dreaming subagent" },
+              { kind: "arrow", from: "guide", to: "capability", y: 122, label: "dreaming rules" },
+              { kind: "arrow", from: "working", to: "capability", y: 166, label: "read full MEMORY.md" },
+              { kind: "arrow", from: "capability", to: "longterm", y: 210, label: "write via Mnemon protocol" },
+              { kind: "arrow", from: "capability", to: "working", y: 252, label: "compact / evict MEMORY.md" }
+            ],
+            details: [
+              ["trigger", "MEMORY.md quota, pre-compact, or explicit request"],
+              ["action", "Spawn the dedicated dreaming subagent"],
+              ["boundary", "Handles consolidation and cleanup, not online read/write decisions"]
+            ]
+          }
+        },
+        matrixRows: [
+          ["Host runtime", "HostAgent", "Runs tasks, receives hooks, and decides whether to load a protocol skill or subagent.", "Does not own memory storage protocols.", "var(--host)"],
+          ["Host-facing surface", "MEMORY.md", "Enters the system prompt as hot working memory.", "Model-friendly but expensive; maintained by memory_set.md and dreaming.", "var(--working)"],
+          ["Canonical store", "Mnemon", "Provides recall and write for cold long-term memory.", "System-friendly with larger capacity; backed by the mnemon binary and store.", "var(--longterm)"],
+          ["Memory pattern", "hot <-> cold contract", "Coordinates LLM-native hot memory with system-native cold memory.", "MEMORY.md and Mnemon are first choices, not the only choices.", "var(--capability)"],
+          ["Retrieval tools", "web/docs/code/RAG search", "Queries external knowledge sources for the current task.", "Not memory by default; write only internalized durable state into memory.", "var(--host)"],
+          ["GUIDE", "GUIDE.md", "Explains when to read or write memory and what is worth keeping.", "Defines policy only, not storage targets.", "var(--guide)"],
+          ["setup", "harness/setup + env.sh", "Installs four hooks, two protocol skills, the dreaming subagent, memory files, and environment variables.", "Mounts assets and sets MNEMON_MEMORY_LOOP_DIR.", "var(--guide)"],
+          ["hook", "prime/remind/nudge/compact", "Provides host lifecycle trigger points.", "Provides timing and short reminders only, not memory protocols.", "var(--hook)"],
+          ["protocol", "memory_get.md / memory_set.md", "Provides the online methods for long-term recall and working-memory writes.", "Binds Mnemon recall and MEMORY.md editing rules.", "var(--capability)"],
+          ["subagent", "dreaming", "Maintains, consolidates, and cleans working memory.", "Binds Mnemon write with MEMORY.md compaction and eviction.", "var(--capability)"]
+        ]
+      }
+    };
+
+    const PHASE_ORDER = ["prime", "recall", "nudge", "compact", "dreaming"];
+    const LANGUAGE_STORAGE_KEY = "mnemon-memory-loop-lang";
+    const savedLang = readStoredLanguage();
+    let lang = COPY[savedLang] ? savedLang : ((navigator.language || "").toLowerCase().startsWith("zh") ? "zh" : "en");
+    let activeId = "prime";
+    let activeStepIndex = 0;
+
+    function readStoredLanguage() {
+      try {
+        return localStorage.getItem(LANGUAGE_STORAGE_KEY);
+      } catch {
+        return null;
+      }
+    }
+
+    function storeLanguage(nextLang) {
+      try {
+        localStorage.setItem(LANGUAGE_STORAGE_KEY, nextLang);
+      } catch {
+        return;
+      }
+    }
+
+    function currentCopy() {
+      return COPY[lang];
+    }
+
+    function lanes(t) {
+      return {
+        guide: { x: 105, title: "GUIDE.md", sub: t.laneSub.guide, color: COLOR.guide },
+        host: { x: 315, title: "HostAgent", sub: t.laneSub.host, color: COLOR.host },
+        capability: { x: 555, title: "Protocol / Subagent", sub: t.laneSub.capability, color: COLOR.capability },
+        working: { x: 805, title: "MEMORY.md", sub: t.laneSub.working, color: COLOR.working },
+        longterm: { x: 1020, title: "Mnemon", sub: t.laneSub.longterm, color: COLOR.longterm }
+      };
+    }
+
+    function splitLabel(label, max = 24) {
+      if (label.length <= max) return [label];
+      const words = label.split(" ");
+      if (words.length > 1) {
+        const lines = [];
+        let line = "";
+        words.forEach((word) => {
+          const next = line ? `${line} ${word}` : word;
+          if (next.length > max && line) {
+            lines.push(line);
+            line = word;
+          } else {
+            line = next;
+          }
+        });
+        if (line) lines.push(line);
+        return lines.slice(0, 3);
+      }
+      const chunks = [];
+      let rest = label;
+      while (rest.length > max) {
+        chunks.push(rest.slice(0, max));
+        rest = rest.slice(max);
+      }
+      if (rest) chunks.push(rest);
+      return chunks.slice(0, 3);
+    }
+
+    function svgLabelLines(lines, x, y, color, anchor = "middle", size = 13, weight = 700) {
+      return `<text x="${x}" y="${y}" text-anchor="${anchor}" fill="${color}" font-size="${size}" font-weight="${weight}" font-family="Inter, system-ui, sans-serif">${lines.map((line, index) => `<tspan x="${x}" dy="${index === 0 ? 0 : 16}">${line}</tspan>`).join("")}</text>`;
+    }
+
+    function svgLabel(label, x, y, color, anchor = "middle", size = 13, weight = 700, max = 24) {
+      return svgLabelLines(splitLabel(label, max), x, y, color, anchor, size, weight);
+    }
+
+    function stepBadge(index, x, y, active) {
+      const fill = active ? "#111827" : "#ffffff";
+      const stroke = active ? "#111827" : "#253040";
+      const text = active ? "#ffffff" : "#253040";
+      return `
+        <g class="step-trigger" data-step="${index}" tabindex="0" role="button" aria-label="Step ${index + 1}">
+          <circle cx="${x}" cy="${y}" r="13" fill="${fill}" stroke="${stroke}" stroke-width="2" />
+          <text x="${x}" y="${y + 4}" text-anchor="middle" fill="${text}" font-size="12" font-weight="900" font-family="Inter, system-ui, sans-serif">${index + 1}</text>
+        </g>
+      `;
+    }
+
+    function drawArrow(event, laneMap, markerId, index, active) {
+      const from = laneMap[event.from];
+      const to = laneMap[event.to];
+      const y = event.y;
+      const direction = from.x < to.x ? 1 : -1;
+      const x1 = from.x + direction * 64;
+      const x2 = to.x - direction * 64;
+      const mid = (x1 + x2) / 2;
+      const badgeY = y;
+      return `
+        <line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="${active ? "#111827" : "#253040"}" stroke-width="${active ? 3 : 2.2}" marker-end="url(#${markerId})" />
+        ${stepBadge(index, mid, badgeY, active)}
+      `;
+    }
+
+    function drawAction(event, laneMap, index, active) {
+      const lane = laneMap[event.actor];
+      const lines = splitLabel(event.label, 22);
+      const w = 184;
+      const h = 16 + lines.length * 16;
+      const x = lane.x - w / 2;
+      const y = event.y - h / 2;
+      const textY = event.y - ((lines.length - 1) * 8) + 4;
+      return `
+        <rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="${active ? "rgba(17,24,39,0.04)" : "#ffffff"}" stroke="${active ? "#111827" : lane.color}" stroke-width="${active ? 3 : 2}" />
+        ${svgLabelLines(lines, lane.x, textY, lane.color, "middle", 12, 800)}
+        ${stepBadge(index, x + 16, y - 8, active)}
+      `;
+    }
+
+    function drawDiagram(phase, t) {
+      const markerId = `arrow-${phase.title.replace(/[^a-z0-9]/gi, "-")}`;
+      const laneMap = lanes(t);
+      const laneGuides = Object.values(laneMap).map((lane) => `
+        <rect x="${lane.x - 92}" y="16" width="184" height="282" rx="8" fill="${lane.color}" opacity="0.045" />
+        <line x1="${lane.x}" y1="66" x2="${lane.x}" y2="288" stroke="${lane.color}" stroke-width="1.3" stroke-dasharray="6 7" opacity="0.52" />
+        <rect x="${lane.x - 82}" y="20" width="164" height="38" rx="19" fill="#ffffff" stroke="${lane.color}" stroke-width="2" />
+        ${svgLabel(lane.title, lane.x, 39, lane.color, "middle", 12, 900, 20)}
+        ${svgLabel(lane.sub, lane.x, 54, "#667085", "middle", 10, 700, 24)}
+      `).join("");
+
+      const events = phase.events.map((event, index) => {
+        if (event.kind === "arrow") return drawArrow(event, laneMap, markerId, index, index === activeStepIndex);
+        return drawAction(event, laneMap, index, index === activeStepIndex);
+      }).join("");
+
+      return `
+        <svg class="diagram" viewBox="0 0 1120 315" role="img" aria-label="${phase.title} data flow">
+          <defs>
+            <marker id="${markerId}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#253040"></path>
+            </marker>
+          </defs>
+          <rect x="0" y="0" width="1120" height="315" fill="rgba(255,255,255,0.82)" />
+          ${laneGuides}
+          ${events}
+        </svg>
+      `;
+    }
+
+    function renderStatic() {
+      const t = currentCopy();
+      document.documentElement.lang = t.langAttr;
+      document.title = `Mnemon ${t.title}`;
+      document.getElementById("eyebrow").textContent = t.eyebrow;
+      document.getElementById("page-title").textContent = t.title;
+      document.getElementById("page-summary").textContent = t.summary;
+      document.getElementById("reading-card").innerHTML = `<h2>${t.readingTitle}</h2><ol>${t.reading.map((item) => `<li>${item}</li>`).join("")}</ol>`;
+      document.getElementById("components-title").textContent = t.componentsTitle;
+      document.getElementById("components-intro").textContent = t.componentsIntro;
+      document.getElementById("core-heading").textContent = t.coreHeading;
+      document.getElementById("asset-heading").textContent = t.assetHeading;
+      document.getElementById("rules-title").textContent = t.rulesTitle;
+      document.getElementById("rules-intro").textContent = t.rulesIntro;
+      document.getElementById("flow-title").textContent = t.flowTitle;
+      document.getElementById("flow-intro").textContent = t.flowIntro;
+      document.getElementById("matrix-title").textContent = t.matrixTitle;
+
+      document.getElementById("core-row").innerHTML = t.cores.map((item) => `
+        <div class="core" style="--color: ${item.color};">
+          <b>${item.name}</b>
+          <p>${item.text}</p>
+        </div>
+      `).join("");
+
+      document.getElementById("asset-list").innerHTML = t.assets.map((item) => `
+        <div class="asset" style="--color: ${item.color};">
+          <b>${item.name}</b>
+          <p>${item.text}</p>
+        </div>
+      `).join("");
+
+      document.getElementById("rules").innerHTML = t.rules.map((item) => `
+        <article class="rule" style="--color: ${item.color};">
+          <b>${item.name}</b>
+          <p>${item.text}</p>
+        </article>
+      `).join("");
+    }
+
+    function renderLanguageSwitch() {
+      document.querySelectorAll("[data-lang]").forEach((button) => {
+        const pressed = button.dataset.lang === lang;
+        button.setAttribute("aria-pressed", pressed ? "true" : "false");
+        button.onclick = () => {
+          lang = button.dataset.lang;
+          storeLanguage(lang);
+          renderAll();
+        };
+      });
+    }
+
+    function renderNav() {
+      const t = currentCopy();
+      const nav = document.getElementById("phase-nav");
+      nav.innerHTML = "";
+      PHASE_ORDER.forEach((id) => {
+        const phase = t.phases[id];
+        const button = document.createElement("button");
+        button.type = "button";
+        button.style.setProperty("--color", phaseColors[id]);
+        button.setAttribute("aria-pressed", id === activeId ? "true" : "false");
+        button.innerHTML = `<strong>${phase.title}</strong><span>${phase.short}</span>`;
+        button.addEventListener("click", () => {
+          activeId = id;
+          activeStepIndex = 0;
+          renderNav();
+          renderPhase();
+        });
+        nav.appendChild(button);
+      });
+    }
+
+    const phaseColors = {
+      prime: "var(--host)",
+      recall: "var(--longterm)",
+      nudge: "var(--working)",
+      compact: "var(--working)",
+      dreaming: "var(--capability)"
+    };
+
+    function renderPhase() {
+      const t = currentCopy();
+      const phase = t.phases[activeId];
+      if (activeStepIndex >= phase.events.length) activeStepIndex = 0;
+      const view = document.getElementById("phase-view");
+      view.style.setProperty("--color", phaseColors[activeId]);
+      view.innerHTML = `
+        <div class="phase-head">
+          <div>
+            <h2>${phase.title}</h2>
+            <p>${phase.summary}</p>
+          </div>
+          <span class="tag">${phase.tag}</span>
+        </div>
+        <div class="diagram-wrap">${drawDiagram(phase, t)}</div>
+        <div class="flow-steps">
+          ${phase.events.map((event, index) => `
+            <button class="step-button step-trigger" type="button" data-step="${index}" style="--color: ${phaseColors[activeId]};" aria-pressed="${index === activeStepIndex ? "true" : "false"}">
+              <span class="step-index">${index + 1}</span>
+              <span>
+                <strong>${event.label}</strong>
+                <em>${stepPath(event, t)}</em>
+              </span>
+            </button>
+          `).join("")}
+        </div>
+        <div class="details">
+          ${phase.details.map(([label, text]) => `<div class="detail"><b>${t.detailLabels[label]}</b><p>${text}</p></div>`).join("")}
+        </div>
+      `;
+      view.querySelectorAll(".step-trigger").forEach((node) => {
+        node.addEventListener("click", () => {
+          activeStepIndex = Number(node.dataset.step);
+          renderPhase();
+        });
+        node.addEventListener("keydown", (event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            activeStepIndex = Number(node.dataset.step);
+            renderPhase();
+          }
+        });
+      });
+    }
+
+    function stepPath(event, t) {
+      const laneMap = lanes(t);
+      if (event.kind === "action") return `action in ${laneMap[event.actor].title}`;
+      return `${laneMap[event.from].title} -> ${laneMap[event.to].title}`;
+    }
+
+    function renderMatrix() {
+      const t = currentCopy();
+      const matrix = document.getElementById("matrix");
+      matrix.innerHTML = `
+        ${t.matrixHeaders.map((label) => `<div class="matrix-cell head">${label}</div>`).join("")}
+        ${t.matrixRows.map(([asset, type, role, boundary, color]) => `
+          <div class="matrix-cell" style="--color: ${color};"><b>${asset}</b></div>
+          <div class="matrix-cell"><p>${type}</p></div>
+          <div class="matrix-cell"><p>${role}</p></div>
+          <div class="matrix-cell"><p>${boundary}</p></div>
+        `).join("")}
+      `;
+    }
+
+    function renderAll() {
+      renderStatic();
+      renderLanguageSwitch();
+      renderNav();
+      renderPhase();
+      renderMatrix();
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>
