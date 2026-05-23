@@ -73,7 +73,7 @@ var recallCmd = &cobra.Command{
 
 		// Try to get query embedding for hybrid search
 		var queryVec []float64
-		ec := embed.NewClient()
+		ec := embed.NewClientWithModel(resolveEmbedModel())
 		if ec.Available() {
 			queryVec, _ = ec.Embed(keyword)
 		}

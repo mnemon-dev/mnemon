@@ -109,7 +109,7 @@ var rememberCmd = &cobra.Command{
 		// 1. Compute embedding BEFORE the transaction (HTTP call should not hold a DB lock)
 		var embeddingBlob []byte
 		var embeddingVec []float64
-		ec := embed.NewClient()
+		ec := embed.NewClientWithModel(resolveEmbedModel())
 		if ec.Available() {
 			if vec, err := ec.Embed(content); err == nil {
 				embeddingVec = vec

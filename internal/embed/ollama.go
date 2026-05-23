@@ -30,11 +30,22 @@ type Client struct {
 // It checks MNEMON_EMBED_ENDPOINT, MNEMON_EMBED_MODEL, and
 // MNEMON_EMBED_DIMENSIONS env vars.
 func NewClient() *Client {
+	return NewClientWithModel("")
+}
+
+// NewClientWithModel creates an Ollama embedding client with an explicit
+// model override. Resolution order for the model: explicit argument >
+// MNEMON_EMBED_MODEL env var > DefaultModel. The endpoint and dimensions
+// continue to be resolved from MNEMON_EMBED_ENDPOINT and
+// MNEMON_EMBED_DIMENSIONS env vars.
+func NewClientWithModel(model string) *Client {
 	endpoint := os.Getenv("MNEMON_EMBED_ENDPOINT")
 	if endpoint == "" {
 		endpoint = DefaultEndpoint
 	}
-	model := os.Getenv("MNEMON_EMBED_MODEL")
+	if model == "" {
+		model = os.Getenv("MNEMON_EMBED_MODEL")
+	}
 	if model == "" {
 		model = DefaultModel
 	}

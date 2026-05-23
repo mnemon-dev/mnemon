@@ -30,7 +30,7 @@ Modes:
 		}
 		defer db.Close()
 
-		ec := embed.NewClient()
+		ec := embed.NewClientWithModel(resolveEmbedModel())
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 
