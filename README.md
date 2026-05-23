@@ -185,6 +185,7 @@ memory is useful.
 - **Intent-aware recall** — graph traversal + optional vector search (RRF fusion), enabled by default for all queries
 - **Built-in deduplication** — `remember` auto-detects duplicates and conflicts; skips or auto-replaces
 - **Retention lifecycle** — importance decay, access-count boosting, and garbage collection
+- **Privacy-safe receipts** — export hashed operation receipts for memory-boundary audits without raw memory contents or queries
 - **Optional embeddings** — works fully without Ollama; add local [Ollama](https://ollama.ai) for enhanced vector+keyword hybrid search
 
 ## Vision

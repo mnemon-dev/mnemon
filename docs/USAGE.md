@@ -154,9 +154,37 @@ Different agents or processes can use different stores via the `MNEMON_STORE` en
 ### Observability
 
 ```bash
-mnemon status           # memory statistics
-mnemon log              # operation log (default: last 20)
-mnemon log --limit 50   # show more entries
+mnemon status              # memory statistics
+mnemon log                 # operation log (default: last 20)
+mnemon log --limit 50      # show more entries
+mnemon receipt             # JSON receipt with hashed recent operations
+mnemon receipt --limit 50  # include more operations in the receipt
+```
+
+`mnemon receipt` is for sharing or archiving memory-boundary evidence without
+publishing raw memories, recall queries, paths, or operation details. It emits
+operation names, timestamps, and SHA-256 hashes for identifiers/details so a
+team can prove that `remember`, `recall`, `forget`, or GC activity happened
+without exposing the underlying content.
+
+Example shape:
+
+```json
+{
+  "schema": "mnemon.memory.receipt.v1",
+  "privacy": {
+    "raw_detail_included": false,
+    "hash_algorithm": "sha256"
+  },
+  "events": [
+    {
+      "event_name": "mnemon.memory.operation.observed",
+      "operation": "remember",
+      "detail_present": true,
+      "detail_hash": "..."
+    }
+  ]
+}
 ```
 
 ### Visualization
