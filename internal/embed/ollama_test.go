@@ -59,3 +59,22 @@ func TestNewClientWithModel_DefaultEndpoint(t *testing.T) {
 		t.Errorf("default endpoint: want %q, got %q", DefaultEndpoint, c.Endpoint())
 	}
 }
+
+// TestNewClientWithModel_ExplicitEmptyTreatedAsUnset documents the deliberate
+// choice that --embed-model "" falls through to env-var/default rather than
+// being rejected. This matches how the existing --data-dir flag handles empty
+// strings and avoids surprises when a user clears the flag via shell scripting
+// such as `mnemon --embed-model "$MAYBE_MODEL" ...`.
+func TestNewClientWithModel_ExplicitEmptyTreatedAsUnset(t *testing.T) {
+	t.Setenv("MNEMON_EMBED_MODEL", "env-model")
+	c := NewClientWithModel("")
+	if c.Model() != "env-model" {
+		t.Errorf("explicit empty should fall through to env: want %q, got %q", "env-model", c.Model())
+	}
+
+	t.Setenv("MNEMON_EMBED_MODEL", "")
+	c = NewClientWithModel("")
+	if c.Model() != DefaultModel {
+		t.Errorf("explicit empty + no env should fall through to default: want %q, got %q", DefaultModel, c.Model())
+	}
+}

@@ -38,20 +38,26 @@ func init() {
 	if env := os.Getenv("MNEMON_DATA_DIR"); env != "" {
 		defaultDataDir = env
 	}
-	defaultEmbedModel := os.Getenv("MNEMON_EMBED_MODEL")
 	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", defaultDataDir, "base data directory (env: MNEMON_DATA_DIR)")
 	rootCmd.PersistentFlags().StringVar(&storeName, "store", "", "named memory store (overrides MNEMON_STORE and active file)")
 	rootCmd.PersistentFlags().BoolVar(&readOnly, "readonly", false, "open database in read-only mode (no WAL files, safe for read-only mounts)")
-	rootCmd.PersistentFlags().StringVar(&embedModel, "embed-model", defaultEmbedModel, fmt.Sprintf("Ollama embedding model used by embed/recall/remember (env: MNEMON_EMBED_MODEL, default: %s)", embed.DefaultModel))
+	rootCmd.PersistentFlags().StringVar(&embedModel, "embed-model", "",
+		fmt.Sprintf("Ollama embedding model used by embed/recall/remember (env: MNEMON_EMBED_MODEL; falls back to built-in default %q). NOTE: switching to a model with a different output dimension will silently invalidate existing embeddings — backfill after changing.", embed.DefaultModel))
 }
 
-// resolveEmbedModel returns the embedding model to pass into
-// embed.NewClientWithModel. Priority: --embed-model flag > MNEMON_EMBED_MODEL
-// env var > embed.DefaultModel (resolved inside NewClientWithModel).
+// resolveEmbedModel returns the embedding model selector that should be
+// passed to embed.NewClientWithModel.
 //
-// The empty string return value is intentional: it lets the embed package
-// apply its own env/default fallback chain and remain the single source of
-// truth for that resolution.
+// Resolution chain (delegated to NewClientWithModel):
+//
+//	non-empty --embed-model flag > MNEMON_EMBED_MODEL env var > embed.DefaultModel
+//
+// An explicitly empty --embed-model is treated as "unset" and falls through
+// to the env var / built-in default; this matches how the existing --data-dir
+// flag behaves and avoids surprises when a user clears the flag via shell
+// scripting. Env-var resolution happens inside NewClientWithModel at command
+// execution time (not at cmd/init time), so test setups using t.Setenv after
+// package init still work as expected.
 func resolveEmbedModel() string {
 	return embedModel
 }

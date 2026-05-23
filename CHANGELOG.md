@@ -8,12 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- `--embed-model` global flag (with existing `MNEMON_EMBED_MODEL` env var as
-  default) lets callers override the Ollama embedding model per-command
-  without exporting the env var, making it easier to use multilingual models
-  such as `nomic-embed-text-v2-moe:latest` for non-English or code-switched
-  corpora. The flag and env var apply consistently across `embed`, `recall`,
-  and `remember` so vectors stay comparable.
+- `--embed-model` global flag exposes the existing `MNEMON_EMBED_MODEL` env
+  var on the CLI, applied consistently across `embed`, `recall`, and
+  `remember`. Useful for switching to multilingual models such as
+  `nomic-embed-text-v2-moe:latest` on code-switched corpora without exporting
+  the env var. Note: switching to a model with a different output dimension
+  silently invalidates existing embeddings — backfill after changing.
 
 ## [0.1.7] - 2026-05-23
 
