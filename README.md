@@ -302,4 +302,6 @@ Mnemon combines the paradigm of one paper with the methodology of another, groun
 
 ## License
 
+Copyright 2026 Grivn and Mnemon contributors.
+
 [Apache-2.0](LICENSE)

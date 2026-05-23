@@ -63,7 +63,7 @@ brews:
     directory: Formula
     homepage: "https://github.com/mnemon-dev/mnemon"
     description: "Persistent memory for LLM agents"
-    license: "MIT"
+    license: "Apache-2.0"
     test: |
       system "#{bin}/mnemon", "--version"
     install: |
