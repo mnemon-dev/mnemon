@@ -207,6 +207,44 @@ func TestRecall_ScoreRoundedToThreeDecimals(t *testing.T) {
 	}
 }
 
+func TestRecall_CompactProjection_ConfidenceMatchesRoundedScore(t *testing.T) {
+	// Verify that the confidence label is derived from the rounded score,
+	// not the raw score. This matters at bucket boundaries where rounding
+	// can cross a cutoff.
+	cases := []struct {
+		rawScore  float64
+		wantScore float64
+		wantLabel string
+	}{
+		{0.5996, 0.6, "high"},     // boundary: rounding crosses 0.6 cutoff
+		{0.2496, 0.25, "medium"},  // boundary: rounding crosses 0.25 cutoff
+		{0.5994, 0.599, "medium"}, // just below boundary, no crossing
+	}
+
+	for _, tc := range cases {
+		resp := search.RecallResponse{
+			Results: []search.RecallResult{
+				{
+					Insight: &model.Insight{
+						ID:      "test-id",
+						Content: "test content",
+					},
+					Score:  tc.rawScore,
+					Intent: search.IntentGeneral,
+				},
+			},
+		}
+		compact := toCompact(resp)
+		r := compact.Results[0]
+		if r.Score != tc.wantScore {
+			t.Errorf("rawScore=%f: want Score=%f, got %f", tc.rawScore, tc.wantScore, r.Score)
+		}
+		if r.Confidence != tc.wantLabel {
+			t.Errorf("rawScore=%f: want Confidence=%q, got %q", tc.rawScore, tc.wantLabel, r.Confidence)
+		}
+	}
+}
+
 func TestRecall_CompactProjection_EmptyResults(t *testing.T) {
 	resp := search.RecallResponse{
 		Results: []search.RecallResult{},

@@ -77,6 +77,7 @@ func roundScore(s float64) float64 {
 func toCompact(resp search.RecallResponse) compactResponse {
 	results := make([]compactResult, 0, len(resp.Results))
 	for _, r := range resp.Results {
+		rounded := roundScore(r.Score)
 		cr := compactResult{
 			ID:         r.Insight.ID,
 			Content:    r.Insight.Content,
@@ -84,8 +85,8 @@ func toCompact(resp search.RecallResponse) compactResponse {
 			Importance: r.Insight.Importance,
 			Intent:     string(r.Intent),
 			MatchedVia: r.Via,
-			Confidence: confidenceLabel(r.Score),
-			Score:      roundScore(r.Score),
+			Confidence: confidenceLabel(rounded),
+			Score:      rounded,
 		}
 		results = append(results, cr)
 	}
