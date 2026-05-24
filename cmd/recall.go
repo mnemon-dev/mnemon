@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"strings"
 
@@ -20,7 +21,79 @@ var (
 	recBasic    bool
 	recSmart    bool //nolint:unused // deprecated: smart is now the default; kept for backward compat
 	recIntent   string
+	recVerbose  bool
 )
+
+// compactResult is the LLM-friendly projection of a recall result.
+// It drops signals, timestamps, traversal metadata, and other debug fields
+// that add noise for agent consumption.
+type compactResult struct {
+	ID         string  `json:"id"`
+	Content    string  `json:"content"`
+	Category   string  `json:"category,omitempty"`
+	Importance int     `json:"importance,omitempty"`
+	Intent     string  `json:"intent"`
+	MatchedVia string  `json:"matched_via,omitempty"`
+	Confidence string  `json:"confidence"`
+	Score      float64 `json:"score"`
+}
+
+// compactResponse wraps compact results with an optional hint.
+type compactResponse struct {
+	Results []compactResult `json:"results"`
+	Hint    string          `json:"hint,omitempty"`
+}
+
+// confidenceLowMax / confidenceMediumMax bucket the recall score into
+// low / medium / high labels for agent consumption. The score is the
+// weighted sum of normalized signals (keyword + entity + similarity +
+// graph), so it is not a calibrated probability. The current cutoffs
+// are chosen empirically and may need tuning once we have a larger
+// sample of real recall traces; until then the raw score is also
+// exposed for callers that need finer control.
+const (
+	confidenceLowMax    = 0.25
+	confidenceMediumMax = 0.6
+)
+
+// confidenceLabel maps a numeric score to a discrete confidence bucket.
+func confidenceLabel(score float64) string {
+	switch {
+	case score < confidenceLowMax:
+		return "low"
+	case score < confidenceMediumMax:
+		return "medium"
+	default:
+		return "high"
+	}
+}
+
+// roundScore rounds a float to 3 decimal places (half-away-from-zero).
+func roundScore(s float64) float64 {
+	return math.Round(s*1000) / 1000
+}
+
+// toCompact projects a full RecallResponse into the compact LLM-friendly shape.
+func toCompact(resp search.RecallResponse) compactResponse {
+	results := make([]compactResult, 0, len(resp.Results))
+	for _, r := range resp.Results {
+		cr := compactResult{
+			ID:         r.Insight.ID,
+			Content:    r.Insight.Content,
+			Category:   string(r.Insight.Category),
+			Importance: r.Insight.Importance,
+			Intent:     string(r.Intent),
+			MatchedVia: r.Via,
+			Confidence: confidenceLabel(r.Score),
+			Score:      roundScore(r.Score),
+		}
+		results = append(results, cr)
+	}
+	return compactResponse{
+		Results: results,
+		Hint:    resp.Meta.Hint,
+	}
+}
 
 var recallCmd = &cobra.Command{
 	Use:   "recall [keyword]",
@@ -43,7 +116,7 @@ var recallCmd = &cobra.Command{
 		enc.SetIndent("", "  ")
 
 		if recBasic {
-			// Legacy SQL LIKE recall
+			// Legacy SQL LIKE recall (not affected by format flags)
 			results, err := db.QueryInsights(store.QueryFilter{
 				Keyword:  keyword,
 				Category: recCategory,
@@ -78,7 +151,7 @@ var recallCmd = &cobra.Command{
 			queryVec, _ = ec.Embed(keyword)
 		}
 
-		// Extract query entities at cmd layer (avoid graph→search circular dep)
+		// Extract query entities at cmd layer (avoid graph->search circular dep)
 		queryEntities := graph.ExtractEntities(keyword)
 
 		resp, err := search.IntentAwareRecall(db, keyword, queryVec, queryEntities, recLimit, intentOverride)
@@ -89,7 +162,11 @@ var recallCmd = &cobra.Command{
 			_ = db.IncrementAccessCount(r.Insight.ID)
 		}
 		db.LogOp("recall", "", fmt.Sprintf("q=%s hits=%d", keyword, len(resp.Results)))
-		return enc.Encode(resp)
+
+		if recVerbose {
+			return enc.Encode(resp)
+		}
+		return enc.Encode(toCompact(resp))
 	},
 }
 
@@ -101,5 +178,6 @@ func init() {
 	recallCmd.Flags().BoolVar(&recSmart, "smart", false, "deprecated: smart is now the default")
 	_ = recallCmd.Flags().MarkHidden("smart")
 	recallCmd.Flags().StringVar(&recIntent, "intent", "", "override intent (WHY|WHEN|ENTITY|GENERAL)")
+	recallCmd.Flags().BoolVar(&recVerbose, "verbose", false, "output full recall response (signals, meta, timestamps)")
 	rootCmd.AddCommand(recallCmd)
 }

@@ -61,8 +61,16 @@ mnemon remember "Chose Qdrant over Milvus for vector search" \
 # Skip duplicate/conflict detection
 mnemon remember "Raw note" --no-diff
 
-# Recall — intent-aware graph-enhanced retrieval (default)
+# Recall — intent-aware graph-enhanced retrieval (default: compact output)
 mnemon recall "vector database" --limit 10
+
+# Recall with full verbose output (signals, meta, timestamps)
+mnemon recall "vector database" --verbose
+
+# Recall with explicit format selection
+mnemon recall "vector database" --format compact   # default
+mnemon recall "vector database" --format verbose   # same as --verbose
+mnemon recall "vector database" --format json      # alias for verbose
 
 # Recall with explicit intent override
 mnemon recall "why did we choose Qdrant" --intent WHY
@@ -101,6 +109,13 @@ mnemon forget <id>
 | `--cat` | | Filter by category |
 | `--source` | | Filter by source |
 | `--basic` | `false` | Use simple SQL LIKE matching instead of smart recall |
+| `--verbose` | `false` | Output full recall response (signals, meta, timestamps) |
+| `--format` | `compact` | Output format: `compact`, `verbose`, or `json` (alias for verbose) |
+
+The default compact output is optimized for LLM/agent consumption. It includes
+`id`, `content`, `category`, `importance`, `intent`, `matched_via`, `confidence`,
+and `score`. Use `--verbose` or `--format verbose` to restore the full payload
+with signals, traversal metadata, and timestamps.
 
 ### Graph Operations
 

@@ -216,14 +216,23 @@ assert_jq "importance is 4"        "$OUT" '.importance' '4'
 assert_contains "tags include tool" "$OUT" '"tool"'
 assert_contains "entities has Qdrant" "$OUT" '"Qdrant"'
 
-step "recall — keyword search"
+step "recall — keyword search (compact default)"
 OUT=$($M --data-dir "$TESTDIR" recall "Qdrant")
 show_json "$OUT" 10
 assert_contains "found Qdrant insight" "$OUT" "User prefers Qdrant"
+assert_contains "compact has confidence" "$OUT" '"confidence"'
+assert_not_contains "compact omits signals" "$OUT" '"signals"'
+assert_not_contains "compact omits anchor_count" "$OUT" '"anchor_count"'
 
-step "recall — no match returns sparse hint"
+step "recall — no match returns sparse hint (compact)"
 OUT=$($M --data-dir "$TESTDIR" recall "nonexistent_xyz")
 assert_contains "sparse hint" "$OUT" "sparse_results"
+
+step "recall --verbose — full payload"
+OUT=$($M --data-dir "$TESTDIR" recall "Qdrant" --verbose)
+assert_contains "verbose has meta" "$OUT" '"meta"'
+assert_contains "verbose has signals" "$OUT" '"signals"'
+assert_contains "verbose has anchor_count" "$OUT" '"anchor_count"'
 
 step "status — statistics"
 OUT=$($M --data-dir "$TESTDIR" status)
@@ -354,7 +363,7 @@ ID_Z=$(extract_id "$OUT_Z")
 assert_jq_gte "Z has causal edge to Y" "$OUT_Z" '.edges_created.causal' '1'
 
 step "multi-level traversal — smart recall finds depth-2 node"
-OUT=$($M --data-dir "$TESTDIR3" recall "why Alpha service routing" --smart)
+OUT=$($M --data-dir "$TESTDIR3" recall "why Alpha service routing" --smart --verbose)
 echo -e "    ${DIM}intent: $(echo "$OUT" | jq -r '.results[0].intent // "N/A"')  results: $(echo "$OUT" | jq '.results | length')${RESET}"
 echo "$OUT" | jq -r '.results[] | "    \(.via)\t\(.score | tostring | .[:6])\t\(.insight.content[:50])"' 2>/dev/null
 assert_contains "finds anchor X (Alpha)" "$OUT" "$ID_X"
@@ -362,18 +371,18 @@ assert_contains "finds depth-1 Y (routing)" "$OUT" "$ID_Y"
 assert_contains "finds depth-2 Z (caching)" "$OUT" "$ID_Z"
 
 step "smart recall — WHY intent"
-OUT=$($M --data-dir "$TESTDIR2" recall "why did we choose Qdrant" --smart)
+OUT=$($M --data-dir "$TESTDIR2" recall "why did we choose Qdrant" --smart --verbose)
 echo -e "    ${DIM}intent: $(echo "$OUT" | jq -r '.results[0].intent // "N/A"')  results: $(echo "$OUT" | jq '.results | length')${RESET}"
 assert_contains "intent is WHY" "$OUT" '"WHY"'
 assert_contains "finds Qdrant insight" "$OUT" "Qdrant"
 
 step "smart recall — WHEN intent"
-OUT=$($M --data-dir "$TESTDIR2" recall "when did we choose vector db" --smart)
+OUT=$($M --data-dir "$TESTDIR2" recall "when did we choose vector db" --smart --verbose)
 echo -e "    ${DIM}intent: $(echo "$OUT" | jq -r '.results[0].intent // "N/A"')  results: $(echo "$OUT" | jq '.results | length')${RESET}"
 assert_contains "intent is WHEN" "$OUT" '"WHEN"'
 
 step "smart recall — graph augments results"
-OUT=$($M --data-dir "$TESTDIR2" recall "why Qdrant performance" --smart)
+OUT=$($M --data-dir "$TESTDIR2" recall "why Qdrant performance" --smart --verbose)
 COUNT=$(echo "$OUT" | jq '.results | length')
 TOTAL=$((TOTAL + 1))
 if [ "$COUNT" -ge 2 ]; then
@@ -442,7 +451,7 @@ OUT=$($M --data-dir "$TESTDIR5" link "$ID_S1" "nonexistent-id-000" --type semant
 assert_contains "rejects missing insight" "$OUT" "not found"
 
 step "smart recall — semantic edges participate in traversal"
-OUT=$($M --data-dir "$TESTDIR5" recall "Go CLI" --smart)
+OUT=$($M --data-dir "$TESTDIR5" recall "Go CLI" --smart --verbose)
 COUNT=$(echo "$OUT" | jq '.results | length')
 TOTAL=$((TOTAL + 1))
 if [ "$COUNT" -ge 2 ]; then
@@ -595,7 +604,7 @@ if [ "$OLLAMA_OK" = "true" ]; then
   assert_jq "all embedded" "$OUT" '.coverage' '100%'
 
   step "recall --smart — uses hybrid search with embeddings"
-  OUT=$($M --data-dir "$TESTDIR7" recall "embedding test" --smart)
+  OUT=$($M --data-dir "$TESTDIR7" recall "embedding test" --smart --verbose)
   COUNT=$(echo "$OUT" | jq '.results | length')
   TOTAL=$((TOTAL + 1))
   if [ "$COUNT" -ge 1 ]; then
@@ -787,16 +796,16 @@ banner "Milestone 11: Smart Recall Reranking + Signals"
 # ══════════════════════════════════════════════════════════════════════
 
 step "smart recall — --intent override"
-OUT=$($M --data-dir "$TESTDIR3" recall "Alpha service" --smart --intent WHY)
+OUT=$($M --data-dir "$TESTDIR3" recall "Alpha service" --smart --intent WHY --verbose)
 assert_jq "intent is WHY" "$OUT" '.meta.intent' 'WHY'
 assert_jq "intent_source is override" "$OUT" '.meta.intent_source' 'override'
 
 step "smart recall — auto-detected intent source"
-OUT=$($M --data-dir "$TESTDIR3" recall "why Alpha service routing" --smart)
+OUT=$($M --data-dir "$TESTDIR3" recall "why Alpha service routing" --smart --verbose)
 assert_jq "intent_source is auto" "$OUT" '.meta.intent_source' 'auto'
 
 step "smart recall — signals metadata present"
-OUT=$($M --data-dir "$TESTDIR3" recall "Alpha service routing" --smart)
+OUT=$($M --data-dir "$TESTDIR3" recall "Alpha service routing" --smart --verbose)
 FIRST=$(echo "$OUT" | jq '.results[0]')
 assert_contains "has signals" "$FIRST" '"signals"'
 assert_contains "has keyword signal" "$FIRST" '"keyword"'
