@@ -1114,7 +1114,7 @@
         <mxCell id="i_c2" value="&lt;b&gt;Remember Decision Tree&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Step 1: directive/reasoning/state?&lt;br&gt;Step 2: overlap check (update/replace/create)&lt;br&gt;Step 3: cost-benefit evaluation&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E6FFE6;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="290" y="400" width="260" height="75" as="geometry"/>
         </mxCell>
-        <mxCell id="i_c3" value="&lt;b&gt;Sub-Agent Delegation&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Delegate to Task sub-agent&lt;br&gt;(Bash type, Sonnet model)&lt;br&gt;Only provide WHAT to store&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E6FFE6;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+        <mxCell id="i_c3" value="&lt;b&gt;Sub-Agent Delegation&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Delegate to Task sub-agent&lt;br&gt;(general-purpose type, Sonnet model)&lt;br&gt;Only provide WHAT to store&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#E6FFE6;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
           <mxGeometry x="580" y="400" width="210" height="75" as="geometry"/>
         </mxCell>
         <mxCell id="i_c4" value="&lt;font style=&quot;font-size:9px&quot;&gt;&lt;b&gt;Do NOT remember:&lt;/b&gt;&lt;br&gt;operational tasks,&lt;br&gt;public knowledge,&lt;br&gt;info in git&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">

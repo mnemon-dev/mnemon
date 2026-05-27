@@ -53,7 +53,7 @@ Aim for a rough distribution: ~20% at 4-5, ~50% at 2-3, ~30% at 1.
 Avoid defaulting everything to 4-5 — that defeats the scoring system.
 
 **What to store**: both conclusions AND context. Prefer storing a little too much over missing something useful.
-**How to store**: delegate to a Task sub-agent (`subagent_type="Bash"`, `model="sonnet"`).
+**How to store**: delegate to a Task sub-agent (`subagent_type="general-purpose"`, `model="sonnet"`).
 Only provide what to store — content, category, importance, entities, and create/update intent.
 The sub-agent will read the mnemon skill and execute the correct commands itself.
 
