@@ -79,6 +79,11 @@ mnemon recall "auth" --basic
 # Search — token-scored keyword search
 mnemon search "authentication" --limit 10
 
+# Import — bulk-import a memory draft file (see docs/IMPORT.md for schema and LLM prompt)
+mnemon import memory_draft.json
+mnemon import --dry-run memory_draft.json   # validate without writing
+mnemon import --no-diff memory_draft.json   # skip deduplication
+
 # Forget — soft-delete an insight
 mnemon forget <id>
 ```

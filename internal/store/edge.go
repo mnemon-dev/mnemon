@@ -98,6 +98,14 @@ func (db *DB) GetAllEdges() ([]*model.Edge, error) {
 	return scanEdges(rows)
 }
 
+// DeleteEdge removes one typed edge between two nodes.
+func (db *DB) DeleteEdge(sourceID string, targetID string, edgeType model.EdgeType) error {
+	_, err := db.execer().Exec(
+		`DELETE FROM edges WHERE source_id = ? AND target_id = ? AND edge_type = ?`,
+		sourceID, targetID, string(edgeType))
+	return err
+}
+
 // DeleteEdgesByNode removes all edges referencing a node.
 func (db *DB) DeleteEdgesByNode(nodeID string) error {
 	_, err := db.execer().Exec(

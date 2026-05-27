@@ -508,6 +508,19 @@ func (db *DB) GetRecentInsightsBySource(source string, excludeID string, limit i
 	return scanInsights(rows)
 }
 
+// GetActiveInsightsBySourceOrdered returns active insights for a source in chronological order.
+func (db *DB) GetActiveInsightsBySourceOrdered(source string) ([]*model.Insight, error) {
+	rows, err := db.execer().Query(
+		`SELECT id, content, category, importance, tags, entities, source, access_count, created_at, updated_at, deleted_at
+		 FROM insights WHERE source = ? AND deleted_at IS NULL
+		 ORDER BY created_at ASC, rowid ASC`, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanInsights(rows)
+}
+
 // GetAllActiveInsights returns all non-deleted insights.
 func (db *DB) GetAllActiveInsights() ([]*model.Insight, error) {
 	rows, err := db.execer().Query(

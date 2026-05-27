@@ -18,6 +18,24 @@ type Engine struct {
 	db         *store.DB
 	embedCache EmbedCache
 	entityMode EntityMode
+	options    EngineOptions
+}
+
+// TemporalMode controls whether the engine creates temporal edges.
+type TemporalMode string
+
+const (
+	// TemporalEnabled creates temporal edges using the normal real-time write path.
+	TemporalEnabled TemporalMode = "enabled"
+	// TemporalDisabled skips temporal edges. Import paths can repair historical
+	// temporal edges after all backdated insights are written.
+	TemporalDisabled TemporalMode = "disabled"
+)
+
+// EngineOptions configures automatic edge generation.
+type EngineOptions struct {
+	EntityMode   EntityMode
+	TemporalMode TemporalMode
 }
 
 // NewEngine creates a new graph edge engine.
@@ -28,7 +46,18 @@ func NewEngine(db *store.DB, embedCache EmbedCache) *Engine {
 
 // NewEngineWithEntityMode creates a graph engine with configurable entity handling.
 func NewEngineWithEntityMode(db *store.DB, embedCache EmbedCache, entityMode EntityMode) *Engine {
-	return &Engine{db: db, embedCache: embedCache, entityMode: entityMode}
+	return NewEngineWithOptions(db, embedCache, EngineOptions{EntityMode: entityMode})
+}
+
+// NewEngineWithOptions creates a graph engine with explicit generation options.
+func NewEngineWithOptions(db *store.DB, embedCache EmbedCache, options EngineOptions) *Engine {
+	if options.EntityMode == "" {
+		options.EntityMode = EntityModeMerge
+	}
+	if options.TemporalMode == "" {
+		options.TemporalMode = TemporalEnabled
+	}
+	return &Engine{db: db, embedCache: embedCache, entityMode: options.EntityMode, options: options}
 }
 
 // OnInsightCreated runs all edge generators for a newly created insight.
@@ -40,7 +69,9 @@ func (e *Engine) OnInsightCreated(insight *model.Insight) EdgeStats {
 	insight.Entities = ResolveEntities(insight.Content, insight.Entities, e.entityMode)
 
 	// 2. Temporal backbone + proximity edges
-	stats.Temporal = CreateTemporalEdge(e.db, insight)
+	if e.options.TemporalMode != TemporalDisabled {
+		stats.Temporal = CreateTemporalEdge(e.db, insight)
+	}
 
 	// 3. Entity co-occurrence edges
 	stats.Entity = CreateEntityEdges(e.db, insight)
