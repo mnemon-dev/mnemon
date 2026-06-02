@@ -339,6 +339,54 @@ func TestResolveEntitiesIndexed_AutoMode(t *testing.T) {
 	}
 }
 
+func TestExtractEntitiesIndexed_FirstMentionNotInIndex_NotCaptured(t *testing.T) {
+	// Documents the intended boundary of the fourth path: it is filter-only,
+	// not a self-seeding extractor. A single-segment CamelCase entity that
+	// has never been stored is NOT admitted by auto-mode extraction. This
+	// means the fourth path cannot bootstrap new vocabulary on its own — a
+	// first appearance must come via the existing regex+dictionary paths or
+	// via pre-provided entities (typical for LLM-extracted or user-supplied
+	// entity lists). Establishes that there is no write-side deadlock:
+	// auto-mode of a never-seen entity simply returns the baseline result
+	// (which excludes single-segment CamelCase), it does not block or error.
+	emptyIndex := map[string]bool{}
+	entities := ExtractEntitiesIndexed("Athena and Hestia are codenames", emptyIndex)
+	has := toSet(entities)
+	if has["Athena"] || has["Hestia"] {
+		t.Errorf("never-seen single-segment CamelCase must NOT be admitted by an empty index; got %v", entities)
+	}
+}
+
+func TestExtractEntitiesIndexed_SeedingViaProvidedEntities(t *testing.T) {
+	// Verifies the full seed-then-propagate cycle the design depends on:
+	// (1) a first-mention insight carries the entity via pre-provided
+	//     entities through ResolveEntitiesIndexed in merge mode (the engine
+	//     default), and the entity reaches the final list even with an
+	//     empty index — the fourth path does not interfere with seeding.
+	// (2) once the entity is "in" the index (modeled here by adding it to
+	//     the map between calls — the engine writes it to the insight, the
+	//     next LoadKnownEntities will see it), a subsequent auto-mode
+	//     extraction picks it up via the fourth path.
+	// Together: the fourth path consumes the index, the existing provided/
+	// regex paths feed it. There is no chicken-and-egg deadlock.
+	const newVocab = "Athena"
+
+	// Step 1: first-mention insight, provided entity, empty index.
+	firstResolved := ResolveEntitiesIndexed("seeding the new vocabulary", []string{newVocab}, EntityModeMerge, map[string]bool{})
+	hasFirst := toSet(firstResolved)
+	if !hasFirst[newVocab] {
+		t.Fatalf("seed step: provided entity %q should reach the final list even with empty index; got %v", newVocab, firstResolved)
+	}
+
+	// Step 2: subsequent auto-mode extraction with the entity now in index.
+	index := map[string]bool{newVocab: true}
+	secondResolved := ResolveEntitiesIndexed("a follow-up mentioning Athena later", nil, EntityModeAuto, index)
+	hasSecond := toSet(secondResolved)
+	if !hasSecond[newVocab] {
+		t.Errorf("propagate step: auto-mode should admit %q via the fourth path once in the index; got %v", newVocab, secondResolved)
+	}
+}
+
 func TestResolveEntitiesIndexed_NilIndexEqualsResolveEntities(t *testing.T) {
 	content := "Built with Go and SQLite"
 	provided := []string{"deployment-pipeline"}
