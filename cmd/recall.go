@@ -152,8 +152,13 @@ var recallCmd = &cobra.Command{
 			queryVec, _ = ec.Embed(keyword)
 		}
 
-		// Extract query entities at cmd layer (avoid graph->search circular dep)
-		queryEntities := graph.ExtractEntities(keyword)
+		// Extract query entities at cmd layer (avoid graph->search circular dep).
+		// Load the known-entity set so the indexed extractor's fourth path can
+		// admit user vocabulary (single-segment CamelCase, lowercase project
+		// names) that techDictionary does not cover. The lookup is read-only;
+		// on error we fall through to the default regex+dictionary extractor.
+		knownEntities, _ := db.LoadKnownEntities()
+		queryEntities := graph.ExtractEntitiesIndexed(keyword, knownEntities)
 
 		resp, err := search.IntentAwareRecall(db, keyword, queryVec, queryEntities, recLimit, intentOverride)
 		if err != nil {

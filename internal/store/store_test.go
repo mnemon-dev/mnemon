@@ -768,3 +768,72 @@ func TestMigrateIfNeeded_NoLegacy(t *testing.T) {
 		t.Fatalf("migrate empty: %v", err)
 	}
 }
+
+// --- LoadKnownEntities ---
+
+func TestLoadKnownEntities_Empty(t *testing.T) {
+	db := testDB(t)
+	known, err := db.LoadKnownEntities()
+	if err != nil {
+		t.Fatalf("load known entities on empty DB: %v", err)
+	}
+	if known == nil {
+		t.Error("want non-nil empty map, got nil")
+	}
+	if len(known) != 0 {
+		t.Errorf("want 0 known entities, got %d: %v", len(known), known)
+	}
+}
+
+func TestLoadKnownEntities_DistinctUnion(t *testing.T) {
+	db := testDB(t)
+	a := makeInsight("ent-a", "first", 3)
+	a.Entities = []string{"Athena", "Hestia"}
+	b := makeInsight("ent-b", "second", 3)
+	b.Entities = []string{"Hestia", "Mnemon"} // Hestia overlaps with a
+	for _, ins := range []*model.Insight{a, b} {
+		if err := db.InsertInsight(ins); err != nil {
+			t.Fatalf("insert %s: %v", ins.ID, err)
+		}
+	}
+
+	known, err := db.LoadKnownEntities()
+	if err != nil {
+		t.Fatalf("load known entities: %v", err)
+	}
+	for _, want := range []string{"Athena", "Hestia", "Mnemon"} {
+		if !known[want] {
+			t.Errorf("want %q in known set, got %v", want, known)
+		}
+	}
+	if len(known) != 3 {
+		t.Errorf("want 3 distinct entities (Hestia deduped), got %d: %v", len(known), known)
+	}
+}
+
+func TestLoadKnownEntities_SkipsDeleted(t *testing.T) {
+	db := testDB(t)
+	live := makeInsight("ent-live", "kept", 3)
+	live.Entities = []string{"Athena"}
+	dead := makeInsight("ent-dead", "dropped", 3)
+	dead.Entities = []string{"Banana"}
+	for _, ins := range []*model.Insight{live, dead} {
+		if err := db.InsertInsight(ins); err != nil {
+			t.Fatalf("insert %s: %v", ins.ID, err)
+		}
+	}
+	if err := db.SoftDeleteInsight("ent-dead"); err != nil {
+		t.Fatalf("soft delete: %v", err)
+	}
+
+	known, err := db.LoadKnownEntities()
+	if err != nil {
+		t.Fatalf("load known entities: %v", err)
+	}
+	if !known["Athena"] {
+		t.Errorf("want 'Athena' from live insight, got %v", known)
+	}
+	if known["Banana"] {
+		t.Errorf("'Banana' is on a soft-deleted insight — must not appear, got %v", known)
+	}
+}

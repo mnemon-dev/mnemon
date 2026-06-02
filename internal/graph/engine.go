@@ -65,8 +65,15 @@ func NewEngineWithOptions(db *store.DB, embedCache EmbedCache, options EngineOpt
 func (e *Engine) OnInsightCreated(insight *model.Insight) EdgeStats {
 	var stats EdgeStats
 
-	// 1. Resolve entities from pre-provided values and/or regex+dictionary extraction.
-	insight.Entities = ResolveEntities(insight.Content, insight.Entities, e.entityMode)
+	// 1. Resolve entities from pre-provided values and/or regex+dictionary
+	//    extraction. The indexed variant adds a fourth path that admits
+	//    wide-cast capitalized tokens and known-word matches filtered against
+	//    the existing entity index, so user vocabulary already represented in
+	//    the graph propagates into new insights without dictionary edits. On
+	//    error the index lookup falls through to nil and behavior matches the
+	//    non-indexed extractor.
+	knownEntities, _ := e.db.LoadKnownEntities()
+	insight.Entities = ResolveEntitiesIndexed(insight.Content, insight.Entities, e.entityMode, knownEntities)
 
 	// 2. Temporal backbone + proximity edges
 	if e.options.TemporalMode != TemporalDisabled {

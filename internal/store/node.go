@@ -134,6 +134,36 @@ func (db *DB) UpdateEntities(id string, entities []string) error {
 	return err
 }
 
+// LoadKnownEntities returns the set of distinct entities that appear on at
+// least one active (non-deleted) insight. It returns an empty (non-nil) map
+// when no insights carry entities. The result is intended for use as a
+// read-only filter — for example, by an index-aware entity extractor that
+// admits wide-cast candidates only when they match a previously stored
+// entity.
+func (db *DB) LoadKnownEntities() (map[string]bool, error) {
+	known := make(map[string]bool)
+	rows, err := db.execer().Query(
+		`SELECT DISTINCT je.value FROM insights i, json_each(i.entities) je
+		 WHERE i.deleted_at IS NULL`)
+	if err != nil {
+		return nil, fmt.Errorf("load known entities: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var v string
+		if err := rows.Scan(&v); err != nil {
+			return nil, fmt.Errorf("scan known entity: %w", err)
+		}
+		if v != "" {
+			known[v] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate known entities: %w", err)
+	}
+	return known, nil
+}
+
 // IncrementAccessCount bumps the access count and refreshes last_accessed_at.
 // No-op when the database is read-only.
 func (db *DB) IncrementAccessCount(id string) error {

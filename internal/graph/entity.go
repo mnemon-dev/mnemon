@@ -52,6 +52,18 @@ var entityPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`[《「]([^》」]+)[》」]`),
 }
 
+// wideEntityPatterns are looser regexes whose matches are NOT admitted on
+// their own — they must be filtered against a caller-supplied known-entity
+// set. They form the "fourth path" of ExtractEntitiesIndexed: a wide cast
+// over capitalized tokens (single-segment CamelCase, name-like identifiers)
+// that the default patterns deliberately skip to avoid noise. The index
+// acts as the filter, so noise is dropped before it reaches the caller.
+var wideEntityPatterns = []*regexp.Regexp{
+	// Capitalized tokens of length >= 2 — covers single-segment CamelCase
+	// (Athena, Hestia, FastAPI) without admitting bare initial-caps words.
+	regexp.MustCompile(`\b([A-Z][a-zA-Z0-9]+)\b`),
+}
+
 // techDictionary contains common technology terms that regex patterns miss
 // because they look like ordinary words (lowercase, single word, etc.).
 var techDictionary = map[string]bool{
@@ -144,13 +156,74 @@ func ExtractEntities(text string) []string {
 
 // ResolveEntities returns the final entity list for a content/provided pair.
 func ResolveEntities(content string, provided []string, mode EntityMode) []string {
+	return ResolveEntitiesIndexed(content, provided, mode, nil)
+}
+
+// ExtractEntitiesIndexed extends ExtractEntities with a fourth extraction
+// path: a wide-cast regex over capitalized tokens plus a tokenized scan over
+// the rest of the text, whose candidates are admitted only when they appear
+// in knownEntities. The index is used purely as a filter (never as a
+// generator), so this stays read-only with respect to the entity store and
+// never feeds its own output back into the index.
+//
+// The fourth path exists because the default regex+dictionary paths
+// short-circuit to an empty entity set on text whose only entities are
+// single-segment CamelCase names (e.g., personal-project vocabulary) that
+// are not in techDictionary. When such names already appear on prior
+// insights — i.e., live in the entity index — the indexed extractor admits
+// them on subsequent text without any dictionary edit.
+//
+// When knownEntities is nil or empty, behavior is identical to
+// ExtractEntities. Callers without DB access can pass nil to get the
+// pre-existing semantics.
+func ExtractEntitiesIndexed(text string, knownEntities map[string]bool) []string {
+	entities := ExtractEntities(text)
+	if len(knownEntities) == 0 {
+		return entities
+	}
+	seen := make(map[string]bool, len(entities)+8)
+	for _, e := range entities {
+		seen[e] = true
+	}
+	// Fourth-path A: wide-cast capitalized tokens, admitted only when known.
+	for _, pat := range wideEntityPatterns {
+		for _, m := range pat.FindAllStringSubmatch(text, -1) {
+			cand := m[len(m)-1]
+			if cand == "" || seen[cand] || acronymStopwords[cand] {
+				continue
+			}
+			if knownEntities[cand] {
+				seen[cand] = true
+				entities = append(entities, cand)
+			}
+		}
+	}
+	// Fourth-path B: every tokenized word, admitted only when known. This
+	// catches non-CamelCase user vocabulary stored in the index (e.g.,
+	// lowercase project names or short identifiers).
+	for _, word := range splitWords(text) {
+		if word == "" || seen[word] || acronymStopwords[word] {
+			continue
+		}
+		if knownEntities[word] {
+			seen[word] = true
+			entities = append(entities, word)
+		}
+	}
+	return entities
+}
+
+// ResolveEntitiesIndexed is the index-aware sibling of ResolveEntities.
+// See ExtractEntitiesIndexed for the fourth-path semantics. A nil
+// knownEntities map is identical to calling ResolveEntities.
+func ResolveEntitiesIndexed(content string, provided []string, mode EntityMode, knownEntities map[string]bool) []string {
 	switch mode {
 	case EntityModeProvided:
 		return mergeEntities(provided, nil)
 	case EntityModeAuto:
-		return mergeEntities(nil, ExtractEntities(content))
+		return mergeEntities(nil, ExtractEntitiesIndexed(content, knownEntities))
 	default:
-		return mergeEntities(provided, ExtractEntities(content))
+		return mergeEntities(provided, ExtractEntitiesIndexed(content, knownEntities))
 	}
 }
 

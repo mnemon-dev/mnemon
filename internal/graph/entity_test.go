@@ -193,6 +193,177 @@ func TestSplitWords_Punctuation(t *testing.T) {
 	}
 }
 
+// --- Fourth-path (index-aware) extraction tests ---
+
+func TestExtractEntitiesIndexed_NilIndexMatchesExtractEntities(t *testing.T) {
+	text := "Built with Go and SQLite, deployed on Docker"
+	a := ExtractEntities(text)
+	b := ExtractEntitiesIndexed(text, nil)
+	if !equalAsSets(a, b) {
+		t.Errorf("nil index should match ExtractEntities: base=%v indexed=%v", a, b)
+	}
+}
+
+func TestExtractEntitiesIndexed_EmptyIndexMatchesExtractEntities(t *testing.T) {
+	text := "Built with Go and SQLite, deployed on Docker"
+	a := ExtractEntities(text)
+	b := ExtractEntitiesIndexed(text, map[string]bool{})
+	if !equalAsSets(a, b) {
+		t.Errorf("empty index should match ExtractEntities: base=%v indexed=%v", a, b)
+	}
+}
+
+func TestExtractEntitiesIndexed_SingleSegmentCamelCase_AdmittedWhenKnown(t *testing.T) {
+	// Default paths skip single-segment CamelCase to avoid noise. With the
+	// name in the index, the fourth path admits it.
+	known := map[string]bool{"Athena": true, "Hestia": true}
+	entities := ExtractEntitiesIndexed("Athena and Hestia are project codenames", known)
+	has := toSet(entities)
+	if !has["Athena"] {
+		t.Errorf("want known single-segment CamelCase 'Athena', got %v", entities)
+	}
+	if !has["Hestia"] {
+		t.Errorf("want known single-segment CamelCase 'Hestia', got %v", entities)
+	}
+}
+
+func TestExtractEntitiesIndexed_SingleSegmentCamelCase_RejectedWhenUnknown(t *testing.T) {
+	// Negative case: ensure the filter is doing work. A capitalized token
+	// not in the index must NOT be admitted.
+	known := map[string]bool{"Athena": true}
+	entities := ExtractEntitiesIndexed("Banana is a tasty fruit and Athena is our agent", known)
+	has := toSet(entities)
+	if has["Banana"] {
+		t.Errorf("'Banana' is not in index — should not be admitted, got %v", entities)
+	}
+	if !has["Athena"] {
+		t.Errorf("'Athena' is in index — should be admitted, got %v", entities)
+	}
+}
+
+func TestExtractEntitiesIndexed_LowercaseKnownWordAdmitted(t *testing.T) {
+	// Fourth-path B: tokenized scan picks up lowercase index entries that
+	// the regex-based paths cannot match.
+	known := map[string]bool{"openclaw": true}
+	entities := ExtractEntitiesIndexed("see openclaw docs for the harness layer", known)
+	has := toSet(entities)
+	if !has["openclaw"] {
+		t.Errorf("want lowercase known 'openclaw', got %v", entities)
+	}
+}
+
+func TestExtractEntitiesIndexed_PreservesDefaultPaths(t *testing.T) {
+	// The fourth path is purely additive — existing CamelCase, acronym, and
+	// dictionary matches must still come through.
+	known := map[string]bool{"Athena": true}
+	entities := ExtractEntitiesIndexed("Athena uses HttpServer and Go to call API", known)
+	has := toSet(entities)
+	if !has["Athena"] {
+		t.Errorf("want fourth-path 'Athena', got %v", entities)
+	}
+	if !has["HttpServer"] {
+		t.Errorf("want CamelCase 'HttpServer', got %v", entities)
+	}
+	if !has["Go"] {
+		t.Errorf("want techDictionary 'Go', got %v", entities)
+	}
+	if !has["API"] {
+		t.Errorf("want acronym 'API', got %v", entities)
+	}
+}
+
+func TestExtractEntitiesIndexed_NoDuplicates(t *testing.T) {
+	known := map[string]bool{"Athena": true}
+	entities := ExtractEntitiesIndexed("Athena Athena Athena", known)
+	count := 0
+	for _, e := range entities {
+		if e == "Athena" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("want 1 'Athena', got %d (entities=%v)", count, entities)
+	}
+}
+
+func TestExtractEntitiesIndexed_StopwordsStillFilter(t *testing.T) {
+	// Even if a stopword were perversely listed in the index, the stopword
+	// filter must still reject it — defense-in-depth.
+	known := map[string]bool{"THE": true, "IS": true}
+	entities := ExtractEntitiesIndexed("IT IS IN THE BOX", known)
+	has := toSet(entities)
+	if has["THE"] {
+		t.Errorf("'THE' is a stopword — must not be admitted, got %v", entities)
+	}
+	if has["IS"] {
+		t.Errorf("'IS' is a stopword — must not be admitted, got %v", entities)
+	}
+}
+
+func TestResolveEntitiesIndexed_MergeMode(t *testing.T) {
+	known := map[string]bool{"Athena": true}
+	entities := ResolveEntitiesIndexed("Athena deploys HttpServer", []string{"deployment-pipeline"}, EntityModeMerge, known)
+	has := toSet(entities)
+	if !has["deployment-pipeline"] {
+		t.Errorf("merge mode should keep provided entity, got %v", entities)
+	}
+	if !has["Athena"] {
+		t.Errorf("merge mode should include fourth-path 'Athena', got %v", entities)
+	}
+	if !has["HttpServer"] {
+		t.Errorf("merge mode should include CamelCase 'HttpServer', got %v", entities)
+	}
+}
+
+func TestResolveEntitiesIndexed_ProvidedModeIgnoresIndex(t *testing.T) {
+	known := map[string]bool{"Athena": true}
+	entities := ResolveEntitiesIndexed("Athena deploys HttpServer", []string{"deployment-pipeline"}, EntityModeProvided, known)
+	has := toSet(entities)
+	if !has["deployment-pipeline"] {
+		t.Errorf("provided mode should keep provided entity, got %v", entities)
+	}
+	if has["Athena"] || has["HttpServer"] {
+		t.Errorf("provided mode should ignore extraction (and the index), got %v", entities)
+	}
+}
+
+func TestResolveEntitiesIndexed_AutoMode(t *testing.T) {
+	known := map[string]bool{"Athena": true}
+	entities := ResolveEntitiesIndexed("Athena deploys HttpServer", []string{"deployment-pipeline"}, EntityModeAuto, known)
+	has := toSet(entities)
+	if has["deployment-pipeline"] {
+		t.Errorf("auto mode should ignore provided entities, got %v", entities)
+	}
+	if !has["Athena"] || !has["HttpServer"] {
+		t.Errorf("auto mode should include extracted entities, got %v", entities)
+	}
+}
+
+func TestResolveEntitiesIndexed_NilIndexEqualsResolveEntities(t *testing.T) {
+	content := "Built with Go and SQLite"
+	provided := []string{"deployment-pipeline"}
+	for _, mode := range []EntityMode{EntityModeMerge, EntityModeProvided, EntityModeAuto} {
+		a := ResolveEntities(content, provided, mode)
+		b := ResolveEntitiesIndexed(content, provided, mode, nil)
+		if !equalAsSets(a, b) {
+			t.Errorf("mode=%s: nil-indexed should equal ResolveEntities; base=%v indexed=%v", mode, a, b)
+		}
+	}
+}
+
+func equalAsSets(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	am := toSet(a)
+	for _, v := range b {
+		if !am[v] {
+			return false
+		}
+	}
+	return true
+}
+
 func toSet(s []string) map[string]bool {
 	m := make(map[string]bool, len(s))
 	for _, v := range s {
