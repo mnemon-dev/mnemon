@@ -79,10 +79,65 @@ func ClaudeWriteHook(configDir, filename string, content []byte) (string, error)
 	return hookPath, nil
 }
 
+// userClaudeConfigDir returns the directory Claude Code treats as user-global
+// configuration: $CLAUDE_CONFIG_DIR when set, otherwise ~/.claude.
+func userClaudeConfigDir() string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return dir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(home, ".claude")
+}
+
+// canonicalPath returns the symlink-resolved absolute form of p, falling back
+// to the lexical absolute path when p does not (yet) exist.
+func canonicalPath(p string) string {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return p
+	}
+	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
+		return resolved
+	}
+	return abs
+}
+
+// collidesWithUserConfig reports whether a project-local config dir is in fact
+// Claude Code's user-global config dir — the degenerate case of running a
+// project-local setup with cwd == $HOME, where "./.claude" IS "~/.claude".
+// Relative hook commands written into that file load for every session on the
+// machine but only resolve when the session's working directory is $HOME;
+// the user-global file's contract is absolute paths. Both sides are resolved
+// through symlinks before comparison.
+func collidesWithUserConfig(configDir string) bool {
+	userDir := userClaudeConfigDir()
+	if userDir == "" {
+		return false
+	}
+	return canonicalPath(configDir) == canonicalPath(userDir)
+}
+
 // ClaudeRegisterHooks registers selected hooks in settings.json.
 // Prime (SessionStart) is always registered.
+//
+// When the project-local config dir collides with the user-global one (setup
+// run from $HOME), hook commands are written as absolute paths so they honor
+// the global file's contract and resolve from any session directory.
 func ClaudeRegisterHooks(configDir string, sel HookSelection) (string, error) {
 	hooksDir := filepath.Join(configDir, "hooks", "mnemon")
+	if collidesWithUserConfig(configDir) {
+		abs, err := filepath.Abs(hooksDir)
+		if err != nil {
+			return "", err
+		}
+		hooksDir = abs
+		fmt.Printf("  Note: this project config dir is Claude Code's user-global config (%s);\n"+
+			"        writing absolute hook paths so hooks resolve from any directory.\n"+
+			"        Use --global to make a user-wide install explicit.\n", userClaudeConfigDir())
+	}
 	settingsPath := filepath.Join(configDir, "settings.json")
 	data, err := ReadJSONFile(settingsPath)
 	if err != nil {
