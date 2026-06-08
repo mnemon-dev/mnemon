@@ -3,17 +3,21 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/mnemon-dev/mnemon/internal/embed"
 	_ "modernc.org/sqlite"
 )
 
 // DefaultStoreName is the fallback store when none is specified.
 const DefaultStoreName = "default"
+
+const embeddingFloat32UserVersion = 1
 
 var validStoreNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*$`)
 
@@ -311,6 +315,9 @@ CREATE INDEX IF NOT EXISTS idx_oplog_created ON oplog(created_at);
 	if err := addColumnIfNotExists(db.conn, `ALTER TABLE insights ADD COLUMN embedding BLOB`); err != nil {
 		return fmt.Errorf("add embedding: %w", err)
 	}
+	if err := db.migrateEmbeddingsToFloat32(); err != nil {
+		return fmt.Errorf("migrate embeddings to float32: %w", err)
+	}
 
 	// Lifecycle migration: add effective_importance column
 	if err := addColumnIfNotExists(db.conn, `ALTER TABLE insights ADD COLUMN effective_importance REAL DEFAULT 0.5`); err != nil {
@@ -349,6 +356,82 @@ func addColumnIfNotExists(conn *sql.DB, stmt string) error {
 		return nil
 	}
 	return err
+}
+
+func (db *DB) migrateEmbeddingsToFloat32() error {
+	var userVersion int
+	if err := db.conn.QueryRow(`PRAGMA user_version`).Scan(&userVersion); err != nil {
+		return err
+	}
+	if userVersion >= embeddingFloat32UserVersion {
+		return nil
+	}
+
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.Query(`SELECT id, embedding FROM insights WHERE embedding IS NOT NULL`)
+	if err != nil {
+		return fmt.Errorf("select embeddings: %w", err)
+	}
+	type migratedEmbedding struct {
+		id   string
+		blob []byte
+	}
+	var migrated []migratedEmbedding
+	for rows.Next() {
+		var id string
+		var blob []byte
+		if err := rows.Scan(&id, &blob); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan embedding: %w", err)
+		}
+		vec := embed.DeserializeLegacyVector(blob)
+		if vec == nil || !looksLikeLegacyVector(vec) {
+			// Not a parseable legacy float64 blob (empty, malformed, or
+			// already in float32 form) — leave it untouched. Aborting the
+			// whole migration over one bad row would permanently block the
+			// database from opening, and re-encoding non-legacy data here
+			// would silently corrupt it.
+			fmt.Fprintf(os.Stderr, "mnemon: skipping float32 migration for insight %s: embedding is not a legacy float64 vector (%d bytes)\n", id, len(blob))
+			continue
+		}
+		migrated = append(migrated, migratedEmbedding{id: id, blob: embed.SerializeVector(vec)})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("scan embeddings: %w", err)
+	}
+	rows.Close()
+
+	for _, item := range migrated {
+		if _, err := tx.Exec(`UPDATE insights SET embedding = ? WHERE id = ?`, item.blob, item.id); err != nil {
+			return fmt.Errorf("update embedding %s: %w", item.id, err)
+		}
+	}
+	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, embeddingFloat32UserVersion)); err != nil {
+		return fmt.Errorf("set user_version: %w", err)
+	}
+
+	return tx.Commit()
+}
+
+// looksLikeLegacyVector reports whether v's values are plausible for an
+// embedding (finite and of reasonable magnitude). It guards against
+// misreading an already-migrated float32 blob as legacy float64: reinterpreting
+// arbitrary float32 bit patterns as float64 yields NaN, Inf, or extreme
+// magnitudes with overwhelming probability, so a vector that looks "normal"
+// is almost certainly genuine legacy data.
+func looksLikeLegacyVector(v []float64) bool {
+	for _, f := range v {
+		if math.IsNaN(f) || math.IsInf(f, 0) || math.Abs(f) > 1e6 {
+			return false
+		}
+	}
+	return true
 }
 
 // migrateRemoveNarrativeEdges recreates the edges table without the 'narrative' type

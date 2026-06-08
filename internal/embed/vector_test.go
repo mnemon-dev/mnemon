@@ -1,6 +1,7 @@
 package embed
 
 import (
+	"encoding/binary"
 	"math"
 	"testing"
 )
@@ -70,9 +71,28 @@ func TestCosineSimilarity_ScaledVector(t *testing.T) {
 }
 
 func TestSerializeDeserialize_Roundtrip(t *testing.T) {
-	original := []float64{1.5, -2.7, 0.0, 3.14159, math.MaxFloat64}
+	original := []float64{1.5, -2.7, 0.0, 3.14159, -0.125}
 	blob := SerializeVector(original)
 	restored := DeserializeVector(blob)
+
+	wantLen := len(original) * 4
+	if len(blob) != wantLen {
+		t.Fatalf("blob length: want %d, got %d", wantLen, len(blob))
+	}
+	if len(restored) != len(original) {
+		t.Fatalf("length mismatch: want %d, got %d", len(original), len(restored))
+	}
+	for i := range original {
+		if math.Abs(original[i]-restored[i]) > 1e-6 {
+			t.Errorf("index %d: want %f, got %f", i, original[i], restored[i])
+		}
+	}
+}
+
+func TestDeserializeVector_LegacyFloat64(t *testing.T) {
+	original := []float64{1.5, -2.7, 0.0, 3.14159, math.MaxFloat64}
+	blob := serializeLegacyFloat64(original)
+	restored := DeserializeLegacyVector(blob)
 
 	if len(restored) != len(original) {
 		t.Fatalf("length mismatch: want %d, got %d", len(original), len(restored))
@@ -101,8 +121,22 @@ func TestDeserializeVector_Empty(t *testing.T) {
 }
 
 func TestDeserializeVector_InvalidLength(t *testing.T) {
-	// 7 bytes is not a multiple of 8
+	// 7 bytes is not a multiple of 4
 	if v := DeserializeVector(make([]byte, 7)); v != nil {
 		t.Errorf("invalid blob length: want nil, got %v", v)
 	}
+}
+
+func TestDeserializeLegacyVector_InvalidLength(t *testing.T) {
+	if v := DeserializeLegacyVector(make([]byte, 7)); v != nil {
+		t.Errorf("invalid legacy blob length: want nil, got %v", v)
+	}
+}
+
+func serializeLegacyFloat64(v []float64) []byte {
+	buf := make([]byte, len(v)*8)
+	for i, f := range v {
+		binary.LittleEndian.PutUint64(buf[i*8:], math.Float64bits(f))
+	}
+	return buf
 }

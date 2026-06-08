@@ -1,12 +1,15 @@
 package store
 
 import (
+	"bytes"
+	"encoding/binary"
 	"math"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/mnemon-dev/mnemon/internal/embed"
 	"github.com/mnemon-dev/mnemon/internal/model"
 )
 
@@ -562,7 +565,7 @@ func TestUpdateAndGetEmbedding(t *testing.T) {
 	db := testDB(t)
 	db.InsertInsight(makeInsight("emb-1", "content", 3))
 
-	blob := []byte{1, 2, 3, 4, 5, 6, 7, 8} // 1 float64
+	blob := []byte{1, 2, 3, 4} // 1 float32
 	if err := db.UpdateEmbedding("emb-1", blob); err != nil {
 		t.Fatalf("update embedding: %v", err)
 	}
@@ -571,8 +574,135 @@ func TestUpdateAndGetEmbedding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get embedding: %v", err)
 	}
+	if len(got) != 4 {
+		t.Errorf("want 4 bytes, got %d", len(got))
+	}
+}
+
+func TestMigrateEmbeddingsToFloat32(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Open(dir)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.InsertInsight(makeInsight("emb-mig-1", "legacy embedding", 3)); err != nil {
+		t.Fatalf("insert insight: %v", err)
+	}
+	legacy := serializeLegacyEmbedding([]float64{1.5, -2.25})
+	if err := db.UpdateEmbedding("emb-mig-1", legacy); err != nil {
+		t.Fatalf("update legacy embedding: %v", err)
+	}
+	if _, err := db.conn.Exec(`PRAGMA user_version = 0`); err != nil {
+		t.Fatalf("clear user_version: %v", err)
+	}
+	db.Close()
+
+	db, err = Open(dir)
+	if err != nil {
+		t.Fatalf("reopen db: %v", err)
+	}
+	defer db.Close()
+
+	var userVersion int
+	if err := db.conn.QueryRow(`PRAGMA user_version`).Scan(&userVersion); err != nil {
+		t.Fatalf("get user_version: %v", err)
+	}
+	if userVersion != embeddingFloat32UserVersion {
+		t.Fatalf("user_version: want %d, got %d", embeddingFloat32UserVersion, userVersion)
+	}
+
+	got, err := db.GetEmbedding("emb-mig-1")
+	if err != nil {
+		t.Fatalf("get migrated embedding: %v", err)
+	}
 	if len(got) != 8 {
-		t.Errorf("want 8 bytes, got %d", len(got))
+		t.Fatalf("migrated blob length: want 8 bytes, got %d", len(got))
+	}
+	vec := embed.DeserializeVector(got)
+	if len(vec) != 2 {
+		t.Fatalf("migrated vector length: want 2, got %d", len(vec))
+	}
+	if math.Abs(vec[0]-1.5) > 1e-6 || math.Abs(vec[1]-(-2.25)) > 1e-6 {
+		t.Fatalf("migrated vector: got %v", vec)
+	}
+}
+
+func TestMigrateEmbeddingsToFloat32_SkipsUnreadableBlobs(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Open(dir)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+
+	// A genuine legacy float64 embedding — should be migrated normally.
+	if err := db.InsertInsight(makeInsight("emb-mig-good", "good", 3)); err != nil {
+		t.Fatalf("insert good insight: %v", err)
+	}
+	good := serializeLegacyEmbedding([]float64{0.5, -0.75})
+	if err := db.UpdateEmbedding("emb-mig-good", good); err != nil {
+		t.Fatalf("update good embedding: %v", err)
+	}
+
+	// A malformed blob whose length isn't a multiple of 8 must not abort the
+	// whole migration (and thus block the database from ever opening again).
+	if err := db.InsertInsight(makeInsight("emb-mig-malformed", "malformed", 3)); err != nil {
+		t.Fatalf("insert malformed insight: %v", err)
+	}
+	malformed := []byte{1, 2, 3, 4, 5}
+	if err := db.UpdateEmbedding("emb-mig-malformed", malformed); err != nil {
+		t.Fatalf("update malformed embedding: %v", err)
+	}
+
+	// A blob whose bytes decode to NaN as float64 simulates already-migrated
+	// float32 (or other non-legacy) data that happens to satisfy len%8==0.
+	// It must be left untouched rather than re-encoded as garbage.
+	if err := db.InsertInsight(makeInsight("emb-mig-implausible", "implausible", 3)); err != nil {
+		t.Fatalf("insert implausible insight: %v", err)
+	}
+	implausible := []byte{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}
+	if err := db.UpdateEmbedding("emb-mig-implausible", implausible); err != nil {
+		t.Fatalf("update implausible embedding: %v", err)
+	}
+
+	if _, err := db.conn.Exec(`PRAGMA user_version = 0`); err != nil {
+		t.Fatalf("clear user_version: %v", err)
+	}
+	db.Close()
+
+	db, err = Open(dir)
+	if err != nil {
+		t.Fatalf("reopen db: %v", err)
+	}
+	defer db.Close()
+
+	var userVersion int
+	if err := db.conn.QueryRow(`PRAGMA user_version`).Scan(&userVersion); err != nil {
+		t.Fatalf("get user_version: %v", err)
+	}
+	if userVersion != embeddingFloat32UserVersion {
+		t.Fatalf("user_version: want %d, got %d", embeddingFloat32UserVersion, userVersion)
+	}
+
+	got, err := db.GetEmbedding("emb-mig-good")
+	if err != nil {
+		t.Fatalf("get migrated embedding: %v", err)
+	}
+	vec := embed.DeserializeVector(got)
+	if len(vec) != 2 || math.Abs(vec[0]-0.5) > 1e-6 || math.Abs(vec[1]-(-0.75)) > 1e-6 {
+		t.Fatalf("migrated vector: got %v", vec)
+	}
+
+	for id, want := range map[string][]byte{
+		"emb-mig-malformed":   malformed,
+		"emb-mig-implausible": implausible,
+	} {
+		gotBlob, err := db.GetEmbedding(id)
+		if err != nil {
+			t.Fatalf("get %s: %v", id, err)
+		}
+		if !bytes.Equal(gotBlob, want) {
+			t.Fatalf("%s blob: want %v, got %v (should be left untouched)", id, want, gotBlob)
+		}
 	}
 }
 
@@ -767,6 +897,14 @@ func TestMigrateIfNeeded_NoLegacy(t *testing.T) {
 	if err := MigrateIfNeeded(base); err != nil {
 		t.Fatalf("migrate empty: %v", err)
 	}
+}
+
+func serializeLegacyEmbedding(v []float64) []byte {
+	buf := make([]byte, len(v)*8)
+	for i, f := range v {
+		binary.LittleEndian.PutUint64(buf[i*8:], math.Float64bits(f))
+	}
+	return buf
 }
 
 // --- LoadKnownEntities ---
