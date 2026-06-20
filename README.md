@@ -111,6 +111,16 @@ One command deploys the mnemon skill, prompt files, and Cursor lifecycle hooks
 to `.cursor/`. The integration primes new agent sessions with Mnemon guidance
 and memory status, then nudges for durable-memory writeback after responses.
 
+### [Trae](https://www.trae.ai/)
+
+```bash
+mnemon setup --target trae --yes
+```
+
+One command deploys the mnemon skill, prompt files, and Trae native hooks to
+`.trae/`. The integration uses `SessionStart`, `UserPromptSubmit`, and `Stop`
+hooks in `.trae/hooks.json`.
+
 ### [OpenClaw](https://github.com/openclaw/openclaw)
 
 ```bash

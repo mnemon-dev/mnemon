@@ -92,6 +92,16 @@ mnemon setup
 
 `mnemon setup` 自动检测 Claude Code，交互式部署技能文件、钩子和行为引导。启动新会话 — 记忆自动运作。
 
+### [Trae](https://www.trae.ai/)
+
+```bash
+mnemon setup --target trae --yes
+```
+
+一条命令将 mnemon skill、prompt 文件和 Trae 原生 hooks 部署到 `.trae/`。
+该集成使用 `.trae/hooks.json` 中的 `SessionStart`、`UserPromptSubmit` 和
+`Stop` hooks。
+
 ### [OpenClaw](https://github.com/openclaw/openclaw)
 
 ```bash
