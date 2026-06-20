@@ -9,8 +9,8 @@ import (
 
 // Environment describes a detected LLM CLI environment.
 type Environment struct {
-	Name      string // "claude-code", "codex", "cursor", "trae", "qoder", "qoderwork", "codebuddy", "openclaw", "nanobot", "pi", "hermes"
-	Display   string // "Claude Code", "Codex", "Cursor", "Trae", "Qoder", "QoderWork", "CodeBuddy", "OpenClaw", "Nanobot", "Pi", "Hermes Agent"
+	Name      string // "claude-code", "codex", "cursor", "trae", "qoder", "qoderwork", "codebuddy", "workbuddy", "openclaw", "nanobot", "pi", "hermes"
+	Display   string // "Claude Code", "Codex", "Cursor", "Trae", "Qoder", "QoderWork", "CodeBuddy", "WorkBuddy", "OpenClaw", "Nanobot", "Pi", "Hermes Agent"
 	Detected  bool   // CLI binary or global config dir found
 	BinPath   string // exec.LookPath result
 	Installed bool   // mnemon integration present at ConfigDir
@@ -36,6 +36,7 @@ func DetectEnvironments(global bool) []Environment {
 		detectQoder(global),
 		detectQoderWork(),
 		detectCodeBuddy(global),
+		detectWorkBuddy(global),
 		detectOpenClaw(global),
 		detectNanobot(global),
 		detectPi(global),
@@ -295,6 +296,47 @@ func detectCodeBuddy(global bool) Environment {
 	}
 
 	if binPath, err := exec.LookPath("codebuddy"); err == nil {
+		env.Detected = true
+		env.BinPath = binPath
+	}
+	if _, err := os.Stat(globalDir); err == nil {
+		env.Detected = true
+	}
+
+	skillPath := filepath.Join(configDir, "skills", "mnemon", "SKILL.md")
+	settingsPath := filepath.Join(configDir, "settings.json")
+	if _, err := os.Stat(skillPath); err == nil {
+		env.Installed = true
+	} else if data, err := ReadJSONFile(settingsPath); err == nil && containsMnemon(data) {
+		env.Installed = true
+	}
+
+	if env.BinPath != "" {
+		if out, err := exec.Command(env.BinPath, "--version").Output(); err == nil {
+			env.Version = cleanVersion(strings.TrimSpace(string(out)))
+		}
+	}
+
+	return env
+}
+
+func detectWorkBuddy(global bool) Environment {
+	home := HomeDir()
+	globalDir := filepath.Join(home, ".workbuddy")
+	localDir := ".workbuddy"
+
+	configDir := localDir
+	if global {
+		configDir = globalDir
+	}
+
+	env := Environment{
+		Name:      "workbuddy",
+		Display:   "WorkBuddy",
+		ConfigDir: configDir,
+	}
+
+	if binPath, err := exec.LookPath("workbuddy"); err == nil {
 		env.Detected = true
 		env.BinPath = binPath
 	}
