@@ -84,7 +84,7 @@ make install
 mnemon --version
 ```
 
-### Claude Code
+### [Claude Code](https://github.com/anthropics/claude-code)
 
 ```bash
 mnemon setup
