@@ -9,8 +9,8 @@ import (
 
 // Environment describes a detected LLM CLI environment.
 type Environment struct {
-	Name      string // "claude-code", "codex", "cursor", "trae", "openclaw", "nanobot", "pi", "hermes"
-	Display   string // "Claude Code", "Codex", "Cursor", "Trae", "OpenClaw", "Nanobot", "Pi", "Hermes Agent"
+	Name      string // "claude-code", "codex", "cursor", "trae", "qoder", "qoderwork", "openclaw", "nanobot", "pi", "hermes"
+	Display   string // "Claude Code", "Codex", "Cursor", "Trae", "Qoder", "QoderWork", "OpenClaw", "Nanobot", "Pi", "Hermes Agent"
 	Detected  bool   // CLI binary or global config dir found
 	BinPath   string // exec.LookPath result
 	Installed bool   // mnemon integration present at ConfigDir
@@ -33,6 +33,8 @@ func DetectEnvironments(global bool) []Environment {
 		detectCodex(global),
 		detectCursor(global),
 		detectTrae(global),
+		detectQoder(global),
+		detectQoderWork(),
 		detectOpenClaw(global),
 		detectNanobot(global),
 		detectPi(global),
@@ -187,6 +189,82 @@ func detectTrae(global bool) Environment {
 	if _, err := os.Stat(skillPath); err == nil {
 		env.Installed = true
 	} else if data, err := ReadJSONFile(hooksPath); err == nil && containsMnemon(data) {
+		env.Installed = true
+	}
+
+	if env.BinPath != "" {
+		if out, err := exec.Command(env.BinPath, "--version").Output(); err == nil {
+			env.Version = cleanVersion(strings.TrimSpace(string(out)))
+		}
+	}
+
+	return env
+}
+
+func detectQoder(global bool) Environment {
+	home := HomeDir()
+	globalDir := filepath.Join(home, ".qoder")
+	localDir := ".qoder"
+
+	configDir := localDir
+	if global {
+		configDir = globalDir
+	}
+
+	env := Environment{
+		Name:      "qoder",
+		Display:   "Qoder",
+		ConfigDir: configDir,
+	}
+
+	if binPath, err := exec.LookPath("qoder"); err == nil {
+		env.Detected = true
+		env.BinPath = binPath
+	}
+	if _, err := os.Stat(globalDir); err == nil {
+		env.Detected = true
+	}
+
+	skillPath := filepath.Join(configDir, "skills", "mnemon", "SKILL.md")
+	settingsPath := filepath.Join(configDir, "settings.json")
+	if _, err := os.Stat(skillPath); err == nil {
+		env.Installed = true
+	} else if data, err := ReadJSONFile(settingsPath); err == nil && containsMnemon(data) {
+		env.Installed = true
+	}
+
+	if env.BinPath != "" {
+		if out, err := exec.Command(env.BinPath, "--version").Output(); err == nil {
+			env.Version = cleanVersion(strings.TrimSpace(string(out)))
+		}
+	}
+
+	return env
+}
+
+func detectQoderWork() Environment {
+	home := HomeDir()
+	configDir := filepath.Join(home, ".qoderwork")
+
+	env := Environment{
+		Name:      "qoderwork",
+		Display:   "QoderWork",
+		ConfigDir: configDir,
+	}
+
+	if binPath, err := exec.LookPath("qoderwork"); err == nil {
+		env.Detected = true
+		env.BinPath = binPath
+	}
+	if _, err := os.Stat(configDir); err == nil {
+		env.Detected = true
+	}
+
+	skillPath := filepath.Join(configDir, "skills", "mnemon", "SKILL.md")
+	settingsPath := filepath.Join(configDir, "settings.json")
+	if _, err := os.Stat(skillPath); err == nil {
+		env.Installed = true
+	} else if data, err := ReadJSONFile(settingsPath); err == nil && containsMnemon(data) {
 		env.Installed = true
 	}
 

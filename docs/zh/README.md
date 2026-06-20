@@ -92,15 +92,26 @@ mnemon setup
 
 `mnemon setup` 自动检测 Claude Code，交互式部署技能文件、钩子和行为引导。启动新会话 — 记忆自动运作。
 
-### [Trae](https://www.trae.ai/)
+### [TRAE](https://www.trae.ai/) (TRAE Work)
 
 ```bash
 mnemon setup --target trae --yes
 ```
 
-一条命令将 mnemon skill、prompt 文件和 Trae 原生 hooks 部署到 `.trae/`。
-该集成使用 `.trae/hooks.json` 中的 `SessionStart`、`UserPromptSubmit` 和
-`Stop` hooks。
+一条命令将 mnemon skill、prompt 文件和 TRAE 原生 hooks 部署到 `.trae/`，
+同时覆盖 TRAE IDE 和 TRAE Work。该集成使用 `.trae/hooks.json` 中的
+`SessionStart`、`UserPromptSubmit` 和 `Stop` hooks。
+
+### [Qoder](https://qoder.com/) (QoderWork)
+
+```bash
+mnemon setup --target qoder --yes
+mnemon setup --target qoderwork --yes
+```
+
+Qoder 会将 mnemon skill、prompt 文件和原生 hooks 部署到 `.qoder/` 或
+`~/.qoder/`。QoderWork 使用原生用户级配置 `~/.qoderwork/`。两者都会在
+`settings.json` 中注册 `SessionStart`、`UserPromptSubmit` 和 `Stop` hooks。
 
 ### [OpenClaw](https://github.com/openclaw/openclaw)
 
@@ -185,7 +196,7 @@ Agent 工作，并且只在有用时调用 Mnemon
 
 - **零用户操作** — 安装一次；支持 hook 的 runtime 可用 hook，minimal runtime 可用持久规则
 - **LLM 监督式** — 宿主 LLM 主动决定记什么、更新什么、遗忘什么；无内嵌 LLM，无 API 密钥
-- **多框架支持** — Claude Code 和 Codex（hooks）、OpenClaw（plugins）、Pi（extensions）、Nanobot（skills）等
+- **多框架支持** — Claude Code、Codex、Cursor、Qoder 和 QoderWork（hooks）、OpenClaw（plugins）、Pi（extensions）、Nanobot（skills）等
 - **Markdown 可安装 harness** — `SKILL.md`、`INSTALL.md`、`GUIDELINE.md` 和四个生命周期提醒
 - **四图架构** — 时序、实体、因果、语义四种边，不仅仅是向量相似度
 - **意图原生协议** — 三个原语（`remember`、`link`、`recall`）映射到 LLM 的认知词汇而非数据库语法；结构化 JSON 输出，带信号透明度

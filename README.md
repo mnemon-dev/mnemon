@@ -121,6 +121,18 @@ One command deploys the mnemon skill, prompt files, and TRAE native hooks for
 both TRAE IDE and TRAE Work to `.trae/`. The integration uses `SessionStart`,
 `UserPromptSubmit`, and `Stop` hooks in `.trae/hooks.json`.
 
+### [Qoder](https://qoder.com/) (QoderWork)
+
+```bash
+mnemon setup --target qoder --yes
+mnemon setup --target qoderwork --yes
+```
+
+Qoder deploys the mnemon skill, prompt files, and native hooks to `.qoder/`
+or `~/.qoder/`. QoderWork uses its native user config at `~/.qoderwork/`.
+Both integrations register `SessionStart`, `UserPromptSubmit`, and `Stop`
+hooks in `settings.json`.
+
 ### [OpenClaw](https://github.com/openclaw/openclaw)
 
 ```bash
@@ -221,7 +233,7 @@ memory is useful.
 
 - **Zero user-side operation** — install once; supported runtimes can use hooks, minimal runtimes can use persistent rules
 - **LLM-supervised** — the host LLM decides what to remember, update, and forget; no embedded LLM, no API keys
-- **Multi-framework support** — Claude Code, Codex, and Cursor (hooks), OpenClaw (plugins), Pi (extensions), Nanobot (skills), and more
+- **Multi-framework support** — Claude Code, Codex, Cursor, Qoder, and QoderWork (hooks), OpenClaw (plugins), Pi (extensions), Nanobot (skills), and more
 - **Markdown-installable harness** — `SKILL.md`, `INSTALL.md`, `GUIDELINE.md`, and four lifecycle reminders
 - **Four-graph architecture** — temporal, entity, causal, and semantic edges, not just vector similarity
 - **Intent-native protocol** — three primitives (`remember`, `link`, `recall`) map to the LLM's cognitive vocabulary, not database syntax; structured JSON output with signal transparency
@@ -238,7 +250,13 @@ All your local agentic AIs — across sessions and frameworks — sharing one po
 ```
   Claude Code ──┐
                 │
+  Codex ────────┤
+                │
   Cursor ───────┤
+                │
+  Qoder ────────┤
+                │
+  QoderWork ────┤
                 │
   OpenClaw ─────┤
                 │
@@ -254,7 +272,7 @@ All your local agentic AIs — across sessions and frameworks — sharing one po
 ```
 
 The foundation is in place: a single `~/.mnemon` database that any agent can
-read and write. Claude Code, Codex, and Cursor setup automate hook
+read and write. Claude Code, Codex, Cursor, Qoder, and QoderWork setup automate hook
 installation; OpenClaw can use plugin hooks; Pi integrates via native skills
 and TypeScript lifecycle extensions; Nanobot integrates via skill files;
 NanoClaw integrates via container skills and volume mounts. The same harness can

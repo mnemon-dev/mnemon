@@ -22,11 +22,11 @@ var setupCmd = &cobra.Command{
 	Short: "Deploy mnemon into LLM CLI environments",
 	Long: `Detect installed LLM CLIs and deploy mnemon integration.
 
-By default, installs to project-local config (.claude/, .codex/, .cursor/, .trae/, .openclaw/, .nanobot/, .pi/).
-Use --global to install to user-wide config (~/.claude/, ~/.codex/, ~/.cursor/, ~/.trae/, ~/.openclaw/, ~/.nanobot/workspace/, ~/.pi/agent/).
-Hermes Agent uses its native user config at ~/.hermes/.
+By default, installs to project-local config (.claude/, .codex/, .cursor/, .trae/, .qoder/, .openclaw/, .nanobot/, .pi/).
+Use --global to install to user-wide config (~/.claude/, ~/.codex/, ~/.cursor/, ~/.trae/, ~/.qoder/, ~/.openclaw/, ~/.nanobot/workspace/, ~/.pi/agent/).
+Hermes Agent and QoderWork use their native user config at ~/.hermes/ and ~/.qoderwork/.
 
-Supported environments: Claude Code, Codex, Cursor, Trae, OpenClaw, Nanobot, Pi, Hermes Agent.
+Supported environments: Claude Code, Codex, Cursor, Trae, Qoder, QoderWork, OpenClaw, Nanobot, Pi, Hermes Agent.
 
 Examples:
   mnemon setup                              # Interactive: project-local install
@@ -34,6 +34,8 @@ Examples:
   mnemon setup --target claude-code         # Non-interactive: Claude Code only
   mnemon setup --target cursor              # Non-interactive: Cursor skill only
   mnemon setup --target trae                # Non-interactive: Trae skill and hooks
+  mnemon setup --target qoder               # Non-interactive: Qoder skill and hooks
+  mnemon setup --target qoderwork           # Non-interactive: QoderWork skill and hooks
   mnemon setup --target hermes              # Non-interactive: Hermes Agent only
   mnemon setup --eject                      # Interactive: remove integrations
   mnemon setup --eject --target claude-code # Non-interactive: remove Claude Code only
@@ -42,7 +44,7 @@ Examples:
 }
 
 func init() {
-	setupCmd.Flags().StringVar(&setupTarget, "target", "", "target environment (claude-code, codex, cursor, trae, openclaw, nanobot, pi, hermes)")
+	setupCmd.Flags().StringVar(&setupTarget, "target", "", "target environment (claude-code, codex, cursor, trae, qoder, qoderwork, openclaw, nanobot, pi, hermes)")
 	setupCmd.Flags().BoolVar(&setupEject, "eject", false, "remove mnemon integrations")
 	setupCmd.Flags().BoolVar(&setupYes, "yes", false, "auto-confirm all prompts (CI-friendly)")
 	setupCmd.Flags().BoolVar(&setupGlobal, "global", false, "install to user-wide config instead of project-local config")
@@ -50,8 +52,8 @@ func init() {
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
-	if setupTarget != "" && setupTarget != "claude-code" && setupTarget != "codex" && setupTarget != "cursor" && setupTarget != "trae" && setupTarget != "openclaw" && setupTarget != "nanobot" && setupTarget != "pi" && setupTarget != "hermes" {
-		return fmt.Errorf("invalid target %q (must be claude-code, codex, cursor, trae, openclaw, nanobot, pi, or hermes)", setupTarget)
+	if setupTarget != "" && setupTarget != "claude-code" && setupTarget != "codex" && setupTarget != "cursor" && setupTarget != "trae" && setupTarget != "qoder" && setupTarget != "qoderwork" && setupTarget != "openclaw" && setupTarget != "nanobot" && setupTarget != "pi" && setupTarget != "hermes" {
+		return fmt.Errorf("invalid target %q (must be claude-code, codex, cursor, trae, qoder, qoderwork, openclaw, nanobot, pi, or hermes)", setupTarget)
 	}
 
 	envs := setup.DetectEnvironments(setupGlobal)
@@ -87,7 +89,7 @@ func runInstallFlow(envs []setup.Environment) error {
 
 	if len(detected) == 0 {
 		fmt.Println("\nNo supported LLM CLI environments detected.")
-		fmt.Println("Install Claude Code, Codex, Cursor, Trae, OpenClaw, Nanobot, Pi, or Hermes Agent, then run 'mnemon setup' again.")
+		fmt.Println("Install Claude Code, Codex, Cursor, Trae, Qoder, QoderWork, OpenClaw, Nanobot, Pi, or Hermes Agent, then run 'mnemon setup' again.")
 		return nil
 	}
 
@@ -135,6 +137,10 @@ func installEnv(env *setup.Environment) error {
 		err = installCursor(env)
 	case "trae":
 		err = installTrae(env)
+	case "qoder":
+		err = installQoder(env)
+	case "qoderwork":
+		err = installQoderWork(env)
 	case "openclaw":
 		err = installOpenClaw(env)
 	case "nanobot":
@@ -565,6 +571,109 @@ func installTrae(env *setup.Environment) error {
 	fmt.Println()
 	fmt.Println("Restart Trae to activate the mnemon skill and hooks.")
 	fmt.Println("Run 'mnemon setup --eject --target trae' to remove.")
+
+	return nil
+}
+
+// ─── Qoder ──────────────────────────────────────────────────────────
+
+func installQoder(env *setup.Environment) error {
+	configDir := env.ConfigDir
+
+	if !setupGlobal && !setupYes && setup.IsInteractive() {
+		home := setup.HomeDir()
+		localDir := ".qoder"
+		globalDir := home + "/.qoder"
+		idx := setup.SelectOne("Install scope",
+			[]string{
+				fmt.Sprintf("Local — this project only (%s/)", localDir),
+				fmt.Sprintf("Global — all projects (%s/)", globalDir),
+			}, 0)
+		if idx == 1 {
+			configDir = globalDir
+		} else {
+			configDir = localDir
+		}
+	}
+
+	fmt.Printf("\nSetting up Qoder (%s)...\n", configDir)
+
+	return installQoderLike(
+		configDir,
+		setup.QoderWriteSkill,
+		setup.QoderRegisterHooks,
+		"Restart Qoder IDE/CLI to activate the mnemon skill and hooks.",
+		"Run 'mnemon setup --eject --target qoder' to remove.",
+	)
+}
+
+// ─── QoderWork ──────────────────────────────────────────────────────
+
+func installQoderWork(env *setup.Environment) error {
+	configDir := env.ConfigDir
+
+	fmt.Printf("\nSetting up QoderWork (%s)...\n", configDir)
+
+	return installQoderLike(
+		configDir,
+		setup.QoderWorkWriteSkill,
+		setup.QoderWorkRegisterHooks,
+		"Restart QoderWork to activate the mnemon skill and hooks.",
+		"Run 'mnemon setup --eject --target qoderwork' to remove.",
+	)
+}
+
+func installQoderLike(configDir string, writeSkill func(string) (string, error), registerHooks func(string) (string, error), activation, ejectHint string) error {
+	fmt.Println("\n[1/3] Skill")
+	if path, err := writeSkill(configDir); err != nil {
+		setup.StatusError(0, 0, "Skill", err)
+		return err
+	} else {
+		setup.StatusOK(0, 0, "Skill", path)
+	}
+
+	fmt.Println("\n[2/3] Prompts")
+	var promptPath string
+	if path, err := setup.WritePromptFiles(); err != nil {
+		setup.StatusError(0, 0, "Prompts", err)
+		return err
+	} else {
+		setup.StatusOK(0, 0, "Prompts", path)
+		promptPath = path
+	}
+
+	fmt.Println("\n[3/3] Hooks")
+	for _, hook := range []struct {
+		label    string
+		filename string
+		content  []byte
+	}{
+		{"Hook: prime", "prime.sh", assets.QoderPrimeHook},
+		{"Hook: remind", "user_prompt.sh", assets.QoderUserPromptHook},
+		{"Hook: nudge", "stop.sh", assets.QoderStopHook},
+	} {
+		if path, err := setup.QoderWriteHook(configDir, hook.filename, hook.content); err != nil {
+			setup.StatusError(0, 0, hook.label, err)
+			return err
+		} else {
+			setup.StatusOK(0, 0, hook.label, path)
+		}
+	}
+	if path, err := registerHooks(configDir); err != nil {
+		setup.StatusError(0, 0, "Settings", err)
+		return err
+	} else {
+		setup.StatusUpdated(0, 0, "Settings", path)
+	}
+
+	fmt.Println()
+	fmt.Println("Setup complete!")
+	fmt.Printf("  Skill    %s/skills/mnemon/SKILL.md\n", configDir)
+	fmt.Printf("  Hooks    %s/settings.json (SessionStart, UserPromptSubmit, Stop)\n", configDir)
+	fmt.Printf("  Prompts  %s/ (guide.md, skill.md)\n", promptPath)
+	fmt.Println()
+	fmt.Println(activation)
+	fmt.Println(ejectHint)
 
 	return nil
 }
@@ -1005,6 +1114,20 @@ func ejectEnv(env *setup.Environment) error {
 
 	case "trae":
 		errs := setup.TraeEject(env.ConfigDir)
+		ejectMarkdown("AGENTS.md", "Remove memory guidance from ./AGENTS.md?")
+		if len(errs) > 0 {
+			return errs[0]
+		}
+
+	case "qoder":
+		errs := setup.QoderEject(env.ConfigDir)
+		ejectMarkdown("AGENTS.md", "Remove memory guidance from ./AGENTS.md?")
+		if len(errs) > 0 {
+			return errs[0]
+		}
+
+	case "qoderwork":
+		errs := setup.QoderWorkEject(env.ConfigDir)
 		ejectMarkdown("AGENTS.md", "Remove memory guidance from ./AGENTS.md?")
 		if len(errs) > 0 {
 			return errs[0]
