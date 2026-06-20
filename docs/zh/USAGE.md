@@ -34,6 +34,7 @@ mnemon setup --target cursor
 mnemon setup --target trae
 mnemon setup --target qoder
 mnemon setup --target qoderwork
+mnemon setup --target codebuddy
 mnemon setup --target openclaw
 mnemon setup --target pi
 mnemon setup --target nanobot --global
@@ -50,7 +51,7 @@ mnemon setup --eject --target claude-code
 | 标志 | 默认值 | 说明 |
 |---|---|---|
 | `--global` | `false` | 安装到用户级配置而非项目本地（Nanobot 推荐安装到 `~/.nanobot/workspace/`；Pi 安装到 `~/.pi/agent/`；Hermes 安装到 `~/.hermes/`；QoderWork 安装到 `~/.qoderwork/`） |
-| `--target <name>` | (自动检测) | 目标环境：`claude-code`、`codex`、`cursor`、`trae`、`qoder`、`qoderwork`、`openclaw`、`nanobot`、`pi` 或 `hermes` |
+| `--target <name>` | (自动检测) | 目标环境：`claude-code`、`codex`、`cursor`、`trae`、`qoder`、`qoderwork`、`codebuddy`、`openclaw`、`nanobot`、`pi` 或 `hermes` |
 | `--eject` | `false` | 移除 mnemon 集成 |
 | `--yes` | `false` | 自动确认所有提示 |
 

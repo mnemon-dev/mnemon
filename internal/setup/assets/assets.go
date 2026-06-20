@@ -71,6 +71,18 @@ var QoderUserPromptHook []byte
 //go:embed qoder/stop.sh
 var QoderStopHook []byte
 
+//go:embed codebuddy/SKILL.md
+var CodeBuddySkill []byte
+
+//go:embed codebuddy/prime.sh
+var CodeBuddyPrimeHook []byte
+
+//go:embed codebuddy/user_prompt.sh
+var CodeBuddyUserPromptHook []byte
+
+//go:embed codebuddy/stop.sh
+var CodeBuddyStopHook []byte
+
 //go:embed openclaw/SKILL.md
 var OpenClawSkill []byte
 
@@ -121,5 +133,5 @@ var HermesCompactHook []byte
 
 // All returns the embedded filesystem for inspection.
 //
-//go:embed claude codex cursor trae qoder qoderwork openclaw nanoclaw nanobot pi hermes
+//go:embed claude codex cursor trae qoder qoderwork codebuddy openclaw nanoclaw nanobot pi hermes
 var All embed.FS

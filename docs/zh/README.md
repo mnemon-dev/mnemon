@@ -113,6 +113,16 @@ Qoder 会将 mnemon skill、prompt 文件和原生 hooks 部署到 `.qoder/` 或
 `~/.qoder/`。QoderWork 使用原生用户级配置 `~/.qoderwork/`。两者都会在
 `settings.json` 中注册 `SessionStart`、`UserPromptSubmit` 和 `Stop` hooks。
 
+### [CodeBuddy](https://www.codebuddy.cn/)
+
+```bash
+mnemon setup --target codebuddy --yes
+```
+
+CodeBuddy 会将 mnemon skill、prompt 文件和原生 hooks 部署到 `.codebuddy/`
+或 `~/.codebuddy/`。该集成会在 `settings.json` 中注册 `SessionStart`、
+`UserPromptSubmit` 和 `Stop` hooks。
+
 ### [OpenClaw](https://github.com/openclaw/openclaw)
 
 ```bash
@@ -196,7 +206,7 @@ Agent 工作，并且只在有用时调用 Mnemon
 
 - **零用户操作** — 安装一次；支持 hook 的 runtime 可用 hook，minimal runtime 可用持久规则
 - **LLM 监督式** — 宿主 LLM 主动决定记什么、更新什么、遗忘什么；无内嵌 LLM，无 API 密钥
-- **多框架支持** — Claude Code、Codex、Cursor、TRAE/TRAE Work、Qoder/QoderWork 和 Hermes Agent（hooks）、OpenClaw（plugins）、Pi（extensions）、Nanobot（skills）等
+- **多框架支持** — Claude Code、Codex、Cursor、TRAE/TRAE Work、Qoder/QoderWork、CodeBuddy 和 Hermes Agent（hooks）、OpenClaw（plugins）、Pi（extensions）、Nanobot（skills）等
 - **Markdown 可安装 harness** — `SKILL.md`、`INSTALL.md`、`GUIDELINE.md` 和四个生命周期提醒
 - **四图架构** — 时序、实体、因果、语义四种边，不仅仅是向量相似度
 - **意图原生协议** — 三个原语（`remember`、`link`、`recall`）映射到 LLM 的认知词汇而非数据库语法；结构化 JSON 输出，带信号透明度
@@ -224,6 +234,8 @@ Agent 工作，并且只在有用时调用 Mnemon
                 │
   QoderWork ────┤
                 │
+  CodeBuddy ────┤
+                │
   Hermes Agent ─┤
                 │
   OpenClaw ─────┤
@@ -239,7 +251,7 @@ Agent 工作，并且只在有用时调用 Mnemon
   Gemini CLI ───┘
 ```
 
-基础已就绪：一个 `~/.mnemon` 数据库，任何 agent 都可以读写。Claude Code、Codex、Cursor、TRAE/TRAE Work、Qoder/QoderWork 和 Hermes Agent setup 可自动安装 hook；OpenClaw 可以使用 plugin hooks；Pi 通过原生 skill 和 TypeScript lifecycle extension 集成；Nanobot 通过 skill 文件集成；NanoClaw 通过容器技能和卷挂载集成。同一个 harness 可以安装到任何支持 skill、rule、system prompt 或 event hook 的 LLM CLI。
+基础已就绪：一个 `~/.mnemon` 数据库，任何 agent 都可以读写。Claude Code、Codex、Cursor、TRAE/TRAE Work、Qoder/QoderWork、CodeBuddy 和 Hermes Agent setup 可自动安装 hook；OpenClaw 可以使用 plugin hooks；Pi 通过原生 skill 和 TypeScript lifecycle extension 集成；Nanobot 通过 skill 文件集成；NanoClaw 通过容器技能和卷挂载集成。同一个 harness 可以安装到任何支持 skill、rule、system prompt 或 event hook 的 LLM CLI。
 
 更长远的方向是**记忆网关**：协议层与存储引擎解耦。当前 SQLite 后端是第一个适配器；协议面（`remember / link / recall`）可运行在 PostgreSQL、Neo4j 或任何图数据库之上。Agent 侧优化（何时召回、记什么）与存储侧优化（索引、图算法）独立演进。详见[未来方向](design/08-decisions.md#82-未来方向)。
 
