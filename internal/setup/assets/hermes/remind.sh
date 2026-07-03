@@ -16,7 +16,7 @@ from pathlib import Path
 
 payload_path = Path(sys.argv[1])
 try:
-    payload = json.loads(payload_path.read_text() or "{}")
+    payload = json.loads(payload_path.read_text(encoding="utf-8") or "{}")
 except Exception:
     payload = {}
 
@@ -60,7 +60,7 @@ def read_state_file(name):
     hermes_home = Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
     path = hermes_home / "mnemon" / name
     try:
-        text = path.read_text().strip()
+        text = path.read_text(encoding="utf-8").strip()
         path.unlink(missing_ok=True)
         return text
     except Exception:
@@ -75,6 +75,8 @@ def recall(query):
             ["mnemon", "recall", query, "--limit", "5"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=8,
             check=False,
         )

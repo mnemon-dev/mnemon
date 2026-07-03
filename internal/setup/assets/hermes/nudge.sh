@@ -14,7 +14,7 @@ from pathlib import Path
 import sys
 
 try:
-    payload = json.loads(Path(sys.argv[1]).read_text() or "{}")
+    payload = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8") or "{}")
 except Exception:
     payload = {}
 
@@ -33,7 +33,8 @@ if "mnemon" not in response.lower() and "durable memory" not in response.lower()
         state_dir.mkdir(parents=True, exist_ok=True)
         (state_dir / "pending-nudge.txt").write_text(
             "[mnemon] Consider whether the previous exchange warrants durable memory. "
-            "Use mnemon remember only for stable decisions, preferences, facts, or insights.\n"
+            "Use mnemon remember only for stable decisions, preferences, facts, or insights.\n",
+            encoding="utf-8",
         )
     except Exception:
         pass

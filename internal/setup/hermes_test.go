@@ -41,6 +41,43 @@ func TestHermesWriteSkillAndHooks(t *testing.T) {
 	}
 }
 
+func TestHermesPythonHooksUseExplicitUTF8(t *testing.T) {
+	tests := []struct {
+		name string
+		hook string
+		want []string
+	}{
+		{
+			name: "remind",
+			hook: string(assets.HermesRemindHook),
+			want: []string{
+				`payload_path.read_text(encoding="utf-8")`,
+				`path.read_text(encoding="utf-8").strip()`,
+				`encoding="utf-8",`,
+				`errors="replace",`,
+			},
+		},
+		{
+			name: "nudge",
+			hook: string(assets.HermesNudgeHook),
+			want: []string{
+				`Path(sys.argv[1]).read_text(encoding="utf-8")`,
+				`encoding="utf-8",`,
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, want := range tt.want {
+				if !strings.Contains(tt.hook, want) {
+					t.Fatalf("Hermes %s hook is missing %q", tt.name, want)
+				}
+			}
+		})
+	}
+}
+
 func TestHermesRegisterHooksPreservesUnrelatedConfig(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "config.yaml")
