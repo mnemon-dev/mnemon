@@ -50,7 +50,8 @@ Check the output `errors` field because imports can partially succeed.
 
 ## Guardrails
 
-- Never run `remember` or `link` in the main conversation — always delegate to a sub-agent.
+- Main conversation: never run `remember` or `link` directly; delegate to a Task sub-agent.
+- Memory sub-agent: you are the leaf writer. Run `mnemon remember` and any justified `mnemon link` commands directly; do not spawn another sub-agent.
 - Do not store secrets, passwords, or tokens.
 - Categories: `preference` · `decision` · `insight` · `fact` · `context`
 - Edge types: `temporal` · `semantic` · `causal` · `entity`

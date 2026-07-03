@@ -53,9 +53,10 @@ Aim for a rough distribution: ~20% at 4-5, ~50% at 2-3, ~30% at 1.
 Avoid defaulting everything to 4-5 — that defeats the scoring system.
 
 **What to store**: both conclusions AND context. Prefer storing a little too much over missing something useful.
-**How to store**: delegate to a Task sub-agent (`subagent_type="general-purpose"`, `model="sonnet"`).
+**How to store from the main conversation**: delegate to a Task sub-agent (`subagent_type="general-purpose"`, `model="sonnet"`).
 Only provide what to store — content, category, importance, entities, and create/update intent.
-The sub-agent will read the mnemon skill and execute the correct commands itself.
+The sub-agent is the leaf memory writer: it will read the mnemon skill and execute `mnemon remember` / `mnemon link` itself.
 
 Do NOT: write CLI commands or workflow steps in the sub-agent prompt (the sub-agent has access to the skill docs and will use the correct flags).
 Do NOT run memory writes in the main conversation, or remember operational/public/git-tracked/transient info.
+Do NOT ask the memory sub-agent to delegate again; nested memory sub-agents waste tokens and can fail in Claude Code.

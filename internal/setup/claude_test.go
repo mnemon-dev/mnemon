@@ -3,7 +3,10 @@ package setup
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/mnemon-dev/mnemon/internal/setup/assets"
 )
 
 func TestPromptDirHonorsMnemonDataDir(t *testing.T) {
@@ -58,6 +61,51 @@ func TestWritePromptFilesWritesUnderMnemonDataDir(t *testing.T) {
 		if info.Size() == 0 {
 			t.Fatalf("%s is empty", full)
 		}
+	}
+}
+
+func TestClaudeMemoryInstructionsKeepSubagentsLeafWriters(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{
+			name: "guide",
+			body: string(assets.ClaudeGuide),
+			want: []string{
+				"The sub-agent is the leaf memory writer",
+				"Do NOT ask the memory sub-agent to delegate again",
+			},
+		},
+		{
+			name: "skill",
+			body: string(assets.ClaudeSkill),
+			want: []string{
+				"Main conversation: never run `remember` or `link` directly",
+				"Memory sub-agent: you are the leaf writer",
+				"do not spawn another sub-agent",
+			},
+		},
+		{
+			name: "stop hook",
+			body: string(assets.ClaudeStopHook),
+			want: []string{
+				`"hook_event_name"[[:space:]]*:[[:space:]]*"SubagentStop"`,
+				"complete it directly with mnemon remember/link",
+				"do not spawn another sub-agent",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, want := range tt.want {
+				if !strings.Contains(tt.body, want) {
+					t.Fatalf("%s is missing %q", tt.name, want)
+				}
+			}
+		})
 	}
 }
 

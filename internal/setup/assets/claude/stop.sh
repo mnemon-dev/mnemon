@@ -12,4 +12,9 @@ if echo "$MSG" | grep -qiE "mnemon remember|sub-agent.*remember|Stored.*imp="; t
   exit 0
 fi
 
+if echo "$INPUT" | grep -qE '"hook_event_name"[[:space:]]*:[[:space:]]*"SubagentStop"|"agent_id"[[:space:]]*:'; then
+  echo "[mnemon] If this sub-agent was delegated memory work, complete it directly with mnemon remember/link; do not spawn another sub-agent. If no durable memory is needed, say so and finish."
+  exit 0
+fi
+
 echo "[mnemon] Consider: does this exchange warrant a remember sub-agent?"
