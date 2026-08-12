@@ -547,15 +547,17 @@ func (db *DB) migrateAddSupersedesEdgeType() error {
 	}
 	defer func() { _, _ = db.conn.Exec(`PRAGMA foreign_keys=ON`) }()
 
-	// The probe is rolled back, always. Written in autocommit it survives a
-	// process that dies before the cleanup delete below could run, and the
-	// next probe then collides with the leftover on the primary key -- read
-	// here as "not yet migrated", which rebuilds the whole edges table on that
-	// open and on every one after it.
+	// The probe is rolled back, always. Were it left in autocommit -- which is
+	// what disabling enforcement above lets succeed -- the sentinel row would
+	// outlive a rebuild that fails or a process that dies mid-migration. The
+	// next open's probe would then collide with the leftover on the primary
+	// key, and a failing probe is read below as "not yet migrated", so the
+	// whole edges table would be rebuilt on that open and on every one after
+	// it. Nothing here deletes a sentinel afterwards; the rollback is what
+	// guarantees there is never one to delete.
 	//
 	// The id is random rather than a fixed '__probe' because insight ids are
-	// caller-supplied: a fixed sentinel can collide with a real row, and a
-	// cleanup keyed on it can take real edges with it.
+	// caller-supplied, and a fixed sentinel can collide with a real row.
 	probeTx, err := db.conn.Begin()
 	if err != nil {
 		return fmt.Errorf("begin probe: %w", err)
