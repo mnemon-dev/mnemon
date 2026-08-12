@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -755,6 +756,65 @@ func TestMigrateAddSupersedesEdgeType_UpgradesLegacySchema(t *testing.T) {
 
 	if n := countProbeRows(t, reopened); n != 0 {
 		t.Errorf("probe rows leaked into edges: %d", n)
+	}
+}
+
+// --- supersedes lookup ---
+
+// The lookup answers about the ids it is given, not about the whole store: an
+// insight superseded elsewhere must not surface in a verdict on a different
+// candidate set. The oversized slice also crosses the batching boundary, so a
+// match found after the first chunk must still be reported.
+func TestGetSupersededIDs_ScopesToRequestedIDs(t *testing.T) {
+	db := testDB(t)
+
+	for _, id := range []string{"sup-stale", "sup-fresh", "sup-other-stale", "sup-other-fresh"} {
+		if err := db.InsertInsight(makeInsight(id, "content", 3)); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+	}
+	supersede := func(fresh, stale string) {
+		t.Helper()
+		if err := db.InsertEdge(&model.Edge{
+			SourceID: fresh, TargetID: stale, EdgeType: model.EdgeSupersedes,
+			Weight: 1, Metadata: map[string]string{}, CreatedAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("supersede %s -> %s: %v", fresh, stale, err)
+		}
+	}
+	supersede("sup-fresh", "sup-stale")
+	supersede("sup-other-fresh", "sup-other-stale")
+
+	got, err := db.GetSupersededIDs([]string{"sup-stale", "sup-fresh"})
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if !got["sup-stale"] {
+		t.Error("sup-stale is the target of a supersedes edge and must be reported")
+	}
+	if len(got) != 1 {
+		t.Errorf("lookup answered about ids the caller never asked for: %v", got)
+	}
+
+	many := make([]string, 0, supersededLookupChunk+2)
+	for i := 0; i <= supersededLookupChunk; i++ {
+		many = append(many, fmt.Sprintf("absent-%d", i))
+	}
+	many = append(many, "sup-other-stale")
+	got, err = db.GetSupersededIDs(many)
+	if err != nil {
+		t.Fatalf("chunked lookup: %v", err)
+	}
+	if !got["sup-other-stale"] {
+		t.Error("a match past the first chunk was dropped")
+	}
+
+	empty, err := db.GetSupersededIDs(nil)
+	if err != nil {
+		t.Fatalf("empty lookup: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("no ids asked about, got %v", empty)
 	}
 }
 

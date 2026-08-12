@@ -363,9 +363,14 @@ func IntentAwareRecall(db *store.DB, query string, queryVec []float64,
 	}
 
 	// An insight that another insight claims to supersede is demoted before
-	// ranking. Failing to look this up is not fatal: a superseded row ranking
-	// normally is the pre-existing behavior, which is worse but not broken.
-	superseded, supersededErr := db.GetSupersededIDs()
+	// ranking, and only the candidates in hand are looked up. Failing to look
+	// this up is not fatal: a superseded row ranking normally is the
+	// pre-existing behavior, which is worse but not broken.
+	candidateIDs := make([]string, len(candidates))
+	for i := range candidates {
+		candidateIDs[i] = candidates[i].id
+	}
+	superseded, supersededErr := db.GetSupersededIDs(candidateIDs)
 	if supersededErr != nil {
 		superseded = nil
 	}
