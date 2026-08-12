@@ -35,6 +35,29 @@ func (db *DB) GetEdgesByNode(nodeID string) ([]*model.Edge, error) {
 	return scanEdges(rows)
 }
 
+// GetSupersededIDs returns the set of insight ids that are the target of at
+// least one 'supersedes' edge, i.e. every insight some other insight claims to
+// replace. Recall uses this to demote stale content; the rows are kept so the
+// lineage stays inspectable.
+func (db *DB) GetSupersededIDs() (map[string]bool, error) {
+	rows, err := db.execer().Query(
+		`SELECT DISTINCT target_id FROM edges WHERE edge_type = ?`, string(model.EdgeSupersedes))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	superseded := make(map[string]bool)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		superseded[id] = true
+	}
+	return superseded, rows.Err()
+}
+
 // GetEdgesByNodeAndType returns edges for a node filtered by edge type.
 // Uses UNION ALL to allow SQLite to use composite indexes.
 func (db *DB) GetEdgesByNodeAndType(nodeID string, edgeType model.EdgeType) ([]*model.Edge, error) {

@@ -13,13 +13,19 @@ const (
 	EdgeSemantic EdgeType = "semantic"
 	EdgeCausal   EdgeType = "causal"
 	EdgeEntity   EdgeType = "entity"
+	// EdgeSupersedes records that the source insight replaces the target.
+	// Unlike the other types it is not a similarity or co-occurrence signal
+	// but an authority claim: the target is retained for lineage and is
+	// demoted in recall so a corrected fact stops outranking its correction.
+	EdgeSupersedes EdgeType = "supersedes"
 )
 
 var ValidEdgeTypes = map[EdgeType]bool{
-	EdgeTemporal: true,
-	EdgeSemantic: true,
-	EdgeCausal:   true,
-	EdgeEntity:   true,
+	EdgeTemporal:   true,
+	EdgeSemantic:   true,
+	EdgeCausal:     true,
+	EdgeEntity:     true,
+	EdgeSupersedes: true,
 }
 
 // Edge represents a directed relationship between two insights.

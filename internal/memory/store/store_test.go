@@ -617,6 +617,60 @@ func TestMigrateRemoveNarrativeEdges_KeepsRealEdgesNamedLikeTheSentinel(t *testi
 	}
 }
 
+// The supersedes migration probes by inserting a sentinel edge whose endpoints
+// do not exist. If that probe runs with foreign key enforcement on it fails on
+// the foreign key rather than the CHECK, reports "not yet migrated" every
+// time, and rebuilds the entire edges table on every single open. Opening
+// twice must leave the table alone the second time.
+func TestMigrateAddSupersedesEdgeType_IsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+
+	first, err := Open(dir)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	if err := first.InsertInsight(makeInsight("sup-a", "content", 3)); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if err := first.InsertEdge(&model.Edge{
+		SourceID: "sup-a", TargetID: "sup-a", EdgeType: model.EdgeSemantic,
+		Weight: 0.5, Metadata: map[string]string{}, CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("insert edge: %v", err)
+	}
+	var rootBefore int
+	if err := first.conn.QueryRow(
+		`SELECT rootpage FROM sqlite_master WHERE name = 'edges'`).Scan(&rootBefore); err != nil {
+		t.Fatalf("rootpage before: %v", err)
+	}
+	first.Close()
+
+	second, err := Open(dir)
+	if err != nil {
+		t.Fatalf("second open: %v", err)
+	}
+	defer second.Close()
+
+	var rootAfter int
+	if err := second.conn.QueryRow(
+		`SELECT rootpage FROM sqlite_master WHERE name = 'edges'`).Scan(&rootAfter); err != nil {
+		t.Fatalf("rootpage after: %v", err)
+	}
+	if rootAfter != rootBefore {
+		t.Errorf("edges table was rebuilt on reopen (rootpage %d -> %d); the probe is misreporting", rootBefore, rootAfter)
+	}
+
+	// No sentinel row may survive the probe.
+	var probes int
+	if err := second.conn.QueryRow(
+		`SELECT COUNT(*) FROM edges WHERE source_id LIKE '\_\_%' ESCAPE '\'`).Scan(&probes); err != nil {
+		t.Fatalf("count probes: %v", err)
+	}
+	if probes != 0 {
+		t.Errorf("probe rows leaked into edges: %d", probes)
+	}
+}
+
 // --- AutoPrune ---
 
 func TestAutoPrune_PrunesLowestEI(t *testing.T) {
