@@ -661,14 +661,8 @@ func TestMigrateAddSupersedesEdgeType_IsIdempotent(t *testing.T) {
 		t.Errorf("edges table was rebuilt on reopen (rootpage %d -> %d); the probe is misreporting", rootBefore, rootAfter)
 	}
 
-	// No sentinel row may survive the probe.
-	var probes int
-	if err := second.conn.QueryRow(
-		`SELECT COUNT(*) FROM edges WHERE source_id LIKE '\_\_%' ESCAPE '\'`).Scan(&probes); err != nil {
-		t.Fatalf("count probes: %v", err)
-	}
-	if probes != 0 {
-		t.Errorf("probe rows leaked into edges: %d", probes)
+	if n := countProbeRows(t, second); n != 0 {
+		t.Errorf("probe rows leaked into edges: %d", n)
 	}
 }
 
@@ -686,6 +680,22 @@ func disallowSupersedesEdges(t *testing.T, db *DB) {
 			t.Fatalf("%s: %v", s, err)
 		}
 	}
+}
+
+// countProbeRows counts sentinel rows a schema probe could have left behind,
+// on either endpoint. The prefix is deliberately narrow: '__test' is a real
+// insight id elsewhere in this file, so matching every id beginning '__'
+// would report legitimate data as a leak.
+func countProbeRows(t *testing.T, db *DB) int {
+	t.Helper()
+	var n int
+	if err := db.conn.QueryRow(
+		`SELECT COUNT(*) FROM edges
+		 WHERE source_id LIKE '\_\_probe\_%' ESCAPE '\'
+		    OR target_id LIKE '\_\_probe\_%' ESCAPE '\'`).Scan(&n); err != nil {
+		t.Fatalf("count probes: %v", err)
+	}
+	return n
 }
 
 // Idempotence alone only exercises the early return. A store written before
@@ -743,13 +753,8 @@ func TestMigrateAddSupersedesEdgeType_UpgradesLegacySchema(t *testing.T) {
 		t.Errorf("the rebuild dropped a pre-existing edge, got %d", kept)
 	}
 
-	var probes int
-	if err := reopened.conn.QueryRow(
-		`SELECT COUNT(*) FROM edges WHERE source_id LIKE '\_\_%' ESCAPE '\'`).Scan(&probes); err != nil {
-		t.Fatalf("count probes: %v", err)
-	}
-	if probes != 0 {
-		t.Errorf("probe rows leaked into edges: %d", probes)
+	if n := countProbeRows(t, reopened); n != 0 {
+		t.Errorf("probe rows leaked into edges: %d", n)
 	}
 }
 
