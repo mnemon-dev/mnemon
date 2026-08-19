@@ -137,6 +137,7 @@ verbose payloads return the raw score for callers that prefer their own threshol
 mnemon link <source_id> <target_id> --type semantic --weight 0.85
 mnemon link <source_id> <target_id> --type causal --weight 0.8 \
   --meta '{"sub_type":"causes","reason":"..."}'
+mnemon link <new_id> <old_id> --type supersedes --weight 1.0
 
 # Related — BFS traversal from an insight
 mnemon related <id> --edge causal --depth 2
@@ -230,7 +231,7 @@ mnemon viz --format html -o graph.html
 open graph.html
 ```
 
-Nodes are colored by category (decision, fact, insight, preference, context); edges are colored by type (temporal, semantic, causal, entity).
+Nodes are colored by category (decision, fact, insight, preference, context); edges are colored by type (temporal, semantic, causal, entity, supersedes).
 
 ---
 

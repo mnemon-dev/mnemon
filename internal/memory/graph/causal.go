@@ -171,8 +171,8 @@ type NeighborNode struct {
 }
 
 // GetNeighborhood performs a BFS from nodeID up to maxHops, following all edge
-// types (temporal, semantic, causal, entity). Returns up to maxNodes neighbor
-// nodes, excluding the start node and soft-deleted nodes.
+// types. Returns up to maxNodes neighbor nodes, excluding the start node and
+// soft-deleted nodes.
 func GetNeighborhood(db *store.DB, nodeID string, maxHops int, maxNodes int) []NeighborNode {
 	nodes := BFS(db, nodeID, BFSOptions{MaxDepth: maxHops, MaxNodes: maxNodes})
 	result := make([]NeighborNode, len(nodes))

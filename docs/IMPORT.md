@@ -120,6 +120,7 @@ Chat export / Markdown -> LLM extraction prompt -> memory_draft.json -> mnemon i
 | `causal` | Causal influence; A caused or affected B |
 | `semantic` | Semantic similarity; A and B discuss the same topic |
 | `entity` | Entity co-occurrence; A and B mention the same named subject |
+| `supersedes` | Authority claim; A replaces B and B is demoted at recall |
 
 ---
 

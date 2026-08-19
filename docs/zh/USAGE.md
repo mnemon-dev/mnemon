@@ -143,6 +143,7 @@ mnemon forget <id>
 mnemon link <source_id> <target_id> --type semantic --weight 0.85
 mnemon link <source_id> <target_id> --type causal --weight 0.8 \
   --meta '{"sub_type":"causes","reason":"..."}'
+mnemon link <new_id> <old_id> --type supersedes --weight 1.0
 
 # Related — 从某个洞察出发的 BFS 遍历
 mnemon related <id> --edge causal --depth 2
@@ -234,7 +235,7 @@ mnemon viz --format html -o graph.html
 open graph.html
 ```
 
-节点按分类着色（decision、fact、insight、preference、context），边按类型着色（temporal、semantic、causal、entity）。
+节点按分类着色（decision、fact、insight、preference、context），边按类型着色（temporal、semantic、causal、entity、supersedes）。
 
 ---
 
