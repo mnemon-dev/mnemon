@@ -740,6 +740,81 @@ func TestAutoPrune_RespectsExcludeIDs(t *testing.T) {
 	}
 }
 
+// The grace period exists because the capacity check fires on every write: in
+// a store that sits permanently over capacity, an insight can be created and
+// reaped in the same second, before anything has read it once. Below the
+// configured age, importance and access_count must not decide the question.
+func TestAutoPrune_SparesInsightsYoungerThanMinAge(t *testing.T) {
+	t.Setenv("MNEMON_PRUNE_MIN_AGE", "1h")
+	db := testDB(t)
+
+	aged := makeInsight("aged-1", "written yesterday", 1)
+	aged.CreatedAt = time.Now().UTC().Add(-24 * time.Hour)
+	aged.UpdatedAt = aged.CreatedAt
+	if err := db.InsertInsight(aged); err != nil {
+		t.Fatalf("insert aged: %v", err)
+	}
+	if err := db.InsertInsight(makeInsight("fresh-1", "written just now", 1)); err != nil {
+		t.Fatalf("insert fresh: %v", err)
+	}
+
+	// Max=0 asks auto-prune to take everything it is allowed to take.
+	pruned, err := db.AutoPrune(0, nil)
+	if err != nil {
+		t.Fatalf("auto prune: %v", err)
+	}
+	if pruned != 1 {
+		t.Fatalf("want 1 pruned (only the aged insight), got %d", pruned)
+	}
+	if _, err := db.GetInsightByID("fresh-1"); err != nil {
+		t.Errorf("insight younger than the grace period must survive: %v", err)
+	}
+	if _, err := db.GetInsightByID("aged-1"); err == nil {
+		t.Error("insight older than the grace period should have been pruned")
+	}
+}
+
+// Unset must mean exactly what it meant before the grace period existed.
+func TestAutoPrune_MinAgeUnsetLeavesFreshInsightsPrunable(t *testing.T) {
+	t.Setenv("MNEMON_PRUNE_MIN_AGE", "")
+	db := testDB(t)
+	if err := db.InsertInsight(makeInsight("nograce-1", "written just now", 1)); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+
+	pruned, err := db.AutoPrune(0, nil)
+	if err != nil {
+		t.Fatalf("auto prune: %v", err)
+	}
+	if pruned != 1 {
+		t.Errorf("want 1 pruned with no grace period configured, got %d", pruned)
+	}
+}
+
+func TestPruneMinAge(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		want time.Duration
+	}{
+		{"unset", "", DefaultPruneMinAge},
+		{"duration", "36h", 36 * time.Hour},
+		{"padded", "  30m  ", 30 * time.Minute},
+		{"zero", "0s", 0},
+		// A typo must not silently widen what auto-prune may take.
+		{"unparseable", "24 hours", DefaultPruneMinAge},
+		{"negative", "-1h", DefaultPruneMinAge},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MNEMON_PRUNE_MIN_AGE", tt.env)
+			if got := PruneMinAge(); got != tt.want {
+				t.Errorf("PruneMinAge() with %q = %v, want %v", tt.env, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestAutoPrune_NothingToPrune(t *testing.T) {
 	db := testDB(t)
 	db.InsertInsight(makeInsight("ok-1", "content", 3))
