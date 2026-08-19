@@ -23,7 +23,40 @@ const (
 
 	// PruneBatchSize is how many excess insights to prune at once.
 	PruneBatchSize = 10
+
+	// DefaultPruneMinAge is the default grace period AutoPrune gives a newly
+	// created insight. Zero preserves the historical behavior: an insight is
+	// prunable the moment it is written.
+	DefaultPruneMinAge time.Duration = 0
 )
+
+// PruneMinAge returns the minimum age an insight must reach before AutoPrune
+// may soft-delete it. An insight younger than this is spared regardless of
+// importance, access count, or effective_importance.
+//
+// Resolution: MNEMON_PRUNE_MIN_AGE > DefaultPruneMinAge. The value is a Go
+// duration string ("30m", "24h", "168h"); empty or zero means no grace period.
+// An unparseable or negative value is reported on stderr and ignored, so a
+// typo cannot silently widen what auto-prune is allowed to take.
+//
+// Resolved at call time rather than at package init, so a caller or test that
+// sets the variable after start-up sees the value it set.
+func PruneMinAge() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("MNEMON_PRUNE_MIN_AGE"))
+	if raw == "" {
+		return DefaultPruneMinAge
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: invalid MNEMON_PRUNE_MIN_AGE %q: %v (ignored)\n", raw, err)
+		return DefaultPruneMinAge
+	}
+	if d < 0 {
+		fmt.Fprintf(os.Stderr, "warning: negative MNEMON_PRUNE_MIN_AGE %q (ignored)\n", raw)
+		return DefaultPruneMinAge
+	}
+	return d
+}
 
 // InsertInsight inserts a new insight into the database.
 func (db *DB) InsertInsight(i *model.Insight) error {
@@ -443,13 +476,23 @@ func (db *DB) autoPrune(maxInsights int, excludeIDs []string) (int, error) {
 		}
 		excludeClause = fmt.Sprintf("AND id NOT IN (%s)", strings.Join(placeholders, ","))
 	}
+	// Spare insights inside the grace period. The capacity check runs on every
+	// write, so in a store that sits over capacity an insight can otherwise be
+	// created and reaped before anything has had the chance to read it once --
+	// and access_count, the only other protection a low-importance insight has,
+	// cannot rise until something does. Age is what says "not yet".
+	var minAgeClause string
+	if minAge := PruneMinAge(); minAge > 0 {
+		minAgeClause = "AND created_at <= ?"
+		args = append(args, time.Now().UTC().Add(-minAge).Format(time.RFC3339))
+	}
 	args = append(args, excess)
 
 	// Collect candidate IDs first (close cursor before writing to avoid single-conn deadlock)
 	rows, err := ex.Query(
 		fmt.Sprintf(`SELECT id FROM insights
-		 WHERE deleted_at IS NULL AND importance < 4 AND access_count < 3 %s
-		 ORDER BY effective_importance ASC LIMIT ?`, excludeClause), args...)
+		 WHERE deleted_at IS NULL AND importance < 4 AND access_count < 3 %s %s
+		 ORDER BY effective_importance ASC LIMIT ?`, excludeClause, minAgeClause), args...)
 	if err != nil {
 		return 0, fmt.Errorf("query prune candidates: %w", err)
 	}

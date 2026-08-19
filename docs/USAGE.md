@@ -243,6 +243,7 @@ Nodes are colored by category (decision, fact, insight, preference, context); ed
 | `MNEMON_EMBED_ENDPOINT` | `http://localhost:11434` | Ollama API endpoint |
 | `MNEMON_EMBED_MODEL` | `nomic-embed-text` | Ollama embedding model |
 | `MNEMON_EMBED_DIMENSIONS` | (native) | Embedding dimensions; set to truncate (e.g., `256` for Matryoshka models) |
+| `MNEMON_PRUNE_MIN_AGE` | (none) | Grace period before a new insight may be auto-pruned (Go duration, e.g., `24h`); insights younger than this are never auto-pruned |
 
 ---
 

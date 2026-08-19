@@ -247,6 +247,7 @@ open graph.html
 | `MNEMON_EMBED_ENDPOINT` | `http://localhost:11434` | Ollama API 端点 |
 | `MNEMON_EMBED_MODEL` | `nomic-embed-text` | Ollama 嵌入模型 |
 | `MNEMON_EMBED_DIMENSIONS` | (原生维度) | 嵌入向量维度；可设置截断值（例如 Matryoshka 模型使用 `256`） |
+| `MNEMON_PRUNE_MIN_AGE` | (无) | 新洞察可被自动清理前的保护期（Go 时长格式，例如 `24h`）；创建时间不足该时长的洞察不会被自动清理 |
 
 ---
 
