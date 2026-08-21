@@ -223,7 +223,7 @@ hooks.
 
 ### [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
-DeepSeek Harness (DSH) integrates through the [dsh-mnemon](https://github.com/omdsh-dev/dsh-mnemon) plugin, which layers DSH's runtime memory, managed project documents, and Mnemon's long-term memory spaces into one supervised three-tier memory system.
+DeepSeek Harness (DSH) integrates through the [dsh-mnemon](https://github.com/Grivn/dsh-mnemon) plugin, which layers DSH's runtime memory, managed project documents, and Mnemon's long-term memory spaces into one supervised three-tier memory system.
 
 With `mnemon` installed on the host (see [Install](#install)), add the plugin and restart your DSH Web profile:
 
@@ -238,7 +238,7 @@ development checkouts use an absolute path:
 
 ```bash
 dsh plugin --profile web add github:mnemon-dev/mnemon
-dsh plugin --profile web add "github:omdsh-dev/dsh-mnemon"
+dsh plugin --profile web add "github:Grivn/dsh-mnemon"
 dsh plugin --profile web add "link:/absolute/path/to/dsh-mnemon"
 ```
 

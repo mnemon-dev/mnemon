@@ -201,7 +201,7 @@ mnemon setup --target hermes --yes
 
 ### [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
-DeepSeek Harness（DSH）通过 [dsh-mnemon](https://github.com/omdsh-dev/dsh-mnemon) 插件集成：该插件把 DSH 的运行时热记忆、受管项目档案与 Mnemon 长期记忆体组织成一套受监督的三层记忆系统。
+DeepSeek Harness（DSH）通过 [dsh-mnemon](https://github.com/Grivn/dsh-mnemon) 插件集成：该插件把 DSH 的运行时热记忆、受管项目档案与 Mnemon 长期记忆体组织成一套受监督的三层记忆系统。
 
 宿主机安装好 `mnemon`（见[安装](#安装)）后，安装插件并重启 DSH Web profile：
 
@@ -215,7 +215,7 @@ Mnemon 主仓库也可以直接作为 GitHub 安装源。未发布到 npm 的插
 
 ```bash
 dsh plugin --profile web add github:mnemon-dev/mnemon
-dsh plugin --profile web add "github:omdsh-dev/dsh-mnemon"
+dsh plugin --profile web add "github:Grivn/dsh-mnemon"
 dsh plugin --profile web add "link:/absolute/path/to/dsh-mnemon"
 ```
 
