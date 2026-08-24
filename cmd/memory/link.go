@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mnemon-dev/mnemon/internal/memory/model"
@@ -28,7 +29,8 @@ var linkCmd = &cobra.Command{
 		// Validate edge type
 		edgeType := model.EdgeType(linkType)
 		if !model.ValidEdgeTypes[edgeType] {
-			return fmt.Errorf("invalid edge type %q; valid: temporal, semantic, causal, entity", linkType)
+			return fmt.Errorf("invalid edge type %q; valid: %s",
+				linkType, strings.Join(model.EdgeTypeNames(), ", "))
 		}
 
 		// Validate weight
@@ -63,7 +65,7 @@ var linkCmd = &cobra.Command{
 
 		now := time.Now().UTC()
 
-		// Create bidirectional edges (INSERT OR REPLACE)
+		// Mutual relations are recorded in both directions.
 		err = db.InsertEdge(&model.Edge{
 			SourceID:  sourceID,
 			TargetID:  targetID,
@@ -76,16 +78,23 @@ var linkCmd = &cobra.Command{
 			return fmt.Errorf("create edge %s→%s: %w", sourceID, targetID, err)
 		}
 
-		err = db.InsertEdge(&model.Edge{
-			SourceID:  targetID,
-			TargetID:  sourceID,
-			EdgeType:  edgeType,
-			Weight:    linkWeight,
-			Metadata:  metadata,
-			CreatedAt: now,
-		})
-		if err != nil {
-			return fmt.Errorf("create edge %s→%s: %w", targetID, sourceID, err)
+		// A directed relation is recorded once. Writing the reverse of a
+		// supersedes edge would mark the correction as superseded too, so
+		// both insights would be demoted and the stale one would keep its
+		// lead over the correction -- the exact ordering this type exists
+		// to fix.
+		if !edgeType.IsDirected() {
+			err = db.InsertEdge(&model.Edge{
+				SourceID:  targetID,
+				TargetID:  sourceID,
+				EdgeType:  edgeType,
+				Weight:    linkWeight,
+				Metadata:  metadata,
+				CreatedAt: now,
+			})
+			if err != nil {
+				return fmt.Errorf("create edge %s→%s: %w", targetID, sourceID, err)
+			}
 		}
 
 		db.LogOp("link", sourceID, fmt.Sprintf("%s→%s type=%s weight=%.2f", truncID(sourceID), truncID(targetID), linkType, linkWeight))
@@ -105,7 +114,8 @@ var linkCmd = &cobra.Command{
 }
 
 func init() {
-	linkCmd.Flags().StringVar(&linkType, "type", "semantic", "edge type (temporal|semantic|causal|entity)")
+	linkCmd.Flags().StringVar(&linkType, "type", "semantic",
+		fmt.Sprintf("edge type (%s)", strings.Join(model.EdgeTypeNames(), "|")))
 	linkCmd.Flags().Float64Var(&linkWeight, "weight", 0.5, "edge weight (0.0-1.0)")
 	linkCmd.Flags().StringVar(&linkMeta, "meta", "", `optional metadata JSON (e.g. '{"reason":"similar topic"}')`)
 	rootCmd.AddCommand(linkCmd)

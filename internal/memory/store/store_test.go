@@ -3,9 +3,11 @@ package store
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -614,6 +616,205 @@ func TestMigrateRemoveNarrativeEdges_KeepsRealEdgesNamedLikeTheSentinel(t *testi
 	}
 	if kept != 1 {
 		t.Errorf("a real edge was deleted because its id matched the probe sentinel, got %d", kept)
+	}
+}
+
+// The supersedes migration probes by inserting a sentinel edge whose endpoints
+// do not exist. If that probe runs with foreign key enforcement on it fails on
+// the foreign key rather than the CHECK, reports "not yet migrated" every
+// time, and rebuilds the entire edges table on every single open. Opening
+// twice must leave the table alone the second time.
+func TestMigrateAddSupersedesEdgeType_IsIdempotent(t *testing.T) {
+	dir := t.TempDir()
+
+	first, err := Open(dir)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	if err := first.InsertInsight(makeInsight("sup-a", "content", 3)); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if err := first.InsertEdge(&model.Edge{
+		SourceID: "sup-a", TargetID: "sup-a", EdgeType: model.EdgeSemantic,
+		Weight: 0.5, Metadata: map[string]string{}, CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("insert edge: %v", err)
+	}
+	var rootBefore int
+	if err := first.conn.QueryRow(
+		`SELECT rootpage FROM sqlite_master WHERE name = 'edges'`).Scan(&rootBefore); err != nil {
+		t.Fatalf("rootpage before: %v", err)
+	}
+	first.Close()
+
+	second, err := Open(dir)
+	if err != nil {
+		t.Fatalf("second open: %v", err)
+	}
+	defer second.Close()
+
+	var rootAfter int
+	if err := second.conn.QueryRow(
+		`SELECT rootpage FROM sqlite_master WHERE name = 'edges'`).Scan(&rootAfter); err != nil {
+		t.Fatalf("rootpage after: %v", err)
+	}
+	if rootAfter != rootBefore {
+		t.Errorf("edges table was rebuilt on reopen (rootpage %d -> %d); the probe is misreporting", rootBefore, rootAfter)
+	}
+
+	if n := countProbeRows(t, second); n != 0 {
+		t.Errorf("probe rows leaked into edges: %d", n)
+	}
+}
+
+// disallowSupersedesEdges restores the historical edges schema, which predates
+// the 'supersedes' edge type, by rewriting the stored CHECK constraint in
+// place.
+func disallowSupersedesEdges(t *testing.T, db *DB) {
+	t.Helper()
+	for _, s := range []string{
+		`PRAGMA writable_schema=ON`,
+		`UPDATE sqlite_master SET sql = replace(sql, ",'supersedes'", "") WHERE name = 'edges'`,
+		`PRAGMA writable_schema=OFF`,
+	} {
+		if _, err := db.conn.Exec(s); err != nil {
+			t.Fatalf("%s: %v", s, err)
+		}
+	}
+}
+
+// countProbeRows counts sentinel rows a schema probe could have left behind,
+// on either endpoint. The prefix is deliberately narrow: '__test' is a real
+// insight id elsewhere in this file, so matching every id beginning '__'
+// would report legitimate data as a leak.
+func countProbeRows(t *testing.T, db *DB) int {
+	t.Helper()
+	var n int
+	if err := db.conn.QueryRow(
+		`SELECT COUNT(*) FROM edges
+		 WHERE source_id LIKE '\_\_probe\_%' ESCAPE '\'
+		    OR target_id LIKE '\_\_probe\_%' ESCAPE '\'`).Scan(&n); err != nil {
+		t.Fatalf("count probes: %v", err)
+	}
+	return n
+}
+
+// Idempotence alone only exercises the early return. A store written before
+// the type existed must actually be rebuilt: 'supersedes' accepted afterwards,
+// every existing edge carried over verbatim, and no probe row left behind.
+//
+// sqlite_master rewrites are not visible on the connection that wrote them, so
+// the first handle is kept open (its CHECK still admits 'supersedes') while a
+// second Open reads the on-disk four-type schema and runs the migration.
+func TestMigrateAddSupersedesEdgeType_UpgradesLegacySchema(t *testing.T) {
+	dir := t.TempDir()
+
+	first, err := Open(dir)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer first.Close()
+	if err := first.InsertInsight(makeInsight("legacy-a", "content", 3)); err != nil {
+		t.Fatalf("insert insight: %v", err)
+	}
+	if err := first.InsertEdge(&model.Edge{
+		SourceID: "legacy-a", TargetID: "legacy-a", EdgeType: model.EdgeSemantic,
+		Weight: 0.5, Metadata: map[string]string{}, CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("insert edge: %v", err)
+	}
+	disallowSupersedesEdges(t, first)
+
+	var sqlText string
+	if err := first.conn.QueryRow(
+		`SELECT sql FROM sqlite_master WHERE name = 'edges'`).Scan(&sqlText); err != nil {
+		t.Fatalf("read schema: %v", err)
+	}
+	if !strings.Contains(sqlText, "'entity')") || strings.Contains(sqlText, "supersedes") {
+		t.Fatalf("on-disk CHECK was not narrowed: %s", sqlText)
+	}
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer reopened.Close()
+
+	if _, err := reopened.conn.Exec(
+		`INSERT INTO edges VALUES ('legacy-a','legacy-a','supersedes',1,'{}','2026-01-01T00:00:00Z')`); err != nil {
+		t.Errorf("supersedes edge type must be admitted after migration: %v", err)
+	}
+
+	var kept int
+	if err := reopened.conn.QueryRow(
+		`SELECT COUNT(*) FROM edges WHERE source_id = 'legacy-a' AND edge_type = 'semantic'`).Scan(&kept); err != nil {
+		t.Fatalf("count kept: %v", err)
+	}
+	if kept != 1 {
+		t.Errorf("the rebuild dropped a pre-existing edge, got %d", kept)
+	}
+
+	if n := countProbeRows(t, reopened); n != 0 {
+		t.Errorf("probe rows leaked into edges: %d", n)
+	}
+}
+
+// --- supersedes lookup ---
+
+// The lookup answers about the ids it is given, not about the whole store: an
+// insight superseded elsewhere must not surface in a verdict on a different
+// candidate set. The oversized slice also crosses the batching boundary, so a
+// match found after the first chunk must still be reported.
+func TestGetSupersededIDs_ScopesToRequestedIDs(t *testing.T) {
+	db := testDB(t)
+
+	for _, id := range []string{"sup-stale", "sup-fresh", "sup-other-stale", "sup-other-fresh"} {
+		if err := db.InsertInsight(makeInsight(id, "content", 3)); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+	}
+	supersede := func(fresh, stale string) {
+		t.Helper()
+		if err := db.InsertEdge(&model.Edge{
+			SourceID: fresh, TargetID: stale, EdgeType: model.EdgeSupersedes,
+			Weight: 1, Metadata: map[string]string{}, CreatedAt: time.Now().UTC(),
+		}); err != nil {
+			t.Fatalf("supersede %s -> %s: %v", fresh, stale, err)
+		}
+	}
+	supersede("sup-fresh", "sup-stale")
+	supersede("sup-other-fresh", "sup-other-stale")
+
+	got, err := db.GetSupersededIDs([]string{"sup-stale", "sup-fresh"})
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if !got["sup-stale"] {
+		t.Error("sup-stale is the target of a supersedes edge and must be reported")
+	}
+	if len(got) != 1 {
+		t.Errorf("lookup answered about ids the caller never asked for: %v", got)
+	}
+
+	many := make([]string, 0, supersededLookupChunk+2)
+	for i := 0; i <= supersededLookupChunk; i++ {
+		many = append(many, fmt.Sprintf("absent-%d", i))
+	}
+	many = append(many, "sup-other-stale")
+	got, err = db.GetSupersededIDs(many)
+	if err != nil {
+		t.Fatalf("chunked lookup: %v", err)
+	}
+	if !got["sup-other-stale"] {
+		t.Error("a match past the first chunk was dropped")
+	}
+
+	empty, err := db.GetSupersededIDs(nil)
+	if err != nil {
+		t.Fatalf("empty lookup: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("no ids asked about, got %v", empty)
 	}
 }
 

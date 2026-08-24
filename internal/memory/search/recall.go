@@ -75,6 +75,14 @@ const (
 	rerankGraphNoEmbed   = 0.30
 )
 
+// supersededScoreFactor multiplies the final score of an insight that some
+// other insight claims to supersede. It is a demotion, not a filter: the row
+// stays reachable (lineage, audit, explicit recall) but stops outranking the
+// content that replaced it. Without this, a correction competes with the text
+// it corrects on similarity alone and routinely loses, because the stale row
+// is older and therefore better connected and more frequently accessed.
+const supersededScoreFactor = 0.25
+
 // SignalScores holds the individual reranking signal scores for a result.
 type SignalScores struct {
 	Keyword    float64 `json:"keyword"`
@@ -105,6 +113,10 @@ type RecallResult struct {
 	Intent  Intent         `json:"intent"`
 	Via     string         `json:"via,omitempty"`
 	Signals SignalScores   `json:"signals"`
+	// Superseded reports that another insight claims to replace this one.
+	// Surfaced so a caller can see why a result ranked low, and so an agent
+	// reading raw results is not silently handed stale content.
+	Superseded bool `json:"superseded,omitempty"`
 }
 
 // IntentAwareRecall performs MAGMA-aligned intent-aware retrieval:
@@ -350,9 +362,26 @@ func IntentAwareRecall(db *store.DB, query string, queryVec []float64,
 		wKw, wEnt, wSim, wGr = rerankKeywordNoEmbed, rerankEntityNoEmbed, 0, rerankGraphNoEmbed
 	}
 
+	// An insight that another insight claims to supersede is demoted before
+	// ranking, and only the candidates in hand are looked up. Failing to look
+	// this up is not fatal: a superseded row ranking normally is the
+	// pre-existing behavior, which is worse but not broken.
+	candidateIDs := make([]string, len(candidates))
+	for i := range candidates {
+		candidateIDs[i] = candidates[i].id
+	}
+	superseded, supersededErr := db.GetSupersededIDs(candidateIDs)
+	if supersededErr != nil {
+		superseded = nil
+	}
+
 	results := make([]RecallResult, 0, len(candidates))
 	for _, c := range candidates {
 		finalScore := wKw*c.kwScore + wEnt*c.entScore + wSim*c.simScore + wGr*c.graphScore
+		isSuperseded := superseded[c.id]
+		if isSuperseded {
+			finalScore *= supersededScoreFactor
+		}
 		results = append(results, RecallResult{
 			Insight: c.ins,
 			Score:   finalScore,
@@ -364,6 +393,7 @@ func IntentAwareRecall(db *store.DB, query string, queryVec []float64,
 				Similarity: c.simScore,
 				Graph:      c.graphScore,
 			},
+			Superseded: isSuperseded,
 		})
 	}
 

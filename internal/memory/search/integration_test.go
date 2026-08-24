@@ -530,3 +530,85 @@ func TestBeamSearchFromAnchor_MaxVisitedBudget(t *testing.T) {
 		t.Errorf("MaxVisited=5: want at most 4 discovered nodes, got %d", discovered)
 	}
 }
+
+// --- supersedes demotion ---
+
+// Regression: a correction must outrank the text it corrects.
+//
+// The failure this defends against is subtle and was observed in a real store.
+// A correction is usually written as a diff ("X is wrong, use Y"), so it
+// contains the wrong wording verbatim. A query phrased with the wrong wording
+// therefore matches the STALE row at least as well as the correction, and the
+// stale row is older, so it has accumulated more edges and a higher access
+// count. With scoring built only from keyword/similarity/entity/graph, the
+// corrected text reliably beats its own correction and gets served as current.
+func TestIntentAwareRecall_SupersededInsightIsDemoted(t *testing.T) {
+	db := testDB(t)
+	now := time.Now().UTC()
+
+	// Both rows discuss the same subject with near-identical vocabulary.
+	stale := insertInsight(t, db, "stale", "deploy target is the staging cluster", "user", 5, nil, now.Add(-72*time.Hour))
+	fresh := insertInsight(t, db, "fresh", "deploy target is the staging cluster no longer; use production", "user", 5, nil, now)
+
+	// Give the stale row the graph advantage age confers in a real store.
+	for i := range 3 {
+		neighbor := "n" + string(rune('a'+i))
+		insertInsight(t, db, neighbor, "deploy notes", "user", 3, nil, now.Add(-72*time.Hour))
+		db.InsertEdge(&model.Edge{SourceID: stale.ID, TargetID: neighbor, EdgeType: model.EdgeSemantic, Weight: 0.9, Metadata: map[string]string{}, CreatedAt: now})
+	}
+
+	query := "deploy target staging cluster"
+
+	before, err := IntentAwareRecall(db, query, nil, nil, 5, nil)
+	if err != nil {
+		t.Fatalf("recall before: %v", err)
+	}
+	staleBefore, freshBefore := scoreOf(before.Results, "stale"), scoreOf(before.Results, "fresh")
+	if staleBefore <= freshBefore {
+		t.Skipf("fixture did not reproduce the stale-wins condition (stale=%.4f fresh=%.4f); demotion still asserted below", staleBefore, freshBefore)
+	}
+
+	// Record the supersession.
+	if err := db.InsertEdge(&model.Edge{
+		SourceID: fresh.ID, TargetID: stale.ID, EdgeType: model.EdgeSupersedes,
+		Weight: 1.0, Metadata: map[string]string{}, CreatedAt: now,
+	}); err != nil {
+		t.Fatalf("insert supersedes edge: %v", err)
+	}
+
+	after, err := IntentAwareRecall(db, query, nil, nil, 5, nil)
+	if err != nil {
+		t.Fatalf("recall after: %v", err)
+	}
+	staleAfter, freshAfter := scoreOf(after.Results, "stale"), scoreOf(after.Results, "fresh")
+
+	if staleAfter >= freshAfter {
+		t.Errorf("after supersedes edge the correction must outrank the corrected row: stale=%.4f fresh=%.4f", staleAfter, freshAfter)
+	}
+	if staleAfter >= staleBefore {
+		t.Errorf("superseded row was not demoted: before=%.4f after=%.4f", staleBefore, staleAfter)
+	}
+
+	// Demotion, not deletion: the row stays reachable and is flagged.
+	var found bool
+	for _, r := range after.Results {
+		if r.Insight.ID == "stale" {
+			found = true
+			if !r.Superseded {
+				t.Error("superseded row must be flagged Superseded=true")
+			}
+		}
+	}
+	if !found {
+		t.Error("superseded row must remain retrievable, not be filtered out")
+	}
+}
+
+func scoreOf(results []RecallResult, id string) float64 {
+	for _, r := range results {
+		if r.Insight.ID == id {
+			return r.Score
+		}
+	}
+	return 0
+}

@@ -272,7 +272,7 @@ CREATE TABLE IF NOT EXISTS insights (
 CREATE TABLE IF NOT EXISTS edges (
     source_id   TEXT NOT NULL,
     target_id   TEXT NOT NULL,
-    edge_type   TEXT NOT NULL CHECK(edge_type IN ('temporal','semantic','causal','entity')),
+    edge_type   TEXT NOT NULL CHECK(edge_type IN ('temporal','semantic','causal','entity','supersedes')),
     weight      REAL DEFAULT 1.0,
     metadata    TEXT DEFAULT '{}',
     created_at  TEXT NOT NULL,
@@ -333,6 +333,13 @@ CREATE INDEX IF NOT EXISTS idx_oplog_created ON oplog(created_at);
 	// Migration: remove narrative edge type from existing databases
 	if err := db.migrateRemoveNarrativeEdges(); err != nil {
 		return fmt.Errorf("remove narrative edges: %w", err)
+	}
+
+	// Migration: widen the edge CHECK to admit the 'supersedes' type. Must run
+	// after migrateRemoveNarrativeEdges, which rebuilds the table with the
+	// older four-type constraint.
+	if err := db.migrateAddSupersedesEdgeType(); err != nil {
+		return fmt.Errorf("add supersedes edge type: %w", err)
 	}
 
 	// One-time cleanup: soft-delete narrative category insights from legacy databases.
@@ -515,6 +522,81 @@ func (db *DB) migrateRemoveNarrativeEdges() error {
 		`CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type)`,
+	}
+	for _, s := range steps {
+		if _, err := tx.Exec(s); err != nil {
+			return fmt.Errorf("step %q: %w", s[:min(len(s), 40)], err)
+		}
+	}
+	return tx.Commit()
+}
+
+// migrateAddSupersedesEdgeType widens the edges CHECK constraint to admit the
+// 'supersedes' type. SQLite cannot alter a CHECK in place, so the table is
+// rebuilt; existing rows are copied verbatim and no edge is created or
+// dropped.
+func (db *DB) migrateAddSupersedesEdgeType() error {
+	// Enforcement stays off for the probe as well as the rebuild. The probe
+	// inserts a sentinel edge whose endpoints do not exist, so with
+	// foreign_keys(1) it would fail on the foreign key rather than the CHECK
+	// and report "not yet migrated" on every open -- rebuilding the whole
+	// table each time. The rebuild needs it for the same reason as the
+	// narrative migration above: a dangling edge must not abort the copy.
+	if _, err := db.conn.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+		return fmt.Errorf("disable foreign keys for edge rebuild: %w", err)
+	}
+	defer func() { _, _ = db.conn.Exec(`PRAGMA foreign_keys=ON`) }()
+
+	// The probe is rolled back, always. Were it left in autocommit -- which is
+	// what disabling enforcement above lets succeed -- the sentinel row would
+	// outlive a rebuild that fails or a process that dies mid-migration. The
+	// next open's probe would then collide with the leftover on the primary
+	// key, and a failing probe is read below as "not yet migrated", so the
+	// whole edges table would be rebuilt on that open and on every one after
+	// it. Nothing here deletes a sentinel afterwards; the rollback is what
+	// guarantees there is never one to delete.
+	//
+	// The id is random rather than a fixed '__probe' because insight ids are
+	// caller-supplied, and a fixed sentinel can collide with a real row.
+	probeTx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("begin probe: %w", err)
+	}
+	_, probeErr := probeTx.Exec(
+		`INSERT INTO edges VALUES ('__probe_'||hex(randomblob(8)),'__probe_'||hex(randomblob(8)),'supersedes',0,'{}',datetime('now'))`)
+	if err := probeTx.Rollback(); err != nil {
+		return fmt.Errorf("roll back probe: %w", err)
+	}
+	if probeErr == nil {
+		return nil // already migrated
+	}
+
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	steps := []string{
+		`ALTER TABLE edges RENAME TO edges_old`,
+		`CREATE TABLE edges (
+			source_id   TEXT NOT NULL,
+			target_id   TEXT NOT NULL,
+			edge_type   TEXT NOT NULL CHECK(edge_type IN ('temporal','semantic','causal','entity','supersedes')),
+			weight      REAL DEFAULT 1.0,
+			metadata    TEXT DEFAULT '{}',
+			created_at  TEXT NOT NULL,
+			PRIMARY KEY (source_id, target_id, edge_type),
+			FOREIGN KEY (source_id) REFERENCES insights(id) ON DELETE CASCADE,
+			FOREIGN KEY (target_id) REFERENCES insights(id) ON DELETE CASCADE
+		)`,
+		`INSERT INTO edges SELECT * FROM edges_old`,
+		`DROP TABLE edges_old`,
+		`CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type)`,
+		`CREATE INDEX IF NOT EXISTS idx_edges_source_type ON edges(source_id, edge_type)`,
+		`CREATE INDEX IF NOT EXISTS idx_edges_target_type ON edges(target_id, edge_type)`,
 	}
 	for _, s := range steps {
 		if _, err := tx.Exec(s); err != nil {

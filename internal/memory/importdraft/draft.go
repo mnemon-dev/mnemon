@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/mnemon-dev/mnemon/internal/memory/model"
@@ -72,7 +73,7 @@ type DraftEdge struct {
 	TargetIndex int `json:"target_index"`
 
 	// EdgeType is the kind of relationship.
-	// One of: temporal, semantic, causal, entity.
+	// One of: temporal, semantic, causal, entity, supersedes.
 	EdgeType string `json:"edge_type"`
 
 	// Weight is the edge strength in [0.0, 1.0]. Defaults to 0.5.
@@ -166,7 +167,7 @@ func (d *MemoryDraft) Validate() error {
 			return fmt.Errorf("edges[%d]: source_index and target_index must differ", i)
 		}
 		if !model.ValidEdgeTypes[model.EdgeType(edge.EdgeType)] {
-			return fmt.Errorf("edges[%d]: invalid edge_type %q (valid: temporal, semantic, causal, entity)", i, edge.EdgeType)
+			return fmt.Errorf("edges[%d]: invalid edge_type %q (valid: %s)", i, edge.EdgeType, strings.Join(model.EdgeTypeNames(), ", "))
 		}
 		if edge.Weight < 0 || edge.Weight > 1.0 {
 			return fmt.Errorf("edges[%d]: weight %g out of range [0.0, 1.0]", i, edge.Weight)

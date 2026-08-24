@@ -36,6 +36,10 @@ type compactResult struct {
 	MatchedVia string  `json:"matched_via,omitempty"`
 	Confidence string  `json:"confidence"`
 	Score      float64 `json:"score"`
+	// Superseded warns that another insight claims to replace this one.
+	// It must survive the compact projection: an agent reading only this
+	// shape would otherwise be handed corrected content with no signal.
+	Superseded bool `json:"superseded,omitempty"`
 }
 
 // compactResponse wraps compact results with an optional hint.
@@ -87,6 +91,7 @@ func toCompact(resp search.RecallResponse) compactResponse {
 			MatchedVia: r.Via,
 			Confidence: confidenceLabel(rounded),
 			Score:      rounded,
+			Superseded: r.Superseded,
 		}
 		results = append(results, cr)
 	}
