@@ -88,7 +88,8 @@ func TestOpenAIEndpointWithTrailingSlash(t *testing.T) {
 }
 
 func TestOpenAIEmbed(t *testing.T) {
-	t.Setenv("MNEMON_EMBED_MODEL", "bge-m3-mlx-8bit")
+	t.Setenv("MNEMON_EMBED_MODEL", "BAAI/bge-m3")
+	t.Setenv("MNEMON_EMBED_DIMENSIONS", "1024")
 	t.Setenv("MNEMON_EMBED_API_KEY", "sk-test")
 	var gotAuth string
 	var gotBody map[string]any
@@ -120,8 +121,11 @@ func TestOpenAIEmbed(t *testing.T) {
 	if gotAuth != "Bearer sk-test" {
 		t.Errorf("expected Bearer sk-test, got %q", gotAuth)
 	}
-	if gotBody["model"] != "bge-m3-mlx-8bit" {
+	if gotBody["model"] != "BAAI/bge-m3" {
 		t.Errorf("expected model in body, got %v", gotBody["model"])
+	}
+	if gotBody["dimensions"] != float64(1024) {
+		t.Errorf("expected dimensions in body, got %v", gotBody["dimensions"])
 	}
 	if input, _ := gotBody["input"].(string); input != "跨会话记忆测试" {
 		t.Errorf("expected input text, got %v", gotBody["input"])
