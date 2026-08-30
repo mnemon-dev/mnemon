@@ -254,6 +254,13 @@ Nodes are colored by category (decision, fact, insight, preference, context); ed
 | `MNEMON_EMBED_API_KEY` | (none) | Bearer token for OpenAI-compatible servers |
 | `MNEMON_EMBED_DIMENSIONS` | (native) | Embedding dimensions; set to truncate (e.g., `256` for Matryoshka models) |
 | `MNEMON_MAX_INSIGHTS` | `1000` | Active-insight ceiling before auto-pruning starts; `0` disables auto-pruning |
+| `MNEMON_AUTO_PRUNE_MIN_AGE` | `24h` | Minimum age before automatic pruning; accepts durations such as `24h`, integer days such as `7d`, or `0` to disable the grace period |
+
+Auto-prune may temporarily leave the active count above the ceiling when every
+eligible insight is still inside the grace period. Age is measured from local
+store insertion, so newly imported historical memories are protected too. Each deletion is soft,
+commits atomically with a `prune` oplog entry, and is returned by ID in
+`auto_pruned_ids` alongside the existing `auto_pruned` count.
 
 ---
 

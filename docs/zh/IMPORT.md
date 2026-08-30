@@ -148,6 +148,7 @@ mnemon import --store project-alpha memory_draft.json
   "errors": 0,
   "edges_inserted": 3,
   "auto_pruned": 0,
+  "auto_pruned_ids": [],
   "results": [
     {"index": 0, "id": "a1b2c3d4...", "content": "选择了 Qdrant...", "action": "added"},
     {"index": 1, "id": "e5f6a7b8...", "content": "用户偏好简洁的...", "action": "skipped"}
@@ -163,6 +164,7 @@ mnemon import --store project-alpha memory_draft.json
 | `errors` | 写入失败的数量；导入允许部分成功，脚本调用方应检查此字段是否为 0 |
 | `edges_inserted` | 成功插入的显式边数量 |
 | `auto_pruned` | 超出容量限制后自动删除的记忆数量 |
+| `auto_pruned_ids` | 被自动软删除的准确 ID；每个 ID 都有对应的 `prune` oplog 记录 |
 
 ---
 

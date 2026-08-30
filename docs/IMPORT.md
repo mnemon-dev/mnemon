@@ -149,6 +149,7 @@ mnemon import --store project-alpha memory_draft.json
   "errors": 0,
   "edges_inserted": 3,
   "auto_pruned": 0,
+  "auto_pruned_ids": [],
   "results": [
     {"index": 0, "id": "a1b2c3d4...", "content": "Chose Qdrant...", "action": "added"},
     {"index": 1, "id": "e5f6a7b8...", "content": "The user prefers...", "action": "skipped"}
@@ -164,6 +165,7 @@ mnemon import --store project-alpha memory_draft.json
 | `errors` | Number of failed writes. Import allows partial success; script callers should check this is `0` |
 | `edges_inserted` | Number of explicit edges inserted |
 | `auto_pruned` | Number of memories auto-pruned after capacity checks |
+| `auto_pruned_ids` | Exact IDs soft-deleted by auto-prune; each has a matching `prune` oplog entry |
 
 ---
 

@@ -276,6 +276,7 @@ CREATE TABLE IF NOT EXISTS insights (
     entities    TEXT DEFAULT '[]',
     source      TEXT DEFAULT 'user',
     access_count INTEGER DEFAULT 0,
+    stored_at   TEXT,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL,
     deleted_at  TEXT
@@ -323,6 +324,34 @@ CREATE INDEX IF NOT EXISTS idx_oplog_created ON oplog(created_at);
 		return fmt.Errorf("add last_accessed_at: %w", err)
 	}
 
+	// Retention grace is based on when a row entered this store, not its
+	// historical event time. Existing rows predate that distinction, so their
+	// created_at is the least surprising backfill. The column stays nullable for
+	// compatibility with external sync/import tools that write legacy rows.
+	if err := addColumnIfNotExists(db.conn, `ALTER TABLE insights ADD COLUMN stored_at TEXT`); err != nil {
+		return fmt.Errorf("add stored_at: %w", err)
+	}
+	if _, err := db.conn.Exec(`UPDATE insights SET stored_at = created_at WHERE stored_at IS NULL OR stored_at = ''`); err != nil {
+		return fmt.Errorf("backfill stored_at: %w", err)
+	}
+	// Keep legacy/external writers safe when they omit the new column. SQLite
+	// cannot add a column with a non-constant CURRENT_TIMESTAMP default during
+	// migration, so a trigger supplies the physical insertion time instead.
+	if _, err := db.conn.Exec(`
+		CREATE TRIGGER IF NOT EXISTS set_insight_stored_at
+		AFTER INSERT ON insights
+		WHEN NEW.stored_at IS NULL OR NEW.stored_at = ''
+		BEGIN
+			UPDATE insights
+			SET stored_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+			WHERE id = NEW.id;
+		END`); err != nil {
+		return fmt.Errorf("create stored_at trigger: %w", err)
+	}
+	if _, err := db.conn.Exec(`CREATE INDEX IF NOT EXISTS idx_insights_stored ON insights(stored_at)`); err != nil {
+		return fmt.Errorf("create stored_at index: %w", err)
+	}
+
 	// Phase 3 migration: add embedding column
 	if err := addColumnIfNotExists(db.conn, `ALTER TABLE insights ADD COLUMN embedding BLOB`); err != nil {
 		return fmt.Errorf("add embedding: %w", err)
@@ -340,6 +369,9 @@ CREATE INDEX IF NOT EXISTS idx_oplog_created ON oplog(created_at);
 	}
 	if _, err := db.conn.Exec(`CREATE INDEX IF NOT EXISTS idx_prune_candidates ON insights(deleted_at, importance, access_count, effective_importance)`); err != nil {
 		return fmt.Errorf("create prune_candidates index: %w", err)
+	}
+	if _, err := db.conn.Exec(`CREATE INDEX IF NOT EXISTS idx_prune_age_candidates ON insights(deleted_at, importance, access_count, stored_at, effective_importance)`); err != nil {
+		return fmt.Errorf("create prune_age_candidates index: %w", err)
 	}
 
 	// Migration: remove narrative edge type from existing databases

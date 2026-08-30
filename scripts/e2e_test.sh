@@ -764,14 +764,21 @@ banner "Milestone 10: Auto-Prune Lifecycle"
 TESTDIR10="$TESTDATA/m10"
 mkdir -p "$TESTDIR10"
 
-step "auto-prune — insert 5 low-imp + 2 high-imp insights (cap=4 for test)"
-# We'll use a small cap to test pruning. The cap is hardcoded at 1000 in production,
-# so here we test that the mechanism WORKS by checking auto_pruned=0 under cap.
+step "auto-prune — default grace protects a same-second write burst"
 for i in 1 2 3; do
-  $M --data-dir "$TESTDIR10" remember --no-diff "Low importance note $i" --cat general --imp 1 > /dev/null
+  OUT=$(MNEMON_MAX_INSIGHTS=2 $M --data-dir "$TESTDIR10" remember --no-diff "Low importance note $i" --cat general --imp 1)
 done
-OUT=$($M --data-dir "$TESTDIR10" remember --no-diff "High importance decision" --cat decision --imp 5)
-assert_jq "auto_pruned is 0 under cap" "$OUT" '.auto_pruned' '0'
+assert_jq "newborn memories are not pruned" "$OUT" '.auto_pruned' '0'
+assert_jq "newborn prune id list is empty" "$OUT" '.auto_pruned_ids | length' '0'
+
+step "auto-prune — explicit zero grace returns ids and durable audit rows"
+OUT=$(MNEMON_MAX_INSIGHTS=2 MNEMON_AUTO_PRUNE_MIN_AGE=0 $M --data-dir "$TESTDIR10" remember --no-diff "High importance decision" --cat decision --imp 5)
+assert_jq "two excess memories are pruned" "$OUT" '.auto_pruned' '2'
+assert_jq "pruned ids match count" "$OUT" '.auto_pruned_ids | length' '2'
+PRUNED_PREFIX=$(echo "$OUT" | jq -r '.auto_pruned_ids[0][0:8]')
+LOG_OUT=$($M --data-dir "$TESTDIR10" log --limit 20)
+assert_contains "auto-prune operation is visible" "$LOG_OUT" "auto-prune"
+assert_contains "auto-prune log names returned id" "$LOG_OUT" "$PRUNED_PREFIX"
 
 step "auto-prune — effective_importance varies by importance level"
 # imp=5 should have much higher EI than imp=1

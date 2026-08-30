@@ -208,7 +208,7 @@ var rememberCmd = &cobra.Command{
 		var (
 			edgeStats graph.EdgeStats
 			ei        float64
-			pruned    int
+			prunedIDs []string
 			embedded  bool
 		)
 		err = db.InTransaction(func() error {
@@ -259,9 +259,9 @@ var rememberCmd = &cobra.Command{
 
 			// Auto-prune if over capacity (excludeID protects the just-created insight)
 			var pruneErr error
-			pruned, pruneErr = db.AutoPrune(store.MaxInsightsLimit(), []string{insight.ID})
+			prunedIDs, pruneErr = db.AutoPruneWithResult(store.MaxInsightsLimit(), []string{insight.ID}, insight.ID)
 			if pruneErr != nil {
-				fmt.Fprintf(os.Stderr, "warning: auto-prune: %v\n", pruneErr)
+				return fmt.Errorf("auto-prune: %w", pruneErr)
 			}
 
 			db.LogOp("remember", insight.ID, insight.Content)
@@ -303,7 +303,8 @@ var rememberCmd = &cobra.Command{
 			"causal_candidates":    causalCandidates,
 			"embedded":             embedded,
 			"effective_importance": ei,
-			"auto_pruned":          pruned,
+			"auto_pruned":          len(prunedIDs),
+			"auto_pruned_ids":      prunedIDs,
 		}
 		if replacedID != "" {
 			output["replaced_id"] = replacedID

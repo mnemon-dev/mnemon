@@ -16,10 +16,23 @@ func (db *DB) LogOp(operation, insightID, detail string) {
 	if db.readOnly {
 		return
 	}
+	if err := db.RecordOp(operation, insightID, detail); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: oplog insert: %v\n", err)
+	}
+}
+
+// RecordOp durably appends one operation and reports insertion failures. Use it
+// for destructive transitions whose state change and audit evidence must commit
+// or roll back together. Callers must invoke it inside the same transaction as
+// the transition.
+func (db *DB) RecordOp(operation, insightID, detail string) error {
+	if db.readOnly {
+		return fmt.Errorf("database is read-only")
+	}
 	if _, err := db.execer().Exec(
 		`INSERT INTO oplog (operation, insight_id, detail, created_at) VALUES (?, ?, ?, ?)`,
 		operation, insightID, detail, time.Now().UTC().Format(time.RFC3339)); err != nil {
-		fmt.Fprintf(os.Stderr, "warning: oplog insert: %v\n", err)
+		return err
 	}
 
 	// Trim old entries: only deletes when count exceeds limit (O(1) in the common case).
@@ -28,6 +41,7 @@ func (db *DB) LogOp(operation, insightID, detail string) {
 		MaxOplogEntries); err != nil {
 		fmt.Fprintf(os.Stderr, "warning: oplog trim: %v\n", err)
 	}
+	return nil
 }
 
 // OplogEntry represents a single operation log entry.

@@ -256,6 +256,12 @@ open graph.html
 | `MNEMON_EMBED_API_KEY` | （无） | OpenAI 兼容服务器的 Bearer 令牌 |
 | `MNEMON_EMBED_DIMENSIONS` | (原生维度) | 嵌入向量维度；可设置截断值（例如 Matryoshka 模型使用 `256`） |
 | `MNEMON_MAX_INSIGHTS` | `1000` | 触发自动清理的活跃洞察数量上限；设为 `0` 可关闭自动清理 |
+| `MNEMON_AUTO_PRUNE_MIN_AGE` | `24h` | 可被自动清理前的最短存活时间；支持 `24h`、整数天 `7d`，设为 `0` 可关闭保护期 |
+
+如果所有候选 insight 都仍处于保护期内，活跃数量可暂时高于上限。保护期按本地
+实际入库时间计算，因此刚导入的历史记忆也会受到保护。每次删除均为软删除，与
+一条 `prune` oplog 记录在同一事务中提交，并通过触发命令的
+`auto_pruned_ids` 返回具体 ID，同时保留原有的 `auto_pruned` 计数。
 
 ---
 
