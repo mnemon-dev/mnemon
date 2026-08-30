@@ -48,7 +48,7 @@ exports are documented in docs/IMPORT.md.`,
 			return nil
 		}
 
-		db, err := openDB()
+		db, err := openWritableDB("import")
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}

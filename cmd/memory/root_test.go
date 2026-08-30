@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/mnemon-dev/mnemon/internal/memory/embed"
+	"github.com/mnemon-dev/mnemon/internal/memory/store"
+	"github.com/spf13/cobra"
 )
 
 func TestNewReturnsComposableMemoryRoot(t *testing.T) {
@@ -69,6 +71,79 @@ func TestOpenDBRejectsInvalidStoreNameFromFlag(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "invalid store name") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestOpenWritableDBRejectsReadOnlyBeforeCommandWork(t *testing.T) {
+	oldDataDir, oldStoreName, oldReadOnly := dataDir, storeName, readOnly
+	t.Cleanup(func() {
+		dataDir, storeName, readOnly = oldDataDir, oldStoreName, oldReadOnly
+	})
+	dataDir = t.TempDir()
+	storeName = ""
+	readOnly = false
+
+	db, err := openDB()
+	if err != nil {
+		t.Fatalf("create database: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close database: %v", err)
+	}
+
+	readOnly = true
+	db, err = openWritableDB("remember")
+	if db != nil {
+		db.Close()
+		t.Fatal("read-only writable open returned a database handle")
+	}
+	if err == nil || !strings.Contains(err.Error(), "remember is unavailable with --readonly") {
+		t.Fatalf("unexpected read-only error: %v", err)
+	}
+
+	ro, err := openDB()
+	if err != nil {
+		t.Fatalf("ordinary read-only open must remain available: %v", err)
+	}
+	defer ro.Close()
+	if !ro.IsReadOnly() {
+		t.Fatal("ordinary read-only open returned a writable handle")
+	}
+
+	if got := store.ReadActive(dataDir); got != store.DefaultStoreName {
+		t.Fatalf("active store = %q, want %q", got, store.DefaultStoreName)
+	}
+}
+
+func TestStoreMutationsRejectReadOnlyMode(t *testing.T) {
+	oldDataDir, oldStoreName, oldReadOnly := dataDir, storeName, readOnly
+	t.Cleanup(func() {
+		dataDir, storeName, readOnly = oldDataDir, oldStoreName, oldReadOnly
+	})
+	dataDir = t.TempDir()
+	storeName = ""
+	readOnly = true
+
+	tests := []struct {
+		name string
+		cmd  *cobra.Command
+	}{
+		{name: "store create", cmd: storeCreateCmd},
+		{name: "store set", cmd: storeSetCmd},
+		{name: "store remove", cmd: storeRemoveCmd},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.cmd.RunE(nil, []string{"example"})
+			if err == nil || !strings.Contains(err.Error(), tt.name+" is unavailable with --readonly") {
+				t.Fatalf("unexpected read-only error: %v", err)
+			}
+		})
+	}
+
+	if store.StoreExists(dataDir, "example") {
+		t.Fatal("read-only store commands created a store")
 	}
 }
 

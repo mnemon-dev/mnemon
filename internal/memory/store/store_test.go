@@ -69,6 +69,102 @@ func TestInsertAndGetInsight(t *testing.T) {
 	}
 }
 
+func TestOpenReadOnlyRejectsWrites(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "store with spaces")
+	db, err := Open(dir)
+	if err != nil {
+		t.Fatalf("open writable DB: %v", err)
+	}
+	if err := db.InsertInsight(makeInsight("seed", "existing", 3)); err != nil {
+		t.Fatalf("insert seed: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close writable DB: %v", err)
+	}
+
+	ro, err := OpenReadOnly(dir)
+	if err != nil {
+		t.Fatalf("open read-only DB: %v", err)
+	}
+	if !ro.IsReadOnly() {
+		t.Fatal("read-only handle must report IsReadOnly")
+	}
+	stats, err := ro.GetStats()
+	if err != nil {
+		t.Fatalf("query through read-only handle: %v", err)
+	}
+	if stats.Total != 1 {
+		t.Fatalf("read-only total insights = %d, want 1", stats.Total)
+	}
+	if err := ro.InsertInsight(makeInsight("forbidden", "must not persist", 3)); err == nil {
+		t.Fatal("read-only handle accepted an insert")
+	}
+	if err := ro.Close(); err != nil {
+		t.Fatalf("close read-only DB: %v", err)
+	}
+
+	reopened, err := Open(dir)
+	if err != nil {
+		t.Fatalf("reopen writable DB: %v", err)
+	}
+	defer reopened.Close()
+	stats, err = reopened.GetStats()
+	if err != nil {
+		t.Fatalf("stats after rejected write: %v", err)
+	}
+	if stats.Total != 1 {
+		t.Fatalf("total insights after rejected write = %d, want 1", stats.Total)
+	}
+}
+
+func TestOpenReadOnlyDoesNotCreateSidecars(t *testing.T) {
+	sourceDir := t.TempDir()
+	db, err := Open(sourceDir)
+	if err != nil {
+		t.Fatalf("open source DB: %v", err)
+	}
+	if err := db.InsertInsight(makeInsight("seed", "snapshot content", 3)); err != nil {
+		t.Fatalf("insert source insight: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close source DB: %v", err)
+	}
+
+	snapshotDir := filepath.Join(t.TempDir(), "read only snapshot")
+	if err := os.MkdirAll(snapshotDir, 0o755); err != nil {
+		t.Fatalf("create snapshot dir: %v", err)
+	}
+	database, err := os.ReadFile(filepath.Join(sourceDir, "mnemon.db"))
+	if err != nil {
+		t.Fatalf("read source DB: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(snapshotDir, "mnemon.db"), database, 0o444); err != nil {
+		t.Fatalf("write snapshot DB: %v", err)
+	}
+
+	ro, err := OpenReadOnly(snapshotDir)
+	if err != nil {
+		t.Fatalf("open snapshot read-only: %v", err)
+	}
+	stats, err := ro.GetStats()
+	if err != nil {
+		t.Fatalf("query snapshot: %v", err)
+	}
+	if stats.Total != 1 {
+		t.Fatalf("snapshot total insights = %d, want 1", stats.Total)
+	}
+	if err := ro.Close(); err != nil {
+		t.Fatalf("close snapshot: %v", err)
+	}
+
+	for _, suffix := range []string{"-wal", "-shm", "-journal"} {
+		path := filepath.Join(snapshotDir, "mnemon.db"+suffix)
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("read-only snapshot created sidecar %s (stat error %v)", path, err)
+		}
+	}
+}
+
 func TestGetInsightByID_NotFound(t *testing.T) {
 	db := testDB(t)
 	_, err := db.GetInsightByID("nonexistent")

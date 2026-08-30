@@ -44,6 +44,9 @@ Keep mode:
 
 		// Keep mode: boost retention for a specific insight
 		if gcKeepID != "" {
+			if err := requireWritableDB(db, "gc --keep"); err != nil {
+				return err
+			}
 			ins, err := db.GetInsightByID(gcKeepID)
 			if err != nil || ins == nil {
 				return fmt.Errorf("insight %s not found", gcKeepID)

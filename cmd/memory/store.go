@@ -47,6 +47,9 @@ var storeCreateCmd = &cobra.Command{
 	Short: "Create a new memory store",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireWritableMode("store create"); err != nil {
+			return err
+		}
 		name := args[0]
 		if !store.ValidStoreName(name) {
 			return fmt.Errorf("invalid store name %q: must match [a-zA-Z0-9][a-zA-Z0-9_-]*", name)
@@ -72,6 +75,9 @@ var storeSetCmd = &cobra.Command{
 	Short: "Set the default active store",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireWritableMode("store set"); err != nil {
+			return err
+		}
 		name := args[0]
 		if !store.ValidStoreName(name) {
 			return fmt.Errorf("invalid store name %q: must match [a-zA-Z0-9][a-zA-Z0-9_-]*", name)
@@ -94,6 +100,9 @@ var storeRemoveCmd = &cobra.Command{
 	Short: "Remove a memory store and all its data",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireWritableMode("store remove"); err != nil {
+			return err
+		}
 		name := args[0]
 		if !store.ValidStoreName(name) {
 			return fmt.Errorf("invalid store name %q: must match [a-zA-Z0-9][a-zA-Z0-9_-]*", name)

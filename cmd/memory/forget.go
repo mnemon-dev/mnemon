@@ -16,7 +16,7 @@ var forgetCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		id := args[0]
 
-		db, err := openDB()
+		db, err := openWritableDB("forget")
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}

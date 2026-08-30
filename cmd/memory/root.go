@@ -39,7 +39,7 @@ func init() {
 	}
 	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", defaultDataDir, "base data directory (env: MNEMON_DATA_DIR)")
 	rootCmd.PersistentFlags().StringVar(&storeName, "store", "", "named memory store (overrides MNEMON_STORE and active file)")
-	rootCmd.PersistentFlags().BoolVar(&readOnly, "readonly", false, "open database in read-only mode (no WAL files, safe for read-only mounts)")
+	rootCmd.PersistentFlags().BoolVar(&readOnly, "readonly", false, "open an immutable database snapshot (reject writes; create no WAL files)")
 	rootCmd.PersistentFlags().StringVar(&embedModel, "embed-model", "",
 		fmt.Sprintf("embedding model (env: MNEMON_EMBED_MODEL; default: %s)", embed.DefaultModel))
 }
@@ -97,4 +97,38 @@ func openDB() (*store.DB, error) {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return store.Open(dir)
+}
+
+// openWritableDB opens the selected store and rejects mutating command paths
+// when --readonly is active. The store layer still enforces SQLite mode=ro as
+// a defense in depth; this guard gives callers a stable, actionable CLI error
+// before embeddings or any other command work begins.
+func openWritableDB(action string) (*store.DB, error) {
+	db, err := openDB()
+	if err != nil {
+		return nil, err
+	}
+	if err := requireWritableDB(db, action); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+func requireWritableDB(db *store.DB, action string) error {
+	if db.IsReadOnly() {
+		return readOnlyWriteError(action)
+	}
+	return nil
+}
+
+func requireWritableMode(action string) error {
+	if readOnly {
+		return readOnlyWriteError(action)
+	}
+	return nil
+}
+
+func readOnlyWriteError(action string) error {
+	return fmt.Errorf("%s is unavailable with --readonly: database writes are disabled", action)
 }

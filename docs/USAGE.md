@@ -13,7 +13,13 @@ These root flags configure Memory commands:
 | `--store <name>` | (auto) | Named memory store (overrides `MNEMON_STORE` and active file) |
 | `--data-dir <path>` | `~/.mnemon` | Base data directory |
 | `--embed-model <name>` | `nomic-embed-text` | Embedding model (overrides `MNEMON_EMBED_MODEL`) |
-| `--readonly` | `false` | Open the Memory database read-only, without creating WAL files |
+| `--readonly` | `false` | Open an immutable Memory database snapshot; reject write commands and create no WAL files |
+
+`--readonly` is intended for a static database snapshot on a read-only mount.
+It rejects commands that mutate Memory data and suppresses incidental recall
+counters/oplog writes. Do not use it to follow a database another process is
+actively changing; immutable snapshots deliberately ignore concurrent WAL
+updates.
 | `--version` | | Print version and exit |
 
 ---
