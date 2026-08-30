@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `mnemon recall --brief` and `mnemon search --brief` now provide a bounded,
+  unindented JSON discovery projection. `--excerpt-chars` controls the per-item
+  excerpt limit, and `mnemon show <id>` retrieves one selected insight in full.
 - `mnemon setup --target zcode` now installs a ZCode-compatible Mnemon skill.
   With `--global`, setup also registers user-level `SessionStart`,
   `UserPromptSubmit`, and `Stop` process hooks in
@@ -27,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Tests
 
+- Added unit and CLI end-to-end coverage for Unicode-safe excerpt bounds,
+  compact encoding, basic and smart recall, search, full-result lookup, and
+  incompatible output flags.
 - Added ZCode coverage for embedded artifacts, POSIX and Windows hook
   registration, unrelated configuration preservation, and scoped eject
   cleanup.

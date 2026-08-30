@@ -22,6 +22,8 @@ var (
 	recSmart    bool //nolint:unused // deprecated: smart is now the default; kept for backward compat
 	recIntent   string
 	recVerbose  bool
+	recBrief    bool
+	recExcerpt  int
 )
 
 // compactResult is the LLM-friendly projection of a recall result.
@@ -106,6 +108,12 @@ var recallCmd = &cobra.Command{
 		if err := requirePositiveLimit("--limit", recLimit); err != nil {
 			return err
 		}
+		if err := validateBriefExcerptChars(recBrief, recExcerpt); err != nil {
+			return err
+		}
+		if recBrief && recVerbose {
+			return fmt.Errorf("--brief and --verbose cannot be used together")
+		}
 
 		db, err := openDB()
 		if err != nil {
@@ -117,7 +125,7 @@ var recallCmd = &cobra.Command{
 		enc.SetIndent("", "  ")
 
 		if recBasic {
-			// Legacy SQL LIKE recall (not affected by format flags)
+			// Legacy SQL LIKE recall.
 			results, err := db.QueryInsights(store.QueryFilter{
 				Keyword:  keyword,
 				Category: recCategory,
@@ -132,6 +140,17 @@ var recallCmd = &cobra.Command{
 				_ = db.IncrementAccessCount(r.ID)
 			}
 			db.LogOp("recall:basic", "", fmt.Sprintf("q=%s hits=%d", keyword, len(results)))
+			if recBrief {
+				brief := make([]briefResult, 0, len(results))
+				for _, result := range results {
+					brief = append(brief, briefResult{
+						ID:       result.ID,
+						Excerpt:  makeBriefExcerpt(result.Content, recExcerpt),
+						Category: string(result.Category),
+					})
+				}
+				return encodeBrief(os.Stdout, newBriefResponse(brief, ""))
+			}
 			return enc.Encode(results)
 		}
 
@@ -172,6 +191,20 @@ var recallCmd = &cobra.Command{
 		if recVerbose {
 			return enc.Encode(resp)
 		}
+		if recBrief {
+			brief := make([]briefResult, 0, len(resp.Results))
+			for _, result := range resp.Results {
+				score := roundScore(result.Score)
+				brief = append(brief, briefResult{
+					ID:         result.Insight.ID,
+					Excerpt:    makeBriefExcerpt(result.Insight.Content, recExcerpt),
+					Category:   string(result.Insight.Category),
+					Score:      scorePointer(score),
+					Confidence: confidenceLabel(score),
+				})
+			}
+			return encodeBrief(os.Stdout, newBriefResponse(brief, resp.Meta.Hint))
+		}
 		return enc.Encode(toCompact(resp))
 	},
 }
@@ -185,5 +218,7 @@ func init() {
 	_ = recallCmd.Flags().MarkHidden("smart")
 	recallCmd.Flags().StringVar(&recIntent, "intent", "", "override intent (WHY|WHEN|ENTITY|GENERAL)")
 	recallCmd.Flags().BoolVar(&recVerbose, "verbose", false, "output full recall response (signals, meta, timestamps)")
+	recallCmd.Flags().BoolVar(&recBrief, "brief", false, "output short excerpts for discovery; use 'mnemon show <id>' for full content")
+	recallCmd.Flags().IntVar(&recExcerpt, "excerpt-chars", defaultBriefExcerptChars, "maximum characters per --brief excerpt")
 	rootCmd.AddCommand(recallCmd)
 }

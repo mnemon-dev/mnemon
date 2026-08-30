@@ -23,7 +23,7 @@ func TestNewReturnsComposableMemoryRoot(t *testing.T) {
 	if cmd.Version != "test-version" {
 		t.Fatalf("root version = %q, want test-version", cmd.Version)
 	}
-	for _, name := range []string{"remember", "recall", "setup", "store"} {
+	for _, name := range []string{"remember", "recall", "show", "setup", "store"} {
 		if child, _, err := cmd.Find([]string{name}); err != nil || child == cmd {
 			t.Fatalf("memory command %q is not registered", name)
 		}
