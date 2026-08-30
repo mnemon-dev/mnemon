@@ -10,7 +10,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var searchLimit int
+var (
+	searchLimit   int
+	searchBrief   bool
+	searchExcerpt int
+)
 
 var searchCmd = &cobra.Command{
 	Use:   "search [query]",
@@ -20,6 +24,9 @@ var searchCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		query := strings.Join(args, " ")
 		if err := requirePositiveLimit("--limit", searchLimit); err != nil {
+			return err
+		}
+		if err := validateBriefExcerptChars(searchBrief, searchExcerpt); err != nil {
 			return err
 		}
 
@@ -42,6 +49,19 @@ var searchCmd = &cobra.Command{
 		}
 
 		db.LogOp("search", "", fmt.Sprintf("q=%s hits=%d", query, len(results)))
+		if searchBrief {
+			brief := make([]briefResult, 0, len(results))
+			for _, result := range results {
+				score := roundScore(result.Score)
+				brief = append(brief, briefResult{
+					ID:       result.Insight.ID,
+					Excerpt:  makeBriefExcerpt(result.Insight.Content, searchExcerpt),
+					Category: string(result.Insight.Category),
+					Score:    scorePointer(score),
+				})
+			}
+			return encodeBrief(os.Stdout, newBriefResponse(brief, ""))
+		}
 
 		type outputItem struct {
 			ID         string   `json:"id"`
@@ -71,5 +91,7 @@ var searchCmd = &cobra.Command{
 
 func init() {
 	searchCmd.Flags().IntVar(&searchLimit, "limit", 10, "max results")
+	searchCmd.Flags().BoolVar(&searchBrief, "brief", false, "output short excerpts for discovery; use 'mnemon show <id>' for full content")
+	searchCmd.Flags().IntVar(&searchExcerpt, "excerpt-chars", defaultBriefExcerptChars, "maximum characters per --brief excerpt")
 	rootCmd.AddCommand(searchCmd)
 }

@@ -85,6 +85,10 @@ mnemon remember "Raw note" --no-diff
 # Recall — intent-aware graph-enhanced retrieval (default: compact output)
 mnemon recall "vector database" --limit 10
 
+# Discovery-only recall — short excerpts, then fetch one full result by ID
+mnemon recall "vector database" --brief --excerpt-chars 160
+mnemon show <id>
+
 # Recall with full verbose output (signals, meta, timestamps)
 mnemon recall "vector database" --verbose
 
@@ -99,6 +103,7 @@ mnemon recall "auth" --basic
 
 # Search — token-scored keyword search
 mnemon search "authentication" --limit 10
+mnemon search "authentication" --brief --excerpt-chars 160
 
 # Import — bulk-import a memory draft file (see docs/IMPORT.md for schema and LLM prompt)
 mnemon import memory_draft.json
@@ -130,6 +135,8 @@ mnemon forget <id>
 | `--cat` | | Filter by category |
 | `--source` | | Filter by source |
 | `--basic` | `false` | Use simple SQL LIKE matching instead of smart recall |
+| `--brief` | `false` | Emit compact JSON with short excerpts for discovery; fetch selected full content with `mnemon show <id>` |
+| `--excerpt-chars` | `240` | Maximum Unicode characters per `--brief` excerpt |
 | `--verbose` | `false` | Output full recall response (signals, meta, timestamps) |
 
 The default compact output is optimized for LLM/agent consumption. It includes
@@ -137,6 +144,11 @@ The default compact output is optimized for LLM/agent consumption. It includes
 and `score`. Use `--verbose` to restore the full payload with signals, traversal
 metadata, and timestamps. The confidence label is only emitted in compact mode;
 verbose payloads return the raw score for callers that prefer their own thresholds.
+For large memories, `--brief` is a smaller discovery projection: it flattens
+whitespace, caps each excerpt, emits unindented JSON, and includes one
+`detail_command` hint. `search` supports the same two flags. JSON remains the
+machine-readable interchange format; the opt-in projection avoids changing
+existing parsers or adopting a draft serialization format.
 
 ### Graph Operations
 

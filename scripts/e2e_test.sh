@@ -236,6 +236,19 @@ assert_contains "compact has confidence" "$OUT" '"confidence"'
 assert_not_contains "compact omits signals" "$OUT" '"signals"'
 assert_not_contains "compact omits anchor_count" "$OUT" '"anchor_count"'
 
+step "recall --brief → show — bounded discovery then full content"
+OUT=$($M --data-dir "$TESTDIR" recall "Qdrant" --brief --excerpt-chars 20)
+assert_jq "brief excerpt is bounded" "$OUT" '.results[0].excerpt | length <= 20' 'true'
+assert_not_contains "brief omits full content field" "$OUT" '"content"'
+assert_contains "brief points to full lookup" "$OUT" 'mnemon show <id>'
+SHOW_OUT=$($M --data-dir "$TESTDIR" show "$ID1")
+assert_contains "show restores full content" "$SHOW_OUT" 'User prefers Qdrant for vector DB'
+assert_jq "show returns requested id" "$SHOW_OUT" '.id' "$ID1"
+OUT=$($M --data-dir "$TESTDIR" recall "Qdrant" --basic --brief --excerpt-chars 20)
+assert_jq "basic brief uses the same bounded projection" "$OUT" '.results[0].excerpt | length <= 20' 'true'
+OUT=$($M --data-dir "$TESTDIR" recall "Qdrant" --brief --verbose 2>&1 || true)
+assert_contains "brief and verbose are mutually exclusive" "$OUT" 'cannot be used together'
+
 step "recall — no match returns sparse hint (compact)"
 OUT=$($M --data-dir "$TESTDIR" recall "nonexistent_xyz")
 assert_contains "sparse hint" "$OUT" "sparse_results"
@@ -343,6 +356,11 @@ OUT=$($M --data-dir "$TESTDIR2" search "Rust performance")
 show_json "$OUT" 15
 assert_contains "finds decision insight" "$OUT" "Chose Qdrant"
 assert_contains "has score field"        "$OUT" '"score"'
+
+step "search --brief — bounded discovery projection"
+OUT=$($M --data-dir "$TESTDIR2" search "Rust performance" --brief --excerpt-chars 18)
+assert_jq "search brief excerpt is bounded" "$OUT" '.results[0].excerpt | length <= 18' 'true'
+assert_contains "search brief points to full lookup" "$OUT" 'mnemon show <id>'
 
 step "search — no match returns []"
 OUT=$($M --data-dir "$TESTDIR2" search "zzz_no_match_zzz")

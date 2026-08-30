@@ -83,6 +83,10 @@ mnemon remember "原始笔记" --no-diff
 # Recall — 意图感知的图增强检索（默认输出为紧凑格式）
 mnemon recall "vector database" --limit 10
 
+# 仅发现候选 — 返回短摘要，再按 ID 获取完整内容
+mnemon recall "vector database" --brief --excerpt-chars 160
+mnemon show <id>
+
 # 输出完整召回结果（signals、meta、时间戳）
 mnemon recall "vector database" --verbose
 
@@ -97,6 +101,7 @@ mnemon recall "auth" --basic
 
 # Search — 基于 token 评分的关键词搜索
 mnemon search "authentication" --limit 10
+mnemon search "authentication" --brief --excerpt-chars 160
 
 # Import — 批量导入 Memory draft（格式与 LLM prompt 见 docs/IMPORT.md）
 mnemon import memory_draft.json
@@ -128,12 +133,18 @@ mnemon forget <id>
 | `--cat` | | 按分类过滤 |
 | `--source` | | 按来源过滤 |
 | `--basic` | `false` | 使用简单 SQL LIKE 匹配代替智能召回 |
+| `--brief` | `false` | 输出仅含短摘要的紧凑 JSON；使用 `mnemon show <id>` 获取选中项全文 |
+| `--excerpt-chars` | `240` | 每条 `--brief` 摘要最多包含的 Unicode 字符数 |
 | `--verbose` | `false` | 输出完整召回响应（signals、meta、时间戳） |
 
 默认紧凑输出针对 LLM/agent 消费优化，包含 `id`、`content`、`category`、
 `importance`、`intent`、`matched_via`、`confidence` 和 `score`。使用
 `--verbose` 可恢复包含 signals、遍历元数据和时间戳的完整响应。置信度标签只在
 紧凑模式输出；完整响应保留原始分数，供调用方自行设置阈值。
+对于长记忆，`--brief` 提供更小的发现投影：折叠空白、限制每条摘要长度、输出
+无缩进 JSON，并只附带一次 `detail_command` 提示。`search` 同样支持这两个标志。
+JSON 继续作为机器可读交换格式，因此既不破坏现有解析器，也无需绑定尚在演进的
+序列化草案。
 
 **Import 标志：**
 
