@@ -36,7 +36,7 @@ var linkCmd = &cobra.Command{
 			return fmt.Errorf("weight must be between 0.0 and 1.0, got %.2f", linkWeight)
 		}
 
-		db, err := openDB()
+		db, err := openWritableDB("link")
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}

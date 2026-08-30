@@ -29,6 +29,11 @@ Modes:
 			return fmt.Errorf("open database: %w", err)
 		}
 		defer db.Close()
+		if !embedStatus {
+			if err := requireWritableDB(db, "embed"); err != nil {
+				return err
+			}
+		}
 
 		ec := embed.NewClientWithModel(resolveEmbedModel())
 		enc := json.NewEncoder(os.Stdout)

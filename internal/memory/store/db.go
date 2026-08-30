@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -199,16 +200,27 @@ func renameIfExists(oldPath, newPath string) error {
 	return os.Rename(oldPath, newPath)
 }
 
-// OpenReadOnly opens the SQLite database in read-only mode.
-// Safe for read-only filesystem mounts: uses journal_mode=OFF to avoid
-// writing WAL/SHM sidecar files.
+// OpenReadOnly opens an immutable SQLite snapshot in read-only mode.
+// Immutable mode avoids WAL/SHM sidecar files, making the handle safe for a
+// database copied onto a read-only filesystem. Callers must not use this mode
+// to observe a database that another process is actively changing.
 func OpenReadOnly(dataDir string) (*DB, error) {
 	dbPath := filepath.Join(dataDir, "mnemon.db")
 	if _, err := os.Stat(dbPath); err != nil {
 		return nil, fmt.Errorf("database not found: %s", dbPath)
 	}
 
-	conn, err := sql.Open("sqlite", dbPath+"?mode=ro&_pragma=journal_mode(OFF)&_pragma=foreign_keys(1)")
+	// mode=ro is a SQLite URI parameter, not a generic filename query
+	// parameter. Without the file: URI scheme modernc/sqlite treats this as a
+	// normal read-write open and silently ignores the intended protection.
+	dsn := &url.URL{Scheme: "file", Path: filepath.ToSlash(dbPath)}
+	query := dsn.Query()
+	query.Set("mode", "ro")
+	query.Set("immutable", "1")
+	query.Add("_pragma", "foreign_keys(1)")
+	dsn.RawQuery = query.Encode()
+
+	conn, err := sql.Open("sqlite", dsn.String())
 	if err != nil {
 		return nil, fmt.Errorf("open readonly database: %w", err)
 	}

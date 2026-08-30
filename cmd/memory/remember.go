@@ -100,7 +100,7 @@ var rememberCmd = &cobra.Command{
 			UpdatedAt:  now,
 		}
 
-		db, err := openDB()
+		db, err := openWritableDB("remember")
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}
