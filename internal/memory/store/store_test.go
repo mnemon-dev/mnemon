@@ -2,10 +2,12 @@ package store
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/binary"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -713,9 +715,84 @@ func TestMigrateRemoveNarrativeEdges_KeepsRealEdgesNamedLikeTheSentinel(t *testi
 	}
 }
 
+func TestMigrateStoredAtBackfillsLegacyInsights(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "mnemon.db")
+	legacy, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open legacy database: %v", err)
+	}
+	if _, err := legacy.Exec(`
+		CREATE TABLE insights (
+			id TEXT PRIMARY KEY,
+			content TEXT NOT NULL,
+			category TEXT DEFAULT 'general',
+			importance INTEGER DEFAULT 3,
+			tags TEXT DEFAULT '[]',
+			entities TEXT DEFAULT '[]',
+			source TEXT DEFAULT 'user',
+			access_count INTEGER DEFAULT 0,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			deleted_at TEXT
+		);
+		INSERT INTO insights
+			(id, content, created_at, updated_at)
+		VALUES
+			('legacy-row', 'pre-migration memory', '2025-01-02T03:04:05Z', '2025-01-02T03:04:05Z')
+	`); err != nil {
+		legacy.Close()
+		t.Fatalf("create legacy schema: %v", err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatalf("close legacy database: %v", err)
+	}
+
+	migrated, err := Open(dir)
+	if err != nil {
+		t.Fatalf("migrate legacy database: %v", err)
+	}
+	defer migrated.Close()
+
+	var storedAt string
+	if err := migrated.conn.QueryRow(
+		`SELECT stored_at FROM insights WHERE id = 'legacy-row'`).Scan(&storedAt); err != nil {
+		t.Fatalf("read stored_at: %v", err)
+	}
+	if storedAt != "2025-01-02T03:04:05Z" {
+		t.Fatalf("stored_at = %q, want legacy created_at", storedAt)
+	}
+
+	// A sync tool built against the old schema can continue omitting stored_at;
+	// the migrated store must still protect that incoming row as newborn.
+	if _, err := migrated.conn.Exec(`
+		INSERT INTO insights (id, content, created_at, updated_at)
+		VALUES ('external-row', 'legacy writer payload', '2020-01-01T00:00:00Z', '2020-01-01T00:00:00Z')
+	`); err != nil {
+		t.Fatalf("legacy-style insert after migration: %v", err)
+	}
+	if err := migrated.conn.QueryRow(
+		`SELECT stored_at FROM insights WHERE id = 'external-row'`).Scan(&storedAt); err != nil {
+		t.Fatalf("read external stored_at: %v", err)
+	}
+	physicalTime, err := time.Parse(time.RFC3339, storedAt)
+	if err != nil {
+		t.Fatalf("parse external stored_at %q: %v", storedAt, err)
+	}
+	if physicalTime.Before(time.Now().UTC().Add(-time.Minute)) {
+		t.Fatalf("legacy-style insert inherited historical event time: %s", physicalTime)
+	}
+}
+
 // --- AutoPrune ---
 
+func disableAutoPruneGrace(t *testing.T) {
+	t.Helper()
+	t.Setenv("MNEMON_AUTO_PRUNE_MIN_AGE", "0")
+}
+
 func TestAutoPrune_PrunesLowestEI(t *testing.T) {
+	disableAutoPruneGrace(t)
 	db := testDB(t)
 
 	// Insert more than max
@@ -743,16 +820,18 @@ func TestAutoPrune_PrunesLowestEI(t *testing.T) {
 // left no oplog entry — a store could silently shed thousands of insights with
 // no record of which ones. Every pruned id must be recoverable from the oplog.
 func TestAutoPrune_RecordsOplogEntryPerPrunedInsight(t *testing.T) {
+	disableAutoPruneGrace(t)
 	db := testDB(t)
 
 	for i := range 5 {
 		db.InsertInsight(makeInsight("audit-"+string(rune('a'+i)), "content", 2))
 	}
 
-	pruned, err := db.AutoPrune(3, nil)
+	prunedIDs, err := db.AutoPruneWithResult(3, nil, "trigger-write")
 	if err != nil {
 		t.Fatalf("auto prune: %v", err)
 	}
+	pruned := len(prunedIDs)
 	if pruned != 2 {
 		t.Fatalf("want 2 pruned, got %d", pruned)
 	}
@@ -767,6 +846,9 @@ func TestAutoPrune_RecordsOplogEntryPerPrunedInsight(t *testing.T) {
 			logged[e.InsightID] = true
 			if e.Detail == "" {
 				t.Errorf("prune entry for %s has empty detail", e.InsightID)
+			}
+			if !strings.Contains(e.Detail, "trigger=trigger-write") {
+				t.Errorf("prune entry for %s missing trigger: %q", e.InsightID, e.Detail)
 			}
 		}
 	}
@@ -789,9 +871,15 @@ func TestAutoPrune_RecordsOplogEntryPerPrunedInsight(t *testing.T) {
 			t.Errorf("oplog claims %s pruned but it is still active", id)
 		}
 	}
+	for _, id := range prunedIDs {
+		if !logged[id] {
+			t.Errorf("returned pruned id %s has no matching oplog entry", id)
+		}
+	}
 }
 
 func TestAutoPrune_RespectsImmune(t *testing.T) {
+	disableAutoPruneGrace(t)
 	db := testDB(t)
 
 	// Insert 3 insights: 2 immune (importance=4), 1 not
@@ -819,6 +907,7 @@ func TestAutoPrune_RespectsImmune(t *testing.T) {
 }
 
 func TestAutoPrune_RespectsExcludeIDs(t *testing.T) {
+	disableAutoPruneGrace(t)
 	db := testDB(t)
 	ins1 := makeInsight("ex-1", "content a", 1)
 	ins2 := makeInsight("ex-2", "content b", 1)
@@ -861,6 +950,95 @@ func TestMaxInsightsLimit(t *testing.T) {
 	}
 }
 
+func TestAutoPruneMinAge(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		want time.Duration
+	}{
+		{name: "default", env: "", want: DefaultAutoPruneMinAge},
+		{name: "hours", env: "2h", want: 2 * time.Hour},
+		{name: "days", env: "7d", want: 7 * 24 * time.Hour},
+		{name: "padded", env: " 30m ", want: 30 * time.Minute},
+		{name: "zero disables", env: "0", want: 0},
+		{name: "negative falls back", env: "-1h", want: DefaultAutoPruneMinAge},
+		{name: "invalid falls back", env: "tomorrow", want: DefaultAutoPruneMinAge},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("MNEMON_AUTO_PRUNE_MIN_AGE", tt.env)
+			if got := AutoPruneMinAge(); got != tt.want {
+				t.Errorf("AutoPruneMinAge() with %q = %s, want %s", tt.env, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAutoPrune_DefaultGraceProtectsNewbornInsights(t *testing.T) {
+	t.Setenv("MNEMON_AUTO_PRUNE_MIN_AGE", "")
+	db := testDB(t)
+
+	old := makeInsight("old", "eligible old memory", 1)
+	old.CreatedAt = time.Now().UTC().Add(-DefaultAutoPruneMinAge - time.Hour)
+	old.UpdatedAt = old.CreatedAt
+	if err := db.InsertInsight(old); err != nil {
+		t.Fatalf("insert old insight: %v", err)
+	}
+	if _, err := db.Conn().Exec(`UPDATE insights SET stored_at = ? WHERE id = ?`,
+		old.CreatedAt.Format(time.RFC3339), old.ID); err != nil {
+		t.Fatalf("age stored_at for old insight: %v", err)
+	}
+	for _, id := range []string{"newborn-a", "newborn-b"} {
+		if err := db.InsertInsight(makeInsight(id, "newborn memory", 1)); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+	}
+
+	prunedIDs, err := db.AutoPruneWithResult(1, nil, "newborn-b")
+	if err != nil {
+		t.Fatalf("auto prune: %v", err)
+	}
+	if len(prunedIDs) != 1 || prunedIDs[0] != "old" {
+		t.Fatalf("pruned ids = %v, want [old]", prunedIDs)
+	}
+	for _, id := range []string{"newborn-a", "newborn-b"} {
+		if _, err := db.GetInsightByID(id); err != nil {
+			t.Errorf("grace period did not protect %s: %v", id, err)
+		}
+	}
+}
+
+func TestAutoPrune_AuditFailureRollsBackDeletion(t *testing.T) {
+	disableAutoPruneGrace(t)
+	db := testDB(t)
+	for _, id := range []string{"rollback-a", "rollback-b"} {
+		if err := db.InsertInsight(makeInsight(id, "must survive", 1)); err != nil {
+			t.Fatalf("insert %s: %v", id, err)
+		}
+	}
+	if _, err := db.Conn().Exec(`
+		CREATE TRIGGER reject_auto_prune_audit
+		BEFORE INSERT ON oplog
+		WHEN NEW.operation = 'prune'
+		BEGIN
+			SELECT RAISE(ABORT, 'audit unavailable');
+		END`); err != nil {
+		t.Fatalf("create rejecting trigger: %v", err)
+	}
+
+	if _, err := db.AutoPruneWithResult(1, nil, "rollback-b"); err == nil {
+		t.Fatal("auto prune succeeded without its required audit record")
+	}
+	active, err := db.GetAllActiveInsights()
+	if err != nil {
+		t.Fatalf("get active insights: %v", err)
+	}
+	if len(active) != 2 {
+		t.Fatalf("audit failure left %d active insights, want 2", len(active))
+	}
+}
+
 // Switching auto-prune off has to hold at the capacity check itself, not only
 // at the call sites, or a future caller reintroduces the reaping.
 func TestAutoPrune_UnlimitedCeilingPrunesNothing(t *testing.T) {
@@ -888,6 +1066,7 @@ func TestAutoPrune_UnlimitedCeilingPrunesNothing(t *testing.T) {
 // gc reports: the same store that prunes under a lower resolved ceiling is
 // left whole once MNEMON_MAX_INSIGHTS resolves above its size.
 func TestAutoPrune_RaisedCeilingChangesEnforcement(t *testing.T) {
+	disableAutoPruneGrace(t)
 	db := testDB(t)
 	for i := range 5 {
 		if err := db.InsertInsight(makeInsight("raised-"+string(rune('a'+i)), "content", 2)); err != nil {

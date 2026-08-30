@@ -47,7 +47,8 @@ BEGIN TRANSACTION
      ├── CreateCausalEdges     → 关键词 + token 重叠 → 自动因果边
      └── CreateSemanticEdges   → cos ≥ 0.80 自动链接
   ④ RefreshEffectiveImportance → 更新 EI 衰减值
-  ⑤ AutoPrune                 → 总量 > 1000 时软删除最低 EI
+  ⑤ AutoPrune                 → 软删除超过保护期且 EI 最低的条目
+                                 + 每个 ID 必须写入 oplog
 COMMIT
 ```
 
@@ -72,7 +73,8 @@ COMMIT
   ],
   "embedded": true,
   "effective_importance": 0.85,
-  "auto_pruned": 0
+  "auto_pruned": 0,
+  "auto_pruned_ids": []
 }
 ```
 

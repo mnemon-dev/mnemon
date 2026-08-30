@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -10,6 +11,79 @@ import (
 	"github.com/mnemon-dev/mnemon/internal/memory/model"
 	"github.com/mnemon-dev/mnemon/internal/memory/store"
 )
+
+func TestImportGraceProtectsNewbornBatchAndReportsIDs(t *testing.T) {
+	t.Setenv("MNEMON_EMBED_ENDPOINT", "http://127.0.0.1:1")
+	t.Setenv("MNEMON_MAX_INSIGHTS", "1")
+	t.Setenv("MNEMON_AUTO_PRUNE_MIN_AGE", "")
+
+	oldDataDir, oldStoreName, oldReadOnly := dataDir, storeName, readOnly
+	oldImportNoDiff, oldImportDryRun := importNoDiff, importDryRun
+	t.Cleanup(func() {
+		dataDir, storeName, readOnly = oldDataDir, oldStoreName, oldReadOnly
+		importNoDiff, importDryRun = oldImportNoDiff, oldImportDryRun
+	})
+	dataDir = t.TempDir()
+	storeName = ""
+	readOnly = false
+	importNoDiff = true
+	importDryRun = false
+
+	draftPath := filepath.Join(t.TempDir(), "memory_draft.json")
+	draft := `{
+  "schema_version": "1",
+  "insights": [
+    {"content": "first newborn memory", "importance": 1, "created_at": "2024-01-01T00:00:00Z"},
+    {"content": "second newborn memory", "importance": 1, "created_at": "2024-01-02T00:00:00Z"}
+  ]
+}`
+	if err := os.WriteFile(draftPath, []byte(draft), 0o644); err != nil {
+		t.Fatalf("write draft: %v", err)
+	}
+
+	var runErr error
+	out := captureStdout(t, func() {
+		runErr = importCmd.RunE(importCmd, []string{draftPath})
+	})
+	if runErr != nil {
+		t.Fatalf("import: %v", runErr)
+	}
+	var summary struct {
+		AutoPruned    int      `json:"auto_pruned"`
+		AutoPrunedIDs []string `json:"auto_pruned_ids"`
+	}
+	if err := json.Unmarshal([]byte(out), &summary); err != nil {
+		t.Fatalf("decode import output: %v\n%s", err, out)
+	}
+	if summary.AutoPruned != 0 || summary.AutoPrunedIDs == nil || len(summary.AutoPrunedIDs) != 0 {
+		t.Fatalf("newborn batch was pruned: count %d ids %v", summary.AutoPruned, summary.AutoPrunedIDs)
+	}
+
+	db, err := store.Open(store.StoreDir(dataDir, store.DefaultStoreName))
+	if err != nil {
+		t.Fatalf("open imported store: %v", err)
+	}
+	defer db.Close()
+	active, err := db.GetAllActiveInsights()
+	if err != nil {
+		t.Fatalf("get active insights: %v", err)
+	}
+	if len(active) != 2 {
+		t.Fatalf("active insights = %d, want 2 newborn memories", len(active))
+	}
+	var storedAt string
+	if err := db.Conn().QueryRow(
+		`SELECT stored_at FROM insights WHERE content = 'first newborn memory'`).Scan(&storedAt); err != nil {
+		t.Fatalf("read stored_at: %v", err)
+	}
+	physicalTime, err := time.Parse(time.RFC3339, storedAt)
+	if err != nil {
+		t.Fatalf("parse stored_at %q: %v", storedAt, err)
+	}
+	if physicalTime.Before(time.Now().UTC().Add(-time.Minute)) {
+		t.Fatalf("historical import inherited event time as stored_at: %s", physicalTime)
+	}
+}
 
 func TestImportRepairsBackdatedTemporalBackbone(t *testing.T) {
 	t.Setenv("MNEMON_EMBED_ENDPOINT", "http://127.0.0.1:1")

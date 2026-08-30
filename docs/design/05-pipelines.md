@@ -49,7 +49,8 @@ BEGIN TRANSACTION
      ├── CreateCausalEdges     → keywords + token overlap → auto causal edges
      └── CreateSemanticEdges   → cos >= 0.80 auto-link
   ④ RefreshEffectiveImportance → update EI decay values
-  ⑤ AutoPrune                 → soft-delete lowest EI when total > 1000
+  ⑤ AutoPrune                 → soft-delete lowest EI older than grace period
+                                 + required per-ID oplog record
 COMMIT
 ```
 
@@ -74,7 +75,8 @@ COMMIT
   ],
   "embedded": true,
   "effective_importance": 0.85,
-  "auto_pruned": 0
+  "auto_pruned": 0,
+  "auto_pruned_ids": []
 }
 ```
 

@@ -25,6 +25,10 @@ const (
 	// PruneBatchSize is how many excess insights to prune at once.
 	PruneBatchSize = 10
 
+	// DefaultAutoPruneMinAge protects newborn insights from write-burst
+	// retention decisions before they have had a chance to be recalled.
+	DefaultAutoPruneMinAge = 24 * time.Hour
+
 	// MaxInsightsUnlimited is the ceiling MaxInsightsLimit returns when
 	// auto-pruning is switched off. No store reaches it, so AutoPrune's
 	// capacity check never trips and no other code path needs a special case.
@@ -56,13 +60,59 @@ func MaxInsightsLimit() int {
 	return n
 }
 
+// AutoPruneMinAge returns the grace period applied to automatic retention
+// pruning. MNEMON_AUTO_PRUNE_MIN_AGE accepts Go durations such as "24h", an
+// integer day suffix such as "7d", or "0" to disable the grace period. Invalid
+// and negative values fall back to the safe default.
+func AutoPruneMinAge() time.Duration {
+	raw := strings.TrimSpace(os.Getenv("MNEMON_AUTO_PRUNE_MIN_AGE"))
+	if raw == "" {
+		return DefaultAutoPruneMinAge
+	}
+
+	duration, err := parseAutoPruneMinAge(raw)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: invalid MNEMON_AUTO_PRUNE_MIN_AGE %q: %v (using %s)\n",
+			raw, err, DefaultAutoPruneMinAge)
+		return DefaultAutoPruneMinAge
+	}
+	return duration
+}
+
+func parseAutoPruneMinAge(raw string) (time.Duration, error) {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	if strings.HasSuffix(normalized, "d") {
+		days, err := strconv.ParseInt(strings.TrimSuffix(normalized, "d"), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("parse days: %w", err)
+		}
+		if days < 0 {
+			return 0, fmt.Errorf("duration must not be negative")
+		}
+		if days > int64(math.MaxInt64)/int64(24*time.Hour) {
+			return 0, fmt.Errorf("duration overflows")
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+
+	duration, err := time.ParseDuration(normalized)
+	if err != nil {
+		return 0, err
+	}
+	if duration < 0 {
+		return 0, fmt.Errorf("duration must not be negative")
+	}
+	return duration, nil
+}
+
 // InsertInsight inserts a new insight into the database.
 func (db *DB) InsertInsight(i *model.Insight) error {
 	_, err := db.execer().Exec(
-		`INSERT INTO insights (id, content, category, importance, tags, entities, source, access_count, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO insights (id, content, category, importance, tags, entities, source, access_count, stored_at, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		i.ID, i.Content, string(i.Category), i.Importance,
 		i.TagsJSON(), i.EntitiesJSON(), i.Source, i.AccessCount,
+		time.Now().UTC().Format(time.RFC3339),
 		i.CreatedAt.Format(time.RFC3339), i.UpdatedAt.Format(time.RFC3339),
 	)
 	return err
@@ -431,31 +481,47 @@ func (db *DB) GetRetentionCandidates(threshold float64, limit int) ([]RetentionC
 }
 
 // AutoPrune soft-deletes the lowest effective_importance non-immune insights
-// when total active count exceeds maxInsights. excludeIDs are protected from pruning
-// (typically the just-created insights). Returns number pruned.
-// If already inside a transaction (db.tx != nil), executes inline; otherwise wraps in its own transaction.
+// when total active count exceeds maxInsights. excludeIDs are protected from
+// pruning (typically the just-created insights). Returns number pruned.
+// If already inside a transaction (db.tx != nil), executes inline; otherwise
+// wraps the deletion and its required audit records in one transaction.
 func (db *DB) AutoPrune(maxInsights int, excludeIDs []string) (int, error) {
-	if db.tx != nil {
-		return db.autoPrune(maxInsights, excludeIDs)
+	ids, err := db.AutoPruneWithResult(maxInsights, excludeIDs, "")
+	if err != nil {
+		return 0, err
 	}
-	var pruned int
-	err := db.InTransaction(func() error {
-		var innerErr error
-		pruned, innerErr = db.autoPrune(maxInsights, excludeIDs)
-		return innerErr
-	})
-	return pruned, err
+	return len(ids), nil
 }
 
-func (db *DB) autoPrune(maxInsights int, excludeIDs []string) (int, error) {
+// AutoPruneWithResult performs AutoPrune and returns every soft-deleted ID.
+// triggerInsightID, when present, is written into each durable audit record so
+// an operator can connect the retention side effect to its triggering write.
+func (db *DB) AutoPruneWithResult(maxInsights int, excludeIDs []string, triggerInsightID string) ([]string, error) {
+	minAge := AutoPruneMinAge()
+	if db.tx != nil {
+		return db.autoPrune(maxInsights, excludeIDs, triggerInsightID, minAge)
+	}
+	var prunedIDs []string
+	err := db.InTransaction(func() error {
+		var innerErr error
+		prunedIDs, innerErr = db.autoPrune(maxInsights, excludeIDs, triggerInsightID, minAge)
+		return innerErr
+	})
+	if err != nil {
+		return nil, err
+	}
+	return prunedIDs, nil
+}
+
+func (db *DB) autoPrune(maxInsights int, excludeIDs []string, triggerInsightID string, minAge time.Duration) ([]string, error) {
 	ex := db.execer()
 
 	var total int
 	if err := ex.QueryRow(`SELECT COUNT(*) FROM insights WHERE deleted_at IS NULL`).Scan(&total); err != nil {
-		return 0, fmt.Errorf("count insights: %w", err)
+		return nil, fmt.Errorf("count insights: %w", err)
 	}
 	if total <= maxInsights {
-		return 0, nil
+		return []string{}, nil
 	}
 
 	excess := total - maxInsights
@@ -474,51 +540,58 @@ func (db *DB) autoPrune(maxInsights int, excludeIDs []string) (int, error) {
 		}
 		excludeClause = fmt.Sprintf("AND id NOT IN (%s)", strings.Join(placeholders, ","))
 	}
-	args = append(args, excess)
+	cutoff := time.Now().UTC().Add(-minAge).Format(time.RFC3339)
+	args = append(args, cutoff, excess)
 
 	// Collect candidate IDs first (close cursor before writing to avoid single-conn deadlock)
 	rows, err := ex.Query(
 		fmt.Sprintf(`SELECT id FROM insights
 		 WHERE deleted_at IS NULL AND importance < 4 AND access_count < 3 %s
-		 ORDER BY effective_importance ASC LIMIT ?`, excludeClause), args...)
+		   AND julianday(COALESCE(stored_at, created_at)) <= julianday(?)
+		 ORDER BY effective_importance ASC, created_at ASC, id ASC LIMIT ?`, excludeClause), args...)
 	if err != nil {
-		return 0, fmt.Errorf("query prune candidates: %w", err)
+		return nil, fmt.Errorf("query prune candidates: %w", err)
 	}
-	var ids []string
+	ids := make([]string, 0, excess)
 	for rows.Next() {
 		var id string
 		if err := rows.Scan(&id); err != nil {
 			rows.Close()
-			return 0, fmt.Errorf("scan prune candidate: %w", err)
+			return nil, fmt.Errorf("scan prune candidate: %w", err)
 		}
 		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("iterate prune candidates: %w", err)
 	}
 	rows.Close()
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	pruned := 0
+	prunedIDs := make([]string, 0, len(ids))
 	for _, id := range ids {
 		res, err := ex.Exec(
 			`UPDATE insights SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL`,
 			now, now, id)
 		if err != nil {
-			return pruned, fmt.Errorf("prune %s: %w", id, err)
+			return nil, fmt.Errorf("prune %s: %w", id, err)
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			if err := db.DeleteEdgesByNode(id); err != nil {
-				return pruned, fmt.Errorf("delete edges for pruned %s: %w", id, err)
+				return nil, fmt.Errorf("delete edges for pruned %s: %w", id, err)
 			}
-			// Auto-prune is the only destructive path that leaves no trace:
-			// every other write the CLI makes -- remember, forget, link,
-			// import, embed -- records an oplog entry. Without this, a store
-			// can silently lose thousands of insights with no way to find out
-			// which, when, or why.
-			db.LogOp("prune", id, fmt.Sprintf("auto-prune: over capacity (active=%d, max=%d)", total, maxInsights))
-			pruned++
+			detail := fmt.Sprintf("auto-prune: over capacity (active=%d, max=%d, min_age=%s)", total, maxInsights, minAge)
+			if triggerInsightID != "" {
+				detail += fmt.Sprintf(" trigger=%s", triggerInsightID)
+			}
+			if err := db.RecordOp("prune", id, detail); err != nil {
+				return nil, fmt.Errorf("record auto-prune for %s: %w", id, err)
+			}
+			prunedIDs = append(prunedIDs, id)
 		}
 	}
 
-	return pruned, nil
+	return prunedIDs, nil
 }
 
 // BoostRetention boosts an insight's retention: access_count +3, refreshes last_accessed_at.

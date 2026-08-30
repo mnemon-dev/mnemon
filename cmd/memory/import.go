@@ -227,7 +227,7 @@ exports are documented in docs/IMPORT.md.`,
 
 		edgesInserted := 0
 		temporalEdgesRepaired := 0
-		pruned := 0
+		prunedIDs := []string{}
 		if err := db.InTransaction(func() error {
 			// Insert explicit edges for successfully imported insights.
 			for _, de := range draft.Edges {
@@ -277,7 +277,7 @@ exports are documented in docs/IMPORT.md.`,
 			}
 
 			var pruneErr error
-			pruned, pruneErr = db.AutoPrune(store.MaxInsightsLimit(), nil)
+			prunedIDs, pruneErr = db.AutoPruneWithResult(store.MaxInsightsLimit(), nil, "")
 			return pruneErr
 		}); err != nil {
 			return fmt.Errorf("finalize import graph: %w", err)
@@ -285,13 +285,14 @@ exports are documented in docs/IMPORT.md.`,
 
 		_ = temporalEdgesRepaired // computed internally; not surfaced in default output
 		summary := map[string]interface{}{
-			"imported":       countAction(results, "added"),
-			"updated":        countAction(results, "updated"),
-			"skipped":        countAction(results, "skipped"),
-			"errors":         countErrors(results),
-			"edges_inserted": edgesInserted,
-			"auto_pruned":    pruned,
-			"results":        results,
+			"imported":        countAction(results, "added"),
+			"updated":         countAction(results, "updated"),
+			"skipped":         countAction(results, "skipped"),
+			"errors":          countErrors(results),
+			"edges_inserted":  edgesInserted,
+			"auto_pruned":     len(prunedIDs),
+			"auto_pruned_ids": prunedIDs,
+			"results":         results,
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")

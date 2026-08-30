@@ -446,6 +446,16 @@ Mnemon architecture.
 | `MNEMON_DATA_DIR` | `~/.mnemon` | Base data directory |
 | `MNEMON_STORE` | *(active file or `default`)* | Named memory store for data isolation |
 
+**Retention**:
+
+| Environment Variable | Default | Description |
+|---|---|---|
+| `MNEMON_MAX_INSIGHTS` | `1000` | Active-insight ceiling; `0` disables automatic pruning |
+| `MNEMON_AUTO_PRUNE_MIN_AGE` | `24h` | Grace period before an insight can be auto-pruned; accepts `24h`, `7d`, or `0` |
+
+Each automatic deletion is soft, appears in the oplog as a `prune` operation, and is
+reported by ID in the triggering command's `auto_pruned_ids` field.
+
 **Embedding** (only relevant if using embeddings):
 
 | Environment Variable | Default | Description |
