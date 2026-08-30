@@ -516,3 +516,7 @@ Mnemon combines the paradigm of one paper with the methodology of another, groun
 Copyright 2026 Grivn and Mnemon contributors.
 
 [Apache-2.0](LICENSE)
+
+The bracketed copyright example near the end of `LICENSE` is part of Apache
+2.0's standard application appendix; this section carries the project's actual
+copyright notice.

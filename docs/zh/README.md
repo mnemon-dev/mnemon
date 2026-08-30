@@ -453,3 +453,6 @@ Mnemon 取用了一篇论文的范式和另一篇论文的方法论，并基于�
 Copyright 2026 Grivn and Mnemon contributors.
 
 [Apache-2.0](../../LICENSE)
+
+`LICENSE` 末尾带方括号的版权示例属于 Apache 2.0 标准许可证的应用附录；
+本节所列内容才是本项目的实际版权声明。
