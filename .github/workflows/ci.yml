@@ -52,5 +52,5 @@ jobs:
       - name: Build Windows Memory product
         run: go build -o mnemon.exe .
 
-      - name: Test Windows command boundary
-        run: go test ./cmd ./cmd/agency -count=1
+      - name: Test Windows command and Memory storage boundaries
+        run: go test ./cmd ./cmd/agency ./cmd/memory ./internal/memory/store -count=1

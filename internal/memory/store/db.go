@@ -213,7 +213,18 @@ func OpenReadOnly(dataDir string) (*DB, error) {
 	// mode=ro is a SQLite URI parameter, not a generic filename query
 	// parameter. Without the file: URI scheme modernc/sqlite treats this as a
 	// normal read-write open and silently ignores the intended protection.
-	dsn := &url.URL{Scheme: "file", Path: filepath.ToSlash(dbPath)}
+	absolutePath, err := filepath.Abs(dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("resolve readonly database path: %w", err)
+	}
+	uriPath := filepath.ToSlash(absolutePath)
+	// A Windows drive belongs in the URI path (/C:/...), not its authority.
+	// Resolving relative paths first also prevents their first directory from
+	// becoming a URI authority on other platforms.
+	if !strings.HasPrefix(uriPath, "/") {
+		uriPath = "/" + uriPath
+	}
+	dsn := &url.URL{Scheme: "file", Path: uriPath}
 	query := dsn.Query()
 	query.Set("mode", "ro")
 	query.Set("immutable", "1")

@@ -228,6 +228,25 @@ assert_jq "importance is 4"        "$OUT" '.importance' '4'
 assert_contains "tags include tool" "$OUT" '"tool"'
 assert_contains "entities has Qdrant" "$OUT" '"Qdrant"'
 
+step "readonly recall — absolute and relative data paths preserve the database"
+cp "$TESTDIR/data/default/mnemon.db" "$TESTDATA/readonly-before.db"
+OUT=$("$M" --data-dir "$TESTDIR" --store default --readonly recall "" --basic --limit 100000)
+assert_jq "readonly absolute path finds the seed" "$OUT" '.[0].id' "$ID1"
+OUT=$(cd "$TESTDATA" && "$M" --data-dir "m1" --store default --readonly recall "Qdrant" --basic --limit 6)
+assert_jq "readonly relative path finds the seed" "$OUT" '.[0].id' "$ID1"
+if cmp -s "$TESTDATA/readonly-before.db" "$TESTDIR/data/default/mnemon.db"; then
+  pass "readonly recall preserves database bytes" "(including counters and oplog)"
+else
+  fail "readonly recall preserves database bytes" "(database changed)"
+fi
+for suffix in -wal -shm -journal; do
+  if [ -e "$TESTDIR/data/default/mnemon.db$suffix" ]; then
+    fail "readonly recall creates no $suffix sidecar" "(sidecar exists)"
+  else
+    pass "readonly recall creates no $suffix sidecar" "(absent)"
+  fi
+done
+
 step "recall — keyword search (compact default)"
 OUT=$($M --data-dir "$TESTDIR" recall "Qdrant")
 show_json "$OUT" 10
