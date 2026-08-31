@@ -30,23 +30,23 @@ type RememberRequest struct {
 // RememberResult reports the stored insight and any graph or diff effects.
 // Effect-only fields are omitted when a duplicate is skipped.
 type RememberResult struct {
-	ID                  string                    `json:"id"`
-	Content             string                    `json:"content"`
-	Category            model.Category            `json:"category,omitempty"`
-	Importance          int                       `json:"importance,omitempty"`
-	Tags                []string                  `json:"tags,omitempty"`
-	Entities            []string                  `json:"entities,omitempty"`
-	Action              string                    `json:"action"`
-	DiffSuggestion      search.DiffSuggestion     `json:"diff_suggestion"`
-	ReplacedID          string                    `json:"replaced_id,omitempty"`
-	CreatedAt           string                    `json:"created_at,omitempty"`
-	EdgesCreated        *graph.EdgeStats          `json:"edges_created,omitempty"`
-	SemanticCandidates  []graph.SemanticCandidate `json:"semantic_candidates,omitempty"`
-	CausalCandidates    []graph.CausalCandidate   `json:"causal_candidates,omitempty"`
-	Embedded            *bool                     `json:"embedded,omitempty"`
-	EffectiveImportance *float64                  `json:"effective_importance,omitempty"`
-	AutoPruned          *int                      `json:"auto_pruned,omitempty"`
-	AutoPrunedIDs       []string                  `json:"auto_pruned_ids,omitempty"`
+	ID                  string                     `json:"id"`
+	Content             string                     `json:"content"`
+	Category            model.Category             `json:"category,omitempty"`
+	Importance          int                        `json:"importance,omitempty"`
+	Tags                *[]string                  `json:"tags,omitempty"`
+	Entities            *[]string                  `json:"entities,omitempty"`
+	Action              string                     `json:"action"`
+	DiffSuggestion      search.DiffSuggestion      `json:"diff_suggestion"`
+	ReplacedID          string                     `json:"replaced_id,omitempty"`
+	CreatedAt           string                     `json:"created_at,omitempty"`
+	EdgesCreated        *graph.EdgeStats           `json:"edges_created,omitempty"`
+	SemanticCandidates  *[]graph.SemanticCandidate `json:"semantic_candidates,omitempty"`
+	CausalCandidates    *[]graph.CausalCandidate   `json:"causal_candidates,omitempty"`
+	Embedded            *bool                      `json:"embedded,omitempty"`
+	EffectiveImportance *float64                   `json:"effective_importance,omitempty"`
+	AutoPruned          *int                       `json:"auto_pruned,omitempty"`
+	AutoPrunedIDs       *[]string                  `json:"auto_pruned_ids,omitempty"`
 }
 
 type normalizedRemember struct {
@@ -338,13 +338,21 @@ func completeRememberResult(db *store.DB, insight *model.Insight, cache graph.Em
 		pruned = []string{}
 	}
 	prunedCount := len(pruned)
+	tags := insight.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	entities := insight.Entities
+	if entities == nil {
+		entities = []string{}
+	}
 	return RememberResult{
 		ID: insight.ID, Content: insight.Content, Category: insight.Category,
-		Importance: insight.Importance, Tags: insight.Tags, Entities: insight.Entities,
+		Importance: insight.Importance, Tags: &tags, Entities: &entities,
 		Action: decision.action, DiffSuggestion: decision.suggestion,
 		ReplacedID: decision.replacedID, CreatedAt: insight.CreatedAt.Format(time.RFC3339),
-		EdgesCreated: &effects.edges, SemanticCandidates: semantic, CausalCandidates: causal,
+		EdgesCreated: &effects.edges, SemanticCandidates: &semantic, CausalCandidates: &causal,
 		Embedded: &effects.embedded, EffectiveImportance: &effects.importance,
-		AutoPruned: &prunedCount, AutoPrunedIDs: pruned,
+		AutoPruned: &prunedCount, AutoPrunedIDs: &pruned,
 	}
 }

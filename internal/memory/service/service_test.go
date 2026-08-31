@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -66,6 +67,54 @@ func TestServiceMemoryWorkflow(t *testing.T) {
 	status, err := service.Status(context.Background())
 	if err != nil || status.TotalInsights != 2 || status.EdgeCount < 2 || status.DBSizeBytes == 0 {
 		t.Fatalf("status = %#v, err = %v", status, err)
+	}
+}
+
+func TestRememberResultPreservesCLIWireShape(t *testing.T) {
+	service, _ := testService(t, true)
+	added, err := service.Remember(context.Background(), RememberRequest{
+		Content: "wire shape marker", NoDiff: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	addedJSON, err := json.Marshal(added)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var addedFields map[string]json.RawMessage
+	if err := json.Unmarshal(addedJSON, &addedFields); err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{
+		"tags", "entities", "semantic_candidates", "causal_candidates", "auto_pruned_ids",
+	} {
+		if value, ok := addedFields[field]; !ok || string(value) != "[]" {
+			t.Errorf("added %s = %s, present = %v; want []", field, value, ok)
+		}
+	}
+
+	skipped, err := service.Remember(context.Background(), RememberRequest{Content: "wire shape marker"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	skippedJSON, err := json.Marshal(skipped)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var skippedFields map[string]json.RawMessage
+	if err := json.Unmarshal(skippedJSON, &skippedFields); err != nil {
+		t.Fatal(err)
+	}
+	if skipped.Action != "skipped" {
+		t.Fatalf("duplicate action = %q", skipped.Action)
+	}
+	for _, field := range []string{
+		"tags", "entities", "semantic_candidates", "causal_candidates", "auto_pruned_ids",
+	} {
+		if _, ok := skippedFields[field]; ok {
+			t.Errorf("skipped result unexpectedly contains %q", field)
+		}
 	}
 }
 
