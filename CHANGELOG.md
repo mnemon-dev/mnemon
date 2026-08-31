@@ -45,6 +45,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   hook registry, but its current local Agent V2 turn path does not dispatch the
   user-prompt lifecycle event needed for reliable automatic recall.
 
+## [0.2.7] - 2026-09-01
+
+### Fixed
+
+- `--readonly recall` now resolves and encodes SQLite file URI paths correctly
+  on Windows and when `--data-dir` is relative to the current directory. This
+  fixes the misleading `SQL logic error: out of memory (1)` failure reported
+  in #123.
+- Readonly queries retain `mode=ro` and `immutable=1`: they reject database
+  writes, preserve recall counters and oplog, and create no WAL/SHM sidecars.
+
+### Tests
+
+- Added real SQLite and CLI regressions for absolute, relative, and Windows
+  drive-relative paths, including spaces, Unicode, `#`, and `%`.
+- Native Windows CI now runs the Memory command and storage tests in addition
+  to the product build and command-boundary tests.
+
 ## [0.1.15] - 2026-06-18
 
 ### Added
