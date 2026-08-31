@@ -19,10 +19,11 @@ LLM agents forget everything between sessions. Context compaction drops critical
 
 Mnemon gives your agent persistent, cross-session memory — a four-graph knowledge store with intent-aware recall, importance decay, and automatic deduplication. The `mnemon` memory path remains one local binary with zero API keys and one setup command.
 
-Mnemon ships one executable with two separate surfaces. Memory stays at the
-`mnemon` root; [Agency Preview](docs/AGENCY.md) lives at `mnemon agency ...` and adds
-durable, project-local responsibility and effect admission to an existing Pi
-agent. Agency does not replace Memory or the Agent Runtime.
+Mnemon ships one executable with three entry points. Memory stays at the
+`mnemon` root; `mnemon mcp serve` exposes the same Memory engine to MCP clients;
+and [Agency Preview](docs/AGENCY.md) lives at `mnemon agency ...`, adding durable,
+project-local responsibility and effect admission to an existing Pi agent.
+Neither MCP nor Agency replaces Memory or the Agent Runtime.
 
 > **Claude Max / Pro subscriber?** Mnemon works entirely through your existing subscription — no separate API key required. Your LLM subscription *is* the intelligence layer. Two commands and you're done.
 
@@ -36,6 +37,9 @@ Most memory tools embed their own LLM inside the pipeline. Mnemon takes a differ
 | **File Injection** | None — reads file at session start | Claude Code Memory |
 | **MCP Server** | Tool provider via MCP protocol | claude-mem |
 | **LLM-Supervised** | External supervisor of a standalone binary | **Mnemon** |
+
+Mnemon's built-in MCP server is a transport adapter for the same deterministic,
+LLM-supervised engine; it does not embed another LLM or require another API key.
 
 Mnemon also addresses a gap in the protocol stack. MCP standardizes how LLMs discover and invoke tools. ODBC/JDBC standardizes how applications access databases. But how LLMs interact with databases using memory semantics — this layer has no protocol. Mnemon's three primitives — `remember`, `link`, `recall` — form an intent-native protocol: command names map to the LLM's cognitive vocabulary (`remember` not INSERT, `recall` not SELECT), and output is structured JSON with signal transparency rather than raw database rows.
 
@@ -71,7 +75,7 @@ brew install --cask mnemon-dev/tap/mnemon
 go install github.com/mnemon-dev/mnemon@latest
 ```
 
-Windows supports the core Memory commands. Agency remains unavailable on
+Windows supports the core Memory commands and MCP server. Agency remains unavailable on
 Windows until its local authority boundary has native Windows security.
 
 **From source** (macOS / Linux):
@@ -85,6 +89,7 @@ make install
 
 ```bash
 mnemon --version
+mnemon mcp --help
 mnemon agency --version
 ```
 
@@ -99,6 +104,29 @@ and Linux and remains independent from Memory: `mnemon setup --target pi --yes`
 enables Memory, while the command above enables Agency. See the
 [Agency guide](docs/AGENCY.md) for its operating model, Preview compatibility
 boundary, and optional peers.
+
+### MCP clients
+
+Any stdio MCP client can use Mnemon's six Memory tools through the same binary.
+For clients using the conventional `mcpServers` configuration shape, add:
+
+```json
+{
+  "mcpServers": {
+    "mnemon": {
+      "command": "mnemon",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+To select a store, place root flags before the namespace, for example
+`["--store", "work", "mcp", "serve"]`, or set `MNEMON_STORE`. The server
+offers `recall`, `search`, `remember`, `related`, `link`, and `status`. Read
+results are capped at 600 Unicode characters per memory by default; clients can
+request `full: true` when complete content is needed. See the
+[MCP reference](docs/USAGE.md#mcp-server) for all limits and options.
 
 ### [Claude Code](https://github.com/anthropics/claude-code)
 
@@ -344,7 +372,8 @@ memory is useful.
 
 - **Zero user-side operation** — install once; supported runtimes can use hooks, minimal runtimes can use persistent rules
 - **LLM-supervised** — the host LLM decides what to remember, update, and forget; no embedded LLM, no API keys
-- **Multi-framework support** — Claude Code, Codex, Cursor, ZCode, TRAE/TRAE Work, Qoder/QoderWork, CodeBuddy, WorkBuddy, Kimi Code, OpenCode, and Hermes Agent (hooks/plugins), OpenClaw (plugins), Pi (extensions), MiniMax Code and Nanobot (skills), DeepSeek Harness (via the dsh-mnemon plugin), and more
+- **Built-in MCP server** — one stdio command exposes six bounded, schema-described Memory tools to MCP clients
+- **Multi-framework support** — Claude Code, Codex, Cursor, ZCode, TRAE/TRAE Work, Qoder/QoderWork, CodeBuddy, WorkBuddy, Kimi Code, OpenCode, and Hermes Agent (hooks/plugins), OpenClaw (plugins), Pi (extensions), MiniMax Code and Nanobot (skills), DeepSeek Harness (via the dsh-mnemon plugin), any stdio MCP client, and more
 - **Runtime-native integration** — runtime-specific `SKILL.md`, shared `guide.md`, and supported hooks or extensions
 - **Four-graph architecture** — temporal, entity, causal, and semantic edges, not just vector similarity
 - **Intent-native protocol** — three primitives (`remember`, `link`, `recall`) map to the LLM's cognitive vocabulary, not database syntax; structured JSON output with signal transparency
@@ -490,7 +519,7 @@ mnemon setup --eject  # remove all integrations
 make help           # show all targets
 ```
 
-**Dependencies**: Go 1.24+, `modernc.org/sqlite`, `spf13/cobra`, `google/uuid`
+**Dependencies**: Go 1.24+, `modernc.org/sqlite`, `spf13/cobra`, `google/uuid`, `modelcontextprotocol/go-sdk`
 
 See [Development and Deployment](docs/DEPLOYMENT.md) for Docker, Compose, Ollama embedding, and release setup.
 
@@ -499,7 +528,7 @@ See [Development and Deployment](docs/DEPLOYMENT.md) for Docker, Compose, Ollama
 - [Agency Preview](docs/AGENCY.md) — maturity boundary, Pi setup, operating model, completion semantics, and optional peers
 - [Go Engineering Standard](docs/development/go-engineering-standard.md) — maintainability, concurrency, persistence, testing, and review thresholds
 - [Design & Architecture](docs/DESIGN.md) — current engine architecture, algorithms, integration design
-- [Memory Usage & Reference](docs/USAGE.md) — root Memory commands, import, receipts, and embedding support
+- [Memory & MCP Usage Reference](docs/USAGE.md) — root Memory commands, built-in MCP server, import, receipts, and embedding support
 - [Memory Import Guide](docs/IMPORT.md) — schema and LLM prompt for importing historical chats
 - [Architecture Diagrams](docs/diagrams/) — system architecture, pipelines, lifecycle management
 

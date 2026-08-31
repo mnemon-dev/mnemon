@@ -1,6 +1,6 @@
 # Mnemon Memory — 用法与参考
 
-> 你不需要自己运行 Memory 命令 — agent 会在 Hook 和 Skill 指引下执行。本文档只介绍根命名空间下的 Memory CLI，供理解能力、调试和高级手动操作使用。持久 Agent 工作与 Peer 协作请参阅 [Agency Preview 指南](AGENCY.md)。
+> 你不需要自己运行 Memory 命令 — agent 会在 Hook、Skill 或内置 MCP 适配器的指引下执行。本文档介绍根命名空间下的 Memory CLI 与 MCP 服务，供理解能力、调试和高级手动操作使用。持久 Agent 工作与 Peer 协作请参阅 [Agency Preview 指南](AGENCY.md)。
 
 ---
 
@@ -21,6 +21,60 @@
 进程持续修改的数据库；不可变快照会有意忽略并发 WAL 更新。
 `--data-dir` 接受文件系统路径，包括 Windows 盘符路径和相对于当前目录的路径。
 Mnemon 会在内部解析并编码只读 SQLite 文件 URI，无需手动添加 `file:` 前缀。
+
+---
+
+## MCP Server
+
+`mnemon mcp serve` 通过标准输入/输出，把同一套 Memory 服务开放为六个带 schema
+的 MCP 工具。它不会启动网络监听；每个进程在生命周期内服务一个客户端连接。
+
+对于采用常见 `mcpServers` 配置格式的 MCP host：
+
+```json
+{
+  "mcpServers": {
+    "mnemon": {
+      "command": "mnemon",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+产品级 Memory 标志必须放在 `mcp` 命名空间之前。例如，以下配置选择隔离的
+store：
+
+```json
+{
+  "command": "mnemon",
+  "args": ["--store", "work", "mcp", "serve"]
+}
+```
+
+服务同样读取 `MNEMON_DATA_DIR`、`MNEMON_STORE` 和嵌入相关环境变量。使用
+`--readonly` 时，`recall`、`search`、`related`、`status` 仍可用，`remember`
+和 `link` 则会 fail closed。stdout 只输出 MCP JSON-RPC 帧；启动或 Memory
+诊断信息写入 stderr。
+
+| 工具 | 用途 | 主要输入与默认值 |
+|---|---|---|
+| `recall` | 意图感知图召回或基础子串匹配 | 必填 `query`；`limit: 10`；可选 `basic`、`intent`、`category`、`source`、`full` |
+| `search` | 基于 token 评分的关键词搜索 | 必填 `query`；`limit: 10`；可选 `full` |
+| `remember` | 通过 diff 与图处理存储一条持久洞察 | 必填 `content`；`category: general`；`importance: 3`；可选标签、实体、来源、实体模式及 `no_diff` |
+| `related` | 从一条洞察出发遍历类型化图边 | 必填 `id`；`depth: 2`；`limit: 20`；可选 `edge_type`、`full` |
+| `link` | 创建或替换双向类型化关系 | 必填 `source_id`、`target_id`；`edge_type: semantic`；`weight: 0.5`；可选 metadata |
+| `status` | 返回当前 store 的汇总统计 | 无输入 |
+
+`recall`、`search`、`related` 的发现结果默认把每条存储内容截断为 600 个
+Unicode 字符，并明确标记被截断的条目。选中确实需要完整查看的内容后，再对同一
+工具传 `full: true`。结果数范围为 1–100，图深度为 1–10，query 最多 2,000
+个 Unicode 字符，ID 最多 256 个字符，记忆内容最多 8,000 字节。`remember`
+最多接受 20 个 100 字符的 tag 和 50 个 200 字符的 entity，`source` 最多 100
+字符；`link` 最多接受 20 个 metadata 条目，key 最多 100 字符，value 最多
+1,000 字符。这些限制用于约束工具调用和模型上下文。Input schema 会发布客户端
+可见的边界、默认值和枚举；handler 继续执行 fail-closed 校验，包括字节数限制。
+Tool annotation 则标识只读、破坏性和幂等行为。
 
 ---
 

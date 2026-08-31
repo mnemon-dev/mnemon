@@ -1,6 +1,6 @@
 # Mnemon Memory — Usage & Reference
 
-> You don't run Memory commands yourself — the agent does, driven by hooks and guided by the skill file. This document covers the root Memory CLI for understanding what the agent can do, debugging, and advanced manual operation. For durable Agent work and peer collaboration, see the [Agency Preview guide](AGENCY.md).
+> You don't run Memory commands yourself — the agent does, driven by hooks, skills, or the built-in MCP adapter. This document covers the root Memory CLI and MCP server for understanding what the agent can do, debugging, and advanced manual operation. For durable Agent work and peer collaboration, see the [Agency Preview guide](AGENCY.md).
 
 ---
 
@@ -23,6 +23,64 @@ actively changing; immutable snapshots deliberately ignore concurrent WAL
 updates. Pass a filesystem path to `--data-dir`, including Windows drive-letter
 paths or paths relative to the current directory. Mnemon resolves and encodes
 the read-only SQLite file URI internally; do not prepend `file:` yourself.
+
+---
+
+## MCP Server
+
+`mnemon mcp serve` exposes the same Memory service as six schema-described MCP
+tools over standard input/output. It starts no network listener and serves one
+client connection for the life of the process.
+
+For MCP hosts that use the conventional `mcpServers` configuration shape:
+
+```json
+{
+  "mcpServers": {
+    "mnemon": {
+      "command": "mnemon",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+Product-level Memory flags must precede the `mcp` namespace. For example, this
+selects an isolated store:
+
+```json
+{
+  "command": "mnemon",
+  "args": ["--store", "work", "mcp", "serve"]
+}
+```
+
+`MNEMON_DATA_DIR`, `MNEMON_STORE`, and embedding environment variables are also
+honored. With `--readonly`, `recall`, `search`, `related`, and `status` remain
+available, while `remember` and `link` fail closed. Stdout is reserved for MCP
+JSON-RPC frames; startup or Memory diagnostics go to stderr.
+
+| Tool | Purpose | Main inputs and defaults |
+|---|---|---|
+| `recall` | Intent-aware graph recall or basic substring matching | `query` required; `limit: 10`; optional `basic`, `intent`, `category`, `source`, `full` |
+| `search` | Token-scored keyword search | `query` required; `limit: 10`; optional `full` |
+| `remember` | Store one durable insight with diff and graph processing | `content` required; `category: general`; `importance: 3`; optional tags, entities, source, entity mode, and `no_diff` |
+| `related` | Traverse typed graph edges from one insight | `id` required; `depth: 2`; `limit: 20`; optional `edge_type`, `full` |
+| `link` | Create or replace a bidirectional typed relationship | `source_id` and `target_id` required; `edge_type: semantic`; `weight: 0.5`; optional metadata |
+| `status` | Report aggregate statistics for the selected store | No inputs |
+
+Discovery responses from `recall`, `search`, and `related` truncate each stored
+content value to 600 Unicode characters by default and explicitly mark truncated
+items. Pass `full: true` to the same tool only after selecting content that needs
+full inspection. Result limits are 1–100, graph depth is 1–10, queries are capped
+at 2,000 Unicode characters, IDs at 256, and remembered content at 8,000 bytes.
+`remember` accepts at most 20 tags of 100 characters and 50 entities of 200
+characters; `source` is capped at 100 characters. `link` accepts at most 20
+metadata entries, with 100-character keys and 1,000-character values. These
+limits keep tool calls and model context bounded. Input schemas publish the
+client-visible bounds, defaults, and enums; handlers repeat fail-closed
+validation, including byte-based limits. Tool annotations identify read-only,
+destructive, and idempotent behavior.
 
 ---
 

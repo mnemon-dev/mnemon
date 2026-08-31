@@ -19,10 +19,10 @@ LLM 智能体在会话之间会遗忘一切。上下文压缩丢失关键决策�
 
 Mnemon 为你的 LLM 提供持久的跨会话记忆 — 四图知识存储、意图感知检索、重要度衰减、自动去重。`mnemon` 记忆路径仍是一个本地二进制，零 API 密钥，一条命令完成部署。
 
-Mnemon 只发布一个 `mnemon` 可执行文件，同时提供两套相互独立的能力：根级
-Memory 命令保存跨会话知识；Preview 阶段的 `mnemon agency ...` 为项目内 Agent
-提供持久、受约束的协作状态。Agency 以 Pi 为首个 Runtime 集成，详情见
-[Agency 指南](AGENCY.md)。
+Mnemon 只发布一个 `mnemon` 可执行文件，同时提供三个入口：根级 Memory 命令
+保存跨会话知识；`mnemon mcp serve` 向 MCP 客户端开放同一 Memory 引擎；Preview
+阶段的 `mnemon agency ...` 为项目内 Agent 提供持久、受约束的协作状态。MCP
+与 Agency 都不会替代 Memory 或 Agent Runtime。Agency 详情见 [Agency 指南](AGENCY.md)。
 
 > **Claude Max / Pro 订阅用户？** Mnemon 完全通过你现有的订阅运作——不需要额外的 API 密钥。你的 LLM 订阅*本身*就是智能层。两条命令即可完成。
 
@@ -36,6 +36,9 @@ Memory 命令保存跨会话知识；Preview 阶段的 `mnemon agency ...` 为�
 | **File Injection** | 无 — 会话启动时读取文件 | Claude Code Memory |
 | **MCP Server** | 通过 MCP 协议提供工具 | claude-mem |
 | **LLM-Supervised** | 独立二进制的外部监督者 | **Mnemon** |
+
+Mnemon 内置的 MCP 服务只是同一套确定性、LLM 监督式引擎的传输适配器；它不会
+内嵌另一个 LLM，也不需要额外 API 密钥。
 
 Mnemon 同时填补了协议栈中的空白。MCP 标准化了 LLM 如何发现和调用工具，ODBC/JDBC 标准化了应用如何访问数据库，但 LLM 以记忆语义与数据库交互——这一层尚无协议。Mnemon 的三个原语——`remember`、`link`、`recall`——构成一个意图原生协议：命令名称映射到 LLM 的认知词汇（`remember` 而非 INSERT，`recall` 而非 SELECT），输出是带有信号透明度的结构化 JSON，而非原始数据库行。
 
@@ -71,7 +74,7 @@ brew install --cask mnemon-dev/tap/mnemon
 go install github.com/mnemon-dev/mnemon@latest
 ```
 
-Windows 支持核心 Memory 命令。Agency 的本地权威边界完成原生 Windows
+Windows 支持核心 Memory 命令和 MCP 服务。Agency 的本地权威边界完成原生 Windows
 安全实现前，在 Windows 上保持不可用。
 
 **从源码构建**（macOS / Linux）：
@@ -85,6 +88,7 @@ make install
 
 ```bash
 mnemon --version
+mnemon mcp --help
 mnemon agency --version
 ```
 
@@ -98,6 +102,28 @@ mnemon agency setup --runtime pi --project-root .
 Memory 保持独立：`mnemon setup --target pi --yes` 启用 Memory，以上命令启用
 Agency。当前成熟度与兼容边界、工作方式及可选 peer 配置见
 [Agency 指南](AGENCY.md)。
+
+### MCP 客户端
+
+任何支持 stdio 的 MCP 客户端都能通过同一个二进制使用 Mnemon 的六个 Memory
+工具。对于采用常见 `mcpServers` 配置格式的客户端，加入：
+
+```json
+{
+  "mcpServers": {
+    "mnemon": {
+      "command": "mnemon",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+如需选择 store，把根标志放在命名空间之前，例如
+`["--store", "work", "mcp", "serve"]`，也可设置 `MNEMON_STORE`。服务提供
+`recall`、`search`、`remember`、`related`、`link`、`status`。读取结果默认把
+每条记忆限制为 600 个 Unicode 字符；需要全文时客户端可传 `full: true`。全部
+限制和选项见 [MCP 参考](USAGE.md#mcp-server)。
 
 ### [Claude Code](https://github.com/anthropics/claude-code)
 
@@ -306,7 +332,8 @@ store 可见。**Remind** 触发 recall 判断。**Nudge** 触发 writeback 判�
 
 - **零用户操作** — 安装一次；支持 hook 的 runtime 可用 hook，minimal runtime 可用持久规则
 - **LLM 监督式** — 宿主 LLM 主动决定记什么、更新什么、遗忘什么；无内嵌 LLM，无 API 密钥
-- **多框架支持** — Claude Code、Codex、Cursor、ZCode、TRAE/TRAE Work、Qoder/QoderWork、CodeBuddy、WorkBuddy、Kimi Code、OpenCode 和 Hermes Agent（hooks/plugins）、OpenClaw（plugins）、Pi（extensions）、MiniMax Code 和 Nanobot（skills）、DeepSeek Harness（通过 dsh-mnemon 插件）等
+- **内置 MCP 服务** — 一条 stdio 命令向 MCP 客户端开放六个有界、带 schema 的 Memory 工具
+- **多框架支持** — Claude Code、Codex、Cursor、ZCode、TRAE/TRAE Work、Qoder/QoderWork、CodeBuddy、WorkBuddy、Kimi Code、OpenCode 和 Hermes Agent（hooks/plugins）、OpenClaw（plugins）、Pi（extensions）、MiniMax Code 和 Nanobot（skills）、DeepSeek Harness（通过 dsh-mnemon 插件）、任意 stdio MCP 客户端等
 - **Runtime 原生集成** — 各 runtime 的 `SKILL.md`、共享 `guide.md`，以及受支持的 hook 或 extension
 - **四图架构** — 时序、实体、因果、语义四种边，不仅仅是向量相似度
 - **意图原生协议** — 三个原语（`remember`、`link`、`recall`）映射到 LLM 的认知词汇而非数据库语法；结构化 JSON 输出，带信号透明度
@@ -432,7 +459,7 @@ mnemon setup --eject  # 移除所有集成
 make help           # 显示所有目标
 ```
 
-**依赖**：Go 1.24+、`modernc.org/sqlite`、`spf13/cobra`、`google/uuid`
+**依赖**：Go 1.24+、`modernc.org/sqlite`、`spf13/cobra`、`google/uuid`、`modelcontextprotocol/go-sdk`
 
 **可选**：[Ollama](https://ollama.ai) 或 OpenAI 兼容的嵌入服务器
 
@@ -441,7 +468,7 @@ make help           # 显示所有目标
 - [Agency Preview 指南](AGENCY.md) — 成熟度边界、Pi 设置、View → Intent → Receipt 与可选 peer 协作
 - [Go 工程规范](../development/go-engineering-standard.md) — 可维护性、并发、持久化、测试与质量 ratchet
 - [设计与架构](DESIGN.md) — 当前 engine architecture、核心概念、算法、集成设计
-- [Memory 用法与参考](USAGE.md) — 根级 Memory 命令、导入、回执与嵌入向量支持
+- [Memory 与 MCP 用法参考](USAGE.md) — 根级 Memory 命令、内置 MCP 服务、导入、回执与嵌入向量支持
 - [记忆导入指南](IMPORT.md) — 导入历史聊天的 schema 与 LLM 提取提示词
 - [架构图](../diagrams/) — 系统架构、记忆/召回流程、四图模型、生命周期管理
 
