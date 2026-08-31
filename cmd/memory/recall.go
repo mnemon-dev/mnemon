@@ -7,10 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/mnemon-dev/mnemon/internal/memory/embed"
-	"github.com/mnemon-dev/mnemon/internal/memory/graph"
 	"github.com/mnemon-dev/mnemon/internal/memory/search"
-	"github.com/mnemon-dev/mnemon/internal/memory/store"
+	memoryservice "github.com/mnemon-dev/mnemon/internal/memory/service"
 	"github.com/spf13/cobra"
 )
 
@@ -115,31 +113,18 @@ var recallCmd = &cobra.Command{
 			return fmt.Errorf("--brief and --verbose cannot be used together")
 		}
 
-		db, err := openDB()
-		if err != nil {
-			return fmt.Errorf("open database: %w", err)
-		}
-		defer db.Close()
-
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
+		response, err := newRuntimeService(os.Stderr).Recall(cmd.Context(), memoryservice.RecallRequest{
+			Query: keyword, Category: recCategory, Source: recSource,
+			Limit: recLimit, Basic: recBasic, Intent: recIntent,
+		})
+		if err != nil {
+			return err
+		}
 
 		if recBasic {
-			// Legacy SQL LIKE recall.
-			results, err := db.QueryInsights(store.QueryFilter{
-				Keyword:  keyword,
-				Category: recCategory,
-				Source:   recSource,
-				Limit:    recLimit,
-			})
-			if err != nil {
-				return fmt.Errorf("query insights: %w", err)
-			}
-
-			for _, r := range results {
-				_ = db.IncrementAccessCount(r.ID)
-			}
-			db.LogOp("recall:basic", "", fmt.Sprintf("q=%s hits=%d", keyword, len(results)))
+			results := response.BasicResults
 			if recBrief {
 				brief := make([]briefResult, 0, len(results))
 				for _, result := range results {
@@ -154,39 +139,7 @@ var recallCmd = &cobra.Command{
 			return enc.Encode(results)
 		}
 
-		// Default: intent-aware graph-enhanced recall
-		var intentOverride *search.Intent
-		if recIntent != "" {
-			parsed, err := search.IntentFromString(recIntent)
-			if err != nil {
-				return err
-			}
-			intentOverride = &parsed
-		}
-
-		// Try to get query embedding for hybrid search
-		var queryVec []float64
-		ec := embed.NewClientWithModel(resolveEmbedModel())
-		if ec.Available() {
-			queryVec, _ = ec.Embed(keyword)
-		}
-
-		// Extract query entities at cmd layer (avoid graph->search circular dep).
-		// Load the known-entity set so the indexed extractor's fourth path can
-		// admit user vocabulary (single-segment CamelCase, lowercase project
-		// names) that techDictionary does not cover. The lookup is read-only;
-		// on error we fall through to the default regex+dictionary extractor.
-		knownEntities, _ := db.LoadKnownEntities()
-		queryEntities := graph.ExtractEntitiesIndexed(keyword, knownEntities)
-
-		resp, err := search.IntentAwareRecall(db, keyword, queryVec, queryEntities, recLimit, intentOverride)
-		if err != nil {
-			return fmt.Errorf("recall: %w", err)
-		}
-		for _, r := range resp.Results {
-			_ = db.IncrementAccessCount(r.Insight.ID)
-		}
-		db.LogOp("recall", "", fmt.Sprintf("q=%s hits=%d", keyword, len(resp.Results)))
+		resp := *response.SmartResults
 
 		if recVerbose {
 			return enc.Encode(resp)

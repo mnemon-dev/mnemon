@@ -28,6 +28,7 @@ DETERMINISTIC_PKGS := \
 	./internal/memory/importdraft \
 	./internal/memory/model \
 	./internal/memory/search \
+	./internal/memory/service \
 	./internal/memory/setup \
 	./internal/memory/setup/assets \
 	./internal/memory/store \

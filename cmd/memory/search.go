@@ -2,11 +2,10 @@ package memory
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"strings"
 
-	"github.com/mnemon-dev/mnemon/internal/memory/search"
+	memoryservice "github.com/mnemon-dev/mnemon/internal/memory/service"
 	"github.com/spf13/cobra"
 )
 
@@ -30,25 +29,12 @@ var searchCmd = &cobra.Command{
 			return err
 		}
 
-		db, err := openDB()
+		results, err := newRuntimeService(os.Stderr).Search(cmd.Context(), memoryservice.SearchRequest{
+			Query: query, Limit: searchLimit,
+		})
 		if err != nil {
-			return fmt.Errorf("open database: %w", err)
+			return err
 		}
-		defer db.Close()
-
-		all, err := db.GetAllActiveInsights()
-		if err != nil {
-			return fmt.Errorf("get insights: %w", err)
-		}
-
-		results := search.KeywordSearch(all, query, searchLimit)
-
-		// Increment access count for returned results
-		for _, r := range results {
-			_ = db.IncrementAccessCount(r.Insight.ID)
-		}
-
-		db.LogOp("search", "", fmt.Sprintf("q=%s hits=%d", query, len(results)))
 		if searchBrief {
 			brief := make([]briefResult, 0, len(results))
 			for _, result := range results {

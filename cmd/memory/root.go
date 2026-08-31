@@ -2,9 +2,11 @@ package memory
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/mnemon-dev/mnemon/internal/memory/embed"
+	memoryservice "github.com/mnemon-dev/mnemon/internal/memory/service"
 	"github.com/mnemon-dev/mnemon/internal/memory/store"
 	"github.com/spf13/cobra"
 )
@@ -59,6 +61,24 @@ func init() {
 // package init still work as expected.
 func resolveEmbedModel() string {
 	return embedModel
+}
+
+// RuntimeServiceConfig projects the parsed root Memory flags into the shared
+// application service. Protocol adapters may disable AuditContent before
+// constructing a service so unrestricted client text never enters the oplog.
+func RuntimeServiceConfig(warnings io.Writer) memoryservice.Config {
+	return memoryservice.Config{
+		DataDir:      dataDir,
+		StoreName:    storeName,
+		ReadOnly:     readOnly,
+		EmbedModel:   resolveEmbedModel(),
+		Warnings:     warnings,
+		AuditContent: true,
+	}
+}
+
+func newRuntimeService(warnings io.Writer) *memoryservice.Service {
+	return memoryservice.New(RuntimeServiceConfig(warnings))
 }
 
 // resolveStoreName returns the effective store name.
