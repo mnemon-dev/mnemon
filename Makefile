@@ -17,6 +17,7 @@ DETERMINISTIC_PKGS := \
 	. \
 	./cmd \
 	./cmd/agency \
+	./cmd/mcp \
 	./cmd/memory \
 	./internal/agency \
 	./internal/agency/client \
@@ -24,6 +25,7 @@ DETERMINISTIC_PKGS := \
 	./internal/agency/authority \
 	./internal/agency/artifact \
 	./internal/memory/embed \
+	./internal/mcp \
 	./internal/memory/graph \
 	./internal/memory/importdraft \
 	./internal/memory/model \

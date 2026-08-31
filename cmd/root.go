@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/mnemon-dev/mnemon/cmd/agency"
+	mcpcmd "github.com/mnemon-dev/mnemon/cmd/mcp"
 	"github.com/mnemon-dev/mnemon/cmd/memory"
 	"github.com/spf13/cobra"
 )
@@ -41,7 +42,8 @@ func Execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 	if err == nil {
 		return 0
 	}
-	if findErr == nil && !agencyRequest && !belongsToAgency(executed) && executed != nil {
+	if findErr == nil && !agencyRequest && !belongsToAgency(executed) &&
+		!belongsToMCP(executed) && executed != nil {
 		_, _ = fmt.Fprintln(stderr, executed.UsageString())
 	}
 	if err.Error() != "" {
@@ -54,6 +56,15 @@ func Execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 		return 2
 	}
 	return 1
+}
+
+func belongsToMCP(command *cobra.Command) bool {
+	for current := command; current != nil; current = current.Parent() {
+		if current.Name() == "mcp" {
+			return true
+		}
+	}
+	return false
 }
 
 func belongsToAgency(command *cobra.Command) bool {
@@ -75,10 +86,10 @@ func productRoot() *cobra.Command {
 	// so focused tests can construct the product root more than once without
 	// changing the production command set.
 	for _, child := range root.Commands() {
-		if child.Name() == "agency" {
+		if child.Name() == "agency" || child.Name() == "mcp" {
 			root.RemoveCommand(child)
 		}
 	}
-	root.AddCommand(agency.New(version))
+	root.AddCommand(agency.New(version), mcpcmd.New(version, memory.RuntimeServiceConfig))
 	return root
 }
