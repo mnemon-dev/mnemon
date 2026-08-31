@@ -14,13 +14,15 @@ These root flags configure Memory commands:
 | `--data-dir <path>` | `~/.mnemon` | Base data directory |
 | `--embed-model <name>` | `nomic-embed-text` | Embedding model (overrides `MNEMON_EMBED_MODEL`) |
 | `--readonly` | `false` | Open an immutable Memory database snapshot; reject write commands and create no WAL files |
+| `--version` | | Print version and exit |
 
 `--readonly` is intended for a static database snapshot on a read-only mount.
 It rejects commands that mutate Memory data and suppresses incidental recall
 counters/oplog writes. Do not use it to follow a database another process is
 actively changing; immutable snapshots deliberately ignore concurrent WAL
-updates.
-| `--version` | | Print version and exit |
+updates. Pass a filesystem path to `--data-dir`, including Windows drive-letter
+paths or paths relative to the current directory. Mnemon resolves and encodes
+the read-only SQLite file URI internally; do not prepend `file:` yourself.
 
 ---
 

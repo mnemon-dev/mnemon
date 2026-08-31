@@ -14,11 +14,13 @@
 | `--data-dir <path>` | `~/.mnemon` | 基础数据目录 |
 | `--embed-model <name>` | `nomic-embed-text` | 嵌入模型（覆盖 `MNEMON_EMBED_MODEL`） |
 | `--readonly` | `false` | 打开不可变的 Memory 数据库快照；拒绝写命令且不创建 WAL 文件 |
+| `--version` | | 打印版本并退出 |
 
 `--readonly` 适用于只读挂载上的静态数据库快照。它会拒绝修改 Memory
 数据的命令，并禁用 recall 计数器和 oplog 等附带写入。请勿用它跟随由另一个
 进程持续修改的数据库；不可变快照会有意忽略并发 WAL 更新。
-| `--version` | | 打印版本并退出 |
+`--data-dir` 接受文件系统路径，包括 Windows 盘符路径和相对于当前目录的路径。
+Mnemon 会在内部解析并编码只读 SQLite 文件 URI，无需手动添加 `file:` 前缀。
 
 ---
 
