@@ -34,7 +34,13 @@ func New(version string, memory Memory) *Server {
 	server := &Server{memory: memory}
 	server.sdk = sdkmcp.NewServer(
 		&sdkmcp.Implementation{Name: "mnemon", Version: version},
-		&sdkmcp.ServerOptions{Instructions: serverInstructions},
+		&sdkmcp.ServerOptions{
+			Instructions: serverInstructions,
+			Capabilities: &sdkmcp.ServerCapabilities{
+				Logging: &sdkmcp.LoggingCapabilities{},
+				Tools:   &sdkmcp.ToolCapabilities{},
+			},
+		},
 	)
 	server.registerReadTools()
 	server.registerWriteTools()

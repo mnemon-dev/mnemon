@@ -72,6 +72,13 @@ func callStructured[T any](t *testing.T, session *sdkmcp.ClientSession,
 
 func TestServerAdvertisesSixBoundedTools(t *testing.T) {
 	session := connectTestClient(t, New("test-version", newTestMemory(t)))
+	initialized := session.InitializeResult()
+	if initialized == nil || initialized.Capabilities == nil || initialized.Capabilities.Tools == nil {
+		t.Fatalf("initialize capabilities = %#v, want static tools capability", initialized)
+	}
+	if initialized.Capabilities.Tools.ListChanged {
+		t.Fatal("server advertised listChanged for its static tool set")
+	}
 	result, err := session.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -233,9 +240,24 @@ func TestStdioInitializeEchoesSupportedClientProtocolVersion(t *testing.T) {
 			server := New("test-version", newTestMemory(t))
 			serverInput, clientOutput := io.Pipe()
 			clientInput, serverOutput := io.Pipe()
+			ctx, cancel := context.WithCancel(context.Background())
 			done := make(chan error, 1)
 			go func() {
-				done <- server.Serve(context.Background(), serverInput, serverOutput)
+				done <- server.Serve(ctx, serverInput, serverOutput)
+			}()
+			waited := false
+			defer func() {
+				cancel()
+				_ = clientOutput.Close()
+				_ = clientInput.Close()
+				_ = serverOutput.Close()
+				if !waited {
+					select {
+					case <-done:
+					case <-time.After(5 * time.Second):
+						t.Error("stdio server cleanup did not stop")
+					}
+				}
 			}()
 
 			request := map[string]any{
@@ -263,14 +285,13 @@ func TestStdioInitializeEchoesSupportedClientProtocolVersion(t *testing.T) {
 			_ = clientOutput.Close()
 			select {
 			case err := <-done:
+				waited = true
 				if err != nil {
 					t.Fatalf("serve after client close: %v", err)
 				}
 			case <-time.After(5 * time.Second):
 				t.Fatal("stdio server did not stop after client closed stdin")
 			}
-			_ = serverOutput.Close()
-			_ = clientInput.Close()
 		})
 	}
 }
