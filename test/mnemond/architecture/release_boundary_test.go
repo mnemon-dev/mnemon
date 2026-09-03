@@ -22,13 +22,13 @@ func TestReleaseBoundary(t *testing.T) {
 	t.Run("all retained Go packages belong to the root module", func(t *testing.T) {
 		assertSingleModuleImportLaw(t, root)
 	})
-	t.Run("the release has one mnemon executable with two command domains", func(t *testing.T) {
+	t.Run("the release has one mnemon executable with formal command namespaces", func(t *testing.T) {
 		assertFormalCommands(t, root)
 	})
 	t.Run("retired command and Harness topology is absent", func(t *testing.T) {
 		assertRetiredHarnessAbsent(t, root)
 	})
-	t.Run("command help preserves Memory and Agency separation", func(t *testing.T) {
+	t.Run("command help preserves Memory Agency and MCP separation", func(t *testing.T) {
 		assertCommandHelpSeparation(t, root)
 	})
 }
@@ -123,12 +123,13 @@ func assertImportsUseRootModule(t *testing.T, base string) {
 
 func assertFormalCommands(t *testing.T, root string) {
 	t.Helper()
-	assertDirectoryNames(t, filepath.Join(root, "cmd"), []string{"agency", "memory"})
+	assertDirectoryNames(t, filepath.Join(root, "cmd"), []string{"agency", "mcp", "memory"})
 	assertRootCommandDelegatesToCmd(t, root)
 	for target, want := range map[string]string{
 		".":            "main",
 		"./cmd":        "cmd",
 		"./cmd/agency": "agency",
+		"./cmd/mcp":    "mcp",
 		"./cmd/memory": "memory",
 	} {
 		command := exec.Command("go", "list", "-f", "{{.Name}}", target)
@@ -199,7 +200,7 @@ func assertCommandHelpSeparation(t *testing.T, root string) {
 	mnemon := commandHelp(t, root)
 	wantMnemon := []string{
 		"agency", "completion", "embed", "forget", "gc", "help", "import", "link", "log",
-		"recall", "receipt", "related", "remember", "search", "setup", "show", "status",
+		"mcp", "recall", "receipt", "related", "remember", "search", "setup", "show", "status",
 		"store", "viz",
 	}
 	if got := cobraTopLevelCommands(mnemon); !slices.Equal(got, wantMnemon) {
@@ -209,6 +210,11 @@ func assertCommandHelpSeparation(t *testing.T, root string) {
 	agency := commandHelp(t, root, "agency")
 	if got, want := cobraTopLevelCommands(agency), []string{"peer", "serve", "setup"}; !slices.Equal(got, want) {
 		t.Errorf("mnemon agency top-level commands = %v, want %v", got, want)
+	}
+
+	mcp := commandHelp(t, root, "mcp")
+	if got, want := cobraTopLevelCommands(mcp), []string{"serve"}; !slices.Equal(got, want) {
+		t.Errorf("mnemon mcp top-level commands = %v, want %v", got, want)
 	}
 }
 

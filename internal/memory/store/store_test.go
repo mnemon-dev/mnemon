@@ -2,8 +2,10 @@ package store
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/binary"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -439,6 +441,24 @@ func TestInTransaction_Rollback(t *testing.T) {
 	_, err = db.GetInsightByID("tx-2")
 	if err == nil {
 		t.Error("rolled back insight should not be readable")
+	}
+}
+
+func TestInTransactionContext_CancellationBeforeCommitRollsBack(t *testing.T) {
+	db := testDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	err := db.InTransactionContext(ctx, func() error {
+		if err := db.InsertInsight(makeInsight("tx-canceled", "must roll back", 3)); err != nil {
+			return err
+		}
+		cancel()
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("transaction error = %v, want context cancellation", err)
+	}
+	if _, err := db.GetInsightByID("tx-canceled"); err == nil {
+		t.Fatal("transaction committed an insight after cancellation")
 	}
 }
 

@@ -7,7 +7,7 @@ Thank you for considering contributing to Mnemon!
 - Bug fixes with a reproducing test or E2E scenario
 - Performance improvements with benchmark evidence
 - Documentation improvements (typos, clarity, missing examples)
-- New integrations for LLM CLIs beyond Claude Code and OpenClaw
+- New integrations for agent runtimes and MCP clients
 
 For significant features or architectural changes, please **open an issue first** to discuss the approach before writing code.
 

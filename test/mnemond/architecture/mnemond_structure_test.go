@@ -79,6 +79,13 @@ func assertMnemondPackageGraph(t *testing.T, root string) {
 			"internal/memory/embed", "internal/memory/model", "internal/memory/search",
 			"internal/memory/store",
 		},
+		"internal/memory/service": {
+			"internal/memory/embed", "internal/memory/graph", "internal/memory/model",
+			"internal/memory/search", "internal/memory/store",
+		},
+		"internal/mcp": {
+			"internal/memory/model", "internal/memory/search", "internal/memory/service",
+		},
 		"internal/memory/setup/assets": {},
 		"internal/memory/setup":        {"internal/memory/setup/assets"},
 		"internal/agency":              {},
@@ -92,10 +99,11 @@ func assertMnemondPackageGraph(t *testing.T, root string) {
 			"internal/agency/peerlink",
 		},
 		"cmd/agency": {"internal/agency/attach", "internal/agency/client", "internal/daemon"},
+		"cmd/mcp":    {"internal/mcp", "internal/memory/service"},
 		"cmd/memory": {
 			"internal/memory/embed", "internal/memory/graph", "internal/memory/importdraft",
-			"internal/memory/model", "internal/memory/search", "internal/memory/setup",
-			"internal/memory/setup/assets", "internal/memory/store",
+			"internal/memory/model", "internal/memory/search", "internal/memory/service",
+			"internal/memory/setup", "internal/memory/setup/assets", "internal/memory/store",
 		},
 	}
 	got := make(map[string]map[string]struct{}, len(want))

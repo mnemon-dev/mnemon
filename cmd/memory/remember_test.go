@@ -65,6 +65,45 @@ func seedOldPruneCandidate(t *testing.T, id string) {
 	}
 }
 
+func TestRememberRejectsExplicitCLIValuesThatAreServiceDefaults(t *testing.T) {
+	tests := []struct {
+		name      string
+		configure func()
+		wantError string
+	}{
+		{
+			name:      "empty category",
+			configure: func() { remCategory = "" },
+			wantError: `invalid category ""`,
+		},
+		{
+			name:      "zero importance",
+			configure: func() { remImportance = 0 },
+			wantError: "importance must be 1-5, got 0",
+		},
+		{
+			name:      "empty entity mode",
+			configure: func() { remEntityMode = "" },
+			wantError: `invalid entity mode ""`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			configureRememberTest(t)
+			tt.configure()
+
+			err := rememberCmd.RunE(rememberCmd, []string{"must not persist"})
+			if err == nil || !strings.Contains(err.Error(), tt.wantError) {
+				t.Fatalf("remember error = %v, want %q", err, tt.wantError)
+			}
+			if store.StoreExists(dataDir, store.DefaultStoreName) {
+				t.Fatal("invalid CLI input opened a store before being rejected")
+			}
+		})
+	}
+}
+
 func TestRememberReportsAutoPrunedIDsAndTrigger(t *testing.T) {
 	configureRememberTest(t)
 	seedOldPruneCandidate(t, "old-prune-target")

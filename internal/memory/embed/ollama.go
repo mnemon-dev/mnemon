@@ -142,7 +142,16 @@ func (c *Client) endpointURL(route string) (string, error) {
 // a single embedding round-trip, so availability reflects the endpoint
 // the client actually depends on.
 func (c *Client) Available() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	return c.AvailableContext(context.Background())
+}
+
+// AvailableContext is Available with caller cancellation in addition to the
+// bounded discovery timeout.
+func (c *Client) AvailableContext(ctx context.Context) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	var route string
 	switch c.protocol {
@@ -274,7 +283,16 @@ func (c *Client) embedRequestRoute() string {
 // The request body is identical for both protocols; only the endpoint
 // path and the response shape differ.
 func (c *Client) Embed(text string) ([]float64, error) {
-	return c.embedWithContext(context.Background(), text)
+	return c.EmbedContext(context.Background(), text)
+}
+
+// EmbedContext generates an embedding vector and cancels the provider request
+// when its caller is canceled.
+func (c *Client) EmbedContext(ctx context.Context, text string) ([]float64, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return c.embedWithContext(ctx, text)
 }
 
 // decodeEmbedResponse parses a successful embeddings response under the

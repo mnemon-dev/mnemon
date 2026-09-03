@@ -9,7 +9,7 @@ import (
 
 func TestRootComposesMemoryAndAgency(t *testing.T) {
 	root := productRoot()
-	for _, name := range []string{"remember", "recall", "setup", "agency"} {
+	for _, name := range []string{"remember", "recall", "setup", "agency", "mcp"} {
 		child, _, err := root.Find([]string{name})
 		if err != nil || child == root {
 			t.Fatalf("root command %q is not registered", name)
@@ -18,6 +18,10 @@ func TestRootComposesMemoryAndAgency(t *testing.T) {
 	command, _, err := root.Find([]string{"agency", "peer", "prepare"})
 	if err != nil || command.CommandPath() != "mnemon agency peer prepare" {
 		t.Fatalf("Agency subtree is not composed into the product root: %v", err)
+	}
+	command, _, err = root.Find([]string{"mcp", "serve"})
+	if err != nil || command.CommandPath() != "mnemon mcp serve" {
+		t.Fatalf("MCP subtree is not composed into the product root: %v", err)
 	}
 }
 
