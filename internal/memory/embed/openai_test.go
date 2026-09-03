@@ -170,3 +170,89 @@ func TestOpenAIEmbedEmptyResponse(t *testing.T) {
 		t.Fatal("expected error for empty embedding response")
 	}
 }
+
+func TestOpenAIAvailableFallsBackWithoutModelsRoute(t *testing.T) {
+	// OpenAI-compatible servers without a models route (e.g. Voyage AI)
+	// must still be reported available via an embeddings round-trip.
+	t.Setenv("MNEMON_EMBED_API_KEY", "sk-test")
+	var embedRequests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			http.NotFound(w, r)
+		case "/v1/embeddings":
+			if r.Method != http.MethodPost {
+				t.Errorf("expected POST /v1/embeddings, got %s", r.Method)
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
+				t.Errorf("expected Bearer sk-test on fallback probe, got %q", got)
+			}
+			embedRequests++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"embedding":[1.0,2.0]}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv("MNEMON_EMBED_ENDPOINT", srv.URL+"/v1")
+	c := NewClient()
+	if !c.Available() {
+		t.Fatal("expected Available() true when /v1/models is 404 but /v1/embeddings works")
+	}
+	if embedRequests != 1 {
+		t.Fatalf("expected exactly one embedding probe, got %d", embedRequests)
+	}
+}
+
+func TestOpenAIAvailableFallbackRejectsAuthFailure(t *testing.T) {
+	// A 404 models route plus a 401 embeddings route must report
+	// unavailable: availability follows the endpoint that matters.
+	t.Setenv("MNEMON_EMBED_API_KEY", "sk-bad")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			http.NotFound(w, r)
+		case "/v1/embeddings":
+			w.WriteHeader(http.StatusUnauthorized)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv("MNEMON_EMBED_ENDPOINT", srv.URL+"/v1")
+	c := NewClient()
+	if c.Available() {
+		t.Fatal("expected Available() false when fallback probe returns 401")
+	}
+}
+
+func TestOpenAIAvailableNoFallbackOnServerError(t *testing.T) {
+	// Only a missing models route (404/405/501) triggers the fallback.
+	// A 500 models route must report unavailable without an embeddings call.
+	var embedRequests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			w.WriteHeader(http.StatusInternalServerError)
+		case "/v1/embeddings":
+			embedRequests++
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"embedding":[1.0]}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv("MNEMON_EMBED_ENDPOINT", srv.URL+"/v1")
+	c := NewClient()
+	if c.Available() {
+		t.Fatal("expected Available() false for 500 models route")
+	}
+	if embedRequests != 0 {
+		t.Fatalf("expected no embedding probe after 500 models route, got %d", embedRequests)
+	}
+}
