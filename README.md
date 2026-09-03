@@ -497,13 +497,25 @@ reported by ID in the triggering command's `auto_pruned_ids` field.
 
 The embedding client speaks the Ollama API by default and the
 OpenAI-compatible embeddings API when the endpoint ends in `/v1` (or when
-`MNEMON_EMBED_PROTOCOL=openai` is set). For example, a local server such as
+`MNEMON_EMBED_PROTOCOL=openai` is set). OpenAI-compatible servers are
+normally probed via their `models` route; servers that do not serve that
+route (e.g. [Voyage AI](https://docs.voyageai.com)) are detected via an
+embeddings round-trip instead. For example, a local server such as
 [oMLX](https://omlx.dev) can be configured with:
 
 ```bash
 export MNEMON_EMBED_ENDPOINT=http://127.0.0.1:18000/v1
 export MNEMON_EMBED_MODEL=bge-m3-mlx-8bit
 export MNEMON_EMBED_API_KEY=sk-... # omit for keyless local servers
+mnemon embed --status
+```
+
+A hosted provider such as Voyage AI needs only the endpoint, model, and key:
+
+```bash
+export MNEMON_EMBED_ENDPOINT=https://api.voyageai.com/v1
+export MNEMON_EMBED_MODEL=voyage-3.5
+export MNEMON_EMBED_API_KEY=pa-...
 mnemon embed --status
 ```
 
