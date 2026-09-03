@@ -4,8 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/mnemon-dev/mnemon/internal/memory/model"
 	"github.com/mnemon-dev/mnemon/internal/memory/store"
@@ -217,5 +221,122 @@ func TestServiceCanceledWaitDoesNotStartOperation(t *testing.T) {
 	_, err := service.Status(ctx)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("status error = %v, want context cancellation", err)
+	}
+}
+
+func TestServiceCanceledContextNeverAcquiresReadyGate(t *testing.T) {
+	service, _ := testService(t, true)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for i := 0; i < 100; i++ {
+		release, err := service.acquire(ctx)
+		if release != nil {
+			release()
+			t.Fatalf("attempt %d acquired the operation gate after cancellation", i)
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("attempt %d error = %v, want context cancellation", i, err)
+		}
+	}
+}
+
+func TestRememberCancellationStopsEmbeddingAndDoesNotPersist(t *testing.T) {
+	embedStarted := make(chan struct{})
+	unblockProvider := make(chan struct{})
+	var unblockOnce sync.Once
+	unblock := func() { unblockOnce.Do(func() { close(unblockProvider) }) }
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tags":
+			w.WriteHeader(http.StatusOK)
+		case "/api/embed":
+			close(embedStarted)
+			select {
+			case <-r.Context().Done():
+			case <-unblockProvider:
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"embeddings":[[0.1,0.2,0.3]]}`))
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	defer unblock()
+
+	service, config := testService(t, true)
+	t.Setenv("MNEMON_EMBED_ENDPOINT", server.URL)
+	t.Setenv("MNEMON_EMBED_PROTOCOL", "ollama")
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.Remember(ctx, RememberRequest{
+			Content: "canceled provider request", NoDiff: true,
+		})
+		done <- err
+	}()
+
+	select {
+	case <-embedStarted:
+	case <-time.After(2 * time.Second):
+		cancel()
+		unblock()
+		<-done
+		t.Fatal("remember did not start its embedding request")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("remember error = %v, want context cancellation", err)
+		}
+	case <-time.After(2 * time.Second):
+		unblock()
+		<-done
+		t.Fatal("remember did not stop after cancellation")
+	}
+
+	db, err := store.Open(store.StoreDir(config.DataDir, config.StoreName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	stats, err := db.GetStats()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Total != 0 || stats.OplogCount != 0 {
+		t.Fatalf("canceled remember persisted state: %#v", stats)
+	}
+}
+
+func TestCanceledLinkDoesNotPersist(t *testing.T) {
+	service, config := testService(t, true)
+	first := rememberTestInsight(t, service, "first canceled link endpoint")
+	second := rememberTestInsight(t, service, "second canceled link endpoint")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for i := 0; i < 100; i++ {
+		_, err := service.Link(ctx, LinkRequest{
+			SourceID: first.ID, TargetID: second.ID, EdgeType: "causal", Weight: 0.5,
+		})
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("attempt %d link error = %v, want context cancellation", i, err)
+		}
+	}
+
+	db, err := store.Open(store.StoreDir(config.DataDir, config.StoreName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	edges, err := db.GetEdgesBySourceAndType(first.ID, model.EdgeCausal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(edges) != 0 {
+		t.Fatalf("canceled link persisted edges: %#v", edges)
 	}
 }

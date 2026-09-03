@@ -136,7 +136,7 @@ func (s *Service) Link(ctx context.Context, request LinkRequest) (LinkResult, er
 	metadata["created_by"] = request.CreatedBy
 
 	now := time.Now().UTC()
-	err = db.InTransaction(func() error {
+	err = db.InTransactionContext(ctx, func() error {
 		for _, endpoints := range [][2]string{
 			{request.SourceID, request.TargetID}, {request.TargetID, request.SourceID},
 		} {

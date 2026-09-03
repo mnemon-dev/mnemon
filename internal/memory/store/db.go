@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"math"
@@ -51,20 +52,46 @@ func (db *DB) execer() dbExecer {
 // InTransaction runs fn inside a single SQL transaction.
 // All store methods called within fn will use the transaction automatically.
 func (db *DB) InTransaction(fn func() error) error {
+	return db.InTransactionContext(context.Background(), fn)
+}
+
+// InTransactionContext runs fn inside a transaction tied to ctx. Cancellation
+// before commit rolls the transaction back, so callers never acknowledge a
+// canceled durable transition by committing it afterward.
+func (db *DB) InTransactionContext(ctx context.Context, fn func() error) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if db.tx != nil {
 		return fmt.Errorf("nested transactions not supported")
 	}
-	tx, err := db.conn.Begin()
+	tx, err := db.conn.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
 	}
 	db.tx = tx
 	defer func() { db.tx = nil }()
 	if err := fn(); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
 		return err
 	}
-	return tx.Commit()
+	if err := ctx.Err(); err != nil {
+		_ = tx.Rollback()
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		if contextErr := ctx.Err(); contextErr != nil {
+			return contextErr
+		}
+		return err
+	}
+	return nil
 }
 
 // DefaultDataDir returns ~/.mnemon.

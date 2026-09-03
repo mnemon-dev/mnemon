@@ -87,16 +87,31 @@ func TestServerAdvertisesSixBoundedTools(t *testing.T) {
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("tools = %v, want %v", names, want)
 	}
-	for _, name := range []string{"recall", "search", "related", "status"} {
-		annotations := byName[name].Annotations
-		if annotations == nil || !annotations.ReadOnlyHint || annotations.OpenWorldHint == nil || *annotations.OpenWorldHint {
-			t.Errorf("%s annotations = %#v", name, annotations)
-		}
+	type annotationExpectation struct {
+		readOnly    bool
+		destructive bool
+		idempotent  bool
+		openWorld   bool
 	}
-	for _, name := range []string{"remember", "link"} {
+	wantAnnotations := map[string]annotationExpectation{
+		"recall":   {readOnly: false, destructive: false, idempotent: false, openWorld: true},
+		"search":   {readOnly: false, destructive: false, idempotent: false, openWorld: false},
+		"related":  {readOnly: true, idempotent: true},
+		"status":   {readOnly: true, idempotent: true},
+		"remember": {destructive: true, openWorld: true},
+		"link":     {destructive: true},
+	}
+	for name, want := range wantAnnotations {
 		annotations := byName[name].Annotations
-		if annotations == nil || annotations.ReadOnlyHint || annotations.DestructiveHint == nil || !*annotations.DestructiveHint {
+		if annotations == nil || annotations.DestructiveHint == nil || annotations.OpenWorldHint == nil {
 			t.Errorf("%s annotations = %#v", name, annotations)
+			continue
+		}
+		if annotations.ReadOnlyHint != want.readOnly ||
+			*annotations.DestructiveHint != want.destructive ||
+			annotations.IdempotentHint != want.idempotent ||
+			*annotations.OpenWorldHint != want.openWorld {
+			t.Errorf("%s annotations = %#v, want %#v", name, annotations, want)
 		}
 	}
 	recallSchema, ok := byName["recall"].InputSchema.(map[string]any)

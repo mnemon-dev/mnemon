@@ -31,11 +31,15 @@ type linkInput struct {
 func (s *Server) registerWriteTools() {
 	sdkmcp.AddTool(s.sdk, &sdkmcp.Tool{
 		Name: "remember", Description: "Store one durable insight and update its memory graph; duplicate detection may skip or replace an older insight.",
-		InputSchema: rememberInputSchema(), Annotations: toolAnnotations(false, true, false),
+		InputSchema: rememberInputSchema(), Annotations: toolAnnotations(toolBehavior{
+			readOnly: false, destructive: true, idempotent: false, openWorld: true,
+		}),
 	}, s.remember)
 	sdkmcp.AddTool(s.sdk, &sdkmcp.Tool{
 		Name: "link", Description: "Create or replace a bidirectional typed relationship between two stored insights.",
-		InputSchema: linkInputSchema(), Annotations: toolAnnotations(false, true, true),
+		InputSchema: linkInputSchema(), Annotations: toolAnnotations(toolBehavior{
+			readOnly: false, destructive: true, idempotent: false, openWorld: false,
+		}),
 	}, s.link)
 }
 

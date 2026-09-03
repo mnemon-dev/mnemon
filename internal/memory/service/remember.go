@@ -100,17 +100,25 @@ func (s *Service) Remember(ctx context.Context, request RememberRequest) (Rememb
 	defer db.Close()
 
 	insight := newInsight(normalized)
-	embedding := s.prepareEmbedding(ctx, db, normalized.content)
+	embedding, err := s.prepareEmbedding(ctx, db, normalized.content)
+	if err != nil {
+		return RememberResult{}, err
+	}
 	decision, err := decideRememberDiff(db, normalized, embedding)
 	if err != nil {
 		return RememberResult{}, err
 	}
 	if decision.action == "skipped" {
-		db.LogOp("diff-skip", insight.ID, fmt.Sprintf("duplicate of %s", decision.replacedID))
+		if err := db.InTransactionContext(ctx, func() error {
+			db.LogOp("diff-skip", insight.ID, fmt.Sprintf("duplicate of %s", decision.replacedID))
+			return nil
+		}); err != nil {
+			return RememberResult{}, err
+		}
 		return skippedRememberResult(insight, decision), nil
 	}
 
-	effects, err := s.persistInsight(db, insight, normalized.entityMode, embedding, decision)
+	effects, err := s.persistInsight(ctx, db, insight, normalized.entityMode, embedding, decision)
 	if err != nil {
 		return RememberResult{}, err
 	}
@@ -198,19 +206,27 @@ func newInsight(request normalizedRemember) *model.Insight {
 	}
 }
 
-func (s *Service) prepareEmbedding(ctx context.Context, db *store.DB, content string) embeddingState {
+func (s *Service) prepareEmbedding(ctx context.Context, db *store.DB, content string) (embeddingState, error) {
 	client := embed.NewClientWithModel(s.config.EmbedModel)
-	if !client.Available() || ctx.Err() != nil {
-		return embeddingState{}
+	if !client.AvailableContext(ctx) {
+		if err := ctx.Err(); err != nil {
+			return embeddingState{}, err
+		}
+		return embeddingState{}, nil
 	}
 	state := embeddingState{}
-	if vector, err := client.Embed(content); err == nil {
+	if vector, err := client.EmbedContext(ctx, content); err == nil {
 		state.vector = vector
 		state.blob = embed.SerializeVector(vector)
+	} else if contextErr := ctx.Err(); contextErr != nil {
+		return embeddingState{}, contextErr
+	}
+	if err := ctx.Err(); err != nil {
+		return embeddingState{}, err
 	}
 	dbEmbeddings, err := db.GetAllEmbeddings()
 	if err != nil {
-		return state
+		return state, nil
 	}
 	state.cache = make(graph.EmbedCache, len(dbEmbeddings))
 	for _, item := range dbEmbeddings {
@@ -218,7 +234,10 @@ func (s *Service) prepareEmbedding(ctx context.Context, db *store.DB, content st
 			state.cache[item.ID] = vector
 		}
 	}
-	return state
+	if err := ctx.Err(); err != nil {
+		return embeddingState{}, err
+	}
+	return state, nil
 }
 
 func decideRememberDiff(db *store.DB, request normalizedRemember, embedding embeddingState) (diffDecision, error) {
@@ -261,10 +280,10 @@ func decideRememberDiff(db *store.DB, request normalizedRemember, embedding embe
 	return decision, nil
 }
 
-func (s *Service) persistInsight(db *store.DB, insight *model.Insight, entityMode graph.EntityMode,
+func (s *Service) persistInsight(ctx context.Context, db *store.DB, insight *model.Insight, entityMode graph.EntityMode,
 	embedding embeddingState, decision diffDecision) (writeEffects, error) {
 	var effects writeEffects
-	err := db.InTransaction(func() error {
+	err := db.InTransactionContext(ctx, func() error {
 		if decision.action == "updated" && decision.replacedID != "" {
 			if err := db.SoftDeleteInsight(decision.replacedID); err != nil {
 				fmt.Fprintf(s.config.Warnings, "warning: soft-delete %s: %v\n", decision.replacedID, err)

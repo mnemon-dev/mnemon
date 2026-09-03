@@ -2,10 +2,12 @@ package memory
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 
 	"github.com/mnemon-dev/mnemon/internal/memory/graph"
+	"github.com/mnemon-dev/mnemon/internal/memory/model"
 	memoryservice "github.com/mnemon-dev/mnemon/internal/memory/service"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +28,9 @@ var rememberCmd = &cobra.Command{
 	Long:  "Store a new insight into the memory graph with optional category, importance, and tags.",
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := validateRememberCLIOptions(); err != nil {
+			return err
+		}
 		result, err := newRuntimeService(os.Stderr).Remember(cmd.Context(), memoryservice.RememberRequest{
 			Content: strings.Join(args, " "), Category: remCategory,
 			Importance: remImportance, Tags: splitMemoryList(remTags), Source: remSource,
@@ -38,6 +43,28 @@ var rememberCmd = &cobra.Command{
 		enc.SetIndent("", "  ")
 		return enc.Encode(result)
 	},
+}
+
+// validateRememberCLIOptions preserves the CLI's strict contract for values
+// whose zero value means "omitted" to protocol callers of the shared service.
+// Cobra has already supplied non-zero defaults when these flags are omitted,
+// so a zero value here is an explicit invalid CLI value rather than absence.
+func validateRememberCLIOptions() error {
+	category := model.Category(remCategory)
+	if !model.ValidCategories[category] {
+		return fmt.Errorf(
+			"invalid category %q; valid: preference, decision, fact, insight, context, general",
+			remCategory)
+	}
+	if remImportance < 1 || remImportance > 5 {
+		return fmt.Errorf("importance must be 1-5, got %d", remImportance)
+	}
+	entityMode := graph.EntityMode(remEntityMode)
+	if !graph.ValidEntityMode(entityMode) {
+		return fmt.Errorf(
+			"invalid entity mode %q; valid: merge, provided, auto", remEntityMode)
+	}
+	return nil
 }
 
 func splitMemoryList(value string) []string {

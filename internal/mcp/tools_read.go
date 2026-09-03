@@ -34,20 +34,28 @@ type relatedInput struct {
 
 func (s *Server) registerReadTools() {
 	sdkmcp.AddTool(s.sdk, &sdkmcp.Tool{
-		Name: "recall", Description: "Retrieve durable insights using intent-aware graph search, or basic substring matching.",
-		InputSchema: recallInputSchema(), Annotations: toolAnnotations(true, false, true),
+		Name: "recall", Description: "Retrieve durable insights using intent-aware graph search, or basic substring matching; records access history.",
+		InputSchema: recallInputSchema(), Annotations: toolAnnotations(toolBehavior{
+			readOnly: false, destructive: false, idempotent: false, openWorld: true,
+		}),
 	}, s.recall)
 	sdkmcp.AddTool(s.sdk, &sdkmcp.Tool{
-		Name: "search", Description: "Search durable insights with token-based relevance scoring.",
-		InputSchema: searchInputSchema(), Annotations: toolAnnotations(true, false, true),
+		Name: "search", Description: "Search durable insights with token-based relevance scoring; records access history.",
+		InputSchema: searchInputSchema(), Annotations: toolAnnotations(toolBehavior{
+			readOnly: false, destructive: false, idempotent: false, openWorld: false,
+		}),
 	}, s.search)
 	sdkmcp.AddTool(s.sdk, &sdkmcp.Tool{
 		Name: "related", Description: "Traverse typed graph edges from one insight to find related memories.",
-		InputSchema: relatedInputSchema(), Annotations: toolAnnotations(true, false, true),
+		InputSchema: relatedInputSchema(), Annotations: toolAnnotations(toolBehavior{
+			readOnly: true, destructive: false, idempotent: true, openWorld: false,
+		}),
 	}, s.related)
 	sdkmcp.AddTool(s.sdk, &sdkmcp.Tool{
 		Name: "status", Description: "Show aggregate statistics for the selected Mnemon store.",
-		Annotations: toolAnnotations(true, false, true),
+		Annotations: toolAnnotations(toolBehavior{
+			readOnly: true, destructive: false, idempotent: true, openWorld: false,
+		}),
 	}, s.status)
 }
 

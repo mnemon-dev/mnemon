@@ -50,10 +50,17 @@ func (s *Service) acquire(ctx context.Context) (func(), error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-s.gate:
+		if err := ctx.Err(); err != nil {
+			s.gate <- struct{}{}
+			return nil, err
+		}
 		return func() { s.gate <- struct{}{} }, nil
 	}
 }

@@ -176,10 +176,17 @@ func confidenceLabel(score float64) string {
 	}
 }
 
-func toolAnnotations(readOnly, destructive, idempotent bool) *sdkmcp.ToolAnnotations {
+type toolBehavior struct {
+	readOnly    bool
+	destructive bool
+	idempotent  bool
+	openWorld   bool
+}
+
+func toolAnnotations(behavior toolBehavior) *sdkmcp.ToolAnnotations {
 	return &sdkmcp.ToolAnnotations{
-		ReadOnlyHint: readOnly, DestructiveHint: boolPointer(destructive),
-		IdempotentHint: idempotent, OpenWorldHint: boolPointer(false),
+		ReadOnlyHint: behavior.readOnly, DestructiveHint: boolPointer(behavior.destructive),
+		IdempotentHint: behavior.idempotent, OpenWorldHint: boolPointer(behavior.openWorld),
 	}
 }
 

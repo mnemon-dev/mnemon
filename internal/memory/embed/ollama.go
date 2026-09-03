@@ -136,7 +136,16 @@ func (c *Client) endpointURL(route string) (string, error) {
 // responds successfully. Uses a 2s timeout to avoid blocking the CLI on
 // unresponsive servers.
 func (c *Client) Available() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	return c.AvailableContext(context.Background())
+}
+
+// AvailableContext is Available with caller cancellation in addition to the
+// bounded discovery timeout.
+func (c *Client) AvailableContext(ctx context.Context) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	var route string
 	switch c.protocol {
@@ -200,6 +209,15 @@ type openaiEmbedResponse struct {
 // The request body is identical for both protocols; only the endpoint
 // path and the response shape differ.
 func (c *Client) Embed(text string) ([]float64, error) {
+	return c.EmbedContext(context.Background(), text)
+}
+
+// EmbedContext generates an embedding vector and cancels the provider request
+// when its caller is canceled.
+func (c *Client) EmbedContext(ctx context.Context, text string) ([]float64, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	req := embedRequest{Model: c.model, Input: text}
 	if c.dims > 0 {
 		req.Dimensions = c.dims
@@ -220,7 +238,7 @@ func (c *Client) Embed(text string) ([]float64, error) {
 	if err != nil {
 		return nil, err
 	}
-	httpReq, err := http.NewRequest(http.MethodPost, endpointURL, bytes.NewReader(body))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpointURL, bytes.NewReader(body))
 	if err != nil {
 		return nil, fmt.Errorf("build request: %w", err)
 	}

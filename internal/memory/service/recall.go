@@ -84,11 +84,16 @@ func (s *Service) smartRecall(ctx context.Context, db *store.DB, request RecallR
 
 	var queryVector []float64
 	embedder := embed.NewClientWithModel(s.config.EmbedModel)
-	if embedder.Available() {
-		if err := ctx.Err(); err != nil {
-			return RecallResponse{}, err
+	if embedder.AvailableContext(ctx) {
+		vector, embedErr := embedder.EmbedContext(ctx, request.Query)
+		if contextErr := ctx.Err(); contextErr != nil {
+			return RecallResponse{}, contextErr
 		}
-		queryVector, _ = embedder.Embed(request.Query)
+		if embedErr == nil {
+			queryVector = vector
+		}
+	} else if err := ctx.Err(); err != nil {
+		return RecallResponse{}, err
 	}
 	knownEntities, _ := db.LoadKnownEntities()
 	queryEntities := graph.ExtractEntitiesIndexed(request.Query, knownEntities)
