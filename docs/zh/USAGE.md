@@ -24,6 +24,25 @@ Mnemon 会在内部解析并编码只读 SQLite 文件 URI，无需手动添加 
 
 ---
 
+## CLI 升级
+
+通过推荐的 npm 方式安装后，可以升级到 npm `latest` 指向的版本：
+
+```bash
+mnemon update
+```
+
+在调用 npm 前，npm 启动器会确认当前软件包确实属于同一个全局 npm
+prefix。若 `mnemon` 来自 Homebrew、`go install`、源码构建、其他 Node 包管理器
+或另一个 npm prefix，命令会以 fail-closed 方式退出，避免静默产生第二份安装。
+首次迁移请执行 `npm install --global @mnemon-dev/mnemon@latest`，并确保 npm
+全局 bin 目录中的 `mnemon` 在 `PATH` 中优先。
+
+升级只替换 CLI 包，不会修改 Memory 数据，也不会静默改写已安装的宿主集成。
+当某个版本的 release notes 明确要求刷新集成时，再重新运行 `mnemon setup`。
+
+---
+
 ## Memory 设置
 
 将 mnemon 部署到 LLM CLI 环境中。安装后首先运行此命令。

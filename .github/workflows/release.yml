@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -23,12 +23,22 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+
       - name: Run deterministic test suite
         run: make test
+
+      - name: Test npm distribution tooling
+        run: npm test --prefix npm/cli
 
   release:
     needs: test
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -48,3 +58,50 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Preserve native binaries for npm packaging
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-release-binaries
+          path: |
+            dist/artifacts.json
+            dist/mnemon_*/*
+          if-no-files-found: error
+          retention-days: 1
+
+  npm-release:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node and npm registry authentication
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.20.0
+          registry-url: https://registry.npmjs.org
+
+      - name: Download native release binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: npm-release-binaries
+          path: dist
+
+      - name: Stage npm packages
+        run: >-
+          node scripts/build-npm-packages.mjs
+          --version "${{ github.ref_name }}"
+          --dist dist
+          --output dist/npm
+
+      - name: Verify npm packages and launcher
+        run: node scripts/verify-npm-packages.mjs dist/npm/packages.json
+
+      - name: Publish platform artifacts, then the CLI package
+        run: node scripts/publish-npm-packages.mjs dist/npm/packages.json
+        env:
+          # Used only to bootstrap the package; trusted publishing uses OIDC.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

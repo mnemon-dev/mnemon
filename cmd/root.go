@@ -22,10 +22,12 @@ func Execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 	}
 	root := productRoot()
 	agencyRequest := false
+	quietProductRequest := false
 	command, _, findErr := root.Find(args)
 	if findErr == nil {
 		agencyRequest = belongsToAgency(command)
-		if agencyRequest {
+		quietProductRequest = belongsToCommand(command, "update")
+		if agencyRequest || quietProductRequest {
 			root.SilenceErrors = true
 		}
 	}
@@ -41,7 +43,8 @@ func Execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 	if err == nil {
 		return 0
 	}
-	if findErr == nil && !agencyRequest && !belongsToAgency(executed) && executed != nil {
+	if findErr == nil && !agencyRequest && !quietProductRequest &&
+		!belongsToAgency(executed) && executed != nil {
 		_, _ = fmt.Fprintln(stderr, executed.UsageString())
 	}
 	if err.Error() != "" {
@@ -57,8 +60,12 @@ func Execute(ctx context.Context, args []string, stdin io.Reader, stdout, stderr
 }
 
 func belongsToAgency(command *cobra.Command) bool {
+	return belongsToCommand(command, "agency")
+}
+
+func belongsToCommand(command *cobra.Command, name string) bool {
 	for current := command; current != nil; current = current.Parent() {
-		if current.Name() == "agency" {
+		if current.Name() == name {
 			return true
 		}
 	}
@@ -71,14 +78,14 @@ func productRoot() *cobra.Command {
 	root.Long = "Mnemon gives LLM agents persistent memory and a local authority for durable, peer-to-peer work."
 	root.SilenceErrors = false
 	root.SilenceUsage = false
-	// Memory's current command tree is process-global. Remove a prior command
-	// so focused tests can construct the product root more than once without
+	// Memory's current command tree is process-global. Remove prior product
+	// commands so focused tests can construct the root more than once without
 	// changing the production command set.
 	for _, child := range root.Commands() {
-		if child.Name() == "agency" {
+		if child.Name() == "agency" || child.Name() == "update" {
 			root.RemoveCommand(child)
 		}
 	}
-	root.AddCommand(agency.New(version))
+	root.AddCommand(agency.New(version), updateCommand())
 	return root
 }

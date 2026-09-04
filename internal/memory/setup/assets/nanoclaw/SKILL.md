@@ -26,8 +26,8 @@ Each group gets its own isolated mnemon store. An optional global store provides
    mnemon --version
    ```
    If not installed:
-   - **macOS / Linux (Homebrew)**: `brew install mnemon-dev/tap/mnemon`
-   - **Go install**: `go install github.com/mnemon-dev/mnemon@latest`
+   - **Recommended (npm)**: `npm install --global @mnemon-dev/mnemon`
+   - **Alternative (Homebrew)**: `brew install --cask mnemon-dev/tap/mnemon`
 
 2. Verify the container image exists:
    ```bash

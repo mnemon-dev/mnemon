@@ -79,7 +79,8 @@ git push origin v0.2.0
 
 This triggers GitHub Actions → runs tests → builds platform artifacts for the
 single `mnemon` executable via GoReleaser → publishes a GitHub Release →
-updates the Homebrew tap.
+updates the Homebrew tap → verifies and publishes the npm platform artifacts →
+publishes `@mnemon-dev/mnemon` last.
 
 ## License
 

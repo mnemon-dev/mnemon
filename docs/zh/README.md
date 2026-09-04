@@ -59,17 +59,31 @@ Mnemon 同时填补了协议栈中的空白。MCP 标准化了 LLM 如何发现�
 
 ### 安装
 
-**Homebrew Cask**（macOS）：
+**npm**（推荐；macOS / Linux / Windows，需要 Node.js 22+）：
+
+```bash
+npm install --global @mnemon-dev/mnemon
+```
+
+之后可随时升级 npm 管理的 CLI：
+
+```bash
+mnemon update
+```
+
+npm 包会按宿主操作系统和 CPU 安装对应的原生 Go 可执行文件。Mnemon 引擎
+仍然是单一原生二进制；Node.js 只用于 npm 启动器和包管理。
+
+**其他安装方式**：
 
 ```bash
 brew install --cask mnemon-dev/tap/mnemon
-```
-
-**Go install**（macOS / Linux / Windows）：
-
-```bash
 go install github.com/mnemon-dev/mnemon@latest
 ```
+
+Homebrew、`go install`、源码构建及其他 Node 包管理器安装的版本，必须继续使用
+各自原来的安装方式。迁移时请先执行一次 npm 安装命令，并确保 npm 全局 bin 目录
+在 `PATH` 中排在旧可执行文件之前；此后的 `mnemon update` 将由 npm 管理。
 
 Windows 支持核心 Memory 命令。Agency 的本地权威边界完成原生 Windows
 安全实现前，在 Windows 上保持不可用。

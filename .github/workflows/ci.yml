@@ -30,8 +30,16 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+
       - name: Run deterministic test suite
         run: make test
+
+      - name: Test npm distribution tooling
+        run: npm test --prefix npm/cli
 
   windows-memory:
     runs-on: windows-latest
@@ -49,8 +57,16 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+
       - name: Build Windows Memory product
         run: go build -o mnemon.exe .
 
       - name: Test Windows command and Memory storage boundaries
         run: go test ./cmd ./cmd/agency ./cmd/memory ./internal/memory/store -count=1
+
+      - name: Test Windows npm tooling
+        run: npm test --prefix npm/cli

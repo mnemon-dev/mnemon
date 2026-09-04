@@ -59,17 +59,34 @@ See [Design & Architecture](docs/DESIGN.md) for details.
 
 ### Install
 
-**Homebrew Cask** (macOS):
+**npm** (recommended; macOS / Linux / Windows, Node.js 22+):
+
+```bash
+npm install --global @mnemon-dev/mnemon
+```
+
+Upgrade the npm-managed CLI at any time:
+
+```bash
+mnemon update
+```
+
+The npm package installs the matching native Go executable for the host OS and
+CPU. Mnemon's engine remains a single native binary; Node.js is used only by
+the npm launcher and package manager.
+
+**Alternative installers**:
 
 ```bash
 brew install --cask mnemon-dev/tap/mnemon
-```
-
-**Go install** (macOS / Linux / Windows):
-
-```bash
 go install github.com/mnemon-dev/mnemon@latest
 ```
+
+Homebrew, `go install`, source builds, and other Node package managers must
+continue to use their original installation method. To migrate one of these
+installations, run the npm install command once and ensure the npm global bin
+directory precedes the old executable on `PATH`; subsequent `mnemon update`
+calls are npm-managed.
 
 Windows supports the core Memory commands. Agency remains unavailable on
 Windows until its local authority boundary has native Windows security.

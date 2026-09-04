@@ -7,16 +7,11 @@ metadata:
     requires:
       bins: ["mnemon"]
     install:
-      - id: "brew"
-        kind: "brew"
-        formula: "mnemon-dev/tap/mnemon"
+      - id: "node"
+        kind: "node"
+        package: "@mnemon-dev/mnemon@latest"
         bins: ["mnemon"]
-        label: "Install mnemon (Homebrew)"
-      - id: "go"
-        kind: "go"
-        package: "github.com/mnemon-dev/mnemon@latest"
-        bins: ["mnemon"]
-        label: "Install mnemon (go install)"
+        label: "Install mnemon (npm)"
 ---
 
 # mnemon
@@ -25,16 +20,16 @@ metadata:
 
 ### 1. Install the binary
 
-**Homebrew** (macOS / Linux):
+**npm** (macOS / Linux / Windows, Node.js 22+):
 
 ```bash
-brew install mnemon-dev/tap/mnemon
+npm install --global @mnemon-dev/mnemon
 ```
 
-**Go install**:
+Upgrade an npm-managed installation with:
 
 ```bash
-go install github.com/mnemon-dev/mnemon@latest
+mnemon update
 ```
 
 ### 2. Set up OpenClaw integration
