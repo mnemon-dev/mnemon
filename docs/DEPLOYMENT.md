@@ -5,6 +5,7 @@
 Prerequisites:
 
 - Go 1.24.6 or newer in the 1.24 series
+- Node.js 22 or newer for npm package tests
 - `make`
 - `jq` only when running the opt-in CLI E2E/integration suite
 
@@ -102,14 +103,50 @@ server is not on a trusted local network.
 
 ## Release Deployment
 
-Tagged releases are handled by GoReleaser through `.github/workflows/release.yml`.
+Tagged releases are handled through `.github/workflows/release.yml`. GoReleaser
+publishes the native GitHub artifacts and Homebrew cask first. A dependent job
+then stages those exact binaries as npm artifacts, verifies the host launcher,
+and publishes the canonical `@mnemon-dev/mnemon` package.
 
-Required repository secret:
+Long-lived repository secret:
 
 - `HOMEBREW_TAP_TOKEN`, only needed for publishing the Homebrew tap
+
+Before the first npm release, reserve the `@mnemon-dev` npm scope and add a
+granular `NPM_TOKEN` repository secret that can bootstrap the public
+`@mnemon-dev/mnemon` package. After that first tagged release:
+
+1. Configure `mnemon-dev/mnemon` and `release.yml` as the package's GitHub
+   Actions [trusted publisher](https://docs.npmjs.com/trusted-publishers/) on
+   npm, allowing direct `npm publish`.
+2. Run the next tagged release and confirm that npm records GitHub Actions as
+   its trusted publisher.
+3. Delete the `NPM_TOKEN` repository secret and revoke the bootstrap token.
+
+The npm release job uses Node.js 24 and requests only the OIDC permission needed
+for token-free trusted publishing. npm automatically binds each publish to the
+workflow and records provenance; `--provenance` also covers the one-time token
+bootstrap release.
+
+One tag is the only version source. For `v0.3.0`, the workflow publishes six
+platform versions such as `0.3.0-darwin-arm64`, then publishes the `0.3.0` CLI
+meta-package last. The meta-package pins each platform version through npm
+aliases. Stable tags advance `latest`; prerelease tags advance `next`. Publishing
+the meta-package last prevents npm users from observing an incomplete release.
+
+Publishing is retry-safe: already published immutable versions are skipped, so
+the failed `npm-release` job can be rerun without rebuilding or republishing the
+GitHub release.
 
 Create a local snapshot build without publishing:
 
 ```bash
 make release-snapshot
+```
+
+The npm staging tools consume GoReleaser's `dist/artifacts.json`; they do not
+maintain a second build matrix. They are exercised independently with:
+
+```bash
+npm test --prefix npm/cli
 ```

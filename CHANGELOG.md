@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- `npm install --global @mnemon-dev/mnemon` is now the canonical CLI install
+  path. Tagged releases publish pinned native artifacts for macOS, Linux, and
+  Windows before advancing the npm `latest` or `next` channel.
+- `mnemon update` upgrades an npm-managed installation through its owning npm
+  prefix. The npm launcher performs replacement without keeping the native
+  process running, including on Windows. Installations from another source fail
+  closed with a one-time npm migration command instead of silently creating a
+  shadowed executable.
 - `mnemon recall --brief` and `mnemon search --brief` now provide a bounded,
   unindented JSON discovery projection. `--excerpt-chars` controls the per-item
   excerpt limit, and `mnemon show <id>` retrieves one selected insight in full.

@@ -26,6 +26,28 @@ the read-only SQLite file URI internally; do not prepend `file:` yourself.
 
 ---
 
+## CLI Updates
+
+The canonical npm installation can update itself to the package tagged
+`latest`:
+
+```bash
+mnemon update
+```
+
+The npm launcher proves that the active package belongs to the same global npm
+prefix before invoking npm. It fails closed when `mnemon` came from Homebrew,
+`go install`, a source build, another Node package manager, or a different npm
+prefix, preventing a second installation from being created silently. Migrate
+once with `npm install --global @mnemon-dev/mnemon@latest`, then make sure that
+npm's global bin directory is the first `mnemon` on `PATH`.
+
+Updating replaces only the CLI package. It does not modify Memory data or
+silently rewrite installed host integrations. Review release notes and rerun
+`mnemon setup` when an integration release explicitly requires a refresh.
+
+---
+
 ## Memory Setup
 
 Deploy mnemon into LLM CLI environments. This is the first command to run after installation.

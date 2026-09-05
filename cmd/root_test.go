@@ -9,7 +9,7 @@ import (
 
 func TestRootComposesMemoryAndAgency(t *testing.T) {
 	root := productRoot()
-	for _, name := range []string{"remember", "recall", "setup", "agency"} {
+	for _, name := range []string{"remember", "recall", "setup", "agency", "update"} {
 		child, _, err := root.Find([]string{name})
 		if err != nil || child == root {
 			t.Fatalf("root command %q is not registered", name)
@@ -18,6 +18,18 @@ func TestRootComposesMemoryAndAgency(t *testing.T) {
 	command, _, err := root.Find([]string{"agency", "peer", "prepare"})
 	if err != nil || command.CommandPath() != "mnemon agency peer prepare" {
 		t.Fatalf("Agency subtree is not composed into the product root: %v", err)
+	}
+}
+
+func TestUnmanagedUpdateExplainsTheOneTimeNPMMigration(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := Execute(context.Background(), []string{"update"}, strings.NewReader(""),
+		&stdout, &stderr)
+	if exitCode != 1 || stdout.Len() != 0 ||
+		!strings.Contains(stderr.String(), "npm install --global @mnemon-dev/mnemon@latest") ||
+		strings.Contains(stderr.String(), "Usage:") {
+		t.Fatalf("unmanaged update: exit=%d stdout=%q stderr=%q",
+			exitCode, stdout.String(), stderr.String())
 	}
 }
 
