@@ -2,16 +2,20 @@
   <img src="../logo/logo.svg" width="160" height="160" alt="Mnemon Logo" />
 </p>
 
-# Mnemon
+<h1 align="center">Mnemon</h1>
 
-[English](../../README.md) | **中文**
+<p align="center"><a href="../../README.md">English</a> · <strong>中文</strong></p>
 
-**LLM 智能体的持久记忆系统** — LLM 监督式、钩子集成、四图架构。
+<p align="center">
+  <a href="https://www.npmjs.com/package/@mnemon-dev/mnemon"><img alt="npm 版本" src="https://img.shields.io/npm/v/@mnemon-dev/mnemon?label=npm" /></a>
+  <a href="https://github.com/mnemon-dev/mnemon/releases/latest"><img alt="GitHub 发布版本" src="https://img.shields.io/github/v/release/mnemon-dev/mnemon" /></a>
+  <a href="https://github.com/mnemon-dev/mnemon/stargazers"><img alt="GitHub 收藏数" src="https://img.shields.io/github/stars/mnemon-dev/mnemon?label=stars" /></a>
+  <a href="https://go.dev/"><img alt="Go 1.24+" src="https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go&amp;logoColor=white" /></a>
+  <a href="https://github.com/mnemon-dev/mnemon/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mnemon-dev/mnemon/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="../../LICENSE"><img alt="许可证：Apache-2.0" src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" /></a>
+</p>
 
-[![Go 1.24+](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![CI](https://github.com/mnemon-dev/mnemon/actions/workflows/ci.yml/badge.svg)](https://github.com/mnemon-dev/mnemon/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/mnemon-dev/mnemon)](https://goreportcard.com/report/github.com/mnemon-dev/mnemon)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](../../LICENSE)
+<p align="center"><strong>LLM 智能体的持久记忆系统</strong> — LLM 监督式、钩子集成、四图架构。</p>
 
 ---
 
