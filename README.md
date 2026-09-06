@@ -2,16 +2,20 @@
   <img src="docs/logo/logo.svg" width="160" height="160" alt="Mnemon Logo" />
 </p>
 
-# Mnemon
+<h1 align="center">Mnemon</h1>
 
-**English** | [中文](docs/zh/README.md)
+<p align="center"><strong>English</strong> · <a href="docs/zh/README.md">中文</a></p>
 
-**LLM-supervised persistent memory for AI agents.**
+<p align="center">
+  <a href="https://www.npmjs.com/package/@mnemon-dev/mnemon"><img alt="npm version" src="https://img.shields.io/npm/v/@mnemon-dev/mnemon?label=npm" /></a>
+  <a href="https://github.com/mnemon-dev/mnemon/releases/latest"><img alt="GitHub release" src="https://img.shields.io/github/v/release/mnemon-dev/mnemon" /></a>
+  <a href="https://github.com/mnemon-dev/mnemon/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/mnemon-dev/mnemon?label=stars" /></a>
+  <a href="https://go.dev/"><img alt="Go 1.24+" src="https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go&amp;logoColor=white" /></a>
+  <a href="https://github.com/mnemon-dev/mnemon/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/mnemon-dev/mnemon/actions/workflows/ci.yml/badge.svg" /></a>
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/badge/License-Apache--2.0-blue.svg" /></a>
+</p>
 
-[![Go 1.24+](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
-[![CI](https://github.com/mnemon-dev/mnemon/actions/workflows/ci.yml/badge.svg)](https://github.com/mnemon-dev/mnemon/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/mnemon-dev/mnemon)](https://goreportcard.com/report/github.com/mnemon-dev/mnemon)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+<p align="center"><strong>LLM-supervised persistent memory for AI agents.</strong></p>
 
 ---
 
