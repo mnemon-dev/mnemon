@@ -65,12 +65,18 @@ homebrew_casks:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     homepage: "https://github.com/mnemon-dev/mnemon"
     description: "Persistent memory and durable agency for LLM agents"
-    hooks:
-      post:
-        install: |
-          if OS.mac?
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/mnemon"]
-          end
+    # Homebrew deprecated `postflight` (emitted by hooks.post.install) in
+    # favor of `postflight_steps`. GoReleaser does not emit that stanza yet
+    # (goreleaser/goreleaser#6873). custom_block is not wrapped, so it can
+    # carry the new DSL. `{{ "{{staged_path}}" }}` survives GoReleaser's
+    # second template pass and becomes Homebrew's install-time token.
+    # Drop this once hooks.post.install_steps ships.
+    custom_block: |
+      postflight_steps do
+        on_macos do
+          run "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "{{ "{{staged_path}}" }}/mnemon"]
+        end
+      end
 
 release:
   github:
