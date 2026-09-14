@@ -1354,7 +1354,7 @@ func installPi(env *setup.Environment) error {
 
 	fmt.Println("\n[2/3] Prompts")
 	var promptPath string
-	if path, err := setup.WritePromptFiles(); err != nil {
+	if path, err := setup.PiWritePromptFiles(); err != nil {
 		setup.StatusError(0, 0, "Prompts", err)
 		return err
 	} else {

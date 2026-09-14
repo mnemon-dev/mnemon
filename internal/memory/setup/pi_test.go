@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,39 @@ import (
 
 	"github.com/mnemon-dev/mnemon/internal/memory/setup/assets"
 )
+
+func TestPiPromptFilesRemainSeparateFromClaude(t *testing.T) {
+	dataDir := t.TempDir()
+	t.Setenv("MNEMON_DATA_DIR", dataDir)
+	if _, err := WritePromptFiles(); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := PiWritePromptFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir != filepath.Join(dataDir, "prompt", "pi") {
+		t.Fatalf("Pi prompt directory = %q", dir)
+	}
+	// A later Claude setup must not change Pi's installed guide or skill.
+	if _, err := WritePromptFiles(); err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string][]byte{
+		filepath.Join(dir, "guide.md"):               assets.PiGuide,
+		filepath.Join(dir, "skill.md"):               assets.PiSkill,
+		filepath.Join(dataDir, "prompt", "guide.md"): assets.ClaudeGuide,
+		filepath.Join(dataDir, "prompt", "skill.md"): assets.ClaudeSkill,
+	} {
+		got, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("wrong host's prompt at %s", path)
+		}
+	}
+}
 
 func TestPiWriteSkillAndExtension(t *testing.T) {
 	dir := t.TempDir()

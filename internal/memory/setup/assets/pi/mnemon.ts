@@ -1,25 +1,19 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
 function promptDir(): string {
-  return join(process.env.MNEMON_DATA_DIR ?? join(process.env.HOME ?? "", ".mnemon"), "prompt");
-}
-
-function guidePath(): string | undefined {
-  const scoped = join(promptDir(), "guide.md");
-  if (existsSync(scoped)) return scoped;
-
-  const legacy = join(process.env.HOME ?? "", ".mnemon", "prompt", "guide.md");
-  if (existsSync(legacy)) return legacy;
-
-  return undefined;
+  return join(process.env.MNEMON_DATA_DIR || join(process.env.HOME ?? "", ".mnemon"), "prompt", "pi");
 }
 
 function readGuide(): string {
-  const path = guidePath();
-  return path ? readFileSync(path, "utf8") : "";
+  try {
+    return readFileSync(join(promptDir(), "guide.md"), "utf8");
+  } catch {
+    // An explicit memory directory must not fall back to another host's guide.
+    return "";
+  }
 }
 
 function memoryStatus(): string {

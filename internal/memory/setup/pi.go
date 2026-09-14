@@ -8,6 +8,26 @@ import (
 	"github.com/mnemon-dev/mnemon/internal/memory/setup/assets"
 )
 
+// PiWritePromptFiles keeps Pi's tool and lifecycle guidance separate from the
+// shared Claude prompts when both integrations use the same memory directory.
+func PiWritePromptFiles() (string, error) {
+	dir, err := promptDir()
+	if err != nil {
+		return "", err
+	}
+	dir = filepath.Join(dir, "pi")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "guide.md"), assets.PiGuide, 0644); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(filepath.Join(dir, "skill.md"), assets.PiSkill, 0644); err != nil {
+		return "", err
+	}
+	return dir, nil
+}
+
 // PiWriteSkill writes the mnemon skill to the Pi skills directory.
 func PiWriteSkill(configDir string) (string, error) {
 	skillDir := filepath.Join(configDir, "skills", "mnemon")

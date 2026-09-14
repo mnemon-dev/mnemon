@@ -167,6 +167,9 @@ var NanobotSkill []byte
 //go:embed pi/SKILL.md
 var PiSkill []byte
 
+//go:embed pi/guide.md
+var PiGuide []byte
+
 //go:embed pi/mnemon.ts
 var PiExtension []byte
 
