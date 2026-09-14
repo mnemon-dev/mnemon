@@ -69,7 +69,12 @@ func TestRepositoryHygieneRulesRejectGeneratedFiles(t *testing.T) {
 		path, raw, want string
 	}{
 		{"scratch/result.json", `{}`, "durable JSON category"},
+		{"test/memory/pi/extra.json", `{}`, "durable JSON category"},
 		{"testdata/mnemond/cases/example/tmp.json", `{}`, "temporary JSON name"},
+		{"testdata/memory/long-horizon/report-copy.json",
+			`{"schema_version":1,"run_id":"run","status":"passed","git_sha":"abc",` +
+				`"scenario":"example","commands":[],"assertions":[]}`,
+			"run report"},
 		{"internal/memory/setup/assets/fixtures/report-copy.json",
 			`{"schema_version":1,"run_id":"run","status":"passed","git_sha":"abc",` +
 				`"scenario":"example","commands":[],"assertions":[]}`,
@@ -95,6 +100,12 @@ func TestRepositoryHygieneRulesAcceptDurableJSONCategories(t *testing.T) {
 		"package.json",
 		"npm/cli/package.json",
 		"npm/cli/targets.json",
+		"test/memory/pi/package.json",
+		"test/memory/pi/package-lock.json",
+		"testdata/memory/long-horizon/inputs.json",
+		"testdata/memory/long-horizon/oracle.json",
+		"testdata/memory/long-horizon/official/provenance.json",
+		"testdata/memory/pi-lifecycle/inputs.json",
 		"internal/memory/setup/assets/openclaw/plugin/openclaw.plugin.json",
 		"internal/memory/setup/assets/openclaw/plugin/package.json",
 	} {
@@ -242,6 +253,10 @@ func durableJSONCategory(trackedPath string) string {
 		return "DSH package manifest"
 	case trackedPath == "npm/cli/package.json" || trackedPath == "npm/cli/targets.json":
 		return "npm CLI manifest"
+	case trackedPath == "test/memory/pi/package.json" || trackedPath == "test/memory/pi/package-lock.json":
+		return "pinned Pi Memory test dependency"
+	case strings.HasPrefix(trackedPath, "testdata/memory/"):
+		return "data-only Memory regression fixture"
 	case strings.HasPrefix(trackedPath, "internal/memory/setup/assets/"):
 		return "managed asset"
 	default:
