@@ -192,7 +192,12 @@ Weights vary by intent:
 
 ### Step 5: WHY Post-Processing — Causal Topological Sort
 
-If the intent is WHY, an additional topological sort using Kahn's algorithm is performed: results are arranged along causal edges so that **causes come first, effects follow**.
+Equal relevance scores are ordered by importance, then newer creation time, then
+ID. Keyword top-K selection uses the same tie order; vector, recency, and beam
+ties use IDs. Anchor traversal and edge admission also use explicit ID order so
+map iteration and SQLite scan order cannot change bounded candidate selection.
+
+If the intent is WHY, an additional topological sort using Kahn's algorithm is performed: results are arranged along causal edges so that **causes come first, effects follow**. Equal-score nodes without causal precedence retain their prior ranking.
 
 ### Signal Transparency
 

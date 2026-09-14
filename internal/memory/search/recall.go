@@ -219,6 +219,9 @@ func IntentAwareRecallWithFilter(db *store.DB, query string, queryVec []float64,
 	timeSorted := make([]*model.Insight, len(all))
 	copy(timeSorted, all)
 	sort.Slice(timeSorted, func(i, j int) bool {
+		if timeSorted[i].CreatedAt.Equal(timeSorted[j].CreatedAt) {
+			return timeSorted[i].ID < timeSorted[j].ID
+		}
 		return timeSorted[i].CreatedAt.After(timeSorted[j].CreatedAt)
 	})
 	timeLimit := anchorTopK
@@ -256,20 +259,27 @@ func IntentAwareRecallWithFilter(db *store.DB, query string, queryVec []float64,
 	}
 
 	anchorCount := len(anchorMap)
+	anchorIDs := make([]string, 0, anchorCount)
+	for id := range anchorMap {
+		anchorIDs = append(anchorIDs, id)
+	}
+	sort.Strings(anchorIDs)
 
 	// Initialize score map with anchors
 	scoreMap := make(map[string]float64)
 	viaMap := make(map[string]string)
 	insightMap := make(map[string]*model.Insight)
 
-	for id, a := range anchorMap {
+	for _, id := range anchorIDs {
+		a := anchorMap[id]
 		scoreMap[id] = a.score
 		viaMap[id] = a.via
 		insightMap[id] = a.insight
 	}
 
 	// Step 3: Beam search from each anchor
-	for id, a := range anchorMap {
+	for _, id := range anchorIDs {
+		a := anchorMap[id]
 		beamSearchFromAnchor(db, id, a.score, queryVec, weights, params, scoreMap, viaMap, insightMap, embedCache, allowed)
 	}
 
@@ -409,10 +419,9 @@ func IntentAwareRecallWithFilter(db *store.DB, query string, queryVec []float64,
 	}
 
 	sort.Slice(results, func(i, j int) bool {
-		if results[i].Score != results[j].Score {
-			return results[i].Score > results[j].Score
-		}
-		return results[i].Insight.Importance > results[j].Insight.Importance
+		return scoredInsightBefore(
+			ScoredInsight{Insight: results[i].Insight, Score: results[i].Score},
+			ScoredInsight{Insight: results[j].Insight, Score: results[j].Score})
 	})
 
 	if limit > 0 && len(results) > limit {
@@ -453,9 +462,11 @@ func causalTopologicalSort(db *store.DB, results []RecallResult) []RecallResult 
 	// Build a set of IDs in the result set for quick lookup
 	idSet := make(map[string]bool, len(results))
 	idToResult := make(map[string]RecallResult, len(results))
-	for _, r := range results {
+	idToRank := make(map[string]int, len(results))
+	for rank, r := range results {
 		idSet[r.Insight.ID] = true
 		idToResult[r.Insight.ID] = r
+		idToRank[r.Insight.ID] = rank
 	}
 
 	// Build DAG from causal edges: source → target means source causes target
@@ -483,7 +494,7 @@ func causalTopologicalSort(db *store.DB, results []RecallResult) []RecallResult 
 	pq := &kahnMaxHeap{}
 	for _, r := range results {
 		if inDegree[r.Insight.ID] == 0 {
-			heap.Push(pq, kahnItem{id: r.Insight.ID, score: idToResult[r.Insight.ID].Score})
+			heap.Push(pq, kahnItem{id: r.Insight.ID, score: r.Score, rank: idToRank[r.Insight.ID]})
 		}
 	}
 
@@ -495,7 +506,7 @@ func causalTopologicalSort(db *store.DB, results []RecallResult) []RecallResult 
 		for _, target := range adj[item.id] {
 			inDegree[target]--
 			if inDegree[target] == 0 {
-				heap.Push(pq, kahnItem{id: target, score: idToResult[target].Score})
+				heap.Push(pq, kahnItem{id: target, score: idToResult[target].Score, rank: idToRank[target]})
 			}
 		}
 	}
@@ -561,15 +572,23 @@ func beamSearchFromAnchor(
 			if err != nil {
 				continue
 			}
+			// The visit budget must not depend on SQLite's unordered scan order.
+			sort.Slice(edges, func(i, j int) bool {
+				a, b := recallEdgeNeighbor(edges[i], cur.id), recallEdgeNeighbor(edges[j], cur.id)
+				if a != b {
+					return a < b
+				}
+				if edges[i].EdgeType != edges[j].EdgeType {
+					return edges[i].EdgeType < edges[j].EdgeType
+				}
+				return edges[i].SourceID < edges[j].SourceID
+			})
 
 			for _, e := range edges {
 				if totalVisited >= params.MaxVisited {
 					break
 				}
-				neighborID := e.TargetID
-				if neighborID == cur.id {
-					neighborID = e.SourceID
-				}
+				neighborID := recallEdgeNeighbor(e, cur.id)
 				if allowed != nil && allowed[neighborID] == nil {
 					continue
 				}
@@ -622,6 +641,13 @@ func beamSearchFromAnchor(
 	}
 }
 
+func recallEdgeNeighbor(edge *model.Edge, nodeID string) string {
+	if edge.TargetID == nodeID {
+		return edge.SourceID
+	}
+	return edge.TargetID
+}
+
 // Scoped traversal uses the same candidate snapshot that admitted the node.
 // Unfiltered recall retains its existing on-demand lookup behavior.
 func recallNeighbor(db *store.DB, id string, allowed map[string]*model.Insight) (*model.Insight, error) {
@@ -641,8 +667,13 @@ type beamItem struct {
 // beamHeap implements a max-heap for beam search (highest score first).
 type beamHeap []beamItem
 
-func (h beamHeap) Len() int            { return len(h) }
-func (h beamHeap) Less(i, j int) bool  { return h[i].score > h[j].score } // max-heap
+func (h beamHeap) Len() int { return len(h) }
+func (h beamHeap) Less(i, j int) bool {
+	if h[i].score != h[j].score {
+		return h[i].score > h[j].score
+	}
+	return h[i].id < h[j].id
+}
 func (h beamHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
 func (h *beamHeap) Push(x interface{}) { *h = append(*h, x.(beamItem)) }
 func (h *beamHeap) Pop() interface{} {
@@ -657,13 +688,19 @@ func (h *beamHeap) Pop() interface{} {
 type kahnItem struct {
 	id    string
 	score float64
+	rank  int
 }
 
 // kahnMaxHeap implements a max-heap for Kahn's algorithm (highest score first).
 type kahnMaxHeap []kahnItem
 
-func (h kahnMaxHeap) Len() int            { return len(h) }
-func (h kahnMaxHeap) Less(i, j int) bool  { return h[i].score > h[j].score }
+func (h kahnMaxHeap) Len() int { return len(h) }
+func (h kahnMaxHeap) Less(i, j int) bool {
+	if h[i].score != h[j].score {
+		return h[i].score > h[j].score
+	}
+	return h[i].rank < h[j].rank
+}
 func (h kahnMaxHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
 func (h *kahnMaxHeap) Push(x interface{}) { *h = append(*h, x.(kahnItem)) }
 func (h *kahnMaxHeap) Pop() interface{} {
@@ -684,7 +721,7 @@ type vectorHit struct {
 type vectorHitMinHeap []vectorHit
 
 func (h vectorHitMinHeap) Len() int            { return len(h) }
-func (h vectorHitMinHeap) Less(i, j int) bool  { return h[i].similarity < h[j].similarity }
+func (h vectorHitMinHeap) Less(i, j int) bool  { return vectorHitBefore(h[j], h[i]) }
 func (h vectorHitMinHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
 func (h *vectorHitMinHeap) Push(x interface{}) { *h = append(*h, x.(vectorHit)) }
 func (h *vectorHitMinHeap) Pop() interface{} {
@@ -693,6 +730,13 @@ func (h *vectorHitMinHeap) Pop() interface{} {
 	item := old[n-1]
 	*h = old[:n-1]
 	return item
+}
+
+func vectorHitBefore(a, b vectorHit) bool {
+	if a.similarity != b.similarity {
+		return a.similarity > b.similarity
+	}
+	return a.id < b.id
 }
 
 // vectorSearch performs brute-force cosine similarity search, loading embeddings from DB.
@@ -720,10 +764,11 @@ func vectorSearchFromCache(embedCache map[string][]float64, queryVec []float64, 
 		if sim <= 0.1 {
 			continue
 		}
+		candidate := vectorHit{id: id, similarity: sim}
 		if limit <= 0 || h.Len() < limit {
-			heap.Push(h, vectorHit{id: id, similarity: sim})
-		} else if sim > (*h)[0].similarity {
-			(*h)[0] = vectorHit{id: id, similarity: sim}
+			heap.Push(h, candidate)
+		} else if vectorHitBefore(candidate, (*h)[0]) {
+			(*h)[0] = candidate
 			heap.Fix(h, 0)
 		}
 	}

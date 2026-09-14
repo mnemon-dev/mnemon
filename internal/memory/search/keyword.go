@@ -20,10 +20,7 @@ type scoredHeap []ScoredInsight
 
 func (h scoredHeap) Len() int { return len(h) }
 func (h scoredHeap) Less(i, j int) bool {
-	if h[i].Score != h[j].Score {
-		return h[i].Score < h[j].Score
-	}
-	return h[i].Insight.Importance < h[j].Insight.Importance
+	return scoredInsightBefore(h[j], h[i])
 }
 func (h scoredHeap) Swap(i, j int)       { h[i], h[j] = h[j], h[i] }
 func (h *scoredHeap) Push(x interface{}) { *h = append(*h, x.(ScoredInsight)) }
@@ -67,10 +64,11 @@ func keywordSearchCached(insights []*model.Insight, query string, limit int, tok
 		}
 		score := float64(intersection) / float64(len(queryTokens))
 
+		candidate := ScoredInsight{Insight: ins, Score: score}
 		if limit <= 0 || h.Len() < limit {
-			heap.Push(h, ScoredInsight{Insight: ins, Score: score})
-		} else if score > (*h)[0].Score || (score == (*h)[0].Score && ins.Importance > (*h)[0].Insight.Importance) {
-			(*h)[0] = ScoredInsight{Insight: ins, Score: score}
+			heap.Push(h, candidate)
+		} else if scoredInsightBefore(candidate, (*h)[0]) {
+			(*h)[0] = candidate
 			heap.Fix(h, 0)
 		}
 	}
