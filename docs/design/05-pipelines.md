@@ -126,13 +126,19 @@ Multiple signals run in parallel and are merged via Reciprocal Rank Fusion:
 Signal 1: Keyword     → KeywordSearch(all_insights, query, top-20)
 Signal 2: Vector      → CosineSimilarity(query_vec, all_embeddings, top-20)
 Signal 3: Recency     → sort by created_at DESC, top-20
-Signal 4: Entity      → insights sharing entities with the query
+Signal 4: Entity      → exact entity overlap with the query, top-20
 
 RRF Score = Σ  1 / (k + rank_i + 1)    (k = 60)
                  for each signal
 ```
 
 Each insight may rank differently across signals; RRF fusion produces a robust composite ranking.
+
+The entity signal compares whole stored and extracted query entities
+case-insensitively and counts distinct, nonempty matches. Its independent
+top-20 budget keeps matching entities eligible when common query words fill
+the keyword budget. Category and source filters apply before all four signals;
+reranking and the requested result limit still apply after anchor selection.
 
 ### Step 3: Beam Search Graph Traversal
 

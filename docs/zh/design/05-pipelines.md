@@ -119,13 +119,17 @@ LLM 收到这个输出后，可以评估候选并通过 `mnemon link` 命令建�
 Signal 1: Keyword     → KeywordSearch(all_insights, query, top-20)
 Signal 2: Vector      → CosineSimilarity(query_vec, all_embeddings, top-20)
 Signal 3: Recency     → sort by created_at DESC, top-20
-Signal 4: Entity      → 与 query 共享实体的 insights
+Signal 4: Entity      → 与 query 精确匹配实体的 insights，top-20
 
 RRF Score = Σ  1 / (k + rank_i + 1)    (k = 60)
                  for each signal
 ```
 
 每个 insight 在不同信号中可能有不同排名，RRF 融合产生稳健的综合排名。
+
+实体信号对已保存和从查询中提取的完整实体值进行不区分大小写的匹配，只统计不同的
+非空匹配。独立的 top-20 预算让实体匹配在常见查询词占满关键词预算时仍能进入候选。
+分类和来源过滤先于这四个信号生效；选出锚点后仍应用重排序和请求的结果数量限制。
 
 ### Step 3：Beam Search 图遍历
 

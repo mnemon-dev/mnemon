@@ -3,9 +3,7 @@ package search
 import (
 	"container/heap"
 	"fmt"
-	"math"
 	"sort"
-	"strings"
 
 	"github.com/mnemon-dev/mnemon/internal/memory/embed"
 	"github.com/mnemon-dev/mnemon/internal/memory/model"
@@ -122,7 +120,7 @@ type RecallResult struct {
 
 // IntentAwareRecall performs MAGMA-aligned intent-aware retrieval:
 // 1. Detect query intent (or use override)
-// 2. Multi-signal anchor selection via RRF (keyword + vector + time)
+// 2. Multi-signal anchor selection via RRF (keyword + vector + time + entity)
 // 3. Beam search from anchors with additive transition scoring
 // 4. Multi-factor reranking (keyword + entity + similarity + graph)
 // 5. WHY intent → causal topological sort
@@ -245,6 +243,22 @@ func IntentAwareRecallWithFilter(db *store.DB, query string, queryVec []float64,
 		}
 	}
 
+	// Signal 4: Exact entity overlap, independent of keyword and recency budgets.
+	queryEntitySet := normalizedEntitySet(queryEntities)
+	for rank, a := range selectEntityAnchors(all, queryEntitySet) {
+		rrfScore := 1.0 / float64(rrfK+rank+1)
+		if existing, ok := anchorMap[a.Insight.ID]; ok {
+			existing.score += rrfScore
+			existing.via = "hybrid"
+		} else {
+			anchorMap[a.Insight.ID] = &anchor{
+				insight: a.Insight,
+				score:   rrfScore,
+				via:     "entity",
+			}
+		}
+	}
+
 	// Normalize anchor scores to [0, 1]
 	var maxAnchorScore float64
 	for _, a := range anchorMap {
@@ -287,10 +301,6 @@ func IntentAwareRecallWithFilter(db *store.DB, query string, queryVec []float64,
 
 	// Step 4: Multi-factor reranking
 	queryTokens := Tokenize(query)
-	queryEntitySet := make(map[string]bool, len(queryEntities))
-	for _, e := range queryEntities {
-		queryEntitySet[strings.ToLower(e)] = true
-	}
 
 	// Compute raw graph scores and find min/max for normalization
 	type candidate struct {
@@ -353,16 +363,8 @@ func IntentAwareRecallWithFilter(db *store.DB, query string, queryVec []float64,
 			c.kwScore = float64(intersection) / float64(len(queryTokens))
 		}
 
-		// entity_score: entity overlap
-		if len(queryEntitySet) > 0 {
-			matched := 0
-			for _, ent := range c.ins.Entities {
-				if queryEntitySet[strings.ToLower(ent)] {
-					matched++
-				}
-			}
-			c.entScore = float64(matched) / math.Max(1, float64(len(queryEntitySet)))
-		}
+		// entity_score uses the same bounded overlap as entity anchor selection.
+		c.entScore = entityOverlapScore(c.ins.Entities, queryEntitySet)
 
 		// similarity: cosine similarity with query vector (uses pre-loaded cache)
 		if hasEmbeddings {
