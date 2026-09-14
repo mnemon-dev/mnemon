@@ -133,6 +133,9 @@ mnemon import --no-diff memory_draft.json   # 跳过去重
 mnemon forget <id>
 ```
 
+召回过滤器精确匹配记忆中保存的分类和来源。智能召回在候选选择和结果数量限制之前
+应用过滤条件，图遍历也仅经过符合条件的记忆。
+
 `remember` 和 `import` 仅跳过与活跃记忆逐字节完全相同的内容。不同主体、
 变化后的属性值、调整语序的陈述和近似重复内容都会作为新记忆保存。
 `remember` 仍会返回建议性的 `diff_suggestion`（`UPDATE`、`CONFLICT` 或

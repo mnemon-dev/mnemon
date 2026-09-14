@@ -129,6 +129,13 @@ type RecallResult struct {
 // 6. Sparse hint detection
 func IntentAwareRecall(db *store.DB, query string, queryVec []float64,
 	queryEntities []string, limit int, intentOverride *Intent) (RecallResponse, error) {
+	return IntentAwareRecallWithFilter(db, query, queryVec, queryEntities, limit, intentOverride, RecallFilter{})
+}
+
+// IntentAwareRecallWithFilter applies the source/category scope before anchor
+// selection. Traversal cannot leave this scope and re-enter through another node.
+func IntentAwareRecallWithFilter(db *store.DB, query string, queryVec []float64,
+	queryEntities []string, limit int, intentOverride *Intent, filter RecallFilter) (RecallResponse, error) {
 
 	// Step 1: Intent determination
 	var intent Intent
@@ -148,6 +155,7 @@ func IntentAwareRecall(db *store.DB, query string, queryVec []float64,
 	if err != nil {
 		return RecallResponse{}, err
 	}
+	all, allowed := filterRecallInsights(all, filter)
 
 	// Pre-load all embeddings once (avoids N+1 queries in beam search and reranking).
 	var embedCache map[string][]float64
@@ -155,6 +163,9 @@ func IntentAwareRecall(db *store.DB, query string, queryVec []float64,
 		if dbEmbeds, err := db.GetAllEmbeddings(); err == nil {
 			embedCache = make(map[string][]float64, len(dbEmbeds))
 			for _, e := range dbEmbeds {
+				if allowed != nil && allowed[e.ID] == nil {
+					continue
+				}
 				if v := embed.DeserializeVector(e.Embedding); v != nil {
 					embedCache[e.ID] = v
 				}
@@ -191,7 +202,7 @@ func IntentAwareRecall(db *store.DB, query string, queryVec []float64,
 				existing.score += rrfScore
 				existing.via = "hybrid"
 			} else {
-				ins, err := db.GetInsightByID(vh.id)
+				ins, err := recallNeighbor(db, vh.id, allowed)
 				if err != nil || ins == nil {
 					continue
 				}
@@ -259,7 +270,7 @@ func IntentAwareRecall(db *store.DB, query string, queryVec []float64,
 
 	// Step 3: Beam search from each anchor
 	for id, a := range anchorMap {
-		beamSearchFromAnchor(db, id, a.score, queryVec, weights, params, scoreMap, viaMap, insightMap, embedCache)
+		beamSearchFromAnchor(db, id, a.score, queryVec, weights, params, scoreMap, viaMap, insightMap, embedCache, allowed)
 	}
 
 	traversedCount := len(scoreMap)
@@ -519,6 +530,7 @@ func beamSearchFromAnchor(
 	viaMap map[string]string,
 	insightMap map[string]*model.Insight,
 	embedCache map[string][]float64,
+	allowed map[string]*model.Insight,
 ) {
 	visited := map[string]bool{startID: true}
 	totalVisited := 1
@@ -558,6 +570,9 @@ func beamSearchFromAnchor(
 				if neighborID == cur.id {
 					neighborID = e.SourceID
 				}
+				if allowed != nil && allowed[neighborID] == nil {
+					continue
+				}
 
 				// MAGMA transition score (P6): additive accumulation
 				// score_v = score_u + λ₁·φ(edgeType, intent) + λ₂·sim(v_neighbor, v_query)
@@ -578,7 +593,7 @@ func beamSearchFromAnchor(
 					scoreMap[neighborID] = neighborScore
 					viaMap[neighborID] = string(e.EdgeType)
 					if _, loaded := insightMap[neighborID]; !loaded {
-						ins, err := db.GetInsightByID(neighborID)
+						ins, err := recallNeighbor(db, neighborID, allowed)
 						if err == nil && ins != nil {
 							insightMap[neighborID] = ins
 						}
@@ -605,6 +620,15 @@ func beamSearchFromAnchor(
 		}
 		current = pruned
 	}
+}
+
+// Scoped traversal uses the same candidate snapshot that admitted the node.
+// Unfiltered recall retains its existing on-demand lookup behavior.
+func recallNeighbor(db *store.DB, id string, allowed map[string]*model.Insight) (*model.Insight, error) {
+	if allowed != nil {
+		return allowed[id], nil
+	}
+	return db.GetInsightByID(id)
 }
 
 // beamItem is a node in the beam search priority queue.

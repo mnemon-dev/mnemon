@@ -195,7 +195,10 @@ meta.intent and meta.intent_source (auto or override). --basic bypasses intent.`
 		knownEntities, _ := db.LoadKnownEntities()
 		queryEntities := graph.ExtractEntitiesIndexed(keyword, knownEntities)
 
-		resp, err := search.IntentAwareRecall(db, keyword, queryVec, queryEntities, recLimit, intentOverride)
+		resp, err := search.IntentAwareRecallWithFilter(db, keyword, queryVec, queryEntities, recLimit, intentOverride, search.RecallFilter{
+			Category: recCategory,
+			Source:   recSource,
+		})
 		if err != nil {
 			return fmt.Errorf("recall: %w", err)
 		}

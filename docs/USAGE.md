@@ -138,6 +138,10 @@ mnemon import --no-diff memory_draft.json   # skip deduplication
 mnemon forget <id>
 ```
 
+Recall filters match the stored category and source exactly. Smart recall applies
+them before candidate selection and the result limit; graph traversal stays
+within matching memories.
+
 `remember` and `import` skip only byte-identical content already present in an
 active memory. Different subjects, changed values, reordered statements, and
 near-duplicates are stored as new memories. `remember` still reports advisory

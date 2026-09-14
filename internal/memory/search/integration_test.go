@@ -442,7 +442,7 @@ func TestBeamSearchFromAnchor_ScorePropagation(t *testing.T) {
 	params := TraversalParams{BeamWidth: 10, MaxDepth: 3, MaxVisited: 100}
 
 	scoreMap["bs-1"] = 1.0
-	beamSearchFromAnchor(db, "bs-1", 1.0, nil, weights, params, scoreMap, viaMap, insightMap, nil)
+	beamSearchFromAnchor(db, "bs-1", 1.0, nil, weights, params, scoreMap, viaMap, insightMap, nil, nil)
 
 	// Neighbor should be discovered with score > 0
 	if _, ok := scoreMap["bs-2"]; !ok {
@@ -484,7 +484,7 @@ func TestBeamSearchFromAnchor_BeamWidthPruning(t *testing.T) {
 	params := TraversalParams{BeamWidth: 3, MaxDepth: 3, MaxVisited: 500}
 
 	scoreMap["bw-center"] = 1.0
-	beamSearchFromAnchor(db, "bw-center", 1.0, nil, weights, params, scoreMap, viaMap, insightMap, nil)
+	beamSearchFromAnchor(db, "bw-center", 1.0, nil, weights, params, scoreMap, viaMap, insightMap, nil, nil)
 
 	// Count deep nodes discovered — should be limited by beam width
 	deepCount := 0
@@ -522,7 +522,7 @@ func TestBeamSearchFromAnchor_MaxVisitedBudget(t *testing.T) {
 	params := TraversalParams{BeamWidth: 10, MaxDepth: 20, MaxVisited: 5}
 
 	scoreMap["mv-0"] = 1.0
-	beamSearchFromAnchor(db, "mv-0", 1.0, nil, weights, params, scoreMap, viaMap, insightMap, nil)
+	beamSearchFromAnchor(db, "mv-0", 1.0, nil, weights, params, scoreMap, viaMap, insightMap, nil, nil)
 
 	// scoreMap includes the anchor itself, so discovered nodes (excluding anchor) should be <= 4
 	discovered := len(scoreMap) - 1 // subtract anchor
