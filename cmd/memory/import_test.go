@@ -301,19 +301,23 @@ func hasTemporalEdge(t *testing.T, db *store.DB, sourceID, targetID string) bool
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	oldStdout := os.Stdout
-	r, w, err := os.Pipe()
+	// A pipe written before it is drained can block on larger CLI responses,
+	// especially on platforms with smaller pipe buffers. Keep the full output
+	// in a test-owned file without adding a concurrent reader.
+	captured, err := os.CreateTemp(t.TempDir(), "stdout-")
 	if err != nil {
-		t.Fatalf("pipe stdout: %v", err)
+		t.Fatalf("create stdout capture: %v", err)
 	}
-	os.Stdout = w
+	defer captured.Close()
+	os.Stdout = captured
 	defer func() { os.Stdout = oldStdout }()
 
 	fn()
 
-	if err := w.Close(); err != nil {
-		t.Fatalf("close stdout writer: %v", err)
+	if _, err := captured.Seek(0, io.SeekStart); err != nil {
+		t.Fatalf("rewind stdout capture: %v", err)
 	}
-	data, err := io.ReadAll(r)
+	data, err := io.ReadAll(captured)
 	if err != nil {
 		t.Fatalf("read stdout: %v", err)
 	}
