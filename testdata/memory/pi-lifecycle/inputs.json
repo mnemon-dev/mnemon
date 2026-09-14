@@ -1,0 +1,46 @@
+{
+  "schema_version": "1",
+  "mode": "interaction",
+  "cases": [
+    {
+      "id": "native-acquisition",
+      "turns": [
+        {
+          "id": "remember",
+          "message": "Please remember this for our future sessions: I maintain the AsterGate project. Its production database is PostgreSQL, and my preferred deployment window is Tuesday at 09:00 UTC. These are durable project preferences."
+        },
+        {
+          "id": "new-session-recall",
+          "freshSession": true,
+          "message": "What production database and deployment window did I tell you to use for AsterGate? Check your persistent memory, and say if a detail was not stored."
+        }
+      ]
+    },
+    {
+      "id": "history-update",
+      "insights": [
+        {
+          "content": "Since 2024-02-01, Mira lives in Lyon. Mira works remotely for Ember Studio.",
+          "category": "fact",
+          "importance": 5,
+          "entities": [
+            "Mira",
+            "Ember Studio"
+          ],
+          "created_at": "2024-02-01T12:00:00Z"
+        }
+      ],
+      "turns": [
+        {
+          "id": "change",
+          "message": "Please update your memory: Mira moved from Lyon to Porto on 2025-07-01. She still works remotely for Ember Studio. Remember her current home for future sessions."
+        },
+        {
+          "id": "past-and-present",
+          "freshSession": true,
+          "message": "Where did Mira live in March 2024, and where does she live now? Use memory evidence for both dates and say if you lack evidence."
+        }
+      ]
+    }
+  ]
+}
