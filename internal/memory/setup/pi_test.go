@@ -79,8 +79,9 @@ func TestPiExtensionMapsLifecycleEvents(t *testing.T) {
 		`pi.on("resources_discover"`,
 		`pi.on("session_start"`,
 		`pi.on("before_agent_start"`,
+		`pi.on("context"`,
 		`pi.on("agent_end"`,
-		`pi.on("session_before_compact"`,
+		`pi.on("session_compact"`,
 		"process.env.MNEMON_DATA_DIR",
 		"process.env.PI_CODING_AGENT_DIR",
 	} {

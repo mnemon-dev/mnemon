@@ -1373,7 +1373,7 @@ func installPi(env *setup.Environment) error {
 	fmt.Println()
 	fmt.Println("Setup complete!")
 	fmt.Printf("  Skill     %s/skills/mnemon/SKILL.md\n", configDir)
-	fmt.Printf("  Extension %s/extensions/mnemon.ts (resources_discover, before_agent_start, agent_end, session_before_compact)\n", configDir)
+	fmt.Printf("  Extension %s/extensions/mnemon.ts (resources_discover, before_agent_start, context, agent_end, session_compact)\n", configDir)
 	fmt.Printf("  Prompts   %s/ (guide.md, skill.md)\n", promptPath)
 	fmt.Println()
 	fmt.Println("Start a new Pi session or run /reload to activate.")
