@@ -1,0 +1,234 @@
+{
+  "dev01.q1": {
+    "slots": {
+      "desk": "T6"
+    },
+    "evidence_turn_ids": [
+      "dev01.s1.t1",
+      "dev01.s2.t1",
+      "dev01.s3.t1"
+    ],
+    "abstain": false
+  },
+  "dev02.q1": {
+    "slots": {
+      "production_db": "SQLite",
+      "test_db": "DuckDB"
+    },
+    "evidence_turn_ids": [
+      "dev02.s1.t1",
+      "dev02.s2.t1"
+    ],
+    "abstain": false
+  },
+  "dev02.q2": {
+    "slots": {
+      "production_db": "MariaDB"
+    },
+    "evidence_turn_ids": [
+      "dev02.s1.t1"
+    ],
+    "abstain": false
+  },
+  "dev03.q1": {
+    "slots": {
+      "start_time": null
+    },
+    "evidence_turn_ids": [],
+    "abstain": true
+  },
+  "dev04.q1": {
+    "slots": {
+      "production_allowed": false,
+      "test_allowed": false
+    },
+    "evidence_turn_ids": [
+      "dev04.s2.t1",
+      "dev04.s3.t1"
+    ],
+    "abstain": false
+  },
+  "hold01.q1": {
+    "slots": {
+      "order": "Aster",
+      "warehouse": "N4",
+      "extension": "247"
+    },
+    "evidence_turn_ids": [
+      "hold01.s1.t1",
+      "hold01.s2.t1",
+      "hold01.s3.t1"
+    ],
+    "abstain": false,
+    "aliases": {
+      "extension": [
+        247
+      ]
+    }
+  },
+  "hold02.q1": {
+    "slots": {
+      "destination": "Larch"
+    },
+    "evidence_turn_ids": [
+      "hold02.s1.t1",
+      "hold02.s2.t1",
+      "hold02.s3.t1",
+      "hold02.s4.t1"
+    ],
+    "abstain": false,
+    "aliases": {
+      "destination": [
+        "Larch馆",
+        "Larch Hall"
+      ]
+    }
+  },
+  "hold03.q1": {
+    "slots": {
+      "signed_date": "2026-03-06",
+      "handover_date": "2026-03-12",
+      "elapsed_days": 6
+    },
+    "evidence_turn_ids": [
+      "hold03.s1.t1",
+      "hold03.s2.t1"
+    ],
+    "abstain": false
+  },
+  "hold04.q1": {
+    "slots": {
+      "tier": "Bronze",
+      "response_hours": 48
+    },
+    "evidence_turn_ids": [
+      "hold04.s2.t1"
+    ],
+    "abstain": false
+  },
+  "hold04.q2": {
+    "slots": {
+      "tier": "Gold",
+      "response_hours": 6
+    },
+    "evidence_turn_ids": [
+      "hold04.s2.t1",
+      "hold04.s4.t1"
+    ],
+    "abstain": false
+  },
+  "hold05.q1": {
+    "slots": {
+      "production_allowed": false,
+      "backup_export_allowed": false,
+      "test_drill_allowed": true
+    },
+    "evidence_turn_ids": [
+      "hold05.s2.t1",
+      "hold05.s3.t1"
+    ],
+    "abstain": false
+  },
+  "hold06.q1": {
+    "slots": {
+      "threshold": 80
+    },
+    "evidence_turn_ids": [
+      "hold06.s3.t1"
+    ],
+    "abstain": false
+  },
+  "hold06.q2": {
+    "slots": {
+      "threshold": 60
+    },
+    "evidence_turn_ids": [
+      "hold06.s2.t1"
+    ],
+    "abstain": false
+  },
+  "hold07.q1": {
+    "slots": {
+      "confirmation_code": null
+    },
+    "evidence_turn_ids": [],
+    "abstain": true
+  },
+  "hold08.q1": {
+    "slots": {
+      "primary_color": "青色",
+      "accent_color": "米白色"
+    },
+    "evidence_turn_ids": [
+      "hold08.s2.t1"
+    ],
+    "abstain": false,
+    "aliases": {
+      "primary_color": [
+        "cyan"
+      ],
+      "accent_color": [
+        "ivory",
+        "off-white"
+      ]
+    }
+  },
+  "hold09.q1": {
+    "slots": {
+      "buyer": "Alina Sokolova",
+      "supplier": "Belora"
+    },
+    "evidence_turn_ids": [
+      "hold09.s1.t1",
+      "hold09.s2.t1",
+      "hold09.s3.t1"
+    ],
+    "abstain": false,
+    "aliases": {
+      "buyer": [
+        "Алина Соколова"
+      ]
+    }
+  },
+  "hold10.q1": {
+    "slots": {
+      "retained_kits": [
+        "KIT-A",
+        "KIT-C"
+      ],
+      "net_spend": 33
+    },
+    "evidence_turn_ids": [
+      "hold10.s1.t1",
+      "hold10.s2.t1",
+      "hold10.s3.t1"
+    ],
+    "abstain": false
+  },
+  "hold11.q1": {
+    "slots": {
+      "allowed_1730": false,
+      "allowed_1830": true,
+      "allowed_1900": false
+    },
+    "evidence_turn_ids": [
+      "hold11.s1.t1",
+      "hold11.s3.t1"
+    ],
+    "abstain": false
+  },
+  "hold12.q1": {
+    "slots": {
+      "profile_alias": "Aurora",
+      "hard_requirement": "transparent_background",
+      "rejected_profile": "R7"
+    },
+    "evidence_turn_ids": [
+      "hold12.s1.t1",
+      "hold12.s2.t1",
+      "hold12.s3.t1",
+      "hold12.s4.t1"
+    ],
+    "abstain": false
+  }
+}

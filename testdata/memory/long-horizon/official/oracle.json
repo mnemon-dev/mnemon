@@ -1,0 +1,108 @@
+{
+  "official01.q1": {
+    "slots": {
+      "degree": "Business Administration"
+    },
+    "evidence_turn_ids": [
+      "official01.s1.t5"
+    ],
+    "abstain": false
+  },
+  "official02.q1": {
+    "slots": {
+      "restaurant": "Roscioli"
+    },
+    "evidence_turn_ids": [
+      "official02.s1.t4"
+    ],
+    "abstain": false
+  },
+  "official03.q1": {
+    "slots": {
+      "personal_best_time": "25:50"
+    },
+    "evidence_turn_ids": [
+      "official03.s2.t1"
+    ],
+    "abstain": false,
+    "aliases": {
+      "personal_best_time": [
+        "25 minutes and 50 seconds",
+        "25m50s"
+      ]
+    }
+  },
+  "official04.q1": {
+    "slots": {
+      "total_usd": 2500
+    },
+    "evidence_turn_ids": [
+      "official04.s1.t3",
+      "official04.s2.t3",
+      "official04.s3.t1"
+    ],
+    "abstain": false,
+    "aliases": {
+      "total_usd": [
+        "$2,500",
+        "$2500",
+        "2500"
+      ]
+    }
+  },
+  "official05.q1": {
+    "slots": {
+      "total_usd": 185
+    },
+    "evidence_turn_ids": [
+      "official05.s2.t7",
+      "official05.s4.t3"
+    ],
+    "abstain": false,
+    "aliases": {
+      "total_usd": [
+        "$185",
+        "185"
+      ]
+    }
+  },
+  "official06.q1": {
+    "slots": {
+      "first_vehicle": "bike"
+    },
+    "evidence_turn_ids": [
+      "official06.s2.t1",
+      "official06.s1.t1"
+    ],
+    "abstain": false,
+    "aliases": {
+      "first_vehicle": [
+        "bicycle",
+        "the bike"
+      ]
+    }
+  },
+  "official07.q1": {
+    "slots": {
+      "elapsed_days": 4
+    },
+    "evidence_turn_ids": [
+      "official07.s2.t1",
+      "official07.s1.t1"
+    ],
+    "abstain": false,
+    "aliases": {
+      "elapsed_days": [
+        "4 days",
+        "4"
+      ]
+    }
+  },
+  "official08.q1": {
+    "slots": {
+      "booking_date": null
+    },
+    "evidence_turn_ids": [],
+    "abstain": true
+  }
+}

@@ -1,0 +1,1323 @@
+{
+  "schema_version": "1",
+  "cases": [
+    {
+      "id": "dev01",
+      "split": "dev",
+      "category": "cross_session_multihop",
+      "sessions": [
+        {
+          "id": "dev01.s1",
+          "date_time": "2026-01-05T09:00:00Z",
+          "turns": [
+            {
+              "id": "dev01.s1.t1",
+              "speaker": "user",
+              "text": "书稿PV-14的审稿人已经定为岑悠；PV-41的审稿人是岑舟。"
+            },
+            {
+              "id": "dev01.s1.t2",
+              "speaker": "assistant",
+              "text": "我会按书稿编号区分两位审稿人。"
+            }
+          ]
+        },
+        {
+          "id": "dev01.s2",
+          "date_time": "2026-01-12T09:00:00Z",
+          "turns": [
+            {
+              "id": "dev01.s2.t1",
+              "speaker": "user",
+              "text": "周四工作坊给岑悠发了青铜徽章，岑舟拿的是银徽章。"
+            },
+            {
+              "id": "dev01.s2.t2",
+              "speaker": "assistant",
+              "text": "两枚徽章属于不同的人。"
+            }
+          ]
+        },
+        {
+          "id": "dev01.s3",
+          "date_time": "2026-01-20T09:00:00Z",
+          "turns": [
+            {
+              "id": "dev01.s3.t1",
+              "speaker": "user",
+              "text": "工作坊的青铜徽章在登记柜T6办理，银徽章在T2办理。"
+            },
+            {
+              "id": "dev01.s3.t2",
+              "speaker": "assistant",
+              "text": "登记柜依据徽章分配。"
+            }
+          ]
+        },
+        {
+          "id": "dev01.s4",
+          "date_time": "2026-01-28T09:00:00Z",
+          "turns": [
+            {
+              "id": "dev01.s4.t1",
+              "speaker": "user",
+              "text": "PV-14改了封面颜色，审稿人没有变化。"
+            },
+            {
+              "id": "dev01.s4.t2",
+              "speaker": "assistant",
+              "text": "只更新封面事项。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "dev01.q1",
+          "text": "PV-14的审稿人应该去哪个登记柜？请填柜号。",
+          "answer_slots": [
+            "desk"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev02",
+      "split": "dev",
+      "category": "knowledge_update_history",
+      "sessions": [
+        {
+          "id": "dev02.s1",
+          "date_time": "2026-02-01T08:00:00Z",
+          "turns": [
+            {
+              "id": "dev02.s1.t1",
+              "speaker": "user",
+              "text": "Juniper项目的正式数据库是MariaDB，测试台一直用DuckDB。"
+            },
+            {
+              "id": "dev02.s1.t2",
+              "speaker": "assistant",
+              "text": "正式环境与测试台分开记录。"
+            }
+          ]
+        },
+        {
+          "id": "dev02.s2",
+          "date_time": "2026-02-10T08:00:00Z",
+          "turns": [
+            {
+              "id": "dev02.s2.t1",
+              "speaker": "user",
+              "text": "Juniper正式数据库已在2026-02-09切换为SQLite，替代MariaDB；测试台不变。"
+            },
+            {
+              "id": "dev02.s2.t2",
+              "speaker": "assistant",
+              "text": "这是正式环境已经生效的切换。"
+            }
+          ]
+        },
+        {
+          "id": "dev02.s3",
+          "date_time": "2026-02-18T08:00:00Z",
+          "turns": [
+            {
+              "id": "dev02.s3.t1",
+              "speaker": "user",
+              "text": "刚收到一封旧文档邮件，附件是2月1日的快照，仍写MariaDB；这不是新的配置变更。"
+            },
+            {
+              "id": "dev02.s3.t2",
+              "speaker": "assistant",
+              "text": "附件描述历史状态。"
+            }
+          ]
+        },
+        {
+          "id": "dev02.s4",
+          "date_time": "2026-02-25T08:00:00Z",
+          "turns": [
+            {
+              "id": "dev02.s4.t1",
+              "speaker": "user",
+              "text": "Juniper测试台的报告已归档，两套数据库都没有再调整。"
+            },
+            {
+              "id": "dev02.s4.t2",
+              "speaker": "assistant",
+              "text": "归档不改变数据库选择。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "dev02.q1",
+          "text": "截至2026-02-25，Juniper正式数据库和测试数据库分别是什么？",
+          "answer_slots": [
+            "production_db",
+            "test_db"
+          ]
+        },
+        {
+          "id": "dev02.q2",
+          "text": "在2026-02-05，Juniper正式数据库是什么？只答当时状态。",
+          "answer_slots": [
+            "production_db"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev03",
+      "split": "dev",
+      "category": "abstention_missing_fact",
+      "sessions": [
+        {
+          "id": "dev03.s1",
+          "date_time": "2026-03-02T10:00:00Z",
+          "turns": [
+            {
+              "id": "dev03.s1.t1",
+              "speaker": "user",
+              "text": "Rill读书会安排在周四，地点为河岸小屋。开始时间还没有确定。"
+            },
+            {
+              "id": "dev03.s1.t2",
+              "speaker": "assistant",
+              "text": "时间仍待定。"
+            }
+          ]
+        },
+        {
+          "id": "dev03.s2",
+          "date_time": "2026-03-09T10:00:00Z",
+          "turns": [
+            {
+              "id": "dev03.s2.t1",
+              "speaker": "user",
+              "text": "我可以在下午参加，但不要据此替组织者确定开始时间。"
+            },
+            {
+              "id": "dev03.s2.t2",
+              "speaker": "assistant",
+              "text": "你的空闲时间不是活动开始时间。"
+            }
+          ]
+        },
+        {
+          "id": "dev03.s3",
+          "date_time": "2026-03-16T10:00:00Z",
+          "turns": [
+            {
+              "id": "dev03.s3.t1",
+              "speaker": "user",
+              "text": "另一场Slate读书会下午三点开始，与Rill无关。"
+            },
+            {
+              "id": "dev03.s3.t2",
+              "speaker": "assistant",
+              "text": "两场活动分开。"
+            }
+          ]
+        },
+        {
+          "id": "dev03.s4",
+          "date_time": "2026-03-23T10:00:00Z",
+          "turns": [
+            {
+              "id": "dev03.s4.t1",
+              "speaker": "user",
+              "text": "Rill的地点已经复核，时间仍未收到通知。"
+            },
+            {
+              "id": "dev03.s4.t2",
+              "speaker": "assistant",
+              "text": "暂无明确开始时间。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "dev03.q1",
+          "text": "Rill读书会确认的开始时间是几点？若没有确证，将start_time设为null并abstain=true。",
+          "answer_slots": [
+            "start_time"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dev04",
+      "split": "dev",
+      "category": "multilingual_negation",
+      "sessions": [
+        {
+          "id": "dev04.s1",
+          "date_time": "2026-04-01T09:00:00Z",
+          "turns": [
+            {
+              "id": "dev04.s1.t1",
+              "speaker": "user",
+              "text": "En el proyecto Cobre, la exportación de producción está permitida. La exportación de pruebas también está permitida."
+            },
+            {
+              "id": "dev04.s1.t2",
+              "speaker": "assistant",
+              "text": "Producción y pruebas son entornos distintos."
+            }
+          ]
+        },
+        {
+          "id": "dev04.s2",
+          "date_time": "2026-04-08T09:00:00Z",
+          "turns": [
+            {
+              "id": "dev04.s2.t1",
+              "speaker": "user",
+              "text": "Cobre从今天起禁止生产环境导出；测试环境仍可导出。"
+            },
+            {
+              "id": "dev04.s2.t2",
+              "speaker": "assistant",
+              "text": "只改变生产环境权限。"
+            }
+          ]
+        },
+        {
+          "id": "dev04.s3",
+          "date_time": "2026-04-15T09:00:00Z",
+          "turns": [
+            {
+              "id": "dev04.s3.t1",
+              "speaker": "user",
+              "text": "Cobre test exports aren’t allowed as of today. The production policy from April 8 is unchanged."
+            },
+            {
+              "id": "dev04.s3.t2",
+              "speaker": "assistant",
+              "text": "The two environments have separate policy histories."
+            }
+          ]
+        },
+        {
+          "id": "dev04.s4",
+          "date_time": "2026-04-22T09:00:00Z",
+          "turns": [
+            {
+              "id": "dev04.s4.t1",
+              "speaker": "user",
+              "text": "Cobre的导出文件改了前缀，但权限没有再变。"
+            },
+            {
+              "id": "dev04.s4.t2",
+              "speaker": "assistant",
+              "text": "文件名变化不代表权限变化。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "dev04.q1",
+          "text": "Al 22 de abril de 2026, ¿están permitidas las exportaciones de producción y de pruebas en Cobre? Usa valores booleanos.",
+          "answer_slots": [
+            "production_allowed",
+            "test_allowed"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold01",
+      "split": "holdout",
+      "category": "same_name_entity_isolation",
+      "sessions": [
+        {
+          "id": "hold01.s1",
+          "date_time": "2026-05-02T11:00:00Z",
+          "turns": [
+            {
+              "id": "hold01.s1.t1",
+              "speaker": "user",
+              "text": "采购部的Alex Lin负责Aster订单，设备部的Alex Lin负责Birch订单；这是两位不同同事。"
+            },
+            {
+              "id": "hold01.s1.t2",
+              "speaker": "assistant",
+              "text": "按部门和订单同时区分同名同事。"
+            }
+          ]
+        },
+        {
+          "id": "hold01.s2",
+          "date_time": "2026-05-09T11:00:00Z",
+          "turns": [
+            {
+              "id": "hold01.s2.t1",
+              "speaker": "user",
+              "text": "Aster订单配送到仓库N4，Birch订单配送到仓库N9。"
+            },
+            {
+              "id": "hold01.s2.t2",
+              "speaker": "assistant",
+              "text": "仓库与订单一一对应。"
+            }
+          ]
+        },
+        {
+          "id": "hold01.s3",
+          "date_time": "2026-05-16T11:00:00Z",
+          "turns": [
+            {
+              "id": "hold01.s3.t1",
+              "speaker": "user",
+              "text": "设备部Alex Lin的分机是684，采购部Alex Lin的分机是247。"
+            },
+            {
+              "id": "hold01.s3.t2",
+              "speaker": "assistant",
+              "text": "不会把两个分机合并。"
+            }
+          ]
+        },
+        {
+          "id": "hold01.s4",
+          "date_time": "2026-05-23T11:00:00Z",
+          "turns": [
+            {
+              "id": "hold01.s4.t1",
+              "speaker": "user",
+              "text": "Birch改为仓库N7；Aster不改。采购部本周只是更新了通讯录排版。"
+            },
+            {
+              "id": "hold01.s4.t2",
+              "speaker": "assistant",
+              "text": "只有Birch的仓库变更。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "hold01.q1",
+          "text": "采购部的Alex Lin负责哪笔订单、该订单最终配送到哪个仓库、他的分机是多少？",
+          "answer_slots": [
+            "order",
+            "warehouse",
+            "extension"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold02",
+      "split": "holdout",
+      "category": "four_hop_alias_chain",
+      "sessions": [
+        {
+          "id": "hold02.s1",
+          "date_time": "2026-01-03T12:00:00Z",
+          "turns": [
+            {
+              "id": "hold02.s1.t1",
+              "speaker": "user",
+              "text": "蓝纹陶样的内部编号是K-62；黄纹陶样是K-26。"
+            },
+            {
+              "id": "hold02.s1.t2",
+              "speaker": "assistant",
+              "text": "颜色对应不同编号。"
+            }
+          ]
+        },
+        {
+          "id": "hold02.s2",
+          "date_time": "2026-01-11T12:00:00Z",
+          "turns": [
+            {
+              "id": "hold02.s2.t1",
+              "speaker": "user",
+              "text": "K-62装进包裹BX-83，K-26装进BX-38。"
+            },
+            {
+              "id": "hold02.s2.t2",
+              "speaker": "assistant",
+              "text": "样品与包裹关联已明确。"
+            }
+          ]
+        },
+        {
+          "id": "hold02.s3",
+          "date_time": "2026-01-19T12:00:00Z",
+          "turns": [
+            {
+              "id": "hold02.s3.t1",
+              "speaker": "user",
+              "text": "BX-83由承运单Vela运送，BX-38由承运单Mora运送。"
+            },
+            {
+              "id": "hold02.s3.t2",
+              "speaker": "assistant",
+              "text": "按承运单查询目的地。"
+            }
+          ]
+        },
+        {
+          "id": "hold02.s4",
+          "date_time": "2026-01-27T12:00:00Z",
+          "turns": [
+            {
+              "id": "hold02.s4.t1",
+              "speaker": "user",
+              "text": "Vela的目的地是Larch馆，Mora的目的地是Elm馆。只有Mora被延期。"
+            },
+            {
+              "id": "hold02.s4.t2",
+              "speaker": "assistant",
+              "text": "延期不改变Vela记录。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "hold02.q1",
+          "text": "蓝纹陶样最终运往哪座馆？请填写馆名。",
+          "answer_slots": [
+            "destination"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold03",
+      "split": "holdout",
+      "category": "temporal_relative_date_arithmetic",
+      "sessions": [
+        {
+          "id": "hold03.s1",
+          "date_time": "2026-03-08T10:00:00Z",
+          "turns": [
+            {
+              "id": "hold03.s1.t1",
+              "speaker": "user",
+              "text": "Lumen交接合同是两天前签的；这里的日期均按UTC日历计算。"
+            },
+            {
+              "id": "hold03.s1.t2",
+              "speaker": "assistant",
+              "text": "签约时间要相对于本次会话日期理解。"
+            }
+          ]
+        },
+        {
+          "id": "hold03.s2",
+          "date_time": "2026-03-12T15:00:00Z",
+          "turns": [
+            {
+              "id": "hold03.s2.t1",
+              "speaker": "user",
+              "text": "Lumen今天实际完成交接，原计划3月10日的安排没有执行。"
+            },
+            {
+              "id": "hold03.s2.t2",
+              "speaker": "assistant",
+              "text": "区分计划日期与实际日期。"
+            }
+          ]
+        },
+        {
+          "id": "hold03.s3",
+          "date_time": "2026-03-19T10:00:00Z",
+          "turns": [
+            {
+              "id": "hold03.s3.t1",
+              "speaker": "user",
+              "text": "合同扫描件今天补录，但签约日期没有改变。"
+            },
+            {
+              "id": "hold03.s3.t2",
+              "speaker": "assistant",
+              "text": "补录日期不是签约日期。"
+            }
+          ]
+        },
+        {
+          "id": "hold03.s4",
+          "date_time": "2026-03-26T10:00:00Z",
+          "turns": [
+            {
+              "id": "hold03.s4.t1",
+              "speaker": "user",
+              "text": "Lumen交接材料封存完成，没有新的交接事件。"
+            },
+            {
+              "id": "hold03.s4.t2",
+              "speaker": "assistant",
+              "text": "封存是后续归档。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "hold03.q1",
+          "text": "Lumen签约和实际交接分别是哪一天？两日期相减相隔多少天（不把首尾都计入，日期用YYYY-MM-DD）？",
+          "answer_slots": [
+            "signed_date",
+            "handover_date",
+            "elapsed_days"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold04",
+      "split": "holdout",
+      "category": "future_effective_update_asof",
+      "sessions": [
+        {
+          "id": "hold04.s1",
+          "date_time": "2026-04-01T08:00:00Z",
+          "turns": [
+            {
+              "id": "hold04.s1.t1",
+              "speaker": "user",
+              "text": "Mistral支持合约当前是Bronze级，事故响应窗口是48小时。"
+            },
+            {
+              "id": "hold04.s1.t2",
+              "speaker": "assistant",
+              "text": "这是当前生效配置。"
+            }
+          ]
+        },
+        {
+          "id": "hold04.s2",
+          "date_time": "2026-04-10T08:00:00Z",
+          "turns": [
+            {
+              "id": "hold04.s2.t1",
+              "speaker": "user",
+              "text": "Mistral已签升级，Gold级和6小时响应窗口从2026-05-01才生效；此前仍按Bronze及48小时执行。"
+            },
+            {
+              "id": "hold04.s2.t2",
+              "speaker": "assistant",
+              "text": "公告日与生效日不同。"
+            }
+          ]
+        },
+        {
+          "id": "hold04.s3",
+          "date_time": "2026-04-20T08:00:00Z",
+          "turns": [
+            {
+              "id": "hold04.s3.t1",
+              "speaker": "user",
+              "text": "审计导出了3月末的Mistral快照，上面写Bronze。这份历史快照不取消5月升级。"
+            },
+            {
+              "id": "hold04.s3.t2",
+              "speaker": "assistant",
+              "text": "不能按快照到达顺序覆盖未来安排。"
+            }
+          ]
+        },
+        {
+          "id": "hold04.s4",
+          "date_time": "2026-05-05T08:00:00Z",
+          "turns": [
+            {
+              "id": "hold04.s4.t1",
+              "speaker": "user",
+              "text": "Mistral升级已按5月1日计划生效，未发生其他调整。"
+            },
+            {
+              "id": "hold04.s4.t2",
+              "speaker": "assistant",
+              "text": "生效安排得到确认。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "hold04.q1",
+          "text": "在2026-04-25，Mistral支持级别与响应窗口（小时）分别是多少？",
+          "answer_slots": [
+            "tier",
+            "response_hours"
+          ]
+        },
+        {
+          "id": "hold04.q2",
+          "text": "截至2026-05-05，Mistral支持级别与响应窗口（小时）分别是多少？",
+          "answer_slots": [
+            "tier",
+            "response_hours"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold05",
+      "split": "holdout",
+      "category": "negation_multiple_predicates",
+      "sessions": [
+        {
+          "id": "hold05.s1",
+          "date_time": "2026-06-01T07:00:00Z",
+          "turns": [
+            {
+              "id": "hold05.s1.t1",
+              "speaker": "user",
+              "text": "Kestrel生产部署允许执行；备份外发不允许执行。"
+            },
+            {
+              "id": "hold05.s1.t2",
+              "speaker": "assistant",
+              "text": "部署与备份是两个独立权限。"
+            }
+          ]
+        },
+        {
+          "id": "hold05.s2",
+          "date_time": "2026-06-08T07:00:00Z",
+          "turns": [
+            {
+              "id": "hold05.s2.t1",
+              "speaker": "user",
+              "text": "Kestrel生产部署现在也不允许执行；备份外发仍不允许。"
+            },
+            {
+              "id": "hold05.s2.t2",
+              "speaker": "assistant",
+              "text": "两个权限目前都受限。"
+            }
+          ]
+        },
+        {
+          "id": "hold05.s3",
+          "date_time": "2026-06-15T07:00:00Z",
+          "turns": [
+            {
+              "id": "hold05.s3.t1",
+              "speaker": "user",
+              "text": "Kestrel测试环境演练可以执行，这不解除生产部署和备份外发的限制。"
+            },
+            {
+              "id": "hold05.s3.t2",
+              "speaker": "assistant",
+              "text": "测试演练不是生产权限。"
+            }
+          ]
+        },
+        {
+          "id": "hold05.s4",
+          "date_time": "2026-06-22T07:00:00Z",
+          "turns": [
+            {
+              "id": "hold05.s4.t1",
+              "speaker": "user",
+              "text": "Kestrel的备份外发配置审查完成，没有批准变更。"
+            },
+            {
+              "id": "hold05.s4.t2",
+              "speaker": "assistant",
+              "text": "审查完成不表示权限放开。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "hold05.q1",
+          "text": "截至2026-06-22，Kestrel生产部署、备份外发和测试演练分别是否允许？使用布尔值。",
+          "answer_slots": [
+            "production_allowed",
+            "backup_export_allowed",
+            "test_drill_allowed"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold06",
+      "split": "holdout",
+      "category": "correction_retraction_history",
+      "sessions": [
+        {
+          "id": "hold06.s1",
+          "date_time": "2026-07-02T09:30:00Z",
+          "turns": [
+            {
+              "id": "hold06.s1.t1",
+              "speaker": "user",
+              "text": "Oriole设备的告警阈值设为80，Cedar设备为90。"
+            },
+            {
+              "id": "hold06.s1.t2",
+              "speaker": "assistant",
+              "text": "按设备保存阈值。"
+            }
+          ]
+        },
+        {
+          "id": "hold06.s2",
+          "date_time": "2026-07-09T09:30:00Z",
+          "turns": [
+            {
+              "id": "hold06.s2.t1",
+              "speaker": "user",
+              "text": "Oriole阈值今天改成60，取代80。"
+            },
+            {
+              "id": "hold06.s2.t2",
+              "speaker": "assistant",
+              "text": "这是已经执行的修改。"
+            }
+          ]
+        },
+        {
+          "id": "hold06.s3",
+          "date_time": "2026-07-16T09:30:00Z",
+          "turns": [
+            {
+              "id": "hold06.s3.t1",
+              "speaker": "user",
+              "text": "撤销7月9日对Oriole的修改，从今天起恢复80；Cedar仍是90。"
+            },
+            {
+              "id": "hold06.s3.t2",
+              "speaker": "assistant",
+              "text": "恢复旧数值，但7月9日至15日的历史不抹去。"
+            }
+          ]
+        },
+        {
+          "id": "hold06.s4",
+          "date_time": "2026-07-23T09:30:00Z",
+          "turns": [
+            {
+              "id": "hold06.s4.t1",
+              "speaker": "user",
+              "text": "Oriole今天仅更换外壳，没有调整阈值。"
+            },
+            {
+              "id": "hold06.s4.t2",
+              "speaker": "assistant",
+              "text": "外壳维修不改变告警配置。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "hold06.q1",
+          "text": "截至2026-07-23，Oriole阈值是多少？",
+          "answer_slots": [
+            "threshold"
+          ]
+        },
+        {
+          "id": "hold06.q2",
+          "text": "2026-07-12当天Oriole阈值是多少？",
+          "answer_slots": [
+            "threshold"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold07",
+      "split": "holdout",
+      "category": "abstention_false_booking_premise",
+      "sessions": [
+        {
+          "id": "hold07.s1",
+          "date_time": "2026-08-01T14:00:00Z",
+          "turns": [
+            {
+              "id": "hold07.s1.t1",
+              "speaker": "user",
+              "text": "我计划参加Nacre展会，暂时考虑预订Moss旅馆，但还没有下单。"
+            },
+            {
+              "id": "hold07.s1.t2",
+              "speaker": "assistant",
+              "text": "这是计划，不是已完成预订。"
+            }
+          ]
+        },
+        {
+          "id": "hold07.s2",
+          "date_time": "2026-08-08T14:00:00Z",
+          "turns": [
+            {
+              "id": "hold07.s2.t1",
+              "speaker": "user",
+              "text": "同事季禾已经订了Moss，确认号为MH-593；那是她的订单，不是我的。"
+            },
+            {
+              "id": "hold07.s2.t2",
+              "speaker": "assistant",
+              "text": "不能把同事订单当作你的订单。"
+            }
+          ]
+        },
+        {
+          "id": "hold07.s3",
+          "date_time": "2026-08-15T14:00:00Z",
+          "turns": [
+            {
+              "id": "hold07.s3.t1",
+              "speaker": "user",
+              "text": "我的Nacre行程延期了，我仍然没有预订旅馆。"
+            },
+            {
+              "id": "hold07.s3.t2",
+              "speaker": "assistant",
+              "text": "没有你的预订确认信息。"
+            }
+          ]
+        },
+        {
+          "id": "hold07.s4",
+          "date_time": "2026-08-22T14:00:00Z",
+          "turns": [
+            {
+              "id": "hold07.s4.t1",
+              "speaker": "user",
+              "text": "季禾照常出发，我等下一次展期再决定住处。"
+            },
+            {
+              "id": "hold07.s4.t2",
+              "speaker": "assistant",
+              "text": "两个人的行程不同。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "hold07.q1",
+          "text": "我为Nacre展会预订Moss旅馆的确认号是什么？如果没有我的已确认预订，将confirmation_code设为null并abstain=true。",
+          "answer_slots": [
+            "confirmation_code"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold08",
+      "split": "holdout",
+      "category": "speaker_proposal_vs_commitment",
+      "sessions": [
+        {
+          "id": "hold08.s1",
+          "date_time": "2026-09-01T06:00:00Z",
+          "turns": [
+            {
+              "id": "hold08.s1.t1",
+              "speaker": "user",
+              "text": "我在准备Pebble演示，尚未决定配色。"
+            },
+            {
+              "id": "hold08.s1.t2",
+              "speaker": "assistant",
+              "text": "我建议主色用紫色，辅助色用橙色。"
+            }
+          ]
+        },
+        {
+          "id": "hold08.s2",
+          "date_time": "2026-09-08T06:00:00Z",
+          "turns": [
+            {
+              "id": "hold08.s2.t1",
+              "speaker": "user",
+              "text": "没有采用你的配色建议。我的最终决定是主色青色、辅助色米白色。"
+            },
+            {
+              "id": "hold08.s2.t2",
+              "speaker": "assistant",
+              "text": "以你的明确决定为准。"
+            }
+          ]
+        },
+        {
+          "id": "hold08.s3",
+          "date_time": "2026-09-15T06:00:00Z",
+          "turns": [
+            {
+              "id": "hold08.s3.t1",
+              "speaker": "user",
+              "text": "给同事演示过紫色模板，但那只是比较样例，不是我的最终方案。"
+            },
+            {
+              "id": "hold08.s3.t2",
+              "speaker": "assistant",
+              "text": "展示样例不改已选配色。"
+            }
+          ]
+        },
+        {
+          "id": "hold08.s4",
+          "date_time": "2026-09-22T06:00:00Z",
+          "turns": [
+            {
+              "id": "hold08.s4.t1",
+              "speaker": "user",
+              "text": "Pebble只更新了字距，配色仍按9月8日决定。"
+            },
+            {
+              "id": "hold08.s4.t2",
+              "speaker": "assistant",
+              "text": "不重新解释样例颜色。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "hold08.q1",
+          "text": "Pebble最终主色和辅助色各是什么？",
+          "answer_slots": [
+            "primary_color",
+            "accent_color"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold09",
+      "split": "holdout",
+      "category": "cross_language_alias_and_update",
+      "sessions": [
+        {
+          "id": "hold09.s1",
+          "date_time": "2026-10-01T13:00:00Z",
+          "turns": [
+            {
+              "id": "hold09.s1.t1",
+              "speaker": "user",
+              "text": "Le projet Lanterne est aussi appelé 灯笼. L’ancien nom « Lueur » désigne un autre projet."
+            },
+            {
+              "id": "hold09.s1.t2",
+              "speaker": "assistant",
+              "text": "Lanterne et 灯笼 désignent le même projet."
+            }
+          ]
+        },
+        {
+          "id": "hold09.s2",
+          "date_time": "2026-10-08T13:00:00Z",
+          "turns": [
+            {
+              "id": "hold09.s2.t1",
+              "speaker": "user",
+              "text": "Алина Соколова — это Alina Sokolova. Она отвечает за закупки проекта Lanterne и выбрала поставщика Tavira."
+            },
+            {
+              "id": "hold09.s2.t2",
+              "speaker": "assistant",
+              "text": "Это одно и то же полное имя."
+            }
+          ]
+        },
+        {
+          "id": "hold09.s3",
+          "date_time": "2026-10-15T13:00:00Z",
+          "turns": [
+            {
+              "id": "hold09.s3.t1",
+              "speaker": "user",
+              "text": "Para Lanterne, Tavira dejó de ser el proveedor. Desde hoy Alina eligió a Belora; el responsable de compras no cambió."
+            },
+            {
+              "id": "hold09.s3.t2",
+              "speaker": "assistant",
+              "text": "Cambió el proveedor, no la persona responsable."
+            }
+          ]
+        },
+        {
+          "id": "hold09.s4",
+          "date_time": "2026-10-22T13:00:00Z",
+          "turns": [
+            {
+              "id": "hold09.s4.t1",
+              "speaker": "user",
+              "text": "灯笼的采购联系人没有变，供应商按10月15日的新决定执行。"
+            },
+            {
+              "id": "hold09.s4.t2",
+              "speaker": "assistant",
+              "text": "继续区分联系人和供应商。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "hold09.q1",
+          "text": "截至2026-10-22，灯笼项目的采购负责人和供应商分别是谁？负责人可写拉丁字母或俄文全名。",
+          "answer_slots": [
+            "buyer",
+            "supplier"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold10",
+      "split": "holdout",
+      "category": "enumeration_dedup_and_refund",
+      "sessions": [
+        {
+          "id": "hold10.s1",
+          "date_time": "2026-11-01T16:00:00Z",
+          "turns": [
+            {
+              "id": "hold10.s1.t1",
+              "speaker": "user",
+              "text": "我为Mica工作坊买了套件KIT-A和KIT-B，分别实付14元和22元。"
+            },
+            {
+              "id": "hold10.s1.t2",
+              "speaker": "assistant",
+              "text": "目前两件套件。"
+            }
+          ]
+        },
+        {
+          "id": "hold10.s2",
+          "date_time": "2026-11-08T16:00:00Z",
+          "turns": [
+            {
+              "id": "hold10.s2.t1",
+              "speaker": "user",
+              "text": "KIT-B已经全额退货退款；另买KIT-C，实付19元。"
+            },
+            {
+              "id": "hold10.s2.t2",
+              "speaker": "assistant",
+              "text": "退款要从保留清单和净支出中扣除。"
+            }
+          ]
+        },
+        {
+          "id": "hold10.s3",
+          "date_time": "2026-11-15T16:00:00Z",
+          "turns": [
+            {
+              "id": "hold10.s3.t1",
+              "speaker": "user",
+              "text": "重发一遍KIT-A的收据，还是11月1日那笔14元订单，不是再次购买。KIT-D只加入愿望清单，没有付款。"
+            },
+            {
+              "id": "hold10.s3.t2",
+              "speaker": "assistant",
+              "text": "重复收据和愿望清单都不是新成交。"
+            }
+          ]
+        },
+        {
+          "id": "hold10.s4",
+          "date_time": "2026-11-22T16:00:00Z",
+          "turns": [
+            {
+              "id": "hold10.s4.t1",
+              "speaker": "user",
+              "text": "Mica套件采购结束，没有新增订单或退款。"
+            },
+            {
+              "id": "hold10.s4.t2",
+              "speaker": "assistant",
+              "text": "采购记录已闭合。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "hold10.q1",
+          "text": "截至2026-11-22，我实际保留的Mica套件有哪些？给出按字母排序的编号数组及净支出整数（元）。",
+          "answer_slots": [
+            "retained_kits",
+            "net_spend"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold11",
+      "split": "holdout",
+      "category": "conditional_permission_time_window",
+      "sessions": [
+        {
+          "id": "hold11.s1",
+          "date_time": "2026-12-01T08:00:00Z",
+          "turns": [
+            {
+              "id": "hold11.s1.t1",
+              "speaker": "user",
+              "text": "Vireo生产导出默认禁止。唯一例外是2026-12-08的17:00至19:00 UTC，且工单TR-82必须已经批准；开始时刻包含、结束时刻不包含。"
+            },
+            {
+              "id": "hold11.s1.t2",
+              "speaker": "assistant",
+              "text": "需要同时满足时间窗口和批准状态。"
+            }
+          ]
+        },
+        {
+          "id": "hold11.s2",
+          "date_time": "2026-12-04T08:00:00Z",
+          "turns": [
+            {
+              "id": "hold11.s2.t1",
+              "speaker": "user",
+              "text": "TR-82现在仍待批准。TR-28已经批准，但它属于另一项目。"
+            },
+            {
+              "id": "hold11.s2.t2",
+              "speaker": "assistant",
+              "text": "不能借用另一工单的批准。"
+            }
+          ]
+        },
+        {
+          "id": "hold11.s3",
+          "date_time": "2026-12-08T18:00:00Z",
+          "turns": [
+            {
+              "id": "hold11.s3.t1",
+              "speaker": "user",
+              "text": "TR-82在今天18:00 UTC正式批准，没有追溯生效。"
+            },
+            {
+              "id": "hold11.s3.t2",
+              "speaker": "assistant",
+              "text": "18:00以前仍是待批准。"
+            }
+          ]
+        },
+        {
+          "id": "hold11.s4",
+          "date_time": "2026-12-09T08:00:00Z",
+          "turns": [
+            {
+              "id": "hold11.s4.t1",
+              "speaker": "user",
+              "text": "Vireo的临时窗口已经结束，没有延期或新增例外。"
+            },
+            {
+              "id": "hold11.s4.t2",
+              "speaker": "assistant",
+              "text": "默认限制重新适用。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "hold11.q1",
+          "text": "按上述规则，Vireo在2026-12-08 UTC的17:30、18:30、19:00分别能否生产导出？填三个布尔值。",
+          "answer_slots": [
+            "allowed_1730",
+            "allowed_1830",
+            "allowed_1900"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "hold12",
+      "split": "holdout",
+      "category": "causal_requirement_multihop",
+      "sessions": [
+        {
+          "id": "hold12.s1",
+          "date_time": "2026-02-03T05:00:00Z",
+          "turns": [
+            {
+              "id": "hold12.s1.t1",
+              "speaker": "user",
+              "text": "Aquila图册必须支持透明背景；文件小不是硬性要求。Boreal图册则必须文件小。"
+            },
+            {
+              "id": "hold12.s1.t2",
+              "speaker": "assistant",
+              "text": "两个图册的硬性要求不同。"
+            }
+          ]
+        },
+        {
+          "id": "hold12.s2",
+          "date_time": "2026-02-11T05:00:00Z",
+          "turns": [
+            {
+              "id": "hold12.s2.t1",
+              "speaker": "user",
+              "text": "本地方案表规定：R2保留透明背景但文件较大；R7文件小但不保留透明背景。这是我们的自定义方案，不使用外部格式知识。"
+            },
+            {
+              "id": "hold12.s2.t2",
+              "speaker": "assistant",
+              "text": "判断方案仅依赖这张本地表。"
+            }
+          ]
+        },
+        {
+          "id": "hold12.s3",
+          "date_time": "2026-02-19T05:00:00Z",
+          "turns": [
+            {
+              "id": "hold12.s3.t1",
+              "speaker": "user",
+              "text": "Aquila最终采用R2，Boreal采用R7。"
+            },
+            {
+              "id": "hold12.s3.t2",
+              "speaker": "assistant",
+              "text": "两项选择分别对应各自要求。"
+            }
+          ]
+        },
+        {
+          "id": "hold12.s4",
+          "date_time": "2026-02-27T05:00:00Z",
+          "turns": [
+            {
+              "id": "hold12.s4.t1",
+              "speaker": "user",
+              "text": "文档把R2起了别名Aurora，能力没有变；Aquila没有切换方案。"
+            },
+            {
+              "id": "hold12.s4.t2",
+              "speaker": "assistant",
+              "text": "别名不构成新的技术决策。"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "id": "hold12.q1",
+          "text": "Aquila当前方案的别名是什么？它满足的硬性要求是哪项？另一候选中哪个方案因不满足此硬性要求而不能用于Aquila？要求请用transparent_background或small_file两个标签之一，候选填方案编号。",
+          "answer_slots": [
+            "profile_alias",
+            "hard_requirement",
+            "rejected_profile"
+          ]
+        }
+      ]
+    }
+  ]
+}
