@@ -200,8 +200,9 @@ Weights vary by intent:
 
 Equal relevance scores are ordered by importance, then newer creation time, then
 ID. Keyword top-K selection uses the same tie order; vector, recency, and beam
-ties use IDs. Anchor traversal and edge admission also use explicit ID order so
-map iteration and SQLite scan order cannot change bounded candidate selection.
+ties use IDs. Anchors are traversed in ID order; edge admission uses the complete
+transition score first, then IDs for ties, so map iteration and SQLite scan order
+cannot change bounded candidate selection.
 
 If the intent is WHY, an additional topological sort using Kahn's algorithm is performed: results are arranged along causal edges so that **causes come first, effects follow**. Equal-score nodes without causal precedence retain their prior ranking.
 

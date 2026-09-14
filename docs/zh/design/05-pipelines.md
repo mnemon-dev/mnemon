@@ -190,8 +190,9 @@ final = w_kw·keyword + w_ent·entity + w_sim·similarity + w_gr·graph
 ### Step 5：WHY 后处理 — 因果拓扑排序
 
 相关性同分时，依次按重要性、创建时间从新到旧、ID 排序。关键词 top-K 使用相同的
-同分规则；向量、时间和 beam 同分时按 ID 排序。锚点遍历和边准入也明确按 ID 排序，
-防止 map 迭代或 SQLite 扫描顺序改变有数量限制的候选选择。
+同分规则；向量、时间和 beam 同分时按 ID 排序。锚点按 ID 遍历；边准入先按完整的
+transition score 排序，同分时才按 ID 排序，防止 map 迭代或 SQLite 扫描顺序改变
+有数量限制的候选选择。
 
 如果意图是 WHY，额外进行 Kahn 算法拓扑排序：沿因果边排列结果，使**原因在前、结果在后**。没有因果先后约束的同分节点保留此前的排名。
 

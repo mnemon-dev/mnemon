@@ -574,45 +574,18 @@ func beamSearchFromAnchor(
 			if err != nil {
 				continue
 			}
-			// The visit budget must not depend on SQLite's unordered scan order.
-			sort.Slice(edges, func(i, j int) bool {
-				a, b := recallEdgeNeighbor(edges[i], cur.id), recallEdgeNeighbor(edges[j], cur.id)
-				if a != b {
-					return a < b
-				}
-				if edges[i].EdgeType != edges[j].EdgeType {
-					return edges[i].EdgeType < edges[j].EdgeType
-				}
-				return edges[i].SourceID < edges[j].SourceID
-			})
-
-			for _, e := range edges {
+			// Rank complete transitions before the visit budget can discard them.
+			// The stored score is also used for propagation and beam admission.
+			for _, transition := range rankRecallTransitions(edges, cur, queryVec, weights, embedCache, allowed) {
 				if totalVisited >= params.MaxVisited {
 					break
 				}
-				neighborID := recallEdgeNeighbor(e, cur.id)
-				if allowed != nil && allowed[neighborID] == nil {
-					continue
-				}
-
-				// MAGMA transition score (P6): additive accumulation
-				// score_v = score_u + λ₁·φ(edgeType, intent) + λ₂·sim(v_neighbor, v_query)
-				structural := weights[e.EdgeType] * e.Weight // φ(edgeType, intent) * edge_weight
-				semantic := 0.0
-				if queryVec != nil && embedCache != nil {
-					if nVec, ok := embedCache[neighborID]; ok {
-						cosSim := embed.CosineSimilarity(queryVec, nVec)
-						if cosSim > 0 {
-							semantic = cosSim
-						}
-					}
-				}
-				neighborScore := cur.score + lambda1*structural + lambda2*semantic
+				neighborID, neighborScore := transition.neighborID, transition.score
 
 				// Update global score map if this path is better
 				if existing, ok := scoreMap[neighborID]; !ok || neighborScore > existing {
 					scoreMap[neighborID] = neighborScore
-					viaMap[neighborID] = string(e.EdgeType)
+					viaMap[neighborID] = string(transition.edge.EdgeType)
 					if _, loaded := insightMap[neighborID]; !loaded {
 						ins, err := recallNeighbor(db, neighborID, allowed)
 						if err == nil && ins != nil {
