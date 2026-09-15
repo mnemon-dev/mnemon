@@ -24,6 +24,8 @@ Before the final answer, store explicit remember requests, durable preferences,
 decisions, corrections, or reusable findings when justified. Run the write and
 verify its result before claiming it was saved. Do not wait until after the
 answer or until context compaction: Pi's summarizer cannot execute memory tools.
+Store only what the user stated or verified evidence supports. Preserve
+uncertainty; do not add unstated personal details to make a memory more specific.
 Avoid secrets, credentials, full transcripts, and short-lived operational noise.
 
 For a correction, remember and verify the replacement, then link

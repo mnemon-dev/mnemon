@@ -73,6 +73,7 @@ Check the output `errors` field because imports can partially succeed.
 ## Guardrails
 
 - Use memory only when it can materially improve continuity or task quality.
+- Store only what the user stated or verified evidence supports. Preserve uncertainty and do not add unstated personal details to make a memory more specific.
 - Run justified writes directly with Pi's available tools and verify them before the final answer. No separate sub-agent tool is required.
 - Preserve the inherited `MNEMON_DATA_DIR` and `MNEMON_STORE`. Do not switch stores or override that scope unless the user requests it.
 - Use `forget` for an explicit deletion request or a separate justified retention decision, not for routine corrections. A supersedes link preserves the old fact for historical recall.
