@@ -74,7 +74,7 @@ export function fixedCommand(command, dataDir, readOnly) {
     args = JSON.parse(execFileSync("python3", ["-c", "import json,shlex,sys; print(json.dumps(shlex.split(sys.argv[1])))", text],
       {encoding: "utf8", timeout: 5000, maxBuffer: 128 * 1024, stdio: ["ignore", "pipe", "pipe"]}));
   } catch {throw new Error(`Use balanced quotes for command arguments. ${COMMAND_INTERFACE}`);}
-  const allowed = ["recall", "search", "show", "related", "status", ...(readOnly ? [] : ["remember", "link", "forget"])];
+  const allowed = ["recall", "search", "show", "related", "status", "log", ...(readOnly ? [] : ["remember", "link", "forget"])];
   const rootHelp = args.length === 2 && ["--help", "-h"].includes(args[1]);
   const commandHelp = args[1] === "help" && args.slice(2).every(arg => /^[a-z][a-z0-9-]*$/.test(arg));
   if (args[0] !== "mnemon" || !(allowed.includes(args[1]) || rootHelp || commandHelp) || args.some(a =>

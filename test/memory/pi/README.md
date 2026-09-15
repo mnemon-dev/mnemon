@@ -79,6 +79,9 @@ rejected before CLI execution, including attached semicolons. Quoted or
 escaped punctuation remains literal argument content. This interface does not
 execute a shell or expand variables, substitutions, or wildcards; store,
 read-only, and file access limits remain enforced.
+`mnemon log` is available in the same fixed store, including read-only QA.
+Operation logs can retain a truncated prefix of a deleted fact; distinguish
+that audit fallback from active recall and explicit supersedes relationships.
 
 QA responses must be a single raw JSON object without Markdown fences or
 surrounding prose. This only clarifies the output contract; the strict scorer

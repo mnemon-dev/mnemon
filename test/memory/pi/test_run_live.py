@@ -144,6 +144,7 @@ console.log(JSON.stringify({denied, fixed: runner.fixedCommand('mnemon recall "p
             ('mnemon -h', True, ['-h']),
             ('mnemon help', True, ['help']),
             ('mnemon help remember', True, ['help', 'remember']),
+            ('mnemon log --limit 20', True, ['log', '--limit', '20']),
             ('mnemon recall "project history" --brief', True, ['recall', 'project history', '--brief']),
             ('mnemon remember "PostgreSQL; Tuesday 09:00 UTC | x < y & z"', False,
              ['remember', 'PostgreSQL; Tuesday 09:00 UTC | x < y & z']),
