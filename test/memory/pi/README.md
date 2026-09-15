@@ -69,8 +69,9 @@ other stores. Read-only questions cannot modify memory. Keep this mode separate
 from acquisition: it checks retrieval and answers after lossless raw-turn
 import, not how well a model selects facts to remember.
 
-The tool named `bash` accepts exactly one bare `mnemon` command; its working
-directory is already set. Use separate tool calls instead of `cd`, pipes,
+Each call to the tool named `bash` accepts exactly one bare `mnemon` command;
+multiple separate calls are allowed, and its working directory is already set.
+Use separate tool calls instead of `cd`, pipes,
 redirection, semicolons, `&&`, or multiple unquoted command lines. Use `read`
 for the installed skill and `mnemon --help`, `mnemon -h`, or
 `mnemon help <command>` for CLI help. Shell operators outside quotes are

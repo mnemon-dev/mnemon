@@ -5,7 +5,7 @@ import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 
 const DEFAULT_ENDPOINT = "https://api.deepseek.com";
-const COMMAND_INTERFACE = "Run exactly one mnemon command. The working directory is already set. Use bare mnemon commands: do not add cd, pipes, redirection, &&, semicolons, or multiple commands on separate lines. Read the installed skill with the read tool. CLI help is available through mnemon --help, mnemon -h, or mnemon help <command>. Quoted argument content is literal data; this tool does not execute a shell.";
+const COMMAND_INTERFACE = "Run exactly one mnemon command per bash tool call. Multiple separate tool calls are allowed to finish the task. The working directory is already set. Use bare mnemon commands: do not add cd, pipes, redirection, &&, semicolons, or multiple commands on separate lines. Read the installed skill with the read tool. CLI help is available through mnemon --help, mnemon -h, or mnemon help <command>. Quoted argument content is literal data; this tool does not execute a shell.";
 
 export function validateConfig(config) {
   if (config.authorizeLive !== true) throw new Error("Explicit live authorization required");
