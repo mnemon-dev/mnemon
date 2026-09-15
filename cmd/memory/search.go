@@ -55,7 +55,7 @@ var searchCmd = &cobra.Command{
 				score := roundScore(result.Score)
 				brief = append(brief, briefResult{
 					ID:       result.Insight.ID,
-					Excerpt:  makeBriefExcerpt(result.Insight.Content, searchExcerpt),
+					Excerpt:  makeQueryBriefExcerpt(result.Insight.Content, query, searchExcerpt),
 					Category: string(result.Insight.Category),
 					Score:    scorePointer(score),
 				})

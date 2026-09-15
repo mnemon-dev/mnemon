@@ -185,8 +185,13 @@ and `score`. Use `--verbose` to restore the full payload with signals, traversal
 metadata, and timestamps. The confidence label is only emitted in compact mode;
 verbose payloads return the raw score for callers that prefer their own thresholds.
 For large memories, `--brief` is a smaller discovery projection: it flattens
-whitespace, caps each excerpt, emits unindented JSON, and includes one
-`detail_command` hint. `search` supports the same two flags. JSON remains the
+whitespace and selects a continuous passage around matching query terms, keeping
+nearby context such as dates and qualifications. Ellipses mark omitted text and
+count toward the character limit. Without a content match, it uses the opening
+passage; queries over 4 KiB or 64 distinct terms also use this fallback. Passage
+selection examines windows of at most 4096 characters. This changes only the
+excerpt, not result ranking or limits. Brief mode emits unindented JSON and
+includes one `detail_command` hint. `search` supports the same two flags. JSON remains the
 machine-readable interchange format; the opt-in projection avoids changing
 existing parsers or adopting a draft serialization format.
 

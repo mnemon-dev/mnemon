@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"strings"
-	"unicode/utf8"
 )
 
 const defaultBriefExcerptChars = 240
@@ -51,20 +49,6 @@ func validateBriefExcerptChars(enabled bool, limit int) error {
 		return fmt.Errorf("--excerpt-chars must be greater than 0")
 	}
 	return nil
-}
-
-func makeBriefExcerpt(content string, maxChars int) string {
-	// Flatten whitespace so one memory cannot turn a discovery row into a large
-	// multi-line block. strings.Fields is Unicode-aware.
-	content = strings.Join(strings.Fields(content), " ")
-	if utf8.RuneCountInString(content) <= maxChars {
-		return content
-	}
-	if maxChars == 1 {
-		return "…"
-	}
-	runes := []rune(content)
-	return strings.TrimSpace(string(runes[:maxChars-1])) + "…"
 }
 
 func scorePointer(score float64) *float64 {

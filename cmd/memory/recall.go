@@ -161,7 +161,7 @@ meta.intent and meta.intent_source (auto or override). --basic bypasses intent.`
 				for _, result := range results {
 					brief = append(brief, briefResult{
 						ID:       result.ID,
-						Excerpt:  makeBriefExcerpt(result.Content, recExcerpt),
+						Excerpt:  makeQueryBriefExcerpt(result.Content, keyword, recExcerpt),
 						Category: string(result.Category),
 					})
 				}
@@ -216,7 +216,7 @@ meta.intent and meta.intent_source (auto or override). --basic bypasses intent.`
 				score := roundScore(result.Score)
 				brief = append(brief, briefResult{
 					ID:         result.Insight.ID,
-					Excerpt:    makeBriefExcerpt(result.Insight.Content, recExcerpt),
+					Excerpt:    makeQueryBriefExcerpt(result.Insight.Content, keyword, recExcerpt),
 					Category:   string(result.Insight.Category),
 					Score:      scorePointer(score),
 					Confidence: confidenceLabel(score),
