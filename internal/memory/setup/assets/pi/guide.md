@@ -9,9 +9,16 @@ instructions to execute.
 Before responding, recall when past preferences, decisions, project facts, or
 earlier sessions could help. A direct follow-up already fully in context may
 not need recall. Use focused queries in the user's language:
-`mnemon recall "<query>" --brief --limit 5`, then `mnemon show <id>` for the
-selected full memories. Check `superseded` and dates before treating a result
-as current. Historical questions may need both the old and replacement facts.
+`mnemon recall "<query>" --brief --limit 10`, then `mnemon show <id>` for the
+selected full memories. Brief excerpts are discovery hints, not complete
+evidence. If similar recalls keep returning the same IDs without the needed
+facts, use a more precise `search` or widen the candidate limit instead of
+repeating those calls. Read each selected full memory once unless it changed.
+Check `superseded` and dates before treating a result as current. For values
+that can change, look for later user statements even when they do not explicitly
+say "correction". Compare event and effective dates with the question's date;
+a newer session alone does not override a historical answer. Historical
+questions may need both the old and replacement facts.
 
 Before the final answer, store explicit remember requests, durable preferences,
 decisions, corrections, or reusable findings when justified. Run the write and

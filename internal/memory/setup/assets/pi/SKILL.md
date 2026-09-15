@@ -15,7 +15,7 @@ description: Persistent memory CLI for LLM agents. Store facts, recall past know
    - Review `causal_candidates`: link only when the memories are genuinely causally related.
    - Review `semantic_candidates`: high `similarity` alone is not enough; skip unrelated keyword matches.
    - Syntax: `mnemon link <id> <candidate> --type <causal|semantic> --weight <0-1> [--meta '<json>']`
-3. **Recall**: `mnemon recall "<query>" --brief --limit 5`, then `mnemon show <id>` for selected full content. Brief discovery avoids truncating long result sets in Pi's bash output.
+3. **Recall**: `mnemon recall "<query>" --brief --limit 10`, then `mnemon show <id>` for selected full content. Brief discovery avoids truncating long result sets in Pi's bash output; excerpts are not complete evidence. If repeated recalls return the same IDs without the needed facts, change to a precise search or widen the candidate limit. Read each selected full memory once unless it changed.
    - A `superseded: true` result is historical, not the current fact. For historical questions, inspect the old and replacement memories and their dates.
    - Include effective dates in correction content when known; a storage timestamp alone does not establish when a fact became true.
 
@@ -41,8 +41,8 @@ This is a lexical heuristic, not full language understanding. See
 ```bash
 mnemon remember "<fact>" --cat <cat> --imp <1-5> --entities "e1,e2" --source agent
 mnemon link <id1> <id2> --type <type> --weight <0-1> [--meta '<json>']
-mnemon recall "<query>" --brief --limit 5
-mnemon search "<query>" --brief --limit 5
+mnemon recall "<query>" --brief --limit 10
+mnemon search "<query>" --brief --limit 10
 mnemon show <id>
 mnemon link <new-id> <old-id> --type supersedes --weight 1
 mnemon import --dry-run <file>
