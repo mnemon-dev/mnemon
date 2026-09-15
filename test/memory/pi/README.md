@@ -69,6 +69,25 @@ other stores. Read-only questions cannot modify memory. Keep this mode separate
 from acquisition: it checks retrieval and answers after lossless raw-turn
 import, not how well a model selects facts to remember.
 
+The tool named `bash` accepts exactly one bare `mnemon` command; its working
+directory is already set. Use separate tool calls instead of `cd`, pipes,
+redirection, semicolons, `&&`, or multiple unquoted command lines. Use `read`
+for the installed skill and `mnemon --help`, `mnemon -h`, or
+`mnemon help <command>` for CLI help. Shell operators outside quotes are
+rejected before CLI execution, including attached semicolons. Quoted or
+escaped punctuation remains literal argument content. This interface does not
+execute a shell or expand variables, substitutions, or wildcards; store,
+read-only, and file access limits remain enforced.
+
+QA responses must be a single raw JSON object without Markdown fences or
+surrounding prose. This only clarifies the output contract; the strict scorer
+does not strip fences or repair malformed answers. Preserve earlier pilot
+results and distinguish format failures from unsupported memory answers.
+
+Raw request, tool, and assistant events carry the input `turn_id`. Tool start
+and end events also preserve Pi's `tool_call_id` so parallel calls can be
+paired without relying on event order. These report fields are not model input.
+
 Exercise normal model-selected memory writes and historical corrections with:
 
 ```sh

@@ -83,6 +83,26 @@ catch {{ console.log('rejected'); }}
                 else:
                     self.assertFalse(output.exists())
 
+    def test_conversation_prompt_requires_raw_json_without_changing_scoring(self):
+        source = {'schema_version': '1', 'oracle': 'DO_NOT_SEND_ORACLE', 'cases': [{
+            'id': 'qa', 'split': 'dev', 'sessions': [],
+            'questions': [{'id': 'q', 'text': 'What did I decide?', 'answer_slots': ['decision']}],
+        }]}
+        config = run_live.prepare(self.inputs(source), Path('/binary'), Path('/pi'), self.root / 'out', 'dev')
+        message = config['cases'][0]['turns'][0]['message']
+        self.assertIn('single raw JSON object, without Markdown fences or surrounding prose', message)
+        self.assertIn('with keys slots, evidence_turn_ids, abstain', message)
+        self.assertIn('The slots object must have these keys: ["decision"]', message)
+        self.assertIn('Use null for a requested value that memory cannot establish', message)
+        self.assertIn('Set abstain=true', message)
+        self.assertNotIn('DO_NOT_SEND_ORACLE', json.dumps(config))
+        fenced = '```json\n{"slots":{"decision":null},"evidence_turn_ids":[],"abstain":true}\n```'
+        report = {'cases': [{'id': 'qa', 'completed': True,
+                            'turns': [{'id': 'q', 'stopReason': 'stop', 'response': fenced}]}]}
+        answers, errors = run_live.extract_answers(report)
+        self.assertFalse(errors)
+        self.assertEqual(answers['q'], {'invalid_model_output': True})
+
     def test_failed_generation_and_mismatched_ids_are_not_answers(self):
         expected = [{'id': 'c', 'turns': [{'id': 'q'}]}]
         report = {'completed': False, 'cases': [{'id': 'c', 'completed': False, 'infrastructure_error': True,
@@ -117,6 +137,52 @@ console.log(JSON.stringify({denied, fixed: runner.fixedCommand('mnemon recall "p
         self.assertEqual(result['denied'], [True] * 4)
         self.assertEqual(result['fixed'][:5], ['--data-dir', '/private-memory', '--store', 'default', '--readonly'])
         self.assertNotIn('credential-example', result['redacted'])
+
+    def test_command_interface_accepts_help_and_literals_but_rejects_compound_commands(self):
+        accepted = [
+            ('mnemon --help', True, ['--help']),
+            ('mnemon -h', True, ['-h']),
+            ('mnemon help', True, ['help']),
+            ('mnemon help remember', True, ['help', 'remember']),
+            ('mnemon recall "project history" --brief', True, ['recall', 'project history', '--brief']),
+            ('mnemon remember "PostgreSQL; Tuesday 09:00 UTC | x < y & z"', False,
+             ['remember', 'PostgreSQL; Tuesday 09:00 UTC | x < y & z']),
+            ("mnemon remember 'Line one;\nline two {\"label\":\"a;b\"}'", False,
+             ['remember', 'Line one;\nline two {"label":"a;b"}']),
+            (r'mnemon remember "He said \"keep; both\"."', False, ['remember', 'He said "keep; both".']),
+            (r'mnemon remember A\;B', False, ['remember', 'A;B']),
+            ('mnemon remember ";"', False, ['remember', ';']),
+        ]
+        denied = [
+            'cd /tmp && mnemon status',
+            'mnemon recall x --limit 5;echo done',
+            'mnemon show one;mnemon show two',
+            'mnemon show one\nmnemon show two',
+            'mnemon show one\r\nmnemon show two',
+            'mnemon status|cat',
+            'mnemon status&&mnemon status',
+            'mnemon status>output',
+            'mnemon status &',
+            'mnemon recall "unterminated',
+        ]
+        code = f"""
+const accepted = {json.dumps(accepted)}.map(([command, readOnly]) => runner.fixedCommand(command, '/private-memory', readOnly));
+const denied = {json.dumps(denied)}.map(command => {{
+  try {{ runner.fixedCommand(command, '/private-memory', false); return null; }} catch (error) {{ return error.message; }}
+}});
+console.log(JSON.stringify({{accepted, denied}}));
+"""
+        result = json.loads(self.node(code))
+        for (command, read_only, args), actual in zip(accepted, result['accepted']):
+            with self.subTest(command=command):
+                prefix = ['--data-dir', '/private-memory', '--store', 'default'] + (['--readonly'] if read_only else [])
+                self.assertEqual(actual, prefix + args)
+        for command, message in zip(denied, result['denied']):
+            with self.subTest(command=command):
+                self.assertIsNotNone(message)
+                self.assertIn('Run exactly one mnemon command', message)
+                self.assertIn('working directory is already set', message)
+                self.assertIn('read tool', message)
 
     def test_skill_symlink_and_snapshot_symlink_cannot_escape(self):
         skill = self.root / 'skills'
@@ -214,11 +280,22 @@ console.log(denied);
         self.assertTrue(requests, json.dumps(report))
         self.assertEqual(requests[0]['path'], '/fixture/chat/completions')
         self.assertEqual(requests[0]['body']['model'], 'deepseek-flash')
+        bash = next(tool['function'] for tool in requests[0]['body']['tools'] if tool['function']['name'] == 'bash')
+        self.assertIn('Run exactly one mnemon command', bash['description'])
+        self.assertIn('working directory is already set', bash['description'])
+        self.assertIn('this tool does not execute a shell', bash['description'])
+        self.assertNotIn('--brief', bash['description'])
+        system = next(message['content'] for message in requests[0]['body']['messages'] if message['role'] == 'system')
+        self.assertIn('Run exactly one mnemon command', system)
         self.assertNotIn('DO_NOT_SEND_ORACLE', json.dumps(requests))
         self.assertNotIn('UNTRUSTED_EXTENSION_LOADED', json.dumps(requests))
         self.assertEqual(len(report['binary_sha256']), 64)
         self.assertEqual(report['budgets']['prompt_timeout_ms'], 900000)
         row = report['cases'][0]
+        request_events = [event for event in row['events'] if event['type'] == 'request']
+        self.assertEqual(len(request_events), len(requests))
+        self.assertTrue(all(event['turn_id'] == 'remember' for event in request_events))
+        self.assertTrue(all(event['turn_id'] == 'remember' for event in row['events'] if event['type'] == 'assistant'))
         self.assertFalse(row['completed'])
         self.assertEqual(row['sessions_created'], row['sessions_disposed'])
         self.assertEqual(row['sessions_created'], 1)
