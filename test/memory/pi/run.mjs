@@ -35,7 +35,7 @@ export function validateConfig(config) {
   config.providerBaseUrl = endpoint.href.replace(/\/$/, "");
   config.promptTimeoutMs ??= 90000;
   config.maxRequestsPerPrompt ??= 24;
-  if (!Number.isInteger(config.promptTimeoutMs) || config.promptTimeoutMs < 1 || config.promptTimeoutMs > 300000) throw new Error("Invalid prompt deadline");
+  if (!Number.isInteger(config.promptTimeoutMs) || config.promptTimeoutMs < 1 || config.promptTimeoutMs > 900000) throw new Error("Invalid prompt deadline");
   if (!Number.isInteger(config.maxRequestsPerPrompt) || config.maxRequestsPerPrompt < 1 || config.maxRequestsPerPrompt > 64) throw new Error("Invalid provider request budget");
   if (config.keepScratch !== undefined && typeof config.keepScratch !== "boolean") throw new Error("keepScratch must be boolean");
   return config;

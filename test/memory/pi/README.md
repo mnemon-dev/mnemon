@@ -90,7 +90,7 @@ incomplete result, with no answer-accuracy claim. A malformed completed model
 answer is instead a scored answer failure. Preserve the first result and retry
 into a new directory; never overwrite failed attempts.
 
-`--prompt-timeout-seconds` accepts 1–300 seconds;
+`--prompt-timeout-seconds` accepts 1–900 seconds;
 `--run-timeout-seconds` sets an overall process deadline. `--pi-root` selects
 another directory containing the same pinned `node_modules` installation.
 `--keep-scratch` retains the private databases for additional read-only checks;
@@ -98,6 +98,13 @@ otherwise they are removed after the run. `--provider-base-url` is only for
 an explicitly selected DeepSeek endpoint and is recorded in the result. It
 does not change the model; credentials, query strings, and fragments in the
 URL are rejected. Loopback HTTP is allowed for transport boundary tests.
+
+For a deliberate long-wait acceptance run, select `--prompt-timeout-seconds 900`
+for both binaries. DeepSeek documents a
+[keep-alive wait of up to ten minutes before inference](https://api-docs.deepseek.com/quick_start/rate_limit/).
+The default remains 90 seconds for bounded routine runs. A prompt deadline
+covers all requests and tools for that turn, including queue time; exceeding it
+does not establish whether the model would eventually answer correctly.
 
 To compare two implementations, build both executables from recorded commits
 in separate worktrees and invoke this same runner with the same fixture,

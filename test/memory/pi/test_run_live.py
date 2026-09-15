@@ -59,6 +59,30 @@ class RunnerHelpers(unittest.TestCase):
         with self.assertRaises(ValueError):
             run_live.prepare(self.inputs(source), Path('/binary'), Path('/pi'), self.root / 'out', 'all')
 
+    def test_prompt_deadline_bounds_agree_across_wrapper_and_runner(self):
+        inputs = self.inputs(self.interaction())
+        for seconds in [1, 90, 900, 0, 901]:
+            with self.subTest(seconds=seconds):
+                output = self.root / f'prepared-{seconds}'
+                run = subprocess.run([sys.executable, str(HERE / 'run_live.py'), '--prepare-only',
+                                      '--inputs', str(inputs), '--binary', '/unused', '--output', str(output),
+                                      '--prompt-timeout-seconds', str(seconds)], text=True, capture_output=True)
+                expected = 1 <= seconds <= 900
+                self.assertEqual(run.returncode == 0, expected, run.stderr)
+                config = run_live.prepare(inputs, Path('/unused'), Path('/pi'), output, 'all')
+                config.update(authorizeLive=True, promptTimeoutMs=seconds * 1000)
+                code = f"""
+try {{ runner.validateConfig({json.dumps(config)}); console.log('accepted'); }}
+catch {{ console.log('rejected'); }}
+"""
+                self.assertEqual(self.node(code).strip(), 'accepted' if expected else 'rejected')
+                if expected:
+                    prepared = json.loads((output / 'config.json').read_text())
+                    self.assertEqual(prepared['promptTimeoutMs'], seconds * 1000)
+                    self.assertFalse(prepared['authorizeLive'])
+                else:
+                    self.assertFalse(output.exists())
+
     def test_failed_generation_and_mismatched_ids_are_not_answers(self):
         expected = [{'id': 'c', 'turns': [{'id': 'q'}]}]
         report = {'completed': False, 'cases': [{'id': 'c', 'completed': False, 'infrastructure_error': True,
@@ -180,7 +204,7 @@ console.log(denied);
         env = dict(os.environ, DEEPSEEK_API_KEY='offline-placeholder-only', MNEMON_STORE='user-global-store')
         run = subprocess.run([sys.executable, str(HERE / 'run_live.py'), '--live', '--inputs', str(self.inputs(self.interaction())),
                               '--binary', env['MNEMON_BIN'], '--pi-root', str(package.parents[2]), '--output', str(output),
-                              '--provider-base-url', endpoint, '--prompt-timeout-seconds', '5'],
+                              '--provider-base-url', endpoint, '--prompt-timeout-seconds', '900'],
                              text=True, capture_output=True, env=env, timeout=30)
         self.assertEqual(run.returncode, 2, run.stdout + run.stderr)
         report = json.loads((output / 'results.json').read_text())
@@ -193,7 +217,7 @@ console.log(denied);
         self.assertNotIn('DO_NOT_SEND_ORACLE', json.dumps(requests))
         self.assertNotIn('UNTRUSTED_EXTENSION_LOADED', json.dumps(requests))
         self.assertEqual(len(report['binary_sha256']), 64)
-        self.assertEqual(report['budgets']['prompt_timeout_ms'], 5000)
+        self.assertEqual(report['budgets']['prompt_timeout_ms'], 900000)
         row = report['cases'][0]
         self.assertFalse(row['completed'])
         self.assertEqual(row['sessions_created'], row['sessions_disposed'])

@@ -198,8 +198,8 @@ def main():
     args = parser.parse_args()
     if not args.live and not args.prepare_only:
         parser.error('--live is required for paid evaluation; use --prepare-only otherwise')
-    if not 1 <= args.prompt_timeout_seconds <= 300 or (args.run_timeout_seconds is not None and args.run_timeout_seconds <= 0):
-        parser.error('prompt timeout must be 1–300 seconds and the run timeout must be positive')
+    if not 1 <= args.prompt_timeout_seconds <= 900 or (args.run_timeout_seconds is not None and args.run_timeout_seconds <= 0):
+        parser.error('prompt timeout must be 1–900 seconds and the run timeout must be positive')
     try:
         endpoint = provider_base_url(args.provider_base_url)
         config = prepare(args.inputs, args.binary, args.pi_root, args.output, args.split)
