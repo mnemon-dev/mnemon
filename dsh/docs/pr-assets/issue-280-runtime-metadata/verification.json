@@ -1,0 +1,299 @@
+{
+  "issue": 280,
+  "baseline": "6dc4e4201585223f7f1da371256da11deee34d6c",
+  "testedProductionCommits": [
+    "5b8cd640",
+    "ff66e6ba"
+  ],
+  "platform": "macOS arm64",
+  "node": "24.20.0",
+  "pnpm": "10.13.1",
+  "dsh": "0.1.7-rc.2",
+  "mnemonCli": "0.2.9",
+  "model": "deterministic loopback fixture using the published DeepSeek adapter",
+  "verify": {
+    "passed": true,
+    "root": {
+      "passed": 1363,
+      "skipped": 7
+    },
+    "plugins": {
+      "passed": 406,
+      "skipped": 2
+    },
+    "rootUnpackedBytes": 1374802,
+    "rootUnpackedLimit": 1376000,
+    "nativeCliIntegrationEnabled": true
+  },
+  "independentPlugins": {
+    "passed": true,
+    "repositories": 16,
+    "artifacts": 17
+  },
+  "commands": [
+    "MNEMON_NATIVE_TEST_CLI=/absolute/verified/mnemon pnpm verify",
+    "pnpm verify:plugins --skip-build",
+    "pnpm verify:docs",
+    "pnpm release:intent"
+  ],
+  "optionalStrategies": [
+    "scoped",
+    "light-context",
+    "auto-capture"
+  ],
+  "limits": [
+    "No live Flash quality evaluation",
+    "No manual Windows WebUI verification",
+    "Manual browser reload and automated Headless restart are different coverage"
+  ],
+  "profiles": {
+    "before": {
+      "issue": 280,
+      "dsh": "0.1.7-rc.2",
+      "node": "v24.20.0",
+      "idleReview": false,
+      "preset": "standard",
+      "toolPresentation": "native",
+      "optionalStrategies": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "commands": [
+        "METADATA280_SHOW",
+        "METADATA280_ADD",
+        "METADATA280_REPLACE",
+        "METADATA280_REMOVE"
+      ],
+      "seededEntries": 3,
+      "artifacts": [
+        {
+          "name": "dsh-mnemon",
+          "version": "0.5.14",
+          "filename": "dsh-mnemon-0.5.14.tgz",
+          "sha256": "6275ed7a275afac2f23d8f3bc9ba6402a0dd3d8e33e87bbb99c9d08a74924356"
+        },
+        {
+          "name": "dsh-mnemon-provider-byterover",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-byterover-0.5.4.tgz",
+          "sha256": "17dcd57cb35c0c81af2b93c92be66c2e6b7e8180d5d1cf634c589281003dddc1"
+        },
+        {
+          "name": "dsh-mnemon-provider-hindsight",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-hindsight-0.5.4.tgz",
+          "sha256": "739dec0d42689fdbdb8183ba75f7b6afc4be899b585c03c2a85842e0e998a170"
+        },
+        {
+          "name": "dsh-mnemon-provider-holographic",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-holographic-0.5.4.tgz",
+          "sha256": "700fa0f94387ee04f5202dbbe0d410afb7114ba2486b25c32d64d7b059245f8c"
+        },
+        {
+          "name": "dsh-mnemon-provider-honcho",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-honcho-0.5.4.tgz",
+          "sha256": "db8ffcbbc1df42555295a1ff818e2059b5c09776a0dc4cc9c311779355b06fd7"
+        },
+        {
+          "name": "dsh-mnemon-provider-mem0",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-mem0-0.5.4.tgz",
+          "sha256": "ccd61716ead4d9462e15a662edb59c9850d812e8660bc33c4cc574601b816255"
+        },
+        {
+          "name": "dsh-mnemon-provider-mnemon-native",
+          "version": "0.5.5",
+          "filename": "dsh-mnemon-provider-mnemon-native-0.5.5.tgz",
+          "sha256": "8b839950e17b086578490b9eb3ef438331afa96a85ccd588ddaf7af9649f1f32"
+        },
+        {
+          "name": "dsh-mnemon-provider-openviking",
+          "version": "0.5.6",
+          "filename": "dsh-mnemon-provider-openviking-0.5.6.tgz",
+          "sha256": "e5b3f9c80c6c450e5cb0e0103f30f8df39550dd980aac70dc4d44e069e2bc570"
+        },
+        {
+          "name": "dsh-mnemon-provider-retaindb",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-retaindb-0.5.4.tgz",
+          "sha256": "8962cfc5b8e777a86c8816dfd47f32943aa6a1f1973bc8882727b4b430579e3a"
+        },
+        {
+          "name": "dsh-mnemon-provider-supermemory",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-supermemory-0.5.4.tgz",
+          "sha256": "c117f467d0eb66954ab5b27a8ae08722770699e0f9113fa4bdc9f0724485b508"
+        },
+        {
+          "name": "dsh-mnemon-source-documents",
+          "version": "0.5.6",
+          "filename": "dsh-mnemon-source-documents-0.5.6.tgz",
+          "sha256": "7a94dee1d0e47b2d76a71d86b27d4165875f5bb3a8066b9ef68c2e5b2cb1825a"
+        },
+        {
+          "name": "dsh-mnemon-source-memory-spaces",
+          "version": "0.5.9",
+          "filename": "dsh-mnemon-source-memory-spaces-0.5.9.tgz",
+          "sha256": "a2c913d866be46736ed8aca1dd61371319a0b40593a6258f6d6eec581245bc85"
+        },
+        {
+          "name": "dsh-mnemon-source-runtime",
+          "version": "0.5.8",
+          "filename": "dsh-mnemon-source-runtime-0.5.8.tgz",
+          "sha256": "a0ddb4d9283277614253e4000ad8e6234c6ab1fcfb733aef1894bf080b1193d7"
+        },
+        {
+          "name": "dsh-mnemon-strategy-auto-capture",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-strategy-auto-capture-0.5.4.tgz",
+          "sha256": "a653c1ebec85da0fe2c878e42a0eea84e20da877682fa1c9c97f5d8f8f70c074"
+        },
+        {
+          "name": "dsh-mnemon-strategy-default-three-tier",
+          "version": "0.5.5",
+          "filename": "dsh-mnemon-strategy-default-three-tier-0.5.5.tgz",
+          "sha256": "fe4e722303ffeff5a598011d9ee6b8f5de73fe21aa2bf25ae215c750817b60df"
+        },
+        {
+          "name": "dsh-mnemon-strategy-light-context",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-strategy-light-context-0.5.4.tgz",
+          "sha256": "eac6b61e9652ed54d03dd013bec285afe8714547a27c33ace286439e5958250b"
+        },
+        {
+          "name": "dsh-mnemon-strategy-scoped",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-strategy-scoped-0.5.4.tgz",
+          "sha256": "c751c30b61f5ae60eca489cda936ed17a5b86dadaae538d9657dd76fe8467843"
+        }
+      ]
+    },
+    "after": {
+      "issue": 280,
+      "dsh": "0.1.7-rc.2",
+      "node": "v24.20.0",
+      "idleReview": false,
+      "preset": "standard",
+      "toolPresentation": "native",
+      "optionalStrategies": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "commands": [
+        "METADATA280_SHOW",
+        "METADATA280_ADD",
+        "METADATA280_REPLACE",
+        "METADATA280_REMOVE"
+      ],
+      "seededEntries": 3,
+      "artifacts": [
+        {
+          "name": "dsh-mnemon",
+          "version": "0.5.14",
+          "filename": "dsh-mnemon-0.5.14.tgz",
+          "sha256": "dacaf9f91a7296575de60f6d7d1ae660250ee376b925321fd4a23aab11098a80"
+        },
+        {
+          "name": "dsh-mnemon-provider-byterover",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-byterover-0.5.4.tgz",
+          "sha256": "94677bb5a27261dd2051f67c9ae5bc41c17ea86a4ea95cbd0baee1728203633f"
+        },
+        {
+          "name": "dsh-mnemon-provider-hindsight",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-hindsight-0.5.4.tgz",
+          "sha256": "bf527bc83d51bd7b2e510ed3be59665ae6b3ddbd4e1c3beee16c32235fa0afbb"
+        },
+        {
+          "name": "dsh-mnemon-provider-holographic",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-holographic-0.5.4.tgz",
+          "sha256": "67f9cc593a7bcf33001e0817a4932e23cf9f0927e90b6bc2b2ccd5ef49b91259"
+        },
+        {
+          "name": "dsh-mnemon-provider-honcho",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-honcho-0.5.4.tgz",
+          "sha256": "c102952aa1b9fdd953b25068663635a9ffad606bb39c68b56eafa538c8fab72d"
+        },
+        {
+          "name": "dsh-mnemon-provider-mem0",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-mem0-0.5.4.tgz",
+          "sha256": "42cd225bb376d387d8e7f5503d64b6a00ddae4f5aea26b495cb9d5aa44dab3b0"
+        },
+        {
+          "name": "dsh-mnemon-provider-mnemon-native",
+          "version": "0.5.5",
+          "filename": "dsh-mnemon-provider-mnemon-native-0.5.5.tgz",
+          "sha256": "cb1532ec04e1bc2550456340b453717686c2bc399e742e61be529bdae5e6f812"
+        },
+        {
+          "name": "dsh-mnemon-provider-openviking",
+          "version": "0.5.6",
+          "filename": "dsh-mnemon-provider-openviking-0.5.6.tgz",
+          "sha256": "2ba3e8e5248222733b7463c311443832a0872e0904c2b09304590234cf6c27ca"
+        },
+        {
+          "name": "dsh-mnemon-provider-retaindb",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-retaindb-0.5.4.tgz",
+          "sha256": "a7b5f1efb4e68df2d7ccc7e6078cd8c3229c82cf14f0162a196c975cbe19727f"
+        },
+        {
+          "name": "dsh-mnemon-provider-supermemory",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-provider-supermemory-0.5.4.tgz",
+          "sha256": "d04b900f7f9e9359ba53b349bdbc4550fc19b350771e61df3aa451e8f67f9afd"
+        },
+        {
+          "name": "dsh-mnemon-source-documents",
+          "version": "0.5.6",
+          "filename": "dsh-mnemon-source-documents-0.5.6.tgz",
+          "sha256": "5633eb876955ef99fcdfca7001df59c7d8b34edf4ef37eaeea730d467b3be386"
+        },
+        {
+          "name": "dsh-mnemon-source-memory-spaces",
+          "version": "0.5.9",
+          "filename": "dsh-mnemon-source-memory-spaces-0.5.9.tgz",
+          "sha256": "6af6c1819eeab26bf4ce2997f7205f2c6d9a6d2885f6be8a8b67c407ddc3d144"
+        },
+        {
+          "name": "dsh-mnemon-source-runtime",
+          "version": "0.5.8",
+          "filename": "dsh-mnemon-source-runtime-0.5.8.tgz",
+          "sha256": "5688195fcbfcaf196879031f31baa91c1015d1661cd0419570aee061ad567a64"
+        },
+        {
+          "name": "dsh-mnemon-strategy-auto-capture",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-strategy-auto-capture-0.5.4.tgz",
+          "sha256": "3816601abd83f0c5c679f3e4c9ae96c8f697e8e15f6546e975a96fd7f86b8c02"
+        },
+        {
+          "name": "dsh-mnemon-strategy-default-three-tier",
+          "version": "0.5.5",
+          "filename": "dsh-mnemon-strategy-default-three-tier-0.5.5.tgz",
+          "sha256": "ee54bd3cf96f197a0d8b584a162afee9cfad2c2f205f4b8f17710c27ad70eefa"
+        },
+        {
+          "name": "dsh-mnemon-strategy-light-context",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-strategy-light-context-0.5.4.tgz",
+          "sha256": "62947c3ff777fbb8d42724acf2a9c651d2b2302b387bb8579c59cd79f82a9e0d"
+        },
+        {
+          "name": "dsh-mnemon-strategy-scoped",
+          "version": "0.5.4",
+          "filename": "dsh-mnemon-strategy-scoped-0.5.4.tgz",
+          "sha256": "f3f945add93d2d5f8f48f0e70f5de9360814499a552218af7fa93f574dd3457a"
+        }
+      ]
+    }
+  }
+}

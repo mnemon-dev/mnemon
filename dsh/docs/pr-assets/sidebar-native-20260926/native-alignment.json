@@ -1,0 +1,56 @@
+{
+  "rows": [
+    {
+      "children": [
+        {
+          "height": 16,
+          "tag": "SPAN",
+          "width": 16,
+          "x": 22
+        },
+        {
+          "height": 22,
+          "tag": "SPAN",
+          "width": 47.0390625,
+          "x": 46
+        }
+      ],
+      "current": null,
+      "fontSize": "14px",
+      "height": 36,
+      "label": "Plugins",
+      "lineHeight": "22px",
+      "padding": "7px 8px",
+      "width": 252,
+      "x": 14
+    },
+    {
+      "children": [
+        {
+          "height": 16,
+          "tag": "SPAN",
+          "width": 16,
+          "x": 22
+        },
+        {
+          "height": 22,
+          "tag": "SPAN",
+          "width": 104.4140625,
+          "x": 46
+        }
+      ],
+      "current": "page",
+      "fontSize": "14px",
+      "height": 36,
+      "label": "Memory System",
+      "lineHeight": "22px",
+      "padding": "7px 8px",
+      "width": 252,
+      "x": 14
+    }
+  ],
+  "viewport": {
+    "height": 983,
+    "width": 1055
+  }
+}

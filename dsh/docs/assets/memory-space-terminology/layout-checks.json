@@ -1,0 +1,106 @@
+[
+  {
+    "locale": "en",
+    "page": "spaces",
+    "viewport": 390,
+    "oldTerm": false,
+    "regions": [
+      {
+        "class": "IIa07q_nav _Bh55G_nav",
+        "clientWidth": 310,
+        "scrollWidth": 312
+      },
+      {
+        "class": "IIa07q_canvas _Bh55G_canvas",
+        "clientWidth": 326,
+        "scrollWidth": 326
+      },
+      {
+        "class": "_Bh55G_memoryTabs",
+        "clientWidth": 246,
+        "scrollWidth": 246
+      },
+      {
+        "class": "IIa07q_bodyDirectory",
+        "clientWidth": 274,
+        "scrollWidth": 274
+      }
+    ],
+    "scrollWidth": 390,
+    "width": 390
+  },
+  {
+    "locale": "en",
+    "page": "create",
+    "viewport": 390,
+    "buttons": [
+      {
+        "bottom": 834,
+        "text": "Cancel"
+      },
+      {
+        "bottom": 834,
+        "text": "Create"
+      }
+    ],
+    "dialog": [
+      {
+        "clientWidth": 388,
+        "scrollWidth": 388
+      }
+    ],
+    "height": 844
+  },
+  {
+    "locale": "zh",
+    "page": "spaces",
+    "viewport": 390,
+    "oldTerm": false,
+    "regions": [
+      {
+        "class": "IIa07q_nav _Bh55G_nav",
+        "clientWidth": 310,
+        "scrollWidth": 310
+      },
+      {
+        "class": "IIa07q_canvas _Bh55G_canvas",
+        "clientWidth": 326,
+        "scrollWidth": 326
+      },
+      {
+        "class": "_Bh55G_memoryTabs",
+        "clientWidth": 246,
+        "scrollWidth": 246
+      },
+      {
+        "class": "IIa07q_bodyDirectory",
+        "clientWidth": 274,
+        "scrollWidth": 274
+      }
+    ],
+    "scrollWidth": 390,
+    "width": 390
+  },
+  {
+    "locale": "zh",
+    "page": "create",
+    "viewport": 390,
+    "buttons": [
+      {
+        "bottom": 834,
+        "text": "取消"
+      },
+      {
+        "bottom": 834,
+        "text": "创建"
+      }
+    ],
+    "dialog": [
+      {
+        "clientWidth": 388,
+        "scrollWidth": 388
+      }
+    ],
+    "height": 844
+  }
+]

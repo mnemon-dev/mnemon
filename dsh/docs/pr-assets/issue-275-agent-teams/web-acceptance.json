@@ -1,0 +1,102 @@
+{
+  "base": "84d469ffa838a36fa579295d94029fcac8ac058e",
+  "dsh": "0.1.7-rc.1",
+  "teams": "0.1.7-rc.1",
+  "cli": "0.2.9",
+  "model": "deterministic loopback via published DeepSeek Messages adapter",
+  "cases": [
+    {
+      "kind": "before",
+      "artifactSha256": "c50d9be5efaa7bd9200659802f8fbc3b1e17d03d1f589a64f7f3f13750a0f510",
+      "successfulParentSession": "session-881b215f-71c7-4f06-9bb9-c62a47947bf0",
+      "parentCompletedTurns": 2,
+      "reviewChildren": 0,
+      "reviewModelSteps": [],
+      "runtimeEntries": 0,
+      "runtimeFactMatches": false,
+      "parentTeamTasksSucceeded": 0,
+      "children": []
+    },
+    {
+      "kind": "after",
+      "artifactSha256": "71c282c88af13a770e389ad85c7ec3bc8ea596c1679e08b926779b2bcd37b336",
+      "successfulParentSession": "session-b9834c58-1440-41fa-b4f4-6f0e5046e54d",
+      "parentCompletedTurns": 4,
+      "reviewChildren": 1,
+      "reviewModelSteps": [
+        {
+          "event": "review-model-step",
+          "review": 1,
+          "step": 0,
+          "completeUserMessages": 2
+        },
+        {
+          "event": "review-model-step",
+          "review": 1,
+          "step": 1,
+          "completeUserMessages": 2
+        },
+        {
+          "event": "review-model-step",
+          "review": 1,
+          "step": 2,
+          "completeUserMessages": 2
+        },
+        {
+          "event": "review-model-step",
+          "review": 1,
+          "step": 3,
+          "completeUserMessages": 2
+        }
+      ],
+      "runtimeEntries": 1,
+      "runtimeFactMatches": true,
+      "parentTeamTasksSucceeded": 1,
+      "children": [
+        {
+          "id": "1464b142-eb61-4532-b08c-fc9c19a6502d",
+          "parent": "session-b9834c58-1440-41fa-b4f4-6f0e5046e54d",
+          "completeUserEvidence": [
+            true,
+            true
+          ],
+          "receipts": [
+            {
+              "seq": 16,
+              "name": "spawn_teammate",
+              "isError": true,
+              "committed": false,
+              "error": "Error: Mnemon review cannot execute \"spawn_teammate\"; reuse the inherited checkpoint and bounded Document search."
+            },
+            {
+              "seq": 22,
+              "name": "mnemon_runtime_memory",
+              "isError": false,
+              "committed": true,
+              "completion": "committed",
+              "revision": "9998e8bc15ed7c04e3ac2d0d7a6e54d07f6f47c8046ca80af3ec609a5ede0793"
+            },
+            {
+              "seq": 28,
+              "name": "mnemon_document_search",
+              "isError": false,
+              "committed": false
+            },
+            {
+              "seq": 34,
+              "name": "mnemon_subagent_result",
+              "isError": false,
+              "committed": false
+            }
+          ]
+        }
+      ],
+      "oneAttemptBudgetPreserved": true
+    }
+  ],
+  "nativeCli": {
+    "version": "mnemon version 0.2.9",
+    "operation": "readonly recall from disposable team-review store",
+    "canaryMatched": true
+  }
+}

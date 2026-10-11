@@ -1,0 +1,218 @@
+{
+  "date": "2026-10-02",
+  "revisions": {
+    "baseline": "06182f4d828efb1569d2f68a2df5e0e1d1c69f89 (main, published dsh-mnemon 0.5.21)",
+    "fix": "e0f43ab186a84b586e28ba1644d75daa963daee5"
+  },
+  "environment": {
+    "os": "macOS 15.6 arm64",
+    "node": "24.19.0",
+    "browser": "headless Chrome 154, 1280x800, device scale 1, zh-CN, light",
+    "hosts": [
+      "@deepseek-ai/dsh 0.2.0-rc.2 (scripts/serve-e2e.mjs pointed at it)",
+      "@deepseek-ai/dsh 0.1.7-rc.2 (repository pin, scripts/serve-e2e.mjs)"
+    ],
+    "fixture": "disposable DSH_HOME, data directory and workspace with the loopback model stub; two conversations created under the test preset"
+  },
+  "reproduction": "The test preset is renamed in the disposable profile and DSH restarted: the conversations stay listed and readable, but DSH cannot resume their Agents. The conversation is opened, then its Memory System (Conversation tab mode, and Sidebar mode for writes), Status, Project Documents with New Document, Runtime memory with Add, and Memory Spaces.",
+  "unresumableConversation": {
+    "dsh-0.2.0-rc.2": {
+      "before": {
+        "conversationTab": {
+          "statusCard": "项目档案 等待工作区 绑定活动会话后可用",
+          "documentErrors": [
+            "memory Source is unavailable in the requested management scope: source:include:mnemon-source-documents"
+          ],
+          "created": false,
+          "writeErrors": [
+            "current DSH agent is not live; reopen or resume the conversation and try again"
+          ],
+          "consoleErrors": []
+        },
+        "sidebar": {
+          "statusCard": "项目档案 8 份活跃 · 0 份归档 3.2 KB / 10.0 MB 活跃容量",
+          "documentErrors": [],
+          "created": false,
+          "writeErrors": [
+            "current DSH agent is not live; reopen or resume the conversation and try again"
+          ],
+          "consoleErrors": []
+        }
+      },
+      "after": {
+        "conversationTab": {
+          "statusCard": "项目档案 5 份活跃 · 0 份归档 2.0 KB / 10.0 MB 活跃容量",
+          "documentErrors": [],
+          "created": true,
+          "writeErrors": [],
+          "runtimeAdded": true,
+          "runtimeWriteErrors": [],
+          "spacesErrors": [],
+          "consoleErrors": []
+        },
+        "sidebar": {
+          "statusCard": "项目档案 6 份活跃 · 0 份归档 2.4 KB / 10.0 MB 活跃容量",
+          "documentErrors": [],
+          "created": true,
+          "writeErrors": [],
+          "runtimeAdded": true,
+          "runtimeWriteErrors": [],
+          "spacesErrors": [],
+          "consoleErrors": []
+        }
+      }
+    },
+    "dsh-0.1.7-rc.2": {
+      "before": {
+        "conversationTab": {
+          "statusCard": "项目档案 等待工作区 绑定活动会话后可用",
+          "documentErrors": [
+            "memory Source is unavailable in the requested management scope: source:include:mnemon-source-documents"
+          ],
+          "created": false,
+          "writeErrors": [
+            "current DSH agent is not live; reopen or resume the conversation and try again"
+          ],
+          "consoleErrors": []
+        },
+        "sidebar": {
+          "statusCard": "项目档案 1 份活跃 · 0 份归档 407 B / 10.0 MB 活跃容量",
+          "documentErrors": [],
+          "created": false,
+          "writeErrors": [
+            "current DSH agent is not live; reopen or resume the conversation and try again"
+          ],
+          "consoleErrors": []
+        }
+      },
+      "after": {
+        "conversationTab": {
+          "statusCard": "项目档案 2 份活跃 · 0 份归档 823 B / 10.0 MB 活跃容量",
+          "documentErrors": [],
+          "created": true,
+          "writeErrors": [],
+          "runtimeAdded": true,
+          "runtimeWriteErrors": [],
+          "spacesErrors": [],
+          "consoleErrors": []
+        },
+        "sidebar": {
+          "statusCard": "项目档案 3 份活跃 · 0 份归档 1.2 KB / 10.0 MB 活跃容量",
+          "documentErrors": [],
+          "created": true,
+          "writeErrors": [],
+          "runtimeAdded": true,
+          "runtimeWriteErrors": [],
+          "spacesErrors": [],
+          "consoleErrors": []
+        }
+      }
+    },
+    "note": "Before, a failed New Document leaves its dialog open, so the runs stop there and Runtime and Memory Spaces were not reached."
+  },
+  "switchingMatrix": {
+    "dsh-0.2.0-rc.2": {
+      "scenarios": [
+        {
+          "name": "builtin-tabs-live",
+          "pass": true
+        },
+        {
+          "name": "builtin-switch-to-unloaded-session",
+          "pass": true
+        },
+        {
+          "name": "switch-to-session-remembered-on-memory-tab",
+          "pass": true
+        },
+        {
+          "name": "builtin-rapid-switching",
+          "pass": true
+        },
+        {
+          "name": "builtin-write-in-unloaded-session",
+          "pass": true
+        },
+        {
+          "name": "mode-switch-builtin-to-sidebar-and-back",
+          "pass": true
+        },
+        {
+          "name": "sidebar-switch-sessions",
+          "pass": true
+        },
+        {
+          "name": "builtin-new-draft-then-send",
+          "pass": true
+        },
+        {
+          "name": "restart-with-memory-tab-open",
+          "pass": true
+        }
+      ],
+      "consoleErrors": []
+    },
+    "dsh-0.1.7-rc.2 (fresh fixture)": {
+      "scenarios": [
+        {
+          "name": "builtin-tabs-live",
+          "pass": true
+        },
+        {
+          "name": "builtin-switch-to-unloaded-session",
+          "pass": true
+        },
+        {
+          "name": "switch-to-session-remembered-on-memory-tab",
+          "pass": true
+        },
+        {
+          "name": "builtin-rapid-switching",
+          "pass": true
+        },
+        {
+          "name": "builtin-write-in-unloaded-session",
+          "pass": true
+        },
+        {
+          "name": "mode-switch-builtin-to-sidebar-and-back",
+          "pass": true
+        },
+        {
+          "name": "sidebar-switch-sessions",
+          "pass": true
+        },
+        {
+          "name": "builtin-new-draft-then-send",
+          "pass": true
+        },
+        {
+          "name": "restart-with-memory-tab-open",
+          "pass": true
+        }
+      ],
+      "consoleErrors": []
+    }
+  },
+  "designReview": {
+    "date": "2026-10-03",
+    "followUps": [
+      "With workspace or centralized storage, a tab whose Agent is not loaded used the DSH launch directory as its root on main; the fix routes it to the conversation workspace. Entries saved the old way stay in the launch directory.",
+      "A full Documents capacity in such a tab runs under a task Agent that archives the least recently used Document first, as the conversation Agent does (tests/rpc.spec.ts).",
+      "Automatic Provider placement for a new Memory Space runs under a task Agent in that state (tests/rpc.spec.ts).",
+      "The dashboard aligns such a session with its registry workspace (tests/view-management.spec.ts).",
+      "Archived sessions keep their place in the DSH 0.1.7-rc.2 and 0.2.0-rc.2 registries, so they route to their workspace too."
+    ],
+    "verify": {
+      "command": "pnpm run verify",
+      "rootTests": {
+        "files": 113,
+        "passed": 1566,
+        "skipped": 6
+      },
+      "docsLocalLinks": 2981,
+      "packageUnpackedBytes": 1500772,
+      "packageBudget": 1501000
+    }
+  }
+}

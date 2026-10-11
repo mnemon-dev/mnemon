@@ -1,0 +1,108 @@
+{
+  "issue": 271,
+  "baselineCommit": "84d469ffa838a36fa579295d94029fcac8ac058e",
+  "environment": {
+    "node": "24.20.0",
+    "pnpm": "10.13.1",
+    "mnemonCli": "0.2.9",
+    "mnemonArchiveSha256": "6fbb1d572d8b4c080c36080e23ae0a183fce6841748f6c426e712136ac756b24",
+    "browserFramework": "0.1.7-alpha.1",
+    "officialFrameworkSourceModified": false,
+    "workspaceFramework": "0.1.5-rc.1"
+  },
+  "before": {
+    "command": "pnpm --filter dsh-mnemon-provider-openviking exec vitest run tests/user-discovery.spec.ts -t 'discovers the explicit owner'",
+    "failed": 1,
+    "reason": "API is currently unavailable due to access restrictions"
+  },
+  "verify": {
+    "command": "pnpm run verify",
+    "passed": true,
+    "workerEnvironment": {
+      "VITEST_MAX_FORKS": "1",
+      "VITEST_MIN_FORKS": "1",
+      "VITEST_MAX_THREADS": "1",
+      "VITEST_MIN_THREADS": "1"
+    },
+    "rootTests": {
+      "passed": 1352,
+      "skipped": 6
+    },
+    "pluginTests": {
+      "passed": 402,
+      "skipped": 2
+    },
+    "openvikingTests": {
+      "passed": 69,
+      "skipped": 1,
+      "newRegressionTests": 20
+    },
+    "hostRegressionTests": 1,
+    "genericUiSaveCases": 2,
+    "nativeCliIntegration": "passed in disposable stores",
+    "headless": {
+      "tools": 39,
+      "representativeMnemonTools": 8
+    },
+    "reproducibleBuild": "passed",
+    "packageValidation": "passed"
+  },
+  "skipped": [
+    "5 opt-in real DeepSeek Flash tests: no external model run requested",
+    "1 optional published V4 codec fixture: contract path not configured",
+    "1 Windows smoke test: macOS host",
+    "1 live OpenViking integration: no live server credentials configured"
+  ],
+  "earlierAttempts": {
+    "fullVerify": "Existing timing fences/timeouts failed during concurrent full runs: 6 failures, 1346 passed, 6 skipped.",
+    "targetedRerun": "201 passed, 3 existing timing failures while other verification work remained active.",
+    "resolution": "The full unchanged suite passed in an exclusive window using the documented Vitest worker environment. No performance budget or test timeout was changed.",
+    "pluginArtifacts": "Default four-package concurrency: existing Memory Spaces client search and Runtime client edit exceeded 5-second timeouts; the following Runtime test attempted to update an unmounted root. The complete artifact verification passed when rerun with MNEMON_PLUGIN_VERIFY_CONCURRENCY=1; no tests, timeouts or budgets were changed."
+  },
+  "limitations": [
+    "Deterministic OpenViking HTTP fixture based on the pinned public contract, not a real Volcengine account.",
+    "Read-only discovery does not certify cloud write permission or create missing roots.",
+    "The configured account identifies the local projection, not an independently verified server identity."
+  ],
+  "rawLogSha256": {
+    "discovery-before.log": "c906b05355dc23a4be5defa55b6956bb0f715f8b24737f5778ae2abf56bd6f08",
+    "verify.log": "4a57ba67e3ee87a8ce9ed0274dfaa9d9ce8ce2298c59a229f669cf693fa014f3",
+    "verify-timeout-rerun.log": "e2dd2f612a3e63b4c8f764b22cd7efda514dd98c03f7876d22e2a2d60a1f250d",
+    "verify-exclusive.log": "eb9b392ac499179d709a631479e94a59865385f16ae9eb8b59a43a16444e41cb",
+    "verify-plugins.log": "e6108bdf770403dae043ebf1d241104330770931835674563003d1fa1a3d6576",
+    "verify-plugins-serial.log": "b4512bc767485fc786ae05324d78662896ad6d3d339fac5910fee57bd293e731",
+    "docs-final.log": "0e29b4f4c5609d208b532b26b1fcb710da3de6fd96efe1175bb2bba9ecd94e95"
+  },
+  "pluginArtifacts": {
+    "command": "pnpm run verify:plugins --skip-build",
+    "passed": true,
+    "environment": {
+      "MNEMON_PLUGIN_VERIFY_CONCURRENCY": "1"
+    },
+    "independentPlugins": 16,
+    "packedArtifacts": 17,
+    "publicSdkConsumer": "passed",
+    "realDshStarterAndOptionalStrategies": "passed",
+    "noWorkspaceLinks": true
+  },
+  "implementationCommit": "4ed532540a6353e87be08f744934d9c51f829c5b",
+  "browserAcceptance": {
+    "passed": true,
+    "record": "browser-after.json",
+    "screenshots": 7,
+    "providerRequests": 11,
+    "adminRequests": 0,
+    "identityHeaderRequests": 0,
+    "originalKeyAndOwnerPreserved": true,
+    "independentRuntimeWrite": true
+  },
+  "disposableServersStopped": true,
+  "releaseIntent": "Passed for dsh-mnemon-provider-openviking and dsh-mnemon-source-memory-spaces; bilingual changeset also includes the root package.",
+  "documentation": {
+    "passed": true,
+    "localLinks": 1734,
+    "markdownAnchors": 66,
+    "bilingualPaths": true,
+    "officialPluginCoverage": true
+  }
+}

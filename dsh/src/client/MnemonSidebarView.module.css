@@ -1,0 +1,120 @@
+/*
+ * Fixed skin composed with the shared view styles (see view-styles.ts). The
+ * shared styles carry the DSH component look; this layer keeps the header,
+ * sticky page header and dialog sheet behavior, and the compact item actions
+ * Sources reach through memorySidebarStyles.
+ */
+.shell.shell {
+  background: var(--mn-surface);
+  font-family: var(--dsw-font-family);
+}
+
+.shell .masthead { background: var(--mn-surface); }
+.shell .brand { min-width: 0; }
+.shell .headerActions { gap: 8px; }
+.shell .statusCluster { min-height: 28px; }
+.shell .workspacePicker { flex: 0 0 auto; }
+.shell .workspaceMismatch { justify-content: flex-start; }
+
+.shell .topNavigation {
+  min-height: 0;
+  gap: 0;
+  background: var(--mn-surface);
+}
+.shell .nav { padding-right: 0; }
+.shell .nav button[data-active] {
+  color: var(--dsw-alias-state-business-primary);
+  border-bottom-color: var(--dsw-alias-state-business-primary);
+}
+
+.shell .modalBackdrop { z-index: 1300; }
+.shell .modal.modalWide { width: min(760px, 100%); }
+.shell .modal > [class*='modalBody'] { min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; touch-action: pan-y; -webkit-overflow-scrolling: touch; }
+
+.shell .canvas { background: var(--mn-surface); }
+.shell button,
+.shell input,
+.shell select, .shell textarea { font-family: var(--dsw-font-family); }
+.shell textarea { font-family: var(--dsw-font-family); font-size: 13px; font-weight: 400; }
+.shell select { cursor: pointer; font-weight: 400; }
+.shell textarea { line-height: 20px; }
+
+.shell .pageHeader { margin-bottom: 16px; }
+.shell .canvas[data-lock-page-header] [class*='pageHeader'] {
+  position: sticky;
+  z-index: 12;
+  top: 0;
+  margin: -20px -24px 16px;
+  padding: 20px 24px 12px;
+  border-bottom: .5px solid var(--dsw-alias-border-l2);
+  background: var(--mn-surface);
+}
+/* The substring match above also reaches the header's own meta column. */
+.shell .canvas[data-lock-page-header] [class*='pageHeader'] [class*='pageHeaderMeta'] { position: static; margin: 0; padding: 0; border: 0; background: none; }
+
+/* Compact actions inside cards and rows: the DSH Button at its sm size. */
+.shell .itemActionButton {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: var(--dsw-radius-sm);
+  font-size: 12px;
+  line-height: 18px;
+}
+.shell .itemEditAction {
+  border: .5px solid var(--dsw-alias-border-l3);
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+}
+.shell .itemEditAction:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.shell .itemDangerAction {
+  border: 0;
+  color: var(--dsw-alias-state-error-primary);
+  background: transparent;
+}
+.shell .itemDangerAction:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-danger, color-mix(in srgb, var(--dsw-alias-state-error-primary) 8%, transparent));
+  text-decoration: none;
+}
+
+@media (max-width: 760px) {
+  .shell .headerActions { max-width: none; }
+  .shell .statusCluster > span:not([class*='statusDot']) { display: inline; }
+  .shell .workspacePicker > [data-part='label'], .shell .workspaceMismatch > span { display: none; }
+  .shell .canvas[data-lock-page-header] [class*='pageHeader'] { margin: -16px -16px 16px; padding: 16px 16px 12px; }
+  .shell .modalBackdrop { align-items: flex-end; padding: max(10px, env(safe-area-inset-top, 0px)) 0 0; }
+  .shell .modal, .shell .modal.modalWide { width: 100vw; max-height: calc(100vh - max(10px, env(safe-area-inset-top, 0px))); border-radius: var(--dsw-radius-xl) var(--dsw-radius-xl) 0 0; }
+  .shell .modal > header { gap: 12px; padding: 10px max(14px, env(safe-area-inset-right, 0px)) 12px max(14px, env(safe-area-inset-left, 0px)); }
+  .shell .modal > header p { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .shell .modal > header [class*='iconButton'] { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+  .shell .modal > [class*='modalBody'] { padding: 14px max(14px, env(safe-area-inset-right, 0px)) 18px max(14px, env(safe-area-inset-left, 0px)); scrollbar-gutter: auto; }
+  .shell .modal > [class*='modalBody'] button { min-height: 44px; }
+  .shell .modal > [class*='modalFooter'] { padding: 10px max(14px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px)); }
+  .shell .modal > [class*='modalFooter'] [class*='modalFooterActions'] button { min-height: 44px; padding-block: 8px; }
+}
+
+@media (min-width: 761px) and (max-height: 560px) {
+  .shell .modalBackdrop { padding: 8px; }
+}
+
+@supports (height: 100dvh) {
+  @media (max-width: 760px) {
+    .shell .modal, .shell .modal.modalWide { max-height: calc(100dvh - max(10px, env(safe-area-inset-top, 0px))); }
+  }
+}
+
+@media (max-width: 520px) {
+  .shell .headerActions { max-width: none; flex: 0 0 auto; }
+  .shell [class*='backButton'] > span { display: none; }
+  .shell .workspacePicker button { width: min(118px, 30vw); }
+  .shell .statusCluster [class*='iconButton'] { display: none; }
+  .shell [class*='compositionStrategy'] { display: none; }
+}
+
+@media (max-height: 420px) {
+  .shell .modal > header p { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+}
+
+@media (pointer: coarse) {
+  .shell .modal > header [class*='iconButton'] { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+  .shell .modal > [class*='modalBody'] button, .shell .modal > [class*='modalFooter'] button { min-height: 44px; }
+}

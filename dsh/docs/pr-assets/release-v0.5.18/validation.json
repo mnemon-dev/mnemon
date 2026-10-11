@@ -1,0 +1,50 @@
+{
+  "verifiedAt": "2026-09-28T12:56:40.086932+00:00",
+  "sourceBase": "da1fa6fd160059f07a0f320dc1520997bb7823e0",
+  "candidate": "release version changes on the merged source base",
+  "dsh": "0.1.7-rc.2",
+  "node": "24.20.0",
+  "mnemonCLI": "0.2.9",
+  "artifactSha256": {
+    "dsh-mnemon-0.5.18.tgz": "536f566304d445786fb67836d73b11569e832718259b830492f5528f451f181a",
+    "dsh-mnemon-source-memory-spaces-0.5.12.tgz": "532b83cfbdc0ad81ed595e16513784d23161d29c754ce7f12c8a9ecc0bf1e62b"
+  },
+  "installedVersions": {
+    "dsh-mnemon": "0.5.18",
+    "dsh-mnemon-provider-byterover": "0.5.5",
+    "dsh-mnemon-provider-hindsight": "0.5.5",
+    "dsh-mnemon-provider-holographic": "0.5.5",
+    "dsh-mnemon-provider-honcho": "0.5.5",
+    "dsh-mnemon-provider-mem0": "0.5.5",
+    "dsh-mnemon-provider-mnemon-native": "0.5.6",
+    "dsh-mnemon-provider-openviking": "0.5.7",
+    "dsh-mnemon-provider-retaindb": "0.5.5",
+    "dsh-mnemon-provider-supermemory": "0.5.5",
+    "dsh-mnemon-source-documents": "0.5.7",
+    "dsh-mnemon-source-memory-spaces": "0.5.12",
+    "dsh-mnemon-source-runtime": "0.5.10",
+    "dsh-mnemon-strategy-auto-capture": "0.5.5",
+    "dsh-mnemon-strategy-default-three-tier": "0.5.7",
+    "dsh-mnemon-strategy-general": "0.5.1",
+    "dsh-mnemon-strategy-light-context": "0.5.5",
+    "dsh-mnemon-strategy-scoped": "0.5.5"
+  },
+  "hostPidAtLaunch": 26012,
+  "hostPidAfterAcceptance": 26012,
+  "hostLaunchCount": 1,
+  "hostAlive": true,
+  "officialWebUI": {
+    "installAndEnableNow": true,
+    "statusVersion": "0.5.18",
+    "runtimeWriteAndRead": true,
+    "nativeSpaceCreateAndActivate": true,
+    "nativeBasicRecallMatchesCLI": true
+  },
+  "nativeCLI": {
+    "rememberAction": "added",
+    "memoryId": "d62b1edc-afe3-4e90-b388-89d2426c0bdd",
+    "content": "RELEASE_0518_NATIVE: The versioned release shares durable Native memory between CLI and the official WebUI.",
+    "recallMatched": true
+  },
+  "scope": "Versioned local candidates installed through official WebUI; remaining pinned packages from npm; isolated data only."
+}

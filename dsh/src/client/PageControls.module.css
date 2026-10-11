@@ -1,0 +1,94 @@
+/* Shared page controls: DSH input, DSH selector and the write receipt. */
+
+.search {
+  min-width: 0;
+}
+
+.field {
+  display: inline-grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.fieldLabel {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
+.hiddenLabel {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The DSH settings selector: platform fill, chevron, Menu below. */
+.selector {
+  appearance: none;
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--dsw-radius-md);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.selector > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.selector > svg { flex: none; color: var(--dsw-alias-label-tertiary); }
+.selector:hover:not(:disabled),
+.selector[aria-expanded='true'] { background: var(--dsw-alias-interactive-bg-hover); }
+.selector:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
+.selector:disabled { cursor: default; opacity: .4; }
+
+/* In a form a choice fills its cell; beside a label it keeps its own width. */
+.menuRoot { display: block; min-width: 0; }
+.field:not([data-inline]) .selector { width: 100%; }
+.field[data-inline] { display: inline-flex; align-items: center; gap: 8px; }
+.field[data-inline] .menuRoot { display: inline-block; }
+.field[data-inline] > .fieldLabel { color: var(--dsw-alias-label-tertiary); font-weight: 400; white-space: nowrap; }
+.field[data-size='sm'] .selector { height: 28px; gap: 8px; padding: 0 10px; border-radius: var(--dsw-radius-sm); font-size: 12px; line-height: 18px; }
+
+.menu { min-width: 200px; }
+.option { display: grid; min-width: 0; gap: 1px; white-space: normal; }
+.option > small { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+
+/* One receipt row: outcome tag, the task Agent's summary, and where to see it. */
+.receipt {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-top: 12px;
+  border-radius: var(--dsw-radius-md);
+  padding: 10px 12px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+.receipt > p {
+  flex: 1 1 240px;
+  min-width: 0;
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+}
+.receipt > :first-child { flex: none; margin-top: 1px; }
+.receiptAction { flex: none; margin-left: auto; }

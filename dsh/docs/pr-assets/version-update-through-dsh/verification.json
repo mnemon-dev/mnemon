@@ -1,0 +1,557 @@
+{
+  "date": "2026-10-02",
+  "revisions": {
+    "tested": "b6e463569103c8380d6159ee4108e20d505a8da1",
+    "baseline": "dsh-mnemon 0.5.20 from npm",
+    "packed": {
+      "dsh-mnemon-0.5.21.tgz": "d3676247a1ff050ea473c65431566281022371b7d138e90a063f39aed4a1b260",
+      "note": "pnpm pack of the tested revision; a repack reproduces it. The runs install this tarball with package.json version set to 0.5.21-dshupdate.0 or 0.5.21; nothing else changes."
+    }
+  },
+  "environment": {
+    "os": "macOS 15.6 arm64",
+    "node": "24.19.0",
+    "browser": "headless Chrome 154, 1280x800, device scale 1, zh-CN, light",
+    "dsh": [
+      "@deepseek-ai/dsh 0.2.0-rc.2 (npm latest and next)",
+      "@deepseek-ai/dsh 0.1.7-rc.2"
+    ],
+    "isolation": "a fresh HOME, DSH_HOME, MNEMON_DATA_DIR, workspace and pnpm store for every run"
+  },
+  "packagedAppReproduction": {
+    "desktopApp": "DeepSeek Harness 0.2.0-rc.2 in /Applications; files read only, the app was not driven",
+    "appContract": "dsh-desktop-host calls runProfile({ packageManager: { command: <app executable>, args: ['--expose-internals', 'Resources/runtime/pnpm/bin/pnpm.mjs'], env: { ELECTRON_RUN_AS_NODE, DSH_DESKTOP_NODE_EXECUTABLE, PATH: 'Resources/runtime/bin:' + PATH } } }); DSH's plugin manager uses profileContext.packageManager before a PATH pnpm. The app's plugin manager is byte-identical to npm DSH 0.2.0-rc.2's.",
+    "launcher": "node launcher importing @deepseek-ai/dsh/lib/bin.js and calling runCli({ packageManager }) with the same command shape, a copy of the app's pnpm 11.7.0 and a runtime/bin/node shim",
+    "hostPath": "node 24.19.0 bin, /opt/homebrew/bin, /opt/homebrew/sbin, /usr/local/bin, /usr/bin, /bin, /usr/sbin, /sbin: the app Host directories, none of which holds pnpm",
+    "registry": "loopback registry with npm metadata; other packages redirect to registry.npmjs.org"
+  },
+  "runs": {
+    "baseline": {
+      "host": "DSH 0.2.0-rc.2, packaged-app launcher",
+      "installed": "dsh-mnemon@0.5.20 from npm",
+      "status": {
+        "starter": "0.5.20",
+        "nominal": true
+      },
+      "row": {
+        "state": "可更新",
+        "installed": "0.5.20",
+        "latest": "0.5.21",
+        "hint": "检测到 DSH Profile 安装，但当前找不到 pnpm 命令。",
+        "button": null
+      }
+    },
+    "a": {
+      "host": "DSH 0.2.0-rc.2, packaged-app launcher",
+      "installed": "0.5.21-dshupdate.0 (tested revision)",
+      "target": "0.5.21 served from the tested revision",
+      "offered": {
+        "state": "可更新",
+        "installed": "0.5.21-dshupdate.0",
+        "button": "更新"
+      },
+      "starterClientAfterRequestMs": 1638,
+      "componentClientsAfterRequestMs": 1744,
+      "firstFrameAfterClickMs": {
+        "reopenedChecking": 1908,
+        "result": 3750,
+        "memorySystemGone": null
+      },
+      "final": {
+        "dialog": true,
+        "statusTab": true,
+        "results": [
+          "dsh-mnemon 已更新\n\n请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。",
+          "请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。"
+        ],
+        "row": {
+          "state": "待重启",
+          "installed": "0.5.21",
+          "button": null
+        }
+      },
+      "consoleErrors": [],
+      "profileAfter": {
+        "dependencies": {
+          "dsh-mnemon": "0.5.21"
+        },
+        "bundles": [
+          "@deepseek-ai/dsh-base",
+          "@deepseek-ai/dsh-web-app",
+          "dsh-mnemon"
+        ],
+        "starter": "0.5.21",
+        "pnpmRuns": [
+          "Done in 384ms using pnpm v11.7.0"
+        ]
+      },
+      "afterRestart": {
+        "status": {
+          "starter": "0.5.21",
+          "nominal": true
+        },
+        "row": {
+          "state": "已是最新",
+          "installed": "0.5.21",
+          "latest": "0.5.21",
+          "notice": null,
+          "button": null
+        },
+        "consoleErrors": []
+      }
+    },
+    "b": {
+      "host": "DSH 0.2.0-rc.2, packaged-app launcher",
+      "installed": "0.5.21-dshupdate.0 (tested revision)",
+      "target": "npm's 0.5.21, whose page lacks the reopening",
+      "offered": {
+        "state": "可更新",
+        "installed": "0.5.21-dshupdate.0",
+        "button": "更新"
+      },
+      "starterClientAfterRequestMs": 2801,
+      "componentClientsAfterRequestMs": 1823,
+      "firstFrameAfterClickMs": {
+        "reopenedChecking": null,
+        "result": null,
+        "memorySystemGone": 2503
+      },
+      "final": {
+        "dialog": false,
+        "statusTab": false,
+        "results": [],
+        "row": null
+      },
+      "consoleErrors": [],
+      "profileAfter": {
+        "dependencies": {
+          "dsh-mnemon": "0.5.21"
+        },
+        "bundles": [
+          "@deepseek-ai/dsh-base",
+          "@deepseek-ai/dsh-web-app",
+          "dsh-mnemon"
+        ],
+        "starter": "0.5.21",
+        "pnpmRuns": [
+          "Done in 1.3s using pnpm v11.7.0"
+        ]
+      },
+      "lockfile": "resolution: {integrity: sha512-N95kQZ41RjXFTHZo4t5l02DJwpbsmaC8nX1TQExqsS0bsgbsxRzyBawRE2Y8ZHyzgXmwujtmw4zgYzY4yFOFFQ==, tarball: https://registry.npmjs.org/dsh-mnemon/-/dsh-mnemon-0.5.21.tgz}",
+      "npmIntegrity": "sha512-N95kQZ41RjXFTHZo4t5l02DJwpbsmaC8nX1TQExqsS0bsgbsxRzyBawRE2Y8ZHyzgXmwujtmw4zgYzY4yFOFFQ=="
+    },
+    "c": {
+      "host": "DSH 0.1.7-rc.2, dsh web with pnpm 11.19.0 on PATH (0.1.7-rc.2 runCli takes no package manager)",
+      "installed": "0.5.21-dshupdate.0 (tested revision)",
+      "target": "0.5.21 served from the tested revision",
+      "offered": {
+        "state": "可更新",
+        "installed": "0.5.21-dshupdate.0",
+        "button": "更新"
+      },
+      "starterClientAfterRequestMs": 2422,
+      "componentClientsAfterRequestMs": 2476,
+      "firstFrameAfterClickMs": {
+        "reopenedChecking": 2489,
+        "result": 3700,
+        "memorySystemGone": null
+      },
+      "final": {
+        "dialog": true,
+        "statusTab": true,
+        "results": [
+          "dsh-mnemon 已更新\n\n请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。",
+          "请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。"
+        ],
+        "row": {
+          "state": "待重启",
+          "installed": "0.5.21",
+          "button": null
+        }
+      },
+      "consoleErrors": [],
+      "profileAfter": {
+        "dependencies": {
+          "dsh-mnemon": "0.5.21"
+        },
+        "bundles": [
+          "@deepseek-ai/dsh-base",
+          "@deepseek-ai/dsh-web-app",
+          "dsh-mnemon"
+        ],
+        "starter": "0.5.21",
+        "pnpmRuns": [
+          "Done in 562ms using pnpm v11.19.0"
+        ]
+      },
+      "afterRestart": {
+        "status": {
+          "starter": "0.5.21",
+          "nominal": true
+        },
+        "row": {
+          "state": "已是最新",
+          "installed": "0.5.21",
+          "latest": "0.5.21",
+          "notice": null,
+          "button": null
+        },
+        "consoleErrors": []
+      }
+    },
+    "d": {
+      "host": "npm DSH 0.2.0-rc.2 started with dsh web directly: no launcher package manager and no pnpm on PATH",
+      "installed": "0.5.21-dshupdate.0 (tested revision)",
+      "status": {
+        "starter": "0.5.21-dshupdate.0",
+        "nominal": true
+      },
+      "row": {
+        "state": "可更新",
+        "installed": "0.5.21-dshupdate.0",
+        "latest": "0.5.21",
+        "hint": "检测到 DSH Profile 安装，但宿主找不到 pnpm 命令；安装 pnpm 并重启 DSH 后即可在此更新。",
+        "button": null
+      },
+      "consoleErrors": []
+    },
+    "e": {
+      "host": "DSH 0.2.0-rc.2, packaged-app launcher",
+      "added": "dsh-mnemon-strategy-scoped@0.5.4 from npm with dsh plugin add",
+      "offered": {
+        "state": "可更新",
+        "installed": "0.5.4",
+        "latest": "0.5.5",
+        "hint": "由当前 DSH Profile 管理；用 DSH 自己的插件安装方式更新，完成后重启 DSH。",
+        "button": {
+          "label": "更新",
+          "disabled": false
+        }
+      },
+      "result": [
+        "dsh-mnemon-strategy-scoped 已更新\n\n请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。",
+        "请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。"
+      ],
+      "after": {
+        "state": "待重启",
+        "installed": "0.5.5",
+        "latest": "0.5.5",
+        "hint": "由当前 DSH Profile 管理；用 DSH 自己的插件安装方式更新，完成后重启 DSH。",
+        "button": null
+      },
+      "dialogStayedOpen": true,
+      "profileAfter": {
+        "dependencies": {
+          "dsh-mnemon": "0.5.21-dshupdate.0",
+          "dsh-mnemon-strategy-scoped": "0.5.5"
+        },
+        "bundles": [
+          "@deepseek-ai/dsh-base",
+          "@deepseek-ai/dsh-web-app",
+          "dsh-mnemon",
+          "dsh-mnemon-strategy-scoped"
+        ],
+        "scoped": "0.5.5",
+        "pnpmRuns": [
+          "Done in 267ms using pnpm v11.7.0"
+        ]
+      },
+      "consoleErrors": []
+    }
+  },
+  "automated": {
+    "command": "pnpm run verify",
+    "rootTests": {
+      "files": 113,
+      "passed": 1578,
+      "skipped": 6
+    },
+    "docsLocalLinks": 2965,
+    "packageUnpackedBytes": 1506720,
+    "packageBudget": 1509000
+  },
+  "restartReminder": {
+    "revision": "375d1ba43fae7de1b82e9717ec69dadd1a8375db",
+    "packed": {
+      "dsh-mnemon-0.5.21.tgz": "12d6d82885b3326d6d2db853dad629c99381bc4512c1117e0f91df492eccf489",
+      "served": {
+        "0.5.21-dshupdate.0": "070aa03511c3f4b78f79843008181c90bcceb63165ee56bff84d23e4cf208841",
+        "0.5.21": "687c65f0115c658f89aafb07c1568e1f8d06b4548623ffa670dc4c36470387cc"
+      },
+      "note": "pnpm pack of the revision, served with package.json version set to 0.5.21-dshupdate.0 (installed first) or 0.5.21; nothing else changes."
+    },
+    "runs": {
+      "checkVersions": {
+        "host": "DSH 0.2.0-rc.2, packaged-app launcher",
+        "before": {
+          "engine": "dsh-mnemon 0.5.21-dshupdate.0",
+          "notice": null
+        },
+        "update": {
+          "result": "dsh-mnemon 已更新\n\n请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。",
+          "pnpm": "Done in 598ms using pnpm v11.7.0",
+          "starterOnDisk": "0.5.21",
+          "bundles": [
+            "@deepseek-ai/dsh-base",
+            "@deepseek-ai/dsh-web-app",
+            "dsh-mnemon"
+          ]
+        },
+        "after": {
+          "engine": "dsh-mnemon 0.5.21-dshupdate.0",
+          "notice": {
+            "title": "dsh-mnemon 0.5.21 已安装",
+            "text": "dsh-mnemon 0.5.21 已安装 当前运行的仍是 0.5.21-dshupdate.0；重启 DSH 后生效，桌面版请完全退出后重新打开。"
+          },
+          "runtimeNotice": {
+            "title": "dsh-mnemon 0.5.21 已安装",
+            "text": "dsh-mnemon 0.5.21 已安装 当前运行的仍是 0.5.21-dshupdate.0；重启 DSH 后生效，桌面版请完全退出后重新打开。"
+          },
+          "checkVersions": {
+            "state": "待重启",
+            "installed": "0.5.21",
+            "latest": "0.5.21",
+            "updateButton": false,
+            "notice": "请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。"
+          }
+        },
+        "afterRestart": {
+          "engine": "dsh-mnemon 0.5.21",
+          "notice": null,
+          "runtimeNotice": null,
+          "checkVersions": {
+            "state": "已是最新",
+            "installed": "0.5.21",
+            "latest": "0.5.21",
+            "updateButton": false,
+            "notice": null
+          }
+        },
+        "consoleErrors": []
+      },
+      "dshPluginAdd": {
+        "host": "DSH 0.2.0-rc.2, packaged-app launcher; the Memory System stayed open on Status",
+        "command": "dsh plugin --profile web add dsh-mnemon@0.5.21 (packaged-app launcher, same profile, while DSH served the page)",
+        "pnpm": "Done in 419ms using pnpm v11.7.0",
+        "openPage": {
+          "memorySystem": "closed",
+          "msAfterCommand": 539,
+          "note": "DSH client HMR swapped in the new client; the page showed DSH home"
+        },
+        "reopenedFromSidebar": {
+          "engine": "dsh-mnemon 0.5.21-dshupdate.0",
+          "notice": {
+            "title": "dsh-mnemon 0.5.21 已安装",
+            "text": "dsh-mnemon 0.5.21 已安装 当前运行的仍是 0.5.21-dshupdate.0；重启 DSH 后生效，桌面版请完全退出后重新打开。"
+          },
+          "runtimeNotice": {
+            "title": "dsh-mnemon 0.5.21 已安装",
+            "text": "dsh-mnemon 0.5.21 已安装 当前运行的仍是 0.5.21-dshupdate.0；重启 DSH 后生效，桌面版请完全退出后重新打开。"
+          },
+          "checkVersions": {
+            "state": "待重启",
+            "installed": "0.5.21",
+            "latest": "0.5.21",
+            "updateButton": false,
+            "notice": "请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。"
+          }
+        },
+        "back": {
+          "command": "dsh plugin --profile web add dsh-mnemon@0.5.21-dshupdate.0",
+          "pnpm": "Done in 417ms using pnpm v11.7.0",
+          "openPage": {
+            "memorySystem": "closed",
+            "msAfterCommand": 537
+          },
+          "reopenedFromSidebar": {
+            "engine": "dsh-mnemon 0.5.21-dshupdate.0",
+            "notice": null,
+            "runtimeNotice": null,
+            "checkVersions": {
+              "state": "可更新",
+              "installed": "0.5.21-dshupdate.0",
+              "latest": "0.5.21",
+              "updateButton": true,
+              "notice": null
+            }
+          }
+        },
+        "consoleErrors": []
+      },
+      "strategy": {
+        "host": "DSH 0.2.0-rc.2, packaged-app launcher; dsh-mnemon-strategy-scoped@0.5.4 added on its own",
+        "update": {
+          "result": "dsh-mnemon-strategy-scoped 已更新\n\n请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。",
+          "pnpm": "Done in 312ms using pnpm v11.7.0",
+          "strategyOnDisk": "0.5.5",
+          "starterOnDisk": "0.5.21-dshupdate.0"
+        },
+        "after": {
+          "engine": "dsh-mnemon 0.5.21-dshupdate.0",
+          "notice": {
+            "title": "dsh-mnemon-strategy-scoped 已更新",
+            "text": "dsh-mnemon-strategy-scoped 已更新 重启 DSH 后生效，桌面版请完全退出后重新打开。"
+          },
+          "runtimeNotice": {
+            "title": "dsh-mnemon-strategy-scoped 已更新",
+            "text": "dsh-mnemon-strategy-scoped 已更新 重启 DSH 后生效，桌面版请完全退出后重新打开。"
+          }
+        },
+        "afterRestart": {
+          "engine": "dsh-mnemon 0.5.21-dshupdate.0",
+          "notice": null,
+          "runtimeNotice": null
+        },
+        "consoleErrors": []
+      },
+      "dsh017": {
+        "host": "DSH 0.1.7-rc.2, dsh web with pnpm 11.19.0 on PATH",
+        "update": {
+          "result": "dsh-mnemon 已更新\n\n请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。",
+          "pnpm": "Done in 419ms using pnpm v11.19.0",
+          "starterOnDisk": "0.5.21"
+        },
+        "after": {
+          "engine": "dsh-mnemon 0.5.21-dshupdate.0",
+          "notice": {
+            "title": "dsh-mnemon 0.5.21 已安装",
+            "text": "dsh-mnemon 0.5.21 已安装 当前运行的仍是 0.5.21-dshupdate.0；重启 DSH 后生效，桌面版请完全退出后重新打开。"
+          },
+          "runtimeNotice": {
+            "title": "dsh-mnemon 0.5.21 已安装",
+            "text": "dsh-mnemon 0.5.21 已安装 当前运行的仍是 0.5.21-dshupdate.0；重启 DSH 后生效，桌面版请完全退出后重新打开。"
+          }
+        },
+        "afterRestart": {
+          "engine": "dsh-mnemon 0.5.21",
+          "notice": null,
+          "runtimeNotice": null
+        },
+        "consoleErrors": []
+      }
+    },
+    "automated": {
+      "command": "pnpm run verify",
+      "rootTests": {
+        "files": 113,
+        "passed": 1584,
+        "skipped": 6
+      },
+      "docsLocalLinks": 2997,
+      "packageUnpackedBytes": 1511189,
+      "packageBudget": 1515000
+    }
+  },
+  "designReview": {
+    "revision": "f395626a87bbbc5fea8baef4252f7bf369880084",
+    "fixes": [
+      "Failure text names the ERR_PNPM_* line, DSH's failure kind and DSH's log path, not the first output line.",
+      "Installed is the exact version the Profile records (Starter and profile-added packages), with node_modules as the fallback, so files a failed install leaves are not taken for an update.",
+      "The Host keeps how the last update ended (VersionStatus.lastUpdate); the reopened dialog shows that success or error.",
+      "Packages updated from the dialog are compared with the version they replaced; one put back waits for nothing.",
+      "Status reopens the dialog only after the Host answers, and drops the record once DSH runs the updated version with nothing pending."
+    ],
+    "liveRerun": {
+      "checkVersions020": {
+        "status": {
+          "engine": "dsh-mnemon 0.5.21-dshupdate.0",
+          "reminder": {
+            "title": "dsh-mnemon 0.5.21 已安装",
+            "text": "dsh-mnemon 0.5.21 已安装 当前运行的仍是 0.5.21-dshupdate.0；重启 DSH 后生效，桌面版请完全退出后重新打开。"
+          }
+        },
+        "dialog": {
+          "state": "待重启",
+          "installed": "0.5.21",
+          "latest": "0.5.21",
+          "updateButton": false,
+          "notice": "请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。"
+        }
+      },
+      "afterRestart020": {
+        "status": {
+          "engine": "dsh-mnemon 0.5.21",
+          "reminder": null
+        },
+        "dialog": {
+          "state": "已是最新",
+          "installed": "0.5.21",
+          "latest": "0.5.21",
+          "updateButton": false,
+          "notice": null
+        }
+      },
+      "dshPluginAdd": {
+        "after": {
+          "state": "待重启",
+          "installed": "0.5.21",
+          "latest": "0.5.21",
+          "updateButton": false,
+          "notice": "请重启 DSH 以加载新的 dsh-mnemon 插件代码；桌面版请完全退出后重新打开。"
+        },
+        "back": {
+          "state": "可更新",
+          "installed": "0.5.21-dshupdate.0",
+          "latest": "0.5.21",
+          "updateButton": true,
+          "notice": null
+        }
+      },
+      "strategy": {
+        "after": {
+          "engine": "dsh-mnemon 0.5.21-dshupdate.0",
+          "reminder": {
+            "title": "dsh-mnemon-strategy-scoped 已更新",
+            "text": "dsh-mnemon-strategy-scoped 已更新 重启 DSH 后生效，桌面版请完全退出后重新打开。"
+          }
+        },
+        "afterRestart": {
+          "engine": "dsh-mnemon 0.5.21-dshupdate.0",
+          "reminder": null
+        }
+      },
+      "dsh017": {
+        "after": {
+          "engine": "dsh-mnemon 0.5.21-dshupdate.0",
+          "reminder": {
+            "title": "dsh-mnemon 0.5.21 已安装",
+            "text": "dsh-mnemon 0.5.21 已安装 当前运行的仍是 0.5.21-dshupdate.0；重启 DSH 后生效，桌面版请完全退出后重新打开。"
+          }
+        },
+        "afterRestart": {
+          "engine": "dsh-mnemon 0.5.21",
+          "reminder": null
+        }
+      },
+      "failedInstall": {
+        "setup": "DSH 0.2.0-rc.2 packaged-app launcher; the Profile registry serves no dsh-mnemon 0.5.21 while npm names it",
+        "dialogError": "版本操作失败\n\nDSH could not install dsh-mnemon@0.5.21: operation-error (no-matching-version: [ERR_PNPM_NO_MATCHING_VERSION] No matching version found for dsh-mnemon@0.5.21 while fetching it from http://127.0.0.1:<port>/); log: <profile>/.plugin-manager/logs/<operation>/pnpm.log",
+        "after": {
+          "status": {
+            "engine": "dsh-mnemon 0.5.21-dshupdate.0",
+            "reminder": null
+          },
+          "dialog": {
+            "state": "可更新",
+            "installed": "0.5.21-dshupdate.0",
+            "latest": "0.5.21",
+            "updateButton": true,
+            "notice": null
+          }
+        }
+      },
+      "consoleErrors": []
+    },
+    "automated": {
+      "command": "pnpm run verify",
+      "rootTests": {
+        "files": 113,
+        "passed": 1592,
+        "skipped": 6
+      },
+      "docsLocalLinks": 2997,
+      "packageUnpackedBytes": 1514466,
+      "packageBudget": 1517000
+    }
+  }
+}

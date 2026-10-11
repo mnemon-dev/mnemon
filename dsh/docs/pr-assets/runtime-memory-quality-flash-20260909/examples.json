@@ -1,0 +1,54 @@
+{
+  "archiveManifest": "../runtime-flash-evidence-20260909.json",
+  "source": "docs/pr-assets/runtime-memory-quality-flash-20260909/observations.json in the archive",
+  "run": "long-four",
+  "lossyReplacements": [
+    {
+      "wave": 21,
+      "before": "Orion frontend formal config (module-specific, acceptance-script-dependent, same-named sibling values independent—keep frontend ownership, never treat one-off temp log as new rule): handoff_channel=fe-interaction; conflict_policy=reject-stale-form; retention_days=43; partition_key=filter_id; max_batch_size=131; backoff_ms=353 (initial retry backoff); audit_event=fe.form.submitted (commit audit event name); dedup_window_seconds=223 (duplicate request detection window); checkpoint_prefix=fe-view-cp; locale_fallback=en-GB (language fallback). retry_limit=13 (supercedes deprecated former value 5). Values module-specific.",
+      "toolCall": {
+        "wave": 21,
+        "actor": "maintenance-76",
+        "name": "mnemon_runtime_memory",
+        "arguments": {
+          "action": "replace",
+          "target": "memory",
+          "old_text": "dedup_window_seconds=223 (duplicate request detection window); checkpoint_prefix=fe-view-cp; locale_fallback=en-GB (language fallback). retry_limit=13",
+          "content": "dedup_window_seconds=223 (duplicate request detection window); checkpoint_prefix=fe-view-cp; locale_fallback=en-GB (language fallback); recovery_marker=fe-rehydrate-ok (recovery-success marker). retry_limit=13",
+          "importance": "low"
+        },
+        "error": false,
+        "elapsedMs": 3
+      },
+      "after": "dedup_window_seconds=223 (duplicate request detection window); checkpoint_prefix=fe-view-cp; locale_fallback=en-GB (language fallback); recovery_marker=fe-rehydrate-ok (recovery-success marker). retry_limit=13"
+    },
+    {
+      "wave": 23,
+      "before": "Orion frontend module established config: service_port=8421 (fixed, module-specific port), retry_limit=13 (module-only cap, manual review after reaching; former value 5 is deprecated/superseded and should not be restored from old historical logs), timeout_ms=1800",
+      "toolCall": {
+        "wave": 23,
+        "actor": "maintenance-83",
+        "name": "mnemon_runtime_memory",
+        "arguments": {
+          "action": "replace",
+          "target": "memory",
+          "old_text": "frontend module established config: service_port=8421 (fixed, module-specific port), retry_limit=13",
+          "content": "Orion frontend established config: service_port=8851 (fixed module-specific port; former 8421 deprecated/superseded, do not revert from old logs), retry_limit=13",
+          "importance": "normal"
+        },
+        "error": false,
+        "elapsedMs": 5
+      },
+      "after": "Orion frontend established config: service_port=8851 (fixed module-specific port; former 8421 deprecated/superseded, do not revert from old logs), retry_limit=13"
+    }
+  ],
+  "laterNoWriteMarkerRetention": {
+    "wave": 13,
+    "tool": "mnemon_document_create",
+    "successful": true,
+    "title": "Orion Frontend module recent-config additions",
+    "contentExcerpt": "Each dev_config read/update acts on a single key=value per module. Other fields and other modules stay unchanged except for the one key being set. Transient one-off debug output (unadopted hypotheses such as service_port 9999, temporary jitter timings and TEMP_ markers such as TEMP_USER_frontend, fake test credentials like FAKE_CREDENTIAL_frontend, single-session timings, load-test outputs) is not a config decision and must never override established values. The temporary-turn sandbox marker NO_MEMORY_frontend and related TEMP_/FAKE_ strings were explicit do-not-persist do-not-treat-as-rule debugging artifacts.",
+    "context": "The NO_MEMORY_frontend and FAKE_CREDENTIAL_frontend literals came from explicit no-write wave 10. No successful memory mutation occurred during that turn; automatic review retained the literals later."
+  },
+  "scope": "Selected non-blocking finding evidence. Replacement before/after text and tool calls are copied verbatim. The document excerpt omits unrelated configuration sections; the complete document and all answers remain in the archive."
+}

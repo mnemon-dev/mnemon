@@ -1,0 +1,48 @@
+{
+  "call": {
+    "id": "issuerelease-v0.5.15-3",
+    "name": "mnemon_runtime_memory",
+    "args": {
+      "action": "replace",
+      "target": "user",
+      "old_text": "RELEASE515_USER: I prefer concise replies.",
+      "content": "RELEASE515_USER: I prefer concise replies with examples.",
+      "importance": "critical",
+      "branches": []
+    }
+  },
+  "receipt": {
+    "callId": "issuerelease-v0.5.15-3",
+    "isError": false,
+    "result": {
+      "success": true,
+      "message": "Entry replaced.",
+      "target": "user",
+      "entryCount": 1,
+      "usage": {
+        "used": 56,
+        "limit": 4096
+      },
+      "replaced": {
+        "from": "RELEASE515_USER: I prefer concise replies.",
+        "to": "RELEASE515_USER: I prefer concise replies with examples."
+      },
+      "revision": "8ce71148fa43c5bcd6566b21fcc00ba503185fda91cca92bfff673f862f6951b",
+      "memoryReceipt": {
+        "status": "succeeded",
+        "completion": "committed",
+        "committedAt": "2026-09-26T05:38:02.374Z"
+      }
+    }
+  },
+  "projection": {
+    "annotations": [
+      {
+        "importance": "critical",
+        "created": "14d",
+        "updated": "0d"
+      }
+    ],
+    "renderedActualProjection": "Actual injected Runtime metadata: 1 annotation(s).\n\nUSER.md:\n[importance=critical; created=14d; updated=0d]\nRELEASE515_USER: I prefer concise replies with examples.\n\nMEMORY.md:\n(empty)"
+  }
+}

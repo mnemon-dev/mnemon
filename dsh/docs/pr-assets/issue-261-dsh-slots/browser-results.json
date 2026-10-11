@@ -1,0 +1,55 @@
+{
+  "recordedAt": "2026-09-18T03:41:21.480Z",
+  "baselineAlpha": {
+    "counts": {
+      "turnBars": 0,
+      "saveActions": 0
+    },
+    "realRuntimeAddAndStatus": true,
+    "missingIdError": "list slot \"conversation.chat.turnTail\" requires options.id"
+  },
+  "fixedAlpha": {
+    "realRuntimeAddAndStatus": true,
+    "sidebarRuntimeNavigation": true,
+    "builtinRuntimeNavigation": true,
+    "saveActionCandidateVerifiedAndCancelled": true,
+    "offCounts": {
+      "turnBars": 0,
+      "peerA": 1,
+      "peerB": 1
+    },
+    "reloadCounts": {
+      "turnBars": 1,
+      "peerA": 1,
+      "peerB": 1
+    },
+    "noActiveSessionBuiltinTabAbsent": true,
+    "workspaceIsolation": {
+      "storage": "workspace",
+      "workspaceBRecordCount": 1,
+      "workspaceARecordCountAfterSwitch": 0
+    },
+    "applicationWarningsAndErrors": [],
+    "ignoredExtensionWarningCount": 6
+  },
+  "fixedRc": {
+    "realRuntimeAddAndStatus": true,
+    "sidebarRuntimeNavigation": true,
+    "builtinRuntimeNavigation": true,
+    "saveActionCandidateVerifiedAndCancelled": true,
+    "offTurnBars": 0,
+    "reloadCounts": {
+      "turnBars": 1,
+      "peerA": 0,
+      "peerB": 0
+    },
+    "applicationWarningsAndErrors": [],
+    "ignoredExtensionWarningCount": 13
+  },
+  "limits": [
+    "Model responses use an explicit loopback fixture; tools, installed plugins, storage, and browser UI are real.",
+    "The save-action confirmation was opened and cancelled; no live model distillation was claimed.",
+    "The RC chain peer selectors deliberately decline rendering; alpha list peers render independently.",
+    "The alpha test profile disables unrelated subprocess services, causing a terminal restore warning in its header."
+  ]
+}

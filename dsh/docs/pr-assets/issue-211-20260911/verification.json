@@ -1,0 +1,97 @@
+{
+  "date": "2026-09-11",
+  "baseCommit": "1e19caf40f0bf37edf678c3d829f2398ab28792a",
+  "node": "25.1.0",
+  "pnpm": "11.19.0",
+  "dsh": "0.1.5-rc.1",
+  "mnemonCli": "0.2.7",
+  "platform": "macOS arm64",
+  "sourceSha256": {
+    "src/host/review-tools.ts": "ae99d95b375b2c9f5b7b8c0cb754806bcfd5fd2470a379921903c2444f8219cf",
+    "src/host/subagent.ts": "5f038cc53855871293047eee5781a5f7f5c7694206769b85a1003796bd3e67aa",
+    "src/host/dsh.ts": "893f6083b95eeb92bb07603d395b7762a074c612fed5e79aed1f027c94278f62",
+    "scripts/fixtures/review-evidence-model.mjs": "35abd2b6011f90db17f7365e8c67096273441a2c8611e89eb6ffe829e2b18748",
+    "tests/review-evidence-host.spec.ts": "ee9e9021329a53cf02faa5c4b20491c02cbb563b0da52e8346aebc033780a083",
+    "tests/review-tools.spec.ts": "3102861779248aee95f1241c9cdf3289d311bfa1298382360bd9c9941ef45782"
+  },
+  "web": {
+    "before": [
+      {
+        "event": "parent-complete",
+        "overviewReads": 5
+      },
+      {
+        "event": "parent-complete",
+        "overviewReads": 5
+      },
+      {
+        "event": "review-start",
+        "inheritedChunks": 5,
+        "entries": 335,
+        "characters": 19112,
+        "foreignToolAdvertised": true
+      },
+      {
+        "event": "foreign-attempt-result",
+        "executed": true,
+        "denied": false
+      },
+      {
+        "event": "review-finish",
+        "action": "skipped",
+        "boundedDocumentSearch": true
+      }
+    ],
+    "after": [
+      {
+        "event": "parent-complete",
+        "overviewReads": 5
+      },
+      {
+        "event": "parent-complete",
+        "overviewReads": 5
+      },
+      {
+        "event": "review-start",
+        "inheritedChunks": 5,
+        "entries": 335,
+        "characters": 19112,
+        "foreignToolAdvertised": true
+      },
+      {
+        "event": "foreign-attempt-result",
+        "executed": false,
+        "denied": true
+      },
+      {
+        "event": "review-finish",
+        "action": "skipped",
+        "boundedDocumentSearch": true
+      }
+    ]
+  },
+  "unit": {
+    "targetedPassed": 94,
+    "rootPassed": 935,
+    "pluginsPassed": 323,
+    "optInSkipped": 7
+  },
+  "native": {
+    "passed": 169,
+    "windowsSkipped": 1,
+    "uiCreatedSpace": true,
+    "cliWriteEmbedded": false,
+    "uiReadExactCanary": true,
+    "uiForgetRemainingItems": 0
+  },
+  "package": {
+    "unpackedBytes": 1271378,
+    "previousCap": 1270000,
+    "auditedCap": 1275000
+  },
+  "limits": [
+    "No exact historical Windows/AOCI profile reproduction",
+    "No live model calls or token savings measurement",
+    "0.1.1-rc.1 and 0.1.2-rc.1 public contract inspection; execution cohort is 0.1.5-rc.1"
+  ]
+}

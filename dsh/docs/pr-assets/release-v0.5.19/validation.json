@@ -1,0 +1,81 @@
+{
+  "verifiedAt": "2026-09-29",
+  "timezone": "Asia/Shanghai",
+  "sourceBase": "543b42b14815e21e2810fa44c56518b5a9dc5463",
+  "candidate": "pnpm release:version on the source base, the three Sources' dsh-mnemon peer floors raised to ^0.5.19, built and packed locally",
+  "artifactSha256": {
+    "dsh-mnemon-0.5.19.tgz": "a2a8ce77ada8d86588bc207ab5f39b47ae4a067910f0deab5fe0b68ce2319e1e",
+    "dsh-mnemon-source-runtime-0.5.11.tgz": "b552ae6f2ff8c74674dc3da6f78eaa2cf4a8068a93f39dc417f7c98f30ff583b",
+    "dsh-mnemon-source-documents-0.5.8.tgz": "98bfb9d51b49ee121b94b8952992f3e5c49c24cbd375e69bf4be1b5b84604943",
+    "dsh-mnemon-source-memory-spaces-0.5.13.tgz": "c538c1ea11942baaaa6e4bd60b50a041ada2afeab50f6c13b6151b511a52313d",
+    "dsh-mnemon-provider-mnemon-native-0.5.7.tgz": "c11765a978b50ffe16be2ff1d7e72141a77581ea63e6293d0336ce44324a135c"
+  },
+  "registry": "A loopback registry served npm's real metadata for every dsh-mnemon package and added the five changed versions, published a week earlier; unchanged versions resolved to npm's own tarballs. DSH chose the install source (its speed check picked the mainland China mirror); a pnpm wrapper sent that source's requests to the loopback registry.",
+  "node": "24.19.0",
+  "pnpmForDsh": "11.19.0",
+  "mnemonCLI": "0.2.7",
+  "installedVersions": {
+    "dsh-mnemon": "0.5.19",
+    "dsh-mnemon-provider-byterover": "0.5.5",
+    "dsh-mnemon-provider-hindsight": "0.5.5",
+    "dsh-mnemon-provider-holographic": "0.5.5",
+    "dsh-mnemon-provider-honcho": "0.5.5",
+    "dsh-mnemon-provider-mem0": "0.5.5",
+    "dsh-mnemon-provider-mnemon-native": "0.5.7",
+    "dsh-mnemon-provider-openviking": "0.5.7",
+    "dsh-mnemon-provider-retaindb": "0.5.5",
+    "dsh-mnemon-provider-supermemory": "0.5.5",
+    "dsh-mnemon-source-documents": "0.5.8",
+    "dsh-mnemon-source-memory-spaces": "0.5.13",
+    "dsh-mnemon-source-runtime": "0.5.11",
+    "dsh-mnemon-strategy-auto-capture": "0.5.5",
+    "dsh-mnemon-strategy-default-three-tier": "0.5.7",
+    "dsh-mnemon-strategy-general": "0.5.1",
+    "dsh-mnemon-strategy-light-context": "0.5.5",
+    "dsh-mnemon-strategy-scoped": "0.5.5"
+  },
+  "hosts": {
+    "0.2.0-rc.1": {
+      "addPluginInstall": "0.5.19",
+      "enableNow": true,
+      "hostLaunches": 1,
+      "status": {
+        "starter": "0.5.19",
+        "systemNominal": true,
+        "nativeCli": "0.2.7"
+      },
+      "runtimeWriteAndReadAfterReload": true,
+      "nativeSpaceCreatedAndActivated": "1 / 1 active",
+      "cliRememberAndRecall": true,
+      "webDirectRecallFindsCliMemory": true,
+      "liveModel": {
+        "turnMemory": "wrote 2 (runtime memory)",
+        "saveToMemory": "task Agent saved it into a new memory space and returned a receipt",
+        "profile": "a second fresh profile on the same host, installed with dsh plugin --profile web add dsh-mnemon"
+      },
+      "consoleErrors": 0
+    },
+    "0.1.7-rc.2": {
+      "addPluginInstall": "0.5.19",
+      "enableNow": true,
+      "hostLaunches": 1,
+      "status": {
+        "starter": "0.5.19",
+        "systemNominal": true,
+        "nativeCli": "0.2.7"
+      },
+      "runtimeWriteAndReadAfterReload": true,
+      "nativeSpaceCreatedAndActivated": "1 / 1 active",
+      "cliRememberAndRecall": true,
+      "webDirectRecallFindsCliMemory": true,
+      "liveModel": {
+        "turnMemory": "wrote 2 (runtime memory)",
+        "saveToMemory": "task Agent saved it into a new memory space and returned a receipt",
+        "profile": "a second fresh profile on the same host, installed with dsh plugin --profile web add dsh-mnemon"
+      },
+      "consoleErrors": 0
+    }
+  },
+  "model": "DeepSeek API, deepseek-flash (DeepSeek-V41-Flash in the WebUI); the key reached DSH through the environment only",
+  "scope": "Versioned local candidates installed through the official WebUI on isolated homes and profiles; synthetic data only."
+}

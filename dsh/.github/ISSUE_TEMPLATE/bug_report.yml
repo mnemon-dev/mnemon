@@ -1,0 +1,149 @@
+name: Bug 报告 / Bug report
+description: 报告异常现象、复现步骤和环境；日志及修复建议可选。 / Describe the problem, reproduction steps and environment; logs and fixes are optional.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请填写现象、预期结果、复现步骤和环境。信息不足时机器人会提示补充，模板检查不会自动关闭 Issue。
+        Describe the problem, expected outcome, reproduction steps and environment. Missing information prompts a request for details; template checks do not close issues.
+
+        日志、截图和对照结果可直接放在复现步骤中。下方的证据、冒烟测试、代码引用和补丁草案均为选填，无需重复内容或先提供修复方案。
+        Logs, screenshots and control results may go directly in the reproduction steps. Separate evidence, smoke tests, code references and patch proposals are optional; no duplication or fix is required.
+
+        通过 CLI/API 提交时可使用相同段落标题组织正文。类型填写为“Bug 报告 / Bug report”时，机器人会补齐 `bug` 标签，无需提交者拥有标签权限。
+        CLI/API reports may use the same section headings. The bot adds the `bug` label when the type is “Bug 报告 / Bug report”; reporters do not need label permissions.
+
+        提交前请先搜索确认没有重复 / Search for existing reports before submitting: [Issues](https://github.com/mnemon-dev/mnemon/issues?q=is%3Aissue)
+
+        不要粘贴 token、密钥、私有记忆内容或未脱敏日志。安全漏洞请按 [SECURITY.md](../../SECURITY.md) 私下报告。
+        Do not post tokens, credentials, private memory, or unredacted logs. Report security vulnerabilities privately through [SECURITY.md](../../SECURITY.md).
+  - type: checkboxes
+    id: duplicate-check
+    attributes:
+      label: 提交前查重 / Duplicate check
+      description: 请搜索 open 和 closed Issue。 / Search both open and closed issues.
+      options:
+        - label: 我已搜索 open/closed Issue，确认没有重复。 / I searched open and closed issues and found no duplicate.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及区域 / Affected area
+      description: 选择问题主要涉及的组件或边界。 / Select the component or boundary most closely related to the problem.
+      options:
+        - 安装、更新或发布 / Installation, update, or release
+        - Host 激活或 Headless / Host activation or Headless
+        - 运行时记忆 / Runtime Memory
+        - 项目档案 / Project Documents
+        - 记忆空间或 Provider / Memory Spaces or Providers
+        - 子 Agent 或 Agent 工作流 / Subagent or Agent workflow
+        - Web UI 或对话交互 / Web UI or conversation interaction
+        - 设置、存储或安全 / Settings, storage, or security
+        - CLI、RPC、命令或工具 / CLI, RPC, commands, or tools
+        - 文档 / Documentation
+        - 其他或不确定 / Other or unsure
+    validations:
+      required: true
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue 类型 / Issue type
+      description: 本表单仅用于可复现的 Bug；功能请求或问题请使用另一个表单。 / This form is only for reproducible bugs; use the other form for requests or questions.
+      options:
+        - Bug 报告 / Bug report
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: 摘要 / Summary
+      description: 用一两句话描述实际发生的问题。 / Describe the observed problem in one or two sentences.
+      placeholder: 出了什么问题？影响了哪些操作？ / What went wrong, and which operations are affected?
+    validations:
+      required: true
+  - type: textarea
+    id: expected-outcome
+    attributes:
+      label: 预期结果 / Expected outcome
+      description: 描述正确行为以及可以验证的结果。 / Describe the correct behavior and an observable result.
+      placeholder: 你期望发生什么？ / What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: details-reproduction
+    attributes:
+      label: 详情或复现步骤 / Details or reproduction steps
+      description: 提供最小复现步骤和实际结果；报错和日志（包括 JSON 或普通文本）可直接写在这里。 / Include minimal steps and observed results; errors and logs, including JSON or plain text, may go here.
+      placeholder: |
+        1. 配置 / Configure ...
+        2. 启动 / Start ...
+        3. 调用或点击 / Invoke or click ...
+        4. 观察到 / Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息 / Environment
+      description: 请提供 DSH、dsh-mnemon、Mnemon、Node.js、操作系统、浏览器以及相关 Provider/配置，并先脱敏。 / Provide DSH, dsh-mnemon, Mnemon, Node.js, OS, browser, and relevant redacted Provider or configuration details.
+      placeholder: |
+        - DSH 版本 / DSH version:
+        - dsh-mnemon 版本或 commit / dsh-mnemon version or commit:
+        - Mnemon 版本 / Mnemon version:
+        - Node.js / pnpm:
+        - 操作系统或浏览器 / OS or browser:
+        - Provider 或相关配置（已脱敏）/ Provider or related configuration (redacted):
+    validations:
+      required: true
+  - type: textarea
+    id: bug-evidence
+    attributes:
+      label: Bug 证据 / Bug evidence
+      description: 选填。复现步骤已有证据时无需重复；支持普通文本、任意语言代码块、图片或附件。 / Optional. Do not repeat evidence already in the steps; plain text, any code-block language, images or attachments are accepted.
+      placeholder: 可粘贴脱敏报错、日志、截图或附件，也可留空。 / Add redacted errors, logs, screenshots or attachments, or leave blank.
+    validations:
+      required: false
+  - type: textarea
+    id: smoke-test
+    attributes:
+      label: 冒烟测试 / Smoke test
+      description: 选填。补充实际执行的验证、观察结果或对照实验；未执行可留空。 / Optional. Add checks you actually ran, observed results or controls; leave blank if none were run.
+      placeholder: |
+        - 测试环境 / Test environment:
+        - 执行命令或操作 / Commands or actions:
+        - 实际结果 / Observed result:
+        - 对照版本或配置 / Control version or configuration:
+    validations:
+      required: false
+  - type: textarea
+    id: code-reference
+    attributes:
+      label: 引用代码 / Code references
+      description: 选填。知道相关代码位置时，可提供路径、函数或固定 commit 链接。 / Optional. If you know the relevant code, add paths, functions or links pinned to a commit.
+      placeholder: |
+        src/host/subagent.ts:870
+        tests/subagent.spec.ts
+    validations:
+      required: false
+  - type: textarea
+    id: patch
+    attributes:
+      label: 补丁草案 / Patch proposal
+      description: 选填。已有修复思路时可以补充；无需为提交 Bug 先编写补丁。 / Optional. Share a fix if you have one; a patch is not required to report a bug.
+      placeholder: |
+        ```diff
+        --- a/src/example.ts
+        +++ b/src/example.ts
+        @@ ... @@
+        ```
+    validations:
+      required: false
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 补充信息 / Additional context
+      description: 补充相关 Issue、PR、最小复现仓库或其他已脱敏上下文。 / Add related issues, pull requests, a minimal reproduction, or other redacted context.
+    validations:
+      required: false

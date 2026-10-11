@@ -1,0 +1,20 @@
+--- a/packed-e2e.mjs
++++ b/packed-e2e.mjs
+@@ -48,7 +48,7 @@
+ if (legacyPeers && !args.has('--framework-root')) assert(process.platform === 'darwin' && process.arch === 'arm64', 'Bundled baseline pins are macOS ARM64 only; supply --framework-root from a normal exact-cohort install on this platform.');
+-const frameworkPeers = legacyPeers
+-  ? args.has('--framework-root')
+-    ? await frameworkPins(resolve(args.get('--framework-root')), version)
+-    : JSON.parse(await readFile(new URL(`./e2e/framework-peers-${cohort}.json`, import.meta.url), 'utf8'))
+-  : {};
++const frameworkPeers = args.has('--framework-root')
++  ? await frameworkPins(resolve(args.get('--framework-root')), version)
++  : legacyPeers
++    ? JSON.parse(await readFile(new URL(`./e2e/framework-peers-${cohort}.json`, import.meta.url), 'utf8'))
++    : {};
+ if (legacyPeers) await writeFile(join(runRoot, 'baseline-framework-pins.json'), JSON.stringify(frameworkPeers, null, 2) + '\n');
+@@ -104,3 +104,3 @@
+   dependencies: {
+-    ...(legacyPeers ? frameworkPeers : {}),
++    ...frameworkPeers,
+     '@deepseek-ai/dsh': version, '@deepseek-ai/dsh-client-ui-primitives': version, '@deepseek-ai/dsh-typert-protocol': version,

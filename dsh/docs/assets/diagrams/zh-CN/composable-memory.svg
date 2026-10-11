@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="280" viewBox="0 0 1200 280" lang="zh-CN" role="img" aria-labelledby="title description">
+  <title id="title">记忆来源 + 组合策略 → 上下文视图</title>
+  <desc id="description">Source 拥有记忆；Strategy 根据来源事实提议组合；Core 校验提案并调用 Source 投影，生成不可变 View。DSH 宿主将它固定到执行回合，并把读取和已授权的写入交回所属 Source。</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0L8 4L0 8" fill="none" stroke="#667085" stroke-width="1.5"/></marker>
+  </defs>
+  <rect width="1200" height="280" rx="16" fill="#f8fafc"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,Segoe UI,PingFang SC,Microsoft YaHei,sans-serif">
+    <text x="32" y="38" font-size="15" fill="#667085">可组合记忆 · 每个执行回合只有一个视图</text>
+    <g stroke="#d0d5dd" fill="#fff">
+      <rect x="32" y="78" width="226" height="114" rx="12"/>
+      <rect x="312" y="78" width="184" height="114" rx="12"/>
+      <rect x="550" y="78" width="200" height="114" rx="12"/>
+      <rect x="804" y="78" width="150" height="114" rx="12" fill="#eff6ff" stroke="#93b4eb"/>
+      <rect x="1008" y="78" width="160" height="114" rx="12"/>
+    </g>
+    <g fill="#182230" font-size="20" font-weight="600">
+      <text x="52" y="112">Source · 来源</text><text x="332" y="112">Strategy · 策略</text><text x="570" y="112">Core · 核心</text><text x="824" y="112">View · 视图</text><text x="1028" y="112">DSH 宿主</text>
+    </g>
+    <g fill="#475467" font-size="15">
+      <text x="52" y="143">运行时 · 档案</text><text x="52" y="167">记忆空间 · 自定义</text>
+      <text x="332" y="143">选择 · 预算</text><text x="332" y="167">组合 · 使用指引</text>
+      <text x="570" y="143">校验组合提案</text><text x="570" y="167">调用来源投影</text>
+      <text x="824" y="143">上下文</text><text x="824" y="167">读取 · 写入操作</text>
+      <text x="1028" y="143">固定到回合</text><text x="1028" y="167">呈现给 LLM</text>
+    </g>
+    <g stroke="#667085" stroke-width="1.5" marker-end="url(#arrow)">
+      <path d="M266 136H300"/><path d="M504 136H538"/><path d="M758 136H792"/><path d="M962 136H996"/>
+    </g>
+    <g fill="#667085" font-size="12" text-anchor="middle">
+      <text x="285" y="120">事实</text><text x="523" y="120">提案</text>
+    </g>
+    <text x="32" y="234" fill="#475467" font-size="15">读取与已授权写入交回所属 Source；新的回合可以读取新的修订。</text>
+    <text x="32" y="257" fill="#667085" font-size="14">Provider 子模块归记忆空间 Source 所有，不属于 Core。</text>
+  </g>
+</svg>

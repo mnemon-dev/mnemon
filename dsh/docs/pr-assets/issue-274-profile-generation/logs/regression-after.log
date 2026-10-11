@@ -1,0 +1,10 @@
+
+ RUN  v3.2.7 <checkout>
+
+ ✓ tests/live-config.spec.ts (7 tests) 25ms
+ ✓ tests/profile-generation-loading.spec.ts (2 tests) 424ms
+
+ Test Files  2 passed (2)
+      Tests  9 passed (9)
+   Start at  00:43:22
+   Duration  905ms (transform 321ms, setup 0ms, collect 536ms, tests 449ms, environment 0ms, prepare 167ms)

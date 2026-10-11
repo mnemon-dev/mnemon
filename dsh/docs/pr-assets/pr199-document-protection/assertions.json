@@ -1,0 +1,18 @@
+{
+  "originalId": "029559b7-4cfa-412a-a787-420a1e290e77",
+  "supplementId": "1a7780a2-9a88-42d7-b216-28706edaf687",
+  "originalRevision": 1,
+  "originalContentHash": "67167245d1896658a49a0544ca75a51cd94480276419a817b1ddbd6b256624fc",
+  "originalMetadataUnchanged": true,
+  "originalFileByteIdentical": true,
+  "activeDocuments": 2,
+  "archivedDocuments": 0,
+  "overwriteDenied": true,
+  "explicitEditRevision": 2,
+  "originalStillByteIdenticalAfterExplicitEdit": true,
+  "dispatcherDenial": {
+    "code": "UNKNOWN_TOOL",
+    "message": "Error: unknown tool \"mnemon_document_manage\""
+  },
+  "browserConsoleErrors": 0
+}

@@ -1,0 +1,63 @@
+{
+  "date": "2026-09-16",
+  "implementationCommit": "2ca95ee1953f1cadd589a17255f21f87375e6038",
+  "host": "Published DSH 0.1.5-rc.1 WebUI from the repository dependency cohort",
+  "nativeCli": "Official Mnemon 0.2.8",
+  "model": "Deterministic loopback fixture. Model labels in the UI are preset metadata; no external model API was contacted.",
+  "strategies": [
+    "scoped",
+    "light-context",
+    "auto-capture"
+  ],
+  "firstSession": {
+    "minimumIntervalMs": 300000,
+    "attemptCap": 1,
+    "reviewEnabled": true,
+    "fixtureReviewOrdinal": 1,
+    "documentId": "28b1e0e2-f3e8-4a67-b070-aa5aaa8e27bc",
+    "runtimeRevision": "eb9630ea084410335e336d32908376d78f2b1319276be70b0ddd15c34cbdcca9",
+    "outcome": "Two confirmed Source receipts followed by the intentional HTTP 400 error.",
+    "laterTurn": "No immediate replay. The five-minute interval prevents using this observation alone as proof of the one-attempt cap."
+  },
+  "finalSession": {
+    "loadedFinalBuildAfterHostRestart": true,
+    "settingsSavedThroughWebUi": true,
+    "minimumIntervalMs": 5000,
+    "initialAttemptCap": 1,
+    "initialReviewEnabled": true,
+    "fixtureReviewOrdinal": 2,
+    "childRunId": "65b6f016-bf42-48e1-bb90-897192369e57",
+    "documentId": "2331330a-dc58-46f6-886d-711cab7d8603",
+    "runtimeRevision": "eb9630ea084410335e336d32908376d78f2b1319276be70b0ddd15c34cbdcca9",
+    "firstTwoTurns": "Two substantive synthetic user turns reached the normal eligibility threshold and created one review child.",
+    "reviewOutcome": "Document create and Runtime add returned committed receipts, then the fixture returned INVALID_REQUEST: SYNTHETIC_REVIEW_FAILURE_AFTER_COMMIT.",
+    "thirdTurn": {
+      "fixtureModelRequest": 16,
+      "eligible": true,
+      "observedQuietSecondsAtLeast": 30,
+      "reviewChildCount": 1,
+      "meaning": "One-attempt session cap holds after the five-second interval elapsed."
+    },
+    "fourthTurn": {
+      "fixtureModelRequest": 17,
+      "eligible": true,
+      "reviewEnabled": false,
+      "attemptCap": 2,
+      "observedQuietSecondsAtLeast": 10,
+      "reviewChildCount": 1,
+      "meaning": "Independent disabled switch holds with unused attempt budget."
+    },
+    "finalVisibleParentTurns": 4,
+    "finalVisibleReviewChildren": 1,
+    "finalStatus": "Failure and both committed receipt identifiers remain visible after ordinary turns and Settings changes. No rollback or automatic replay.",
+    "retainedStorage": "The same disposable Profile keeps both independent sessions. Final status shows two Documents and one deduplicated synthetic Runtime entry; prior session/catalog history is retained."
+  },
+  "screenshots": [
+    "after-final-partial-receipts.png",
+    "after-review-budget.png",
+    "after-review-disabled.png",
+    "after-bounded-conversation.png"
+  ],
+  "loggingBoundary": "The outer model fixture remains alive across the Host restart, so review ordinals and model request numbers span both independent sessions. Total review-start events in the complete log are two, one per parent session.",
+  "fixtureReproduction": "The committed --idle-review fixture now sets both idleReviewMs and idleReview.minIntervalMs to 5000, with maxPerSession 1. Settings controls can change these values live."
+}

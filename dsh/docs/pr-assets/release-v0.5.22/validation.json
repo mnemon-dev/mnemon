@@ -1,0 +1,100 @@
+{
+  "verifiedAt": "2026-10-02T20:40:35Z",
+  "revision": {
+    "base": "a69d1a51a5e588615cff2f6415faa865bf217623",
+    "tested": "a69d1a51 (main with #325, #326 and #328) with pnpm release:version, the release pull request working tree"
+  },
+  "packages": {
+    "dsh-mnemon": {
+      "version": "0.5.22",
+      "sha256": "31fefff143bfade64af79a5925ef92c68a891dfcab568945f126c3a6f84e2311"
+    },
+    "components": "the 17 pinned component packages from npm, unchanged since 0.5.21"
+  },
+  "registry": "a loopback registry with npm's real metadata plus the new version, published 168 hours earlier; a pnpm wrapper sends the npm and npmmirror registries DSH asks to it",
+  "hosts": {
+    "0.2.0-rc.2": {
+      "home": "fresh HOME, DSH home and pnpm store",
+      "flow": "Plugins -> Add plugin -> dsh-mnemon -> Install -> Enable now",
+      "installSource": "chosen by DSH (mainland China mirror)",
+      "installedVersions": {
+        "dsh-mnemon": "0.5.22",
+        "dsh-mnemon-source-runtime": "0.5.11",
+        "dsh-mnemon-source-documents": "0.5.8",
+        "dsh-mnemon-source-memory-spaces": "0.5.14",
+        "dsh-mnemon-provider-mnemon-native": "0.5.8"
+      },
+      "status": {
+        "starter": "0.5.22",
+        "nominal": true,
+        "nativeCli": "0.2.9"
+      },
+      "runtimeWriteAndReadAfterReload": true,
+      "nativeSpaceActive": "1 / 1",
+      "cliRememberAndRecall": true,
+      "webDirectRecallFindsCliFact": true,
+      "checkVersions": {
+        "installed": "0.5.22",
+        "npmLatestBeforePublication": "0.5.21",
+        "state": "local version",
+        "updateRoute": "DSH plugin installer",
+        "updateOffered": false
+      },
+      "restartNoticeAfterEnableNow": false,
+      "hostLaunches": 1,
+      "hostWarnings": [],
+      "consoleErrors": []
+    },
+    "0.1.7-rc.2": {
+      "home": "fresh HOME, DSH home and pnpm store",
+      "flow": "Plugins -> Add plugin -> dsh-mnemon -> Install -> Enable now",
+      "installSource": "chosen by DSH (mainland China mirror)",
+      "installedVersions": {
+        "dsh-mnemon": "0.5.22",
+        "dsh-mnemon-source-runtime": "0.5.11",
+        "dsh-mnemon-source-documents": "0.5.8",
+        "dsh-mnemon-source-memory-spaces": "0.5.14",
+        "dsh-mnemon-provider-mnemon-native": "0.5.8"
+      },
+      "status": {
+        "starter": "0.5.22",
+        "nominal": true,
+        "nativeCli": "0.2.9"
+      },
+      "runtimeWriteAndReadAfterReload": true,
+      "nativeSpaceActive": "1 / 1",
+      "cliRememberAndRecall": true,
+      "webDirectRecallFindsCliFact": true,
+      "checkVersions": {
+        "installed": "0.5.22",
+        "npmLatestBeforePublication": "0.5.21",
+        "state": "local version",
+        "updateRoute": "DSH plugin installer",
+        "updateOffered": false
+      },
+      "restartNoticeAfterEnableNow": false,
+      "hostLaunches": 1,
+      "hostWarnings": [],
+      "consoleErrors": []
+    }
+  },
+  "moreEvidence": [
+    "../version-update-through-dsh/verification.json",
+    "../conversation-tab-workspace/verification.json",
+    "../issue-327-subagent-user-turn/verification.json"
+  ],
+  "environment": {
+    "os": "macOS",
+    "node": "24.19.0",
+    "pnpm": "11.19.0",
+    "mnemonCli": "0.2.9",
+    "browser": "headless Google Chrome over the DevTools protocol",
+    "dshModified": false
+  },
+  "screenshots": {
+    "status.png": "b616386bcfa5dd3f3069cce16b9bdab922d624f3fa4068dc896ebbd06e459208",
+    "runtime.png": "9acc6108dcce23e61b13a2f66229f5193fdb02eb4bda66027d74996eb93f109d",
+    "spaces.png": "d0e077e5455d4043c5bbf1910b0aaafe87642393a2fb2b9723974a24c5c12436",
+    "recall.png": "82f6736820b8a0efe60a717af9fe66285ad278050283e66a8646c7ad4e5838b8"
+  }
+}

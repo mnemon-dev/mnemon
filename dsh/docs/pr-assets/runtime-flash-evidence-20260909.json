@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "url": "https://github.com/user-attachments/files/32006240/dsh-mnemon-pr212-evidence-20260909-2994e3d.zip",
+  "sha256": "0629f6d480da9fe0bffc0d411c088122b97be4f050fa2d68efdddf2a2dfa07d3",
+  "bytes": 90913,
+  "snapshotCommit": "2994e3de8cc27a53cd3b54d9c5dc7d6628d1646c",
+  "snapshotFileCount": 16,
+  "uncompressedSnapshotBytes": 493526,
+  "manifest": "MANIFEST.json",
+  "contents": [
+    "docs/pr-assets/runtime-capacity-flash-20260909/ (complete original report and JSON)",
+    "docs/pr-assets/runtime-memory-quality-flash-20260909/ (complete original report and JSON)",
+    "tests/runtime-capacity-flash-stress.spec.ts",
+    "tests/runtime-memory-flash-quality.spec.ts",
+    "tests/fixtures/flash-quality/live.ts",
+    "tests/fixtures/flash-quality/workload.ts"
+  ],
+  "scope": "Exact committed, sanitized synthetic evidence and harness snapshot before report compaction. No new live run; original measurements, strict verdicts and reviewed acceptance are preserved.",
+  "verification": "Downloaded without authentication; ZIP integrity and all 16 per-file SHA-256 values matched the committed snapshot."
+}

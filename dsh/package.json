@@ -1,0 +1,265 @@
+{
+  "name": "dsh-mnemon",
+  "version": "0.5.24",
+  "description": "Composable, view-based memory for DeepSeek Harness. Pluggable sources and strategies, with layered memory out of the box.",
+  "keywords": [
+    "deepseek-harness",
+    "deepseek-harness-plugin",
+    "dsh-plugin",
+    "agent-memory",
+    "llm-memory",
+    "persistent-memory",
+    "long-term-memory",
+    "runtime-memory",
+    "working-memory",
+    "cross-session-memory",
+    "multi-agent-memory",
+    "shared-agent-memory",
+    "memory-orchestration",
+    "memory-provider",
+    "pluggable-memory",
+    "context-management",
+    "project-memory",
+    "project-documents",
+    "document-search",
+    "semantic-recall",
+    "local-first",
+    "mnemon",
+    "openviking",
+    "honcho",
+    "mem0",
+    "hindsight",
+    "holographic-memory",
+    "retaindb",
+    "byterover",
+    "supermemory"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mnemon-dev/mnemon.git",
+    "directory": "dsh"
+  },
+  "homepage": "https://github.com/mnemon-dev/mnemon/tree/master/dsh#readme",
+  "bugs": {
+    "url": "https://github.com/mnemon-dev/mnemon/issues"
+  },
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/src/index.d.ts",
+  "typesVersions": {
+    "*": {
+      "contracts": [
+        "lib/types/src/core/contracts/index.d.ts"
+      ],
+      "extension-sdk": [
+        "lib/types/src/sdk/index.d.ts"
+      ]
+    }
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/types/src/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./core": {
+      "types": "./lib/types/src/core/plugin.d.ts",
+      "default": "./lib/core.js"
+    },
+    "./client": {
+      "types": "./lib/types/src/client/index.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./contracts": {
+      "types": "./lib/types/src/core/contracts/index.d.ts",
+      "default": "./lib/contracts.js"
+    },
+    "./extension-sdk": {
+      "types": "./lib/types/src/sdk/index.d.ts",
+      "default": "./lib/extension-sdk.js"
+    },
+    "./testing": {
+      "types": "./lib/types/src/sdk/testing.d.ts",
+      "default": "./lib/testing.js"
+    },
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./starter": {
+      "types": "./lib/types/src/starter.d.ts",
+      "default": "./lib/starter.js"
+    },
+    "./bundle": {
+      "types": "./lib/types/src/bundle.d.ts",
+      "default": "./lib/bundle.js"
+    }
+  },
+  "files": [
+    "locale",
+    "lib",
+    "bin/repair-legacy-session.mjs",
+    "cordis.patch.yml",
+    "README.md",
+    "README.zh-CN.md",
+    "THIRD_PARTY_NOTICES.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-locale"
+      ],
+      "platform": "web"
+    }
+  },
+  "scripts": {
+    "build": "tsdown && tsc -p tsconfig.types.json && node scripts/link-bundle-declarations.mjs",
+    "prepublishOnly": "pnpm run verify",
+    "lint:package": "publint --strict && attw --pack . --profile esm-only --quiet",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:root": "vitest run --dir tests",
+    "bench:algorithms": "vitest run --config scripts/benchmark-algorithms.config.ts",
+    "verify:build": "node scripts/verify-deterministic-build.mjs",
+    "verify:headless": "node scripts/verify-headless-profile.mjs",
+    "verify:package": "node scripts/verify-package-contents.mjs && node scripts/verify-public-entries.mjs && pnpm run lint:package",
+    "verify:plugins": "node scripts/verify-plugin-artifacts.mjs",
+    "verify:docs": "node scripts/verify-docs.mjs",
+    "e2e:serve": "node scripts/serve-e2e.mjs",
+    "verify": "pnpm run verify:docs && pnpm run typecheck && pnpm run verify:build && pnpm --workspace-concurrency=4 -r build && pnpm -r typecheck && pnpm -r test && pnpm run test:root && pnpm run verify:headless && pnpm run verify:package",
+    "changeset": "changeset",
+    "release:intent": "node scripts/check-release-intent.mjs",
+    "release:status": "changeset status",
+    "release:version": "changeset version && node scripts/sync-release-metadata.mjs && pnpm install --lockfile-only",
+    "release:check": "node scripts/release.mjs --check"
+  },
+  "dependencies": {
+    "@deepseek-ai/cosmokit": "^1.8.5",
+    "@deepseek-ai/schemastery": "^3.18.4",
+    "dsh-mnemon-provider-byterover": "0.5.5",
+    "dsh-mnemon-provider-hindsight": "0.5.5",
+    "dsh-mnemon-provider-holographic": "0.5.6",
+    "dsh-mnemon-provider-honcho": "0.5.5",
+    "dsh-mnemon-provider-mem0": "0.5.5",
+    "dsh-mnemon-provider-mnemon-native": "0.5.8",
+    "dsh-mnemon-provider-openviking": "0.5.7",
+    "dsh-mnemon-provider-retaindb": "0.5.5",
+    "dsh-mnemon-provider-supermemory": "0.5.5",
+    "dsh-mnemon-source-documents": "0.5.9",
+    "dsh-mnemon-source-memory-spaces": "0.5.16",
+    "dsh-mnemon-source-runtime": "0.5.12",
+    "dsh-mnemon-strategy-auto-capture": "0.5.5",
+    "dsh-mnemon-strategy-default-three-tier": "0.5.7",
+    "dsh-mnemon-strategy-general": "0.5.1",
+    "dsh-mnemon-strategy-light-context": "0.5.5",
+    "dsh-mnemon-strategy-scoped": "0.5.5",
+    "fflate": "^0.8.3",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-app-boot": "^0.1.7-rc.2 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.7-rc.2 || ^0.2.0-rc.1",
+    "@deepseek-ai/dsh-typert-protocol": "^0.1.7-rc.2 || ^0.2.0-rc.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
+    "@changesets/cli": "^2.31.1",
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-agent": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-agent-loop": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-api-gateway": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-app-boot": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-connection": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-locale": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-store": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-chat": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-conversation": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-layout": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-plugin-manager": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-renderer": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-session": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-settings": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-sidebar": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-slots": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-client-ui-tool": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-invariants": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-llm": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-session": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-session-format-v0-to-v1": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-session-persistence-jsonl": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-session-projection": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-session-query": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-subagent": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-subagent-spawn-in-process": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-system-prompt": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-tools": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-typert-protocol": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-typert-registry": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-util-code-language": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-util-workspace-path": "0.1.7-rc.2",
+    "@shikijs/langs": "^4.3.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "anser": "^2.3.5",
+    "clsx": "^2.1.1",
+    "diff": "^9.0.0",
+    "immer": "^10.1.1",
+    "jsdom": "^26.1.0",
+    "katex": "^0.16.47",
+    "lightningcss": "^1.29.0",
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-gfm": "^3.1.0",
+    "mdast-util-math": "^3.0.0",
+    "micromark-core-commonmark": "^2.0.3",
+    "micromark-extension-gfm": "^3.0.0",
+    "micromark-extension-math": "^3.1.0",
+    "micromark-factory-space": "^2.0.1",
+    "micromark-util-character": "^2.1.1",
+    "micromark-util-classify-character": "^2.0.1",
+    "micromark-util-sanitize-uri": "^2.0.1",
+    "micromark-util-symbol": "^2.0.1",
+    "publint": "^0.3.23",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "semver": "^7.8.5",
+    "shiki": "^4.3.1",
+    "simple-icons": "16.31.0",
+    "tsdown": "^0.22.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0",
+    "zustand": "~4.4.7"
+  },
+  "bin": {
+    "dsh-mnemon-repair-session": "bin/repair-legacy-session.mjs"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-app-boot": {
+      "optional": true
+    }
+  }
+}

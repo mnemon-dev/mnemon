@@ -1,0 +1,197 @@
+{
+  "pairedRootCount": 1,
+  "rootTag": "MAIN",
+  "selectedPage": "状态",
+  "sourceTabs": [
+    "状态",
+    "运行时",
+    "档案",
+    "记忆空间"
+  ],
+  "styles": [
+    {
+      "fixtureStyleOrder": null,
+      "index": 60,
+      "isMnemonDefaults": true,
+      "plugin": "dsh-mnemon",
+      "pluginCss": "dsh-mnemon/src/client/MnemonView.module.css"
+    }
+  ],
+  "surface": "sidebar",
+  "surfaces": {
+    "canvas": {
+      "backgroundColor": "rgb(255, 255, 255)",
+      "backgroundImage": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)), linear-gradient(rgb(233, 236, 242), rgb(233, 236, 242))",
+      "mnBackdrop": "#e9ecf2",
+      "mnBg": "#fff",
+      "mnSurface": "linear-gradient(#fff, #fff), linear-gradient(#e9ecf2, #e9ecf2) #fff"
+    },
+    "header": {
+      "backgroundColor": "rgb(255, 255, 255)",
+      "backgroundImage": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)), linear-gradient(rgb(233, 236, 242), rgb(233, 236, 242))",
+      "mnBackdrop": "#e9ecf2",
+      "mnBg": "#fff",
+      "mnSurface": "linear-gradient(#fff, #fff), linear-gradient(#e9ecf2, #e9ecf2) #fff"
+    },
+    "root": {
+      "backgroundColor": "rgb(255, 255, 255)",
+      "backgroundImage": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)), linear-gradient(rgb(233, 236, 242), rgb(233, 236, 242))",
+      "mnBackdrop": "#e9ecf2",
+      "mnBg": "#fff",
+      "mnSurface": "linear-gradient(#fff, #fff), linear-gradient(#e9ecf2, #e9ecf2) #fff"
+    }
+  },
+  "title": "DeepSeek Harness",
+  "navigation": [
+    {
+      "page": "Runtime",
+      "selected": true,
+      "heading": "运行时记忆",
+      "result": "0 entries; USER.md and MEMORY.md summaries, filters and Add memory action rendered"
+    },
+    {
+      "page": "Documents",
+      "selected": true,
+      "heading": "项目档案",
+      "result": "Empty directory, reader, search and New document action rendered"
+    },
+    {
+      "page": "Memory Spaces",
+      "selected": true,
+      "heading": "记忆空间",
+      "result": "Overview, empty directory, secondary tabs and Create memory space action rendered"
+    }
+  ],
+  "browser": "Chrome via CUA, fresh task-owned tab",
+  "appearance": "Light selected through Settings and checked state observed",
+  "sessionStarted": false,
+  "fixture": {
+    "issue": 273,
+    "dsh": "0.1.7-rc.2",
+    "node": "v24.20.0",
+    "idleReview": false,
+    "preset": "standard",
+    "toolPresentation": "native",
+    "optionalStrategies": [
+      "scoped",
+      "light-context",
+      "auto-capture"
+    ],
+    "skin": {
+      "order": "none",
+      "installed": false
+    },
+    "artifacts": [
+      {
+        "name": "dsh-mnemon",
+        "version": "0.5.14",
+        "filename": "dsh-mnemon-0.5.14.tgz",
+        "sha256": "cc579518bc03090f098cae69b29182cec4b45ceb8a075216523bf4dc848cb396"
+      },
+      {
+        "name": "dsh-mnemon-provider-byterover",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-byterover-0.5.4.tgz",
+        "sha256": "94677bb5a27261dd2051f67c9ae5bc41c17ea86a4ea95cbd0baee1728203633f"
+      },
+      {
+        "name": "dsh-mnemon-provider-hindsight",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-hindsight-0.5.4.tgz",
+        "sha256": "bf527bc83d51bd7b2e510ed3be59665ae6b3ddbd4e1c3beee16c32235fa0afbb"
+      },
+      {
+        "name": "dsh-mnemon-provider-holographic",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-holographic-0.5.4.tgz",
+        "sha256": "67f9cc593a7bcf33001e0817a4932e23cf9f0927e90b6bc2b2ccd5ef49b91259"
+      },
+      {
+        "name": "dsh-mnemon-provider-honcho",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-honcho-0.5.4.tgz",
+        "sha256": "c102952aa1b9fdd953b25068663635a9ffad606bb39c68b56eafa538c8fab72d"
+      },
+      {
+        "name": "dsh-mnemon-provider-mem0",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-mem0-0.5.4.tgz",
+        "sha256": "42cd225bb376d387d8e7f5503d64b6a00ddae4f5aea26b495cb9d5aa44dab3b0"
+      },
+      {
+        "name": "dsh-mnemon-provider-mnemon-native",
+        "version": "0.5.5",
+        "filename": "dsh-mnemon-provider-mnemon-native-0.5.5.tgz",
+        "sha256": "cb1532ec04e1bc2550456340b453717686c2bc399e742e61be529bdae5e6f812"
+      },
+      {
+        "name": "dsh-mnemon-provider-openviking",
+        "version": "0.5.6",
+        "filename": "dsh-mnemon-provider-openviking-0.5.6.tgz",
+        "sha256": "2ba3e8e5248222733b7463c311443832a0872e0904c2b09304590234cf6c27ca"
+      },
+      {
+        "name": "dsh-mnemon-provider-retaindb",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-retaindb-0.5.4.tgz",
+        "sha256": "a7b5f1efb4e68df2d7ccc7e6078cd8c3229c82cf14f0162a196c975cbe19727f"
+      },
+      {
+        "name": "dsh-mnemon-provider-supermemory",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-supermemory-0.5.4.tgz",
+        "sha256": "d04b900f7f9e9359ba53b349bdbc4550fc19b350771e61df3aa451e8f67f9afd"
+      },
+      {
+        "name": "dsh-mnemon-source-documents",
+        "version": "0.5.6",
+        "filename": "dsh-mnemon-source-documents-0.5.6.tgz",
+        "sha256": "f506da0096e7fbbbc9b024d123fb9b7423fe29f28c9718525cf472677cc61dfd"
+      },
+      {
+        "name": "dsh-mnemon-source-memory-spaces",
+        "version": "0.5.9",
+        "filename": "dsh-mnemon-source-memory-spaces-0.5.9.tgz",
+        "sha256": "df7b3e8e7be6e4593dedff9d0e7de50e4462456d83914a568006e83b885c66c2"
+      },
+      {
+        "name": "dsh-mnemon-source-runtime",
+        "version": "0.5.8",
+        "filename": "dsh-mnemon-source-runtime-0.5.8.tgz",
+        "sha256": "6ed0594a0491b59712027223c228c44718dc27df5949351facf51ed2d424feed"
+      },
+      {
+        "name": "dsh-mnemon-strategy-auto-capture",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-strategy-auto-capture-0.5.4.tgz",
+        "sha256": "3816601abd83f0c5c679f3e4c9ae96c8f697e8e15f6546e975a96fd7f86b8c02"
+      },
+      {
+        "name": "dsh-mnemon-strategy-default-three-tier",
+        "version": "0.5.5",
+        "filename": "dsh-mnemon-strategy-default-three-tier-0.5.5.tgz",
+        "sha256": "52af5caf635f2cf2b165feff1ff3d35d241e6d073771b7b92b3ea37b36ff589f"
+      },
+      {
+        "name": "dsh-mnemon-strategy-light-context",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-strategy-light-context-0.5.4.tgz",
+        "sha256": "62947c3ff777fbb8d42724acf2a9c651d2b2302b387bb8579c59cd79f82a9e0d"
+      },
+      {
+        "name": "dsh-mnemon-strategy-scoped",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-strategy-scoped-0.5.4.tgz",
+        "sha256": "f3f945add93d2d5f8f48f0e70f5de9360814499a552218af7fa93f574dd3457a"
+      }
+    ]
+  },
+  "screenshot": "default-sidebar.png",
+  "screenshotPage": "Runtime",
+  "screenshotVisuallyReviewed": true,
+  "limitations": [
+    "Sidebar navigation only in this run; no memory writes, session messages, or remote Provider operations.",
+    "A pre-existing browser translation extension shows a small floating button at the right edge; no extension settings changed."
+  ],
+  "artifactsMatchAfterOrder": true
+}

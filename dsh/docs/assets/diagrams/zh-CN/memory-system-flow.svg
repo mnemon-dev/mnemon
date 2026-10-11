@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc" lang="zh-CN">
+  <title id="title">dsh-mnemon 从点击到回执的执行流</title>
+  <desc id="desc">区分确定性只读、Agent 查询、受监督写入和维护归档四条路径，并说明并发、隔离和渐进反馈。</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#7e8ba0"/></marker>
+    <marker id="agentArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#6558d9"/></marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans CJK SC","Microsoft YaHei",sans-serif;fill:#172033}.bg{fill:#f7f9fc}.lane{fill:#fff;stroke:#d7deea;stroke-width:1.4}.readLane{stroke:#83a7df}.agentLane{stroke:#9a8ee8}.writeLane{stroke:#34a27b}.maintLane{stroke:#d99238}.card{fill:#f8fafc;stroke:#d7deea;stroke-width:1.2}.agent{fill:#f4f0ff;stroke:#9a8ee8}.result{fill:#edf9f3;stroke:#79bfa6}.title{font-size:36px;font-weight:760}.sub{font-size:16px;fill:#647086}.laneTitle{font-size:17px;font-weight:730}.num{font-size:13px;font-weight:780;fill:#6558d9}.h{font-size:18px;font-weight:700}.copy{font-size:14px;fill:#647086}.small{font-size:12.5px;fill:#647086}.line{fill:none;stroke:#7e8ba0;stroke-width:2.2;marker-end:url(#arrow)}.agentLine{fill:none;stroke:#6558d9;stroke-width:2.2;stroke-dasharray:8 6;marker-end:url(#agentArrow)}.badge{fill:#ebf8ef}.badgeText{font-size:12px;font-weight:700;fill:#238352}
+  </style>
+  <rect class="bg" width="1600" height="900" rx="24"/>
+  <text class="title" x="48" y="56">从一次点击，到可验证的数据与回执</text>
+  <text class="sub" x="48" y="84">确定性操作直接经过 Host；需要判断的操作启动干净的独立任务 Agent；所有页面并发、渐进、局部失败隔离。</text>
+  <rect class="badge" x="1432" y="34" width="120" height="28" rx="14"/><text class="badgeText" x="1492" y="53" text-anchor="middle">v0.2.0 实际路径</text>
+
+  <g aria-label="确定性只读">
+    <rect class="lane readLane" x="32" y="112" width="1536" height="148" rx="20"/>
+    <text class="num" x="58" y="140">01</text><text class="laneTitle" x="92" y="140">确定性只读 · 结果到达即展示</text>
+    <rect class="card" x="58" y="158" width="300" height="78" rx="14"/><text class="h" x="78" y="188">状态 / 直接检索 / 内容 / 实体</text><text class="copy" x="78" y="214">点击即发起，只读且可取消</text>
+    <rect class="card" x="446" y="158" width="300" height="78" rx="14"/><text class="h" x="466" y="188">Host 并发调度</text><text class="copy" x="466" y="214">超时、schema、缓存与错误隔离</text>
+    <rect class="card" x="834" y="158" width="300" height="78" rx="14"/><text class="h" x="854" y="188">Provider 最快原生读取</text><text class="copy" x="854" y="214">每个已激活实例独立返回</text>
+    <rect class="card result" x="1222" y="158" width="300" height="78" rx="14"/><text class="h" x="1242" y="188">页面渐进更新</text><text class="copy" x="1242" y="214">一个转圈 · 局部状态 · 不阻塞整页</text>
+    <path class="line" d="M358 197h88M746 197h88M1134 197h88"/>
+  </g>
+
+  <g aria-label="Agent 查询">
+    <rect class="lane agentLane" x="32" y="280" width="1536" height="148" rx="20"/>
+    <text class="num" x="58" y="308">02</text><text class="laneTitle" x="92" y="308">Agent 查询 · 先取证据，再组织答案</text>
+    <rect class="card" x="58" y="326" width="300" height="78" rx="14"/><text class="h" x="78" y="356">点击 Agent 查询</text><text class="copy" x="78" y="382">聚焦问题 + 可选范围与策略</text>
+    <rect class="card" x="446" y="326" width="300" height="78" rx="14"/><text class="h" x="466" y="356">并发召回有界证据</text><text class="copy" x="466" y="382">排名融合，保留 Provider 来源</text>
+    <rect class="card agent" x="834" y="326" width="300" height="78" rx="14"/><text class="h" x="854" y="356">独立顶层任务 Agent</text><text class="copy" x="854" y="382">无会话历史、无 Mnemon 工具</text>
+    <rect class="card result" x="1222" y="326" width="300" height="78" rx="14"/><text class="h" x="1242" y="356">答案与证据同屏</text><text class="copy" x="1242" y="382">只读 · 失败保留原始召回</text>
+    <path class="line" d="M358 365h88M746 365h88"/><path class="agentLine" d="M1134 365h88"/>
+  </g>
+
+  <g aria-label="受监督写入">
+    <rect class="lane writeLane" x="32" y="448" width="1536" height="164" rx="20"/>
+    <text class="num" x="58" y="476">03</text><text class="laneTitle" x="92" y="476">受监督写入 · 用户确认、Agent 判断、Host 落盘</text>
+    <rect class="card" x="58" y="496" width="300" height="88" rx="14"/><text class="h" x="78" y="528">沉淀记忆 / 存入记忆</text><text class="copy" x="78" y="554">编辑候选，确认前不启动写入</text>
+    <rect class="card agent" x="446" y="496" width="300" height="88" rx="14"/><text class="h" x="466" y="528">判断 · 查重 · 提炼 · 选路</text><text class="copy" x="466" y="554">硬规则优先，必要时模型决策</text>
+    <rect class="card" x="834" y="496" width="300" height="88" rx="14"/><text class="h" x="854" y="528">Host 权限边界</text><text class="copy" x="854" y="554">工具白名单 · 路径 · 锁 · revision</text>
+    <rect class="card result" x="1222" y="496" width="300" height="88" rx="14"/><text class="h" x="1242" y="528">目标 Provider + 回执</text><text class="copy" x="1242" y="554">写入、跳过或失败都明确可见</text>
+    <path class="agentLine" d="M358 540h88"/><path class="line" d="M746 540h88M1134 540h88"/>
+  </g>
+
+  <g aria-label="维护与归档">
+    <rect class="lane maintLane" x="32" y="632" width="1536" height="170" rx="20"/>
+    <text class="num" x="58" y="660">04</text><text class="laneTitle" x="92" y="660">维护与归档 · 按对象隔离，不共享失败</text>
+    <rect class="card" x="58" y="680" width="300" height="94" rx="14"/><text class="h" x="78" y="711">AI 元信息 / 归档</text><text class="copy" x="78" y="737">多选记忆空间，或确认一个档案</text><text class="small" x="78" y="758">不依赖当前主 session</text>
+    <rect class="card agent" x="446" y="680" width="300" height="94" rx="14"/><text class="h" x="466" y="711">每个对象独立任务</text><text class="copy" x="466" y="737">最快采样，或先生成冷引用</text><text class="small" x="466" y="758">异步执行，互不覆盖状态</text>
+    <rect class="card" x="834" y="680" width="300" height="94" rx="14"/><text class="h" x="854" y="711">Host 验证结果</text><text class="copy" x="854" y="737">元信息只写本地目录</text><text class="small" x="854" y="758">归档需通过 revision fence</text>
+    <rect class="card result" x="1222" y="680" width="300" height="94" rx="14"/><text class="h" x="1242" y="711">卡片原位更新</text><text class="copy" x="1242" y="737">动画、成功或局部错误</text><text class="small" x="1242" y="758">失败不关闭窗口、不挤动布局</text>
+    <path class="agentLine" d="M358 727h88"/><path class="line" d="M746 727h88M1134 727h88"/>
+  </g>
+
+  <line x1="48" y1="850" x2="92" y2="850" stroke="#7e8ba0" stroke-width="2.2"/><text class="small" x="104" y="855">确定性 Host 路径</text>
+  <line x1="272" y1="850" x2="316" y2="850" stroke="#6558d9" stroke-width="2.2" stroke-dasharray="8 6"/><text class="small" x="328" y="855">独立任务 Agent 路径</text>
+  <text class="small" x="1552" y="855" text-anchor="end">首次进入全量同步 · 之后按 Provider + ID 按需重连</text>
+</svg>

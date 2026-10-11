@@ -1,0 +1,28 @@
+{
+  "version": 4,
+  "services": {
+    "holographic": {
+      "dataPath": "state/holographic/store.json"
+    }
+  },
+  "enabled": {
+    "holographic": true
+  },
+  "bodies": [
+    {
+      "id": "holographic-b391de2a35579f6ee0be3c92",
+      "externalId": "legacy-fixture-namespace",
+      "name": "Legacy facts",
+      "description": "Synthetic old-format Provider.",
+      "metadataSource": "provider",
+      "active": true,
+      "providerId": "holographic",
+      "connection": {
+        "defaultTrust": 0.8,
+        "minTrust": 0.3
+      },
+      "createdAt": "2026-08-20T10:00:00.000Z",
+      "updatedAt": "2026-08-20T10:00:00.000Z"
+    }
+  ]
+}

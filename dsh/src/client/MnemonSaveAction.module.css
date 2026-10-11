@@ -1,0 +1,145 @@
+/* Save-to-memory assistant action: DSH-sized icon button + centered native modal. */
+
+.wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 28px;
+  padding: 6px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+}
+.button:hover, .button[aria-expanded="true"] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+.button:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
+
+.icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.modal {
+  width: min(640px, calc(100vw - max(12px, env(safe-area-inset-left, 0px)) - max(12px, env(safe-area-inset-right, 0px))));
+  max-height: calc(100vh - 24px);
+}
+
+.modalContent {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.modalAction {
+  min-width: 96px;
+}
+
+.status {
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.readOnly {
+  margin-bottom: 12px;
+  border-radius: var(--dsw-radius-md);
+  padding: 8px 12px;
+  background: var(--dsw-alias-state-warn-tertiary);
+  color: var(--dsw-alias-state-warn-label);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.candidate {
+  display: block;
+}
+.candidateHeading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.candidateHeading > label {
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+}
+/* The DSH settings-form field: hairline stroke, 12px radius, sans text. */
+.candidate textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 260px;
+  max-height: 50vh;
+  border: .5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-md);
+  padding: 10px 12px;
+  resize: vertical;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-primary);
+  font: 14px/22px var(--dsw-font-family);
+}
+.candidate textarea:focus-visible {
+  outline: none;
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.truncated {
+  display: block;
+  margin-top: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+@media (max-width: 640px), (max-height: 560px) {
+  .modal {
+    width: min(100%, calc(100vw - max(8px, env(safe-area-inset-left, 0px)) - max(8px, env(safe-area-inset-right, 0px))));
+    max-height: calc(100vh - 16px);
+  }
+  .modal .modalAction {
+    min-width: 0;
+    min-height: 44px;
+  }
+  .candidate textarea {
+    min-height: clamp(140px, 32vh, 220px);
+    max-height: 42vh;
+  }
+}
+
+@media (pointer: coarse) and (max-width: 640px), (pointer: coarse) and (max-height: 560px) {
+  .candidate textarea { font-size: 16px; }
+}
+
+@supports (height: 100dvh) {
+  .modal {
+    max-height: calc(100dvh - 24px);
+  }
+  @media (max-width: 640px), (max-height: 560px) {
+    .modal { max-height: calc(100dvh - 16px); }
+    .candidate textarea {
+      min-height: clamp(140px, 32dvh, 220px);
+      max-height: 42dvh;
+    }
+  }
+}

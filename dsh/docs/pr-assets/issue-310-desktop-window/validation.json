@@ -1,0 +1,61 @@
+{
+  "record": "issue-310-desktop-window",
+  "date": "2026-09-29",
+  "timezone": "Asia/Shanghai",
+  "candidate": {
+    "revision": "b5f7914bb7fa6bfbd0bb60b5ccf65b757e1f1514",
+    "build": "pnpm release:version from the revision: dsh-mnemon 0.5.19 with its pinned plugins, installed from packed tarballs"
+  },
+  "baseline": "dsh-mnemon 0.5.18 with its pinned plugins, as published on npm",
+  "shell": {
+    "fixture": "scripts/fixtures/electron-desktop-window.mjs",
+    "electron": "44.3.0",
+    "scheme": "dsh-app: standard, secure, CORS, fetch, stream and code cache, as the official shell registers it",
+    "host": "dsh web on 127.0.0.1 only; a fresh DSH home and profile for every run"
+  },
+  "checks": "Open Memory System; Runtime memory: read-only notice, remote reason, Add memory, one real write; Memory Spaces: Save to memory and Create memory space; the dsh-mnemon page under Plugins: read-only notice and remote reason; every Mnemon request URL by route",
+  "runs": [
+    {
+      "name": "Baseline in a DSH 0.1.7 Desktop window",
+      "dsh": "0.1.7-rc.2", "package": "0.5.18", "page": "dsh-app://app/", "transport": null,
+      "runtime": { "readOnlyNotice": true, "remoteReason": false, "addMemory": false },
+      "memorySpaces": { "saveToMemory": "absent", "createMemorySpace": "absent" },
+      "pluginPage": { "readOnlyNotice": true, "remoteReason": false },
+      "mnemonRequests": { "API Gateway /api/dshMnemon": 13 },
+      "consoleErrors": 0
+    },
+    {
+      "name": "Fix in a DSH 0.1.7 Desktop window",
+      "dsh": "0.1.7-rc.2", "package": "0.5.19", "page": "dsh-app://app/", "transport": null,
+      "runtime": { "readOnlyNotice": false, "remoteReason": false, "addMemory": true, "written": true },
+      "memorySpaces": { "saveToMemory": "enabled", "createMemorySpace": "enabled" },
+      "pluginPage": { "readOnlyNotice": false, "remoteReason": false },
+      "mnemonRequests": { "/dsh-mnemon-read": 14, "/dsh-mnemon-settings": 2, "/dsh-mnemon-view": 3, "/dsh-mnemon-write": 1, "/dsh-mnemon-pack": 1 },
+      "write": "POST dsh-app://app/dsh-mnemon-write/source-assistance",
+      "consoleErrors": 0
+    },
+    {
+      "name": "Fix in a DSH 0.2 Desktop window",
+      "dsh": "0.2.0-rc.1", "package": "0.5.19", "page": "dsh-app://app/", "transport": { "ownsHost": true, "streamBaseUrl": "the Host's loopback origin" },
+      "runtime": { "readOnlyNotice": false, "remoteReason": false, "addMemory": true, "written": true },
+      "memorySpaces": { "saveToMemory": "enabled", "createMemorySpace": "enabled" },
+      "pluginPage": { "readOnlyNotice": false, "remoteReason": false },
+      "mnemonRequests": { "/dsh-mnemon-read": 14, "/dsh-mnemon-settings": 4, "/dsh-mnemon-view": 3, "/dsh-mnemon-write": 1, "/dsh-mnemon-pack": 1 },
+      "write": "POST dsh-app://app/dsh-mnemon-write/source-assistance",
+      "consoleErrors": 0
+    },
+    {
+      "name": "Fix on a remote page",
+      "dsh": "0.2.0-rc.1", "package": "0.5.19", "page": "http://memory.test/ (Chrome maps it to the Host, which trusts it with --trusted-host)", "transport": null,
+      "runtime": { "readOnlyNotice": true, "remoteReason": true, "addMemory": false },
+      "memorySpaces": { "saveToMemory": "disabled", "createMemorySpace": "absent" },
+      "pluginPage": { "remoteReason": true },
+      "mnemonRequests": { "API Gateway /api/dshMnemon": 14 },
+      "consoleErrors": 0
+    }
+  ],
+  "notes": [
+    "DSH shows a 0.1.7 window as reconnecting because its WebSocket stream cannot be opened through the scheme; Mnemon's requests are plain HTTP and unaffected. The screenshots are cropped to the Memory System.",
+    "The remote page shows the Runtime memory Source's own read-only line ('当前为只读模式…') under the new reason; the probe looked for the 0.5.18 wording, so its readOnlyNotice flag for that run was read from the screenshot."
+  ]
+}

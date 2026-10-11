@@ -1,0 +1,182 @@
+{
+  "path": "windows-evidence.tar.gz",
+  "sha256": "f976d55ec68f6b18322e2c9e7b391f3a9d4ab4c965f15db9da6a60ff3a996dea",
+  "files": [
+    {
+      "path": "report.md",
+      "bytes": 7264
+    },
+    {
+      "path": "README.md",
+      "bytes": 3548
+    },
+    {
+      "path": "compact-results.json",
+      "bytes": 12374
+    },
+    {
+      "path": "summarize.py",
+      "bytes": 2721
+    },
+    {
+      "path": "harness/Observer.cs",
+      "bytes": 13165
+    },
+    {
+      "path": "harness/issue-259-windows-validation.yml",
+      "bytes": 859
+    },
+    {
+      "path": "harness/run.ps1",
+      "bytes": 5272
+    },
+    {
+      "path": "harness/worker.mjs",
+      "bytes": 2008
+    },
+    {
+      "path": "run-35240525857/baseline-1-ready",
+      "bytes": 4
+    },
+    {
+      "path": "run-35240525857/baseline-1-result.json",
+      "bytes": 395
+    },
+    {
+      "path": "run-35240525857/baseline-2-ready",
+      "bytes": 4
+    },
+    {
+      "path": "run-35240525857/baseline-2-result.json",
+      "bytes": 387
+    },
+    {
+      "path": "run-35240525857/baseline.ts",
+      "bytes": 871
+    },
+    {
+      "path": "run-35240525857/fixed-1-ready",
+      "bytes": 4
+    },
+    {
+      "path": "run-35240525857/fixed-1-result.json",
+      "bytes": 380
+    },
+    {
+      "path": "run-35240525857/fixed-2-ready",
+      "bytes": 4
+    },
+    {
+      "path": "run-35240525857/fixed-2-result.json",
+      "bytes": 380
+    },
+    {
+      "path": "run-35240525857/fixed.ts",
+      "bytes": 896
+    },
+    {
+      "path": "run-35240525857/metadata.json",
+      "bytes": 996
+    },
+    {
+      "path": "run-35240525857/positive-control-first-window.png",
+      "bytes": 24611
+    },
+    {
+      "path": "run-35240525857/positive-control-ready",
+      "bytes": 4
+    },
+    {
+      "path": "run-35240525857/positive-control-result.json",
+      "bytes": 130
+    },
+    {
+      "path": "run-35240525857/summary.txt",
+      "bytes": 671
+    },
+    {
+      "path": "run-35240525857/windows-observation.json",
+      "bytes": 55846
+    },
+    {
+      "path": "run-35241111560/baseline-1-desktop.png",
+      "bytes": 786383
+    },
+    {
+      "path": "run-35241111560/baseline-1-ready",
+      "bytes": 4
+    },
+    {
+      "path": "run-35241111560/baseline-1-result.json",
+      "bytes": 387
+    },
+    {
+      "path": "run-35241111560/baseline-2-desktop.png",
+      "bytes": 786397
+    },
+    {
+      "path": "run-35241111560/baseline-2-ready",
+      "bytes": 4
+    },
+    {
+      "path": "run-35241111560/baseline-2-result.json",
+      "bytes": 387
+    },
+    {
+      "path": "run-35241111560/baseline.ts",
+      "bytes": 871
+    },
+    {
+      "path": "run-35241111560/fixed-1-desktop.png",
+      "bytes": 786057
+    },
+    {
+      "path": "run-35241111560/fixed-1-ready",
+      "bytes": 4
+    },
+    {
+      "path": "run-35241111560/fixed-1-result.json",
+      "bytes": 380
+    },
+    {
+      "path": "run-35241111560/fixed-2-desktop.png",
+      "bytes": 786057
+    },
+    {
+      "path": "run-35241111560/fixed-2-ready",
+      "bytes": 4
+    },
+    {
+      "path": "run-35241111560/fixed-2-result.json",
+      "bytes": 389
+    },
+    {
+      "path": "run-35241111560/fixed.ts",
+      "bytes": 896
+    },
+    {
+      "path": "run-35241111560/metadata.json",
+      "bytes": 996
+    },
+    {
+      "path": "run-35241111560/positive-control-desktop.png",
+      "bytes": 150320
+    },
+    {
+      "path": "run-35241111560/positive-control-ready",
+      "bytes": 4
+    },
+    {
+      "path": "run-35241111560/positive-control-result.json",
+      "bytes": 130
+    },
+    {
+      "path": "run-35241111560/summary.txt",
+      "bytes": 671
+    },
+    {
+      "path": "run-35241111560/windows-observation.json",
+      "bytes": 56066
+    }
+  ]
+}

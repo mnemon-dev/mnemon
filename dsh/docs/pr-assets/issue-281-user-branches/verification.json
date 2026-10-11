@@ -1,0 +1,383 @@
+{
+  "issue": 281,
+  "baselineRevision": "6dc4e4201585223f7f1da371256da11deee34d6c",
+  "baselineRegression": {
+    "passed": 9,
+    "failed": 4,
+    "error": "branches applies to target=memory only",
+    "affectedCompositions": [
+      "default root",
+      "default child",
+      "three enhancements with renamed entries/root",
+      "three enhancements with renamed entries/child"
+    ]
+  },
+  "fixedFocusedRegression": {
+    "passed": 45,
+    "failed": 0,
+    "files": [
+      "tests/runtime-user-branches.spec.ts",
+      "tests/rpc.spec.ts",
+      "tests/strategy-extensions-host.spec.ts"
+    ]
+  },
+  "cli": {
+    "version": "0.2.9",
+    "platform": "darwin_arm64",
+    "archiveSha256": "6fbb1d572d8b4c080c36080e23ae0a183fce6841748f6c426e712136ac756b24",
+    "binarySha256": "bd1b080b0f98e8703b7cd942bd9b7ea3e15f69081e26c302e129d306ac86aaf4"
+  },
+  "fullVerification": {
+    "passed": true,
+    "rootTests": 1373,
+    "rootSkipped": 7,
+    "rootFiles": 100,
+    "independentPluginRepositories": 16,
+    "packedArtifacts": 17,
+    "unpackedBytes": 1374961,
+    "sourceArtifactChanges": false,
+    "pluginTests": 402,
+    "pluginSkipped": 2
+  },
+  "webui": {
+    "before": {
+      "dsh": "0.1.7-rc.2",
+      "model": "loopback deterministic fixture",
+      "cases": {
+        "USER281_PREPARE": {
+          "call": {
+            "name": "mnemon_runtime_memory",
+            "args": {
+              "action": "add",
+              "target": "user",
+              "content": "USER281_SEED: I prefer concise replies.",
+              "importance": "normal"
+            }
+          },
+          "receipt": {
+            "callId": "issue281-4",
+            "isError": false,
+            "result": {
+              "success": true,
+              "message": "Entry added.",
+              "target": "user",
+              "entryCount": 1,
+              "usage": {
+                "used": 39,
+                "limit": 4096
+              },
+              "added": "USER281_SEED: I prefer concise replies.",
+              "revision": "a2d1605f49a3c7c7cb1ef8b9f85cd464a782660d6476fee966f7128d83d4a6aa",
+              "memoryReceipt": {
+                "status": "succeeded",
+                "completion": "committed",
+                "committedAt": "2026-09-25T16:04:42.181Z"
+              }
+            }
+          }
+        },
+        "USER281_REPLACE": {
+          "call": {
+            "name": "mnemon_runtime_memory",
+            "args": {
+              "action": "replace",
+              "target": "user",
+              "old_text": "USER281_SEED: I prefer concise replies.",
+              "content": "USER281_REPLACED: I prefer concise replies with examples.",
+              "importance": "normal",
+              "branches": []
+            }
+          },
+          "receipt": {
+            "callId": "issue281-6",
+            "isError": true,
+            "result": {
+              "text": "Error: branches applies to target=memory only"
+            }
+          }
+        }
+      }
+    },
+    "after": {
+      "dsh": "0.1.7-rc.2",
+      "model": "loopback deterministic fixture",
+      "cases": {
+        "USER281_PREPARE": {
+          "call": {
+            "id": "issue281-3",
+            "name": "mnemon_runtime_memory",
+            "args": {
+              "action": "add",
+              "target": "user",
+              "content": "USER281_SEED: I prefer concise replies.",
+              "importance": "normal"
+            }
+          },
+          "receipt": {
+            "callId": "issue281-3",
+            "isError": false,
+            "result": {
+              "success": true,
+              "message": "Entry added.",
+              "target": "user",
+              "entryCount": 1,
+              "usage": {
+                "used": 39,
+                "limit": 4096
+              },
+              "added": "USER281_SEED: I prefer concise replies.",
+              "revision": "752e1ee8ff95441b0b4405daaacbbc1e0c2492fcfce8a6f43f8066a78c8a9dbc",
+              "memoryReceipt": {
+                "status": "succeeded",
+                "completion": "committed",
+                "committedAt": "2026-09-25T16:08:14.194Z"
+              }
+            }
+          }
+        },
+        "USER281_REPLACE": {
+          "call": {
+            "id": "issue281-6",
+            "name": "mnemon_runtime_memory",
+            "args": {
+              "action": "replace",
+              "target": "user",
+              "old_text": "USER281_SEED: I prefer concise replies.",
+              "content": "USER281_REPLACED: I prefer concise replies with examples.",
+              "importance": "normal",
+              "branches": []
+            }
+          },
+          "receipt": {
+            "callId": "issue281-6",
+            "isError": false,
+            "result": {
+              "success": true,
+              "message": "Entry replaced.",
+              "target": "user",
+              "entryCount": 1,
+              "usage": {
+                "used": 57,
+                "limit": 4096
+              },
+              "replaced": {
+                "from": "USER281_SEED: I prefer concise replies.",
+                "to": "USER281_REPLACED: I prefer concise replies with examples."
+              },
+              "revision": "6601afdf483d86518e7e447965831bd03598b195f3777e77db262f479be86aa7",
+              "memoryReceipt": {
+                "status": "succeeded",
+                "completion": "committed",
+                "committedAt": "2026-09-25T16:08:32.610Z"
+              }
+            }
+          }
+        },
+        "USER281_ADD": {
+          "call": {
+            "id": "issue281-8",
+            "name": "mnemon_runtime_memory",
+            "args": {
+              "action": "add",
+              "target": "user",
+              "content": "USER281_EXTRA: I prefer metric units.",
+              "importance": "normal",
+              "branches": []
+            }
+          },
+          "receipt": {
+            "callId": "issue281-8",
+            "isError": false,
+            "result": {
+              "success": true,
+              "message": "Entry added.",
+              "target": "user",
+              "entryCount": 2,
+              "usage": {
+                "used": 98,
+                "limit": 4096
+              },
+              "added": "USER281_EXTRA: I prefer metric units.",
+              "revision": "1820de19b3c253861fae19029c2904a1f30d43a5b1f1265f66e605bcf75c84b2",
+              "memoryReceipt": {
+                "status": "succeeded",
+                "completion": "committed",
+                "committedAt": "2026-09-25T16:09:16.050Z"
+              }
+            }
+          }
+        },
+        "USER281_REMOVE": {
+          "call": {
+            "id": "issue281-10",
+            "name": "mnemon_runtime_memory",
+            "args": {
+              "action": "remove",
+              "target": "user",
+              "old_text": "USER281_EXTRA: I prefer metric units.",
+              "branches": []
+            }
+          },
+          "receipt": {
+            "callId": "issue281-10",
+            "isError": false,
+            "result": {
+              "success": true,
+              "message": "Entry removed.",
+              "target": "user",
+              "entryCount": 1,
+              "usage": {
+                "used": 57,
+                "limit": 4096
+              },
+              "removed": "USER281_EXTRA: I prefer metric units.",
+              "revision": "6601afdf483d86518e7e447965831bd03598b195f3777e77db262f479be86aa7",
+              "memoryReceipt": {
+                "status": "succeeded",
+                "completion": "committed",
+                "committedAt": "2026-09-25T16:09:16.240Z"
+              }
+            }
+          }
+        },
+        "USER281_REJECT": {
+          "call": {
+            "id": "issue281-12",
+            "name": "mnemon_runtime_memory",
+            "args": {
+              "action": "add",
+              "target": "user",
+              "content": "USER281_REJECTED: I prefer afternoon reminders.",
+              "branches": [
+                "experiment"
+              ]
+            }
+          },
+          "receipt": {
+            "callId": "issue281-12",
+            "isError": true,
+            "result": {
+              "text": "Error: branches applies to target=memory only"
+            }
+          }
+        },
+        "MEMORY281_SCOPE": {
+          "call": {
+            "id": "issue281-14",
+            "name": "mnemon_runtime_memory",
+            "args": {
+              "action": "add",
+              "target": "memory",
+              "content": "MEMORY281_SCOPED: The experiment uses SQLite.",
+              "importance": "normal",
+              "branches": [
+                "experiment"
+              ]
+            }
+          },
+          "receipt": {
+            "callId": "issue281-14",
+            "isError": false,
+            "result": {
+              "success": true,
+              "message": "Entry added.",
+              "target": "memory",
+              "entryCount": 1,
+              "usage": {
+                "used": 45,
+                "limit": 10240
+              },
+              "added": "MEMORY281_SCOPED: The experiment uses SQLite.",
+              "revision": "8a7c550c896ec3d0da3a928086cf708994e6c1768987997fa2b08714003f0200",
+              "memoryReceipt": {
+                "status": "succeeded",
+                "completion": "committed",
+                "committedAt": "2026-09-25T16:09:24.852Z"
+              }
+            }
+          }
+        },
+        "MEMORY281_CLEAR": {
+          "call": {
+            "id": "issue281-16",
+            "name": "mnemon_runtime_memory",
+            "args": {
+              "action": "replace",
+              "target": "memory",
+              "old_text": "MEMORY281_SCOPED: The experiment uses SQLite.",
+              "content": "MEMORY281_GLOBAL: The project uses SQLite.",
+              "importance": "normal",
+              "branches": []
+            }
+          },
+          "receipt": {
+            "callId": "issue281-16",
+            "isError": false,
+            "result": {
+              "success": true,
+              "message": "Entry replaced.",
+              "target": "memory",
+              "entryCount": 1,
+              "usage": {
+                "used": 42,
+                "limit": 10240
+              },
+              "replaced": {
+                "from": "MEMORY281_SCOPED: The experiment uses SQLite.",
+                "to": "MEMORY281_GLOBAL: The project uses SQLite."
+              },
+              "revision": "0bb07c5f0b3529a09197c55a8887d4af6d7ec4620f525ccceff7f50014c0dcdb",
+              "memoryReceipt": {
+                "status": "succeeded",
+                "completion": "committed",
+                "committedAt": "2026-09-25T16:09:25.416Z"
+              }
+            }
+          }
+        }
+      }
+    },
+    "foundation": {
+      "runtimeManualEdit": true,
+      "documentsCreateAndContentSearch": true,
+      "nativeSpaceCreateAndActivate": true,
+      "nativeCliWriteAndWebuiKeywordReadback": true,
+      "settingsSaved": true,
+      "threeEnhancementsEnabled": true
+    }
+  },
+  "scope": {
+    "fix": "named mnemon_runtime_memory adapter only",
+    "sourcesAndGenericActions": "strict USER branch contract retained",
+    "realWindowsTest": false,
+    "externalModelUsed": false
+  },
+  "coldRestart": {
+    "fileHashes": {
+      "runtime/memories.json": "7474fda50ce2d424aacdcae5c297681ad43bf8b203afb96672171178d9c9d81d",
+      "runtime/USER.md": "e171c4ab1ba69b4e03abe8ed1f3eb6e03c4f2616b9b05c2a3f6851c802edd3cf",
+      "runtime/MEMORY.md": "a45fedb212828eab54e34917b4215335ba25d8fef2f17ee5b4a0c4a391a73771",
+      "documents/index.json": "445493609fd0c0c8be59bcde8ab5a13d0848351871de6aec79d24f6c80655990",
+      "documents/active/issue-281-foundation-check-74da7ec3.md": "09799884268f93ed64f90a76700c481d7cf016e89e9e4e0c1db81ba580afb3e7"
+    },
+    "exactRuntimeDocumentsBytes": true,
+    "nativeRecallId": "f08545a9-87dc-4035-8d7f-1fe741223467",
+    "webuiReconnection": {
+      "passed": false,
+      "reason": "Browser ERR_BLOCKED_BY_CLIENT for the new authenticated URL, including the original port; disconnected cached UI excluded from evidence."
+    },
+    "stablePortFileHashes": {
+      "dsh-home/profiles/web/cordis.patch.yml": "3d8789e7e214124dee7b3fa4e66b6e33ac0a0d438838c1a4005e9b2e195db656",
+      "data/data/.dsh-memory-bodies.json": "b228fd2bae3d885a6bef3eb9872b6fce29417e732e4896e58f6bbaa2f88af955",
+      "data/data/default/mnemon.db": "a1d07a5d312dd6cad09bf83ed1693b488fab43e0b2799ce94604ee370f2cbea0",
+      "data/documents/active/issue-281-foundation-check-74da7ec3.md": "09799884268f93ed64f90a76700c481d7cf016e89e9e4e0c1db81ba580afb3e7",
+      "data/documents/index.json": "445493609fd0c0c8be59bcde8ab5a13d0848351871de6aec79d24f6c80655990",
+      "data/runtime/MEMORY.md": "a45fedb212828eab54e34917b4215335ba25d8fef2f17ee5b4a0c4a391a73771",
+      "data/runtime/USER.md": "e171c4ab1ba69b4e03abe8ed1f3eb6e03c4f2616b9b05c2a3f6851c802edd3cf",
+      "data/runtime/memories.json": "7474fda50ce2d424aacdcae5c297681ad43bf8b203afb96672171178d9c9d81d"
+    },
+    "savedMaxPerSession": 19,
+    "profileAndAllThreeSourcesUnchanged": true
+  },
+  "fixedToolSourceBlob": "d32c0d3c7c5e9d92dcb125bcac08b6b553e1041a"
+}

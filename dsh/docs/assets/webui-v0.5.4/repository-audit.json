@@ -1,0 +1,3472 @@
+{
+  "schemaVersion": 1,
+  "auditDate": "2026-09-07",
+  "baselineRevision": "6902155e0f3877dca5c5d70468f2a2a1784c7b29",
+  "scope": "All pre-existing repository image/video files under docs and .github, and Markdown/HTML media references in repository Markdown documents. External PR/Issue references are not enumerated.",
+  "summary": {
+    "existingMedia": 142,
+    "unchangedExistingMedia": 142,
+    "currentArchitectureDiagrams": 8,
+    "retainedHistoricalMedia": 134,
+    "existingPngJpegOcrChecked": 135,
+    "existingPngJpegLegacyLabels": 68,
+    "existingOcrErrors": 0,
+    "currentGuideMediaReferences": 64,
+    "currentGuideHistoricalMediaReferences": 0,
+    "newLightScreenshots": 60,
+    "newLightRecordings": 2
+  },
+  "ocrMethod": "macOS Vision accurate text recognition, zh-Hans and en-US, language correction disabled; case/whitespace-normalized old Chinese noun and memory body/bodies detection. SVG sources read as text; historical motion files retained without a new frame-level audit. OCR results support manual inspection.",
+  "currentGallery": "docs/assets/webui-v0.5.4/README.md",
+  "currentGuideMediaReferences": [
+    {
+      "file": "README.md",
+      "line": 63,
+      "target": "docs/assets/diagrams/en/composable-memory.png"
+    },
+    {
+      "file": "README.md",
+      "line": 20,
+      "target": "docs/assets/webui-v0.5.4/en/spaces.jpg"
+    },
+    {
+      "file": "README.md",
+      "line": 26,
+      "target": "docs/assets/webui-v0.5.4/en/demo.mp4"
+    },
+    {
+      "file": "README.zh-CN.md",
+      "line": 63,
+      "target": "docs/assets/diagrams/zh-CN/composable-memory.png"
+    },
+    {
+      "file": "README.zh-CN.md",
+      "line": 20,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/spaces.jpg"
+    },
+    {
+      "file": "README.zh-CN.md",
+      "line": 26,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/demo.mp4"
+    },
+    {
+      "file": "docs/en/guides/getting-started.md",
+      "line": 177,
+      "target": "docs/assets/webui-v0.5.4/en/status.jpg"
+    },
+    {
+      "file": "docs/en/guides/operations.md",
+      "line": 25,
+      "target": "docs/assets/webui-v0.5.4/en/status.jpg"
+    },
+    {
+      "file": "docs/en/guides/operations.md",
+      "line": 25,
+      "target": "docs/assets/webui-v0.5.4/en/status.jpg"
+    },
+    {
+      "file": "docs/en/guides/operations.md",
+      "line": 33,
+      "target": "docs/assets/webui-v0.5.4/en/versions.jpg"
+    },
+    {
+      "file": "docs/en/guides/operations.md",
+      "line": 33,
+      "target": "docs/assets/webui-v0.5.4/en/versions.jpg"
+    },
+    {
+      "file": "docs/en/guides/operations.md",
+      "line": 44,
+      "target": "docs/assets/webui-v0.5.4/en/versions-expanded.jpg"
+    },
+    {
+      "file": "docs/en/guides/operations.md",
+      "line": 73,
+      "target": "docs/assets/webui-v0.5.4/en/backup-preview.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 11,
+      "target": "docs/assets/webui-v0.5.4/en/demo.mp4"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 35,
+      "target": "docs/assets/webui-v0.5.4/en/status.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 43,
+      "target": "docs/assets/webui-v0.5.4/en/versions.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 51,
+      "target": "docs/assets/webui-v0.5.4/en/enhancements.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 63,
+      "target": "docs/assets/webui-v0.5.4/en/runtime.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 71,
+      "target": "docs/assets/webui-v0.5.4/en/documents.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 85,
+      "target": "docs/assets/webui-v0.5.4/en/spaces.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 94,
+      "target": "docs/assets/webui-v0.5.4/en/graph.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 111,
+      "target": "docs/assets/webui-v0.5.4/en/space-create.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 136,
+      "target": "docs/assets/webui-v0.5.4/en/recall.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 148,
+      "target": "docs/assets/webui-v0.5.4/en/content.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 152,
+      "target": "docs/assets/webui-v0.5.4/en/entities.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 156,
+      "target": "docs/assets/webui-v0.5.4/en/spaces-mobile.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 156,
+      "target": "docs/assets/webui-v0.5.4/en/space-directory-mobile.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 156,
+      "target": "docs/assets/webui-v0.5.4/en/space-create-mobile.jpg"
+    },
+    {
+      "file": "docs/en/guides/ui-guide.md",
+      "line": 156,
+      "target": "docs/assets/webui-v0.5.4/en/versions-mobile.jpg"
+    },
+    {
+      "file": "docs/en/reference/configuration.md",
+      "line": 115,
+      "target": "docs/assets/webui-v0.5.4/en/runtime.jpg"
+    },
+    {
+      "file": "docs/en/reference/configuration.md",
+      "line": 117,
+      "target": "docs/assets/webui-v0.5.4/en/runtime-configured.jpg"
+    },
+    {
+      "file": "docs/en/reference/configuration.md",
+      "line": 151,
+      "target": "docs/assets/webui-v0.5.4/en/settings-layers.jpg"
+    },
+    {
+      "file": "docs/en/reference/configuration.md",
+      "line": 151,
+      "target": "docs/assets/webui-v0.5.4/en/settings-layers.jpg"
+    },
+    {
+      "file": "docs/en/reference/configuration.md",
+      "line": 155,
+      "target": "docs/assets/webui-v0.5.4/en/documents-disabled.jpg"
+    },
+    {
+      "file": "docs/en/reference/configuration.md",
+      "line": 155,
+      "target": "docs/assets/webui-v0.5.4/en/documents-disabled.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/getting-started.md",
+      "line": 177,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/status.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/operations.md",
+      "line": 25,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/status.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/operations.md",
+      "line": 25,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/status.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/operations.md",
+      "line": 33,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/versions.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/operations.md",
+      "line": 33,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/versions.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/operations.md",
+      "line": 44,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/versions-expanded.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/operations.md",
+      "line": 73,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/backup-preview.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 11,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/demo.mp4"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 35,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/status.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 43,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/versions.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 51,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/enhancements.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 63,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/runtime.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 73,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/documents.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 89,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/spaces.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 98,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/graph.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 117,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/space-create.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 142,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/recall.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 154,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/content.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 158,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/entities.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 162,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/spaces-mobile.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 162,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/space-directory-mobile.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 162,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/space-create-mobile.jpg"
+    },
+    {
+      "file": "docs/zh-CN/guides/ui-guide.md",
+      "line": 162,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/versions-mobile.jpg"
+    },
+    {
+      "file": "docs/zh-CN/reference/configuration.md",
+      "line": 117,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/runtime.jpg"
+    },
+    {
+      "file": "docs/zh-CN/reference/configuration.md",
+      "line": 119,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/runtime-configured.jpg"
+    },
+    {
+      "file": "docs/zh-CN/reference/configuration.md",
+      "line": 153,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/settings-layers.jpg"
+    },
+    {
+      "file": "docs/zh-CN/reference/configuration.md",
+      "line": 153,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/settings-layers.jpg"
+    },
+    {
+      "file": "docs/zh-CN/reference/configuration.md",
+      "line": 157,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/documents-disabled.jpg"
+    },
+    {
+      "file": "docs/zh-CN/reference/configuration.md",
+      "line": 157,
+      "target": "docs/assets/webui-v0.5.4/zh-CN/documents-disabled.jpg"
+    }
+  ],
+  "existingMedia": [
+    {
+      "file": "docs/assets/diagrams/en/composable-memory.png",
+      "bytes": 104006,
+      "sha256": "66440c056298542936879e9a1304e82121581483c085af3983dd0f77871c679c",
+      "classification": "current_architecture_diagram",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "README.md",
+          "line": 63
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "README.md",
+          "line": 63
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/diagrams/en/composable-memory.svg",
+      "bytes": 2707,
+      "sha256": "9cd310e48929cd5ee60fbdd43cc9ba6bbbefeff2e7a6a622f54cb519f43481a2",
+      "classification": "current_architecture_diagram",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": false,
+        "legacyLabelsDetected": null
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/diagrams/README.md",
+          "line": 3
+        },
+        {
+          "file": "docs/assets/diagrams/README.md",
+          "line": 5
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/diagrams/README.md",
+          "line": 3
+        },
+        {
+          "file": "docs/assets/diagrams/README.md",
+          "line": 5
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/diagrams/en/memory-system-flow.png",
+      "bytes": 283110,
+      "sha256": "ac51974965c65a30876b8690e17e8eab04fa45e4c91e0677f6a530bc4686b535",
+      "classification": "current_architecture_diagram",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/diagrams/en/memory-system-flow.svg",
+      "bytes": 7892,
+      "sha256": "f4041fced132d8e6bc0092cef18a8c1d08a4e624d05ce38e12cfbf705c8e42dd",
+      "classification": "current_architecture_diagram",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": false,
+        "legacyLabelsDetected": null
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/diagrams/zh-CN/composable-memory.png",
+      "bytes": 97860,
+      "sha256": "9ee85b4f1287ed109aad6201f1f2a68d5f0c28999baeddb127526b305be40bb5",
+      "classification": "current_architecture_diagram",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "README.zh-CN.md",
+          "line": 63
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "README.zh-CN.md",
+          "line": 63
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/diagrams/zh-CN/composable-memory.svg",
+      "bytes": 2794,
+      "sha256": "0b9a022bd2045837547384b0465942f3896d527b749a2ebb9125396ecc3ba5b3",
+      "classification": "current_architecture_diagram",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": false,
+        "legacyLabelsDetected": null
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/diagrams/README.md",
+          "line": 3
+        },
+        {
+          "file": "docs/assets/diagrams/README.md",
+          "line": 5
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/diagrams/README.md",
+          "line": 3
+        },
+        {
+          "file": "docs/assets/diagrams/README.md",
+          "line": 5
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/diagrams/zh-CN/memory-system-flow.png",
+      "bytes": 393004,
+      "sha256": "72d22b857692480b21f77b84b0221324d8e103117fffa32a1138dc16b7e14cd5",
+      "classification": "current_architecture_diagram",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/diagrams/zh-CN/memory-system-flow.svg",
+      "bytes": 7803,
+      "sha256": "0692841af8bee1bef20f04ca151afe72ffb6a6f3b2b3f5525dbac348cbddbda6",
+      "classification": "current_architecture_diagram",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": false,
+        "legacyLabelsDetected": null
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/issues/172/reproduction-runtime-pin.jpg",
+      "bytes": 58513,
+      "sha256": "deb4301587d43b179739183dd8f846229628710ce427bd746dcd960574677c20",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/issues/172/verified-new-turn-completes.jpg",
+      "bytes": 62401,
+      "sha256": "1dff9daa71b9b6b963568b89f9623d332caacbe46f250cd72000cd199ac582c9",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/issues/176/reproduction-read-only-notice.jpg",
+      "bytes": 48450,
+      "sha256": "8ac1b14dcd98ab998cfe31ebdecd4ae22d51de796ea29b9c674802ceeece5fb3",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/issues/176/reproduction-read-only.jpg",
+      "bytes": 50887,
+      "sha256": "dd22093e319c880e6b445852260abec65cc5270932a579aca4b705c4a3f3dbe6",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/issues/176/verified-editable.jpg",
+      "bytes": 55873,
+      "sha256": "0146a98c34f2076ab0db771a96e5f73331213f13ffc54fe5ac752f505dce04cf",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/issues/176/verified-writable-footer.jpg",
+      "bytes": 49070,
+      "sha256": "b38d63d9277b0f71a3a22dee68ea17baed24f64322080a942e9e4c467d20d29f",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/issues/185/verified-all-mnemon-plugins-disabled.jpg",
+      "bytes": 45513,
+      "sha256": "8428d2dbafb2fc5c28ef84839b138507baea26eceb7b1c310fad1a757059013c",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/media/dsh-mnemon-memory-system-demo-poster.jpg",
+      "bytes": 153837,
+      "sha256": "5629fff9eefa4127705138043d05dd570fdb9ea84b41e8e009825df35623b56c",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/media/dsh-mnemon-memory-system-demo.gif",
+      "bytes": 8495823,
+      "sha256": "cf488d6e69a68f9d68012fd9df5036a403d7dfdcef17abd925a21cab44fa2cef",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": false,
+        "legacyLabelsDetected": null
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/media/dsh-mnemon-memory-system-demo.mp4",
+      "bytes": 5512802,
+      "sha256": "d617ad0754fb415810b9c7bc81cc8e97ff27092171bca2cfe1dbc1c6bf7985a4",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": false,
+        "legacyLabelsDetected": null
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/en/content.jpg",
+      "bytes": 99265,
+      "sha256": "276ba55eca34cb166f77181bd68b89ff957ef0e11ba2068cb9aa7babb29ce33c",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 22
+        },
+        {
+          "file": "docs/en/guides/ui-guide.md",
+          "line": 142
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 26
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/en/create-mobile.jpg",
+      "bytes": 41643,
+      "sha256": "ac6de77aa745ac6f10f9631266751de357e41ae3b6bdb87627cc5159be2f18a5",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 26
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 30
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/en/create.jpg",
+      "bytes": 88988,
+      "sha256": "65779522334ac63c88bc5553848c0d018781fa7980290a407ef8266ad6ccf215",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 23
+        },
+        {
+          "file": "docs/en/guides/ui-guide.md",
+          "line": 107
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 27
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/en/documents.jpg",
+      "bytes": 104792,
+      "sha256": "9c4b99fd14d5bcfe2404d33b564f2bb20a728ba9426d02b11dcb3ff81d5a0b1d",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 20
+        },
+        {
+          "file": "docs/en/guides/ui-guide.md",
+          "line": 69
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 24
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/en/enhancements.jpg",
+      "bytes": 74775,
+      "sha256": "a263f91445e5f4b3e70acab8696f6837c5776e3a8cfb1a5251a15f60e3754858",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 24
+        },
+        {
+          "file": "docs/en/guides/ui-guide.md",
+          "line": 49
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 28
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/en/runtime.jpg",
+      "bytes": 81166,
+      "sha256": "a4a121d100ad4b420f66620af5f8f89205f098732effd64bf928fefe6c6a5cc1",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 19
+        },
+        {
+          "file": "docs/en/guides/ui-guide.md",
+          "line": 61
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 23
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/en/spaces-mobile.jpg",
+      "bytes": 49850,
+      "sha256": "98f76c0f693c187a0ae95c55a5e984e9f4c94e2f27057dcd9da6d5a6860e3614",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 25
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 29
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/en/spaces.jpg",
+      "bytes": 100721,
+      "sha256": "a6e922edcf9eb3c479351f524c507ab39db725bf49910a9b6436b6d195ca6983",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "README.md",
+          "line": 20
+        },
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 21
+        },
+        {
+          "file": "docs/en/guides/ui-guide.md",
+          "line": 83
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 25
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/en/status.jpg",
+      "bytes": 87259,
+      "sha256": "85ebddd17f501823177cdca120f05e66582c1dedc0eb9d2aea939bf635b83818",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 18
+        },
+        {
+          "file": "docs/en/guides/ui-guide.md",
+          "line": 35
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 22
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/zh-CN/content.jpg",
+      "bytes": 87440,
+      "sha256": "c50d34780f6df8268bc3b31f5f86a4c68d4685e06d75d03969d0f8b8f216f563",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 22
+        },
+        {
+          "file": "docs/zh-CN/guides/ui-guide.md",
+          "line": 148
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 26
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/zh-CN/create-mobile.jpg",
+      "bytes": 38565,
+      "sha256": "7c8cb3a13b8fdf785b46827874058ff9f36bd8ae68a4a236c2c2d671c2cba3d8",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 26
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 30
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/zh-CN/create.jpg",
+      "bytes": 77940,
+      "sha256": "02d9548aa645fc71be0ac5a43e05cd609343baa83b74b51437f9eec4b3f4c871",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 23
+        },
+        {
+          "file": "docs/zh-CN/guides/ui-guide.md",
+          "line": 113
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 27
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/zh-CN/documents.jpg",
+      "bytes": 99636,
+      "sha256": "aa2f16a1753111a124ed640d616b923aec9821f0f568678e0bfed12f85ec8da5",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 20
+        },
+        {
+          "file": "docs/zh-CN/guides/ui-guide.md",
+          "line": 71
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 24
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/zh-CN/enhancements.jpg",
+      "bytes": 72146,
+      "sha256": "c67a5fbf4354855e05f33eba9adc1f3c46a624beefb372495e16139cb97307c5",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 24
+        },
+        {
+          "file": "docs/zh-CN/guides/ui-guide.md",
+          "line": 49
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 28
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/zh-CN/runtime.jpg",
+      "bytes": 75382,
+      "sha256": "f600d15ac73b86489947f68d181ba6dc54bd35e14ea541dedfed4d27d724de81",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 19
+        },
+        {
+          "file": "docs/zh-CN/guides/ui-guide.md",
+          "line": 61
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 23
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/zh-CN/spaces-mobile.jpg",
+      "bytes": 45334,
+      "sha256": "05915d9824173b22d38709c097b314c3f56936e4a750e3947b2777780c73368f",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 25
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 29
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/zh-CN/spaces.jpg",
+      "bytes": 89662,
+      "sha256": "0a0f62ead04951da1c0ed8c7cfffc0187fbd6f42edd7125cffb231bda2bb795c",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "README.zh-CN.md",
+          "line": 20
+        },
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 21
+        },
+        {
+          "file": "docs/zh-CN/guides/ui-guide.md",
+          "line": 87
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 25
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/memory-space-terminology/zh-CN/status.jpg",
+      "bytes": 81878,
+      "sha256": "bc6c4b97d73f0a0e0832c9e85082e5bf8a6209d3478f9ed7cbfb9a1cd9c8e9a8",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 18
+        },
+        {
+          "file": "docs/zh-CN/guides/ui-guide.md",
+          "line": 35
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/memory-space-terminology/README.md",
+          "line": 22
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/screenshots/ai-metadata-dialog.png",
+      "bytes": 772732,
+      "sha256": "c892f499ce276ba9d3fdb3d107603f6939350e8fc8a4554659fe18dd77a9b844",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/distillation-strategy.png",
+      "bytes": 654113,
+      "sha256": "1fe19d0210f346f7bf52cd06609e997b8b0df4aa8e57fa3fb34c7088c2a5464d",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/document-create-dialog.png",
+      "bytes": 376329,
+      "sha256": "4cdfb966b19b70972779f9b98161d55fbaf4ce33a7d9b2615d465aca569251a1",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/documents-markdown.png",
+      "bytes": 422644,
+      "sha256": "d2b83c1159e1409a2d8e48368c45fe3ad7355cd9e60da1cbe1681c3f10a220c3",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/entities-context.png",
+      "bytes": 126906,
+      "sha256": "6738958f23bf7f8b6e8e442ae60a9530b98ee47817435c5044826b74acded1b8",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/memory-content.png",
+      "bytes": 554952,
+      "sha256": "46ead323210fae81c64c5ea82c47bc943955b168f63993c918b12b8626d79411",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/memory-space-create-dialog.png",
+      "bytes": 623899,
+      "sha256": "ced6c4560d08dfb960491e35f6e2cb00df75a375ac198a1031166353291c626f",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/mobile-dialogs-catalog-memory-spaces.png",
+      "bytes": 149354,
+      "sha256": "a939da0a83862657421ae7b54dc1b959019d47fe822074c643f0484e3eff5407",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/mobile-dialogs-catalog-runtime-documents.png",
+      "bytes": 271993,
+      "sha256": "60ed59309984e8f0acd0227de9e5a6952fbf6292e67a29eb7176e2ac25805d1b",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/mobile-dialogs-catalog-system-conversation.png",
+      "bytes": 108610,
+      "sha256": "6a133eebdf04f09a50f13319937324966997151dbd73509c9d47342e50258bef",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/mobile-dialogs-catalog-workflows.png",
+      "bytes": 195548,
+      "sha256": "6bcf02464e01eda0e980615a6dbe7736c79cfa7143ce476da668d55e589afb97",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/mobile-dialogs-confirm-before-after.png",
+      "bytes": 190599,
+      "sha256": "3c8ce4a25e831ab9deb55511e308c701dba4cae22e769b4e914e79d5267b44c9",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/mobile-dialogs-preview-before-after.png",
+      "bytes": 265094,
+      "sha256": "040ff3a1499d133cef54445731f44e60c6731993c172f4922408dea3d314ce15",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/mobile-dialogs-responsive-before-after.png",
+      "bytes": 746047,
+      "sha256": "0261a37a5571f5f3c4f32a94cd637370225eb2362563a5dbc97106fb84ad449a",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/mobile-dialogs-short-viewport-before-after.png",
+      "bytes": 149177,
+      "sha256": "ea6011c3c322a0f0f9b7f26ad9fc9bfc4183d337a3900412805b78020a34f105",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/mobile-dialogs-version-before-after.png",
+      "bytes": 78485,
+      "sha256": "93173f9a831dcdcc3da68a0e0fa76f8cfda73adca6708b29f1737943afa16f48",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/overview-memory-graph.png",
+      "bytes": 594993,
+      "sha256": "8664b481f8e2e56d3b9110e9895d44a4cb19db0d86a2e2ab90cc129848ca6427",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/recall-agent-answer.png",
+      "bytes": 403824,
+      "sha256": "3c16b038fa1ebd962fdf5a08171a5a1be442af6a53e947df95f795148f4d2005",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/remember-dialog.png",
+      "bytes": 597616,
+      "sha256": "27d27dd3f8d031b89256772cd695ca172d5cdcca2a79dd1709b58d64eeab21b4",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/runtime-memory-add.png",
+      "bytes": 396530,
+      "sha256": "31ebdac12fd38106b4a76b14c4a95ed3d2a1afa83b5e9c31da07d1bd70376d3b",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/runtime-memory-capacity-configuration.png",
+      "bytes": 276873,
+      "sha256": "32c22ff351c276020f8f1809832df36edfc0df99226a54f49b35bbe84c8dba05",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/en/reference/configuration.md",
+          "line": 115
+        },
+        {
+          "file": "docs/en/reference/configuration.md",
+          "line": 115
+        },
+        {
+          "file": "docs/zh-CN/reference/configuration.md",
+          "line": 117
+        },
+        {
+          "file": "docs/zh-CN/reference/configuration.md",
+          "line": 117
+        }
+      ],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/screenshots/runtime-memory.png",
+      "bytes": 367273,
+      "sha256": "1cd3416548fea03007ebc7afe198926ddd2f7a7059a7003e6986515db0d08bf7",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/settings-entry-placement.png",
+      "bytes": 61734,
+      "sha256": "adf7ee5ee749e04b746b32d3b594b5cf3b15284094c5a3e347387fba15637225",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/builtin-139/README.md",
+          "line": 69
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/builtin-139/README.md",
+          "line": 69
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/settings-memory-layers-en.jpg",
+      "bytes": 62035,
+      "sha256": "6c2117aaa2301e009c74df3211337f2432ff5f028bd03180fa18c69e2844faf4",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/en/reference/configuration.md",
+          "line": 149
+        },
+        {
+          "file": "docs/en/reference/configuration.md",
+          "line": 149
+        }
+      ],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/screenshots/settings-memory-layers-zh-CN.jpg",
+      "bytes": 55417,
+      "sha256": "dbb53378304c6b46049979f264fd0a0f2fb2f1d288fdf362b7f848f76b9c6c26",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/zh-CN/reference/configuration.md",
+          "line": 151
+        },
+        {
+          "file": "docs/zh-CN/reference/configuration.md",
+          "line": 151
+        }
+      ],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/screenshots/settings-memory-system.png",
+      "bytes": 234159,
+      "sha256": "63e6ab6a7b7486e445174d6477d36e4a2f16a68d754c8bef90fde742aa283008",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/settings-native-embeddings.jpg",
+      "bytes": 71907,
+      "sha256": "fe0b882b4b765486fb89c30fda16b8b062615a4fb0744018583ff8cd211738c7",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/settings-sidebar-only.png",
+      "bytes": 53238,
+      "sha256": "16c64655733fa1de41a1f5ce5676ea581d7fb348aa11d42ecff837fcd3ce9333",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/en/releases/v0.4.0.md",
+          "line": 35
+        },
+        {
+          "file": "docs/zh-CN/releases/v0.4.0.md",
+          "line": 35
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/en/releases/v0.4.0.md",
+          "line": 35
+        },
+        {
+          "file": "docs/zh-CN/releases/v0.4.0.md",
+          "line": 35
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/settings-task-agent-routing.png",
+      "bytes": 332844,
+      "sha256": "389d951ace3f1d4fa53bfc498f9cbf7345e644067882858477492c874e087532",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/screenshots/sidebar-layer-disabled-en.jpg",
+      "bytes": 29349,
+      "sha256": "cd3af9ab329998306fb38131ac34fcb3d213360833bec87a327e73f939e07e8a",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/en/reference/configuration.md",
+          "line": 153
+        },
+        {
+          "file": "docs/en/reference/configuration.md",
+          "line": 153
+        }
+      ],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/screenshots/sidebar-layer-disabled-zh-CN.jpg",
+      "bytes": 25062,
+      "sha256": "51b7c76c3d85431fbfe7bad90902b690fd907ba740702253f88d888333e5f2d6",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/zh-CN/reference/configuration.md",
+          "line": 155
+        },
+        {
+          "file": "docs/zh-CN/reference/configuration.md",
+          "line": 155
+        }
+      ],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/screenshots/status-overview.png",
+      "bytes": 228429,
+      "sha256": "fd18292b435f123192dd25666f7e9b6b6902e7044aaa56ff01f8a6fe9723ef46",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/en/guides/operations.md",
+          "line": 25
+        },
+        {
+          "file": "docs/en/guides/operations.md",
+          "line": 25
+        },
+        {
+          "file": "docs/zh-CN/guides/operations.md",
+          "line": 25
+        },
+        {
+          "file": "docs/zh-CN/guides/operations.md",
+          "line": 25
+        }
+      ],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/screenshots/version-check.png",
+      "bytes": 304705,
+      "sha256": "039c82e8e3fc4c9739f406b62e80436b3c566fa873a68ff954b58236f7fb55ed",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/en/guides/operations.md",
+          "line": 33
+        },
+        {
+          "file": "docs/en/guides/operations.md",
+          "line": 33
+        },
+        {
+          "file": "docs/zh-CN/guides/operations.md",
+          "line": 33
+        },
+        {
+          "file": "docs/zh-CN/guides/operations.md",
+          "line": 33
+        }
+      ],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/showcase/demo.mp4",
+      "bytes": 1093216,
+      "sha256": "f7ae1991a4ac90425cbc6a85983e6184ca47f501142859e1bba6bb1ce8adc618",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": false,
+        "legacyLabelsDetected": null
+      },
+      "referencesBefore": [
+        {
+          "file": "README.md",
+          "line": 26
+        },
+        {
+          "file": "README.zh-CN.md",
+          "line": 26
+        },
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 26
+        },
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 53
+        },
+        {
+          "file": "docs/en/guides/ui-guide.md",
+          "line": 11
+        },
+        {
+          "file": "docs/zh-CN/guides/ui-guide.md",
+          "line": 11
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 26
+        },
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 53
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/showcase/en/content.png",
+      "bytes": 145867,
+      "sha256": "4ccbe5a551f03898e8ce6503c717c35429747cb77acdb3f4353cdbd51817f948",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 34
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 34
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/showcase/en/documents.png",
+      "bytes": 154432,
+      "sha256": "5cba8f77cebb86db72b3247c001ecd5b9c52373cd0c9f9ce63c3e5957649dfc4",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 32
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 32
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/showcase/en/enhancements.png",
+      "bytes": 195760,
+      "sha256": "54f4b1d1e679d152819dbc28ec6e69536cb71ae3e517d0d60f84c58126315593",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 35
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 35
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/showcase/en/runtime.png",
+      "bytes": 191234,
+      "sha256": "1530e741a3bcd4ba1688dd17f6a7b3baae74e2c055b3bb862ca92cc4e324f8f6",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 31
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 31
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/showcase/en/spaces.png",
+      "bytes": 186893,
+      "sha256": "2b070de8814a0b60427ce850d09bb0a973331c2169c9688d236c8521c1075c00",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 33
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 33
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/showcase/en/status.png",
+      "bytes": 115480,
+      "sha256": "8cd838fee6127ae91336e778f7b6cf7982a1288553414d3a5cc9d419a770d836",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 30
+        },
+        {
+          "file": "docs/en/guides/getting-started.md",
+          "line": 177
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 30
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/assets/showcase/zh-CN/content.png",
+      "bytes": 146154,
+      "sha256": "b8a8be01fe2c1ade34d8c414d2893c21746056faa9eea720ae1c79c47c60dd6e",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 34
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 34
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/showcase/zh-CN/documents.png",
+      "bytes": 154617,
+      "sha256": "f5b4288310ed75a9d9fe822fd583177d0831f0d8521411d721a1b266849a6c42",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 32
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 32
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/showcase/zh-CN/enhancements.png",
+      "bytes": 192074,
+      "sha256": "488311d622c6080d85ae3077f801881fe1af5eaa2d8c352965c59fb4351759f7",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 35
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 35
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/showcase/zh-CN/runtime.png",
+      "bytes": 192768,
+      "sha256": "5934e80494ae9484db21db8573b09e5becb25567cf2104ca6675aeec66e00a41",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 31
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 31
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/showcase/zh-CN/spaces.png",
+      "bytes": 182882,
+      "sha256": "83dc286e505a60958f9eb978a12d666a8b614ad76227ee3b183e3ecd60513aa8",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 33
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 33
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/assets/showcase/zh-CN/status.png",
+      "bytes": 118920,
+      "sha256": "96e03d5ada0c42d0959d699ebf6d25fd0107ab07e18aeb210ba05f3b1df2ffbf",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 30
+        },
+        {
+          "file": "docs/zh-CN/guides/getting-started.md",
+          "line": 177
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/assets/showcase/README.md",
+          "line": 30
+        }
+      ],
+      "currentGuideReferencesReplaced": true
+    },
+    {
+      "file": "docs/pr-assets/architecture-cleanup/builtin-runtime-en-light.png",
+      "bytes": 72959,
+      "sha256": "6d0190f00089a4803f8b5922487329083fc96f5bd530e7436250de065acf0a99",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 81
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 81
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/architecture-cleanup/documents-disabled-en.png",
+      "bytes": 39267,
+      "sha256": "a99cc4a788e0a0fb4bb43e81dd697b1acae6978fba348d51e82017826b125b2b",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 80
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 80
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/architecture-cleanup/documents-mobile-en.png",
+      "bytes": 37517,
+      "sha256": "0ddd8acfd99655321f59b28fc5eb348a5dc28a957e263512ca94682a8e4a14a9",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 79
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 79
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/architecture-cleanup/documents-revision-desktop.png",
+      "bytes": 66304,
+      "sha256": "d98a5c942f6a56bf3671d75f13908738c9504a6f56794945b4b901b61b10990c",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 75
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 75
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/architecture-cleanup/enhancements-enabled-desktop.png",
+      "bytes": 54620,
+      "sha256": "871f53ee8f80f5c80251177713c11cb64d9ce35c90e05b63eda0a8f41ce88058",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 77
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 77
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/architecture-cleanup/native-recall-desktop.png",
+      "bytes": 64911,
+      "sha256": "99c116c28d1cf038e34615a7778ef0cb34005aba28335ccd68217def2ed02b08",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 76
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 76
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/architecture-cleanup/runtime-edited-desktop.png",
+      "bytes": 65630,
+      "sha256": "b8d1243516ed54eef569a0207010938871cf4f3d693f8fc7b7ce3360cc1c8cce",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 74
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 74
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/architecture-cleanup/space-create-mobile-actions.png",
+      "bytes": 37204,
+      "sha256": "34c0619202c46d8046dfe7be01d61ca39767c5a951a454721344a87392163e37",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 78
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 78
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/architecture-cleanup/space-create-mobile.png",
+      "bytes": 36448,
+      "sha256": "fffdede4b6598312e342d838bca7d012223b583ea258bffca312162746d06693",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 78
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/architecture-cleanup/README.md",
+          "line": 78
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/better-sidebar-153/after-memory-tab.jpg",
+      "bytes": 103523,
+      "sha256": "36558a0670a646de870c1e6f1fda3c9b64ddf69b965886f5f6b824e86aa61f38",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/better-sidebar-153/README.md",
+          "line": 35
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/better-sidebar-153/README.md",
+          "line": 35
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/better-sidebar-153/after-tab-menu.jpg",
+      "bytes": 99117,
+      "sha256": "6a7a865c7a919c3faf74baa5b8526e2f0ab2115818f01a008f0d9718c3a2902c",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/better-sidebar-153/README.md",
+          "line": 34
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/better-sidebar-153/README.md",
+          "line": 34
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/builtin-139/after-builtin-runtime.png",
+      "bytes": 72115,
+      "sha256": "85a6f6eb2df829e240016e4f5d83dc08c9973af709ed15ce324a3a6c08b6519d",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/builtin-139/README.md",
+          "line": 70
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/builtin-139/README.md",
+          "line": 70
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/builtin-139/after-native-status.png",
+      "bytes": 71341,
+      "sha256": "372d64485bab905c4ba90bb5356a64d07354c6db9d6e55ed2f1b198a2f30ff7f",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/builtin-139/README.md",
+          "line": 73
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/builtin-139/README.md",
+          "line": 73
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/builtin-139/after-sidebar-runtime.png",
+      "bytes": 70503,
+      "sha256": "e229b9ede99f7bc10c5795ac9b0c8bbfac93c6570cc87e233c45d28877d24fdb",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/builtin-139/README.md",
+          "line": 71
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/builtin-139/README.md",
+          "line": 71
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/builtin-139/after-workspace-b-isolated.png",
+      "bytes": 72669,
+      "sha256": "fa759784aaaa9973fcb86bdf688103ef34d5156fd2bb910c71916576ba675eb7",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/builtin-139/README.md",
+          "line": 72
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/builtin-139/README.md",
+          "line": 72
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/builtin-139/before-0.4.1-conversation.png",
+      "bytes": 48922,
+      "sha256": "98629d250614f4fca4adf550be5bef220d1ea4cc44dbbc5d0a1bd0a29958b0a7",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/builtin-139/README.md",
+          "line": 68
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/builtin-139/README.md",
+          "line": 68
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/checkpoint-subagent-token-after.png",
+      "bytes": 25185,
+      "sha256": "e32edf92f5642b0806cd4c4eec5a2a6a071c92a7ffa21754c8401b4cad9280fb",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/checkpoint-subagent-token-before.png",
+      "bytes": 25058,
+      "sha256": "6ad5206074bce4267a6fc9bc181fc65ff73090924a3313d0b04da4f35e9f3da0",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/default-theme-dark-after.jpg",
+      "bytes": 78189,
+      "sha256": "bf9c15cc00473e2c0725fa00337c7c0ed3da974739d69d720f58fc5708e9dacd",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/default-theme-light-after.jpg",
+      "bytes": 72356,
+      "sha256": "a8231091b6c3bbcd789a8ea7747ec77dee4f66c183b7e0f6df16ae876c06cf76",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/default-theme-taskboard-dark.jpg",
+      "bytes": 43126,
+      "sha256": "8f5ecd44235576ae102c5b8c778bfc6a86c55db33b091441e22e9934a4317648",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/dialog-surfaces/after-dark-desktop-document.jpg",
+      "bytes": 64285,
+      "sha256": "e8c81b1736ab5496880ea2db852501c8044a8d69148f250adab4c59c77338b41",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 38
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 38
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/dialog-surfaces/after-dark-desktop-runtime.jpg",
+      "bytes": 56644,
+      "sha256": "f7e4fa299ddee36934af141f090c32c0dd613f588cdecea952b2e64b7c9b1867",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 31
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 31
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/dialog-surfaces/after-dark-mobile-document.jpg",
+      "bytes": 27089,
+      "sha256": "751a28750ae21c6462dac031f591bd1e812382ec959e0129f5543f59b5e72289",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 38
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 38
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/dialog-surfaces/after-dark-mobile-runtime.jpg",
+      "bytes": 42209,
+      "sha256": "7a7f96ba0f4ee586e3e10f9e0728939681efb482ac0dcd5d74487ecd5c1cda0d",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 30
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 30
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/dialog-surfaces/after-dark-strategy.jpg",
+      "bytes": 77538,
+      "sha256": "20b9f1bc075c77a1ce85710a489ba019d39bd093a1264665b40502e1d18d21ae",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 38
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 38
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/dialog-surfaces/after-light-desktop-runtime.jpg",
+      "bytes": 62351,
+      "sha256": "88804cd2f4e913bd249978a969eb8b70bf744f40c90575836f1dccb254c3825e",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 32
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 32
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/dialog-surfaces/before-dark-desktop-runtime.jpg",
+      "bytes": 55900,
+      "sha256": "caa8927bedfe3dac819a0adf2d0ab0c5b50629dfbd480adb26383d62153e36e9",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 31
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 31
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/dialog-surfaces/before-dark-mobile-runtime.jpg",
+      "bytes": 41524,
+      "sha256": "7f7a5195ad7120d95c3e4efab3c8b481e222fe2bf06a4673b81ddfe5a0270e86",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 30
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 30
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/dialog-surfaces/before-light-desktop-runtime.jpg",
+      "bytes": 61879,
+      "sha256": "8c7b47bed7571f0fa3aac79299b932106df3b59cd2ba65e0ee0996af41ecbd50",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 32
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/dialog-surfaces/README.md",
+          "line": 32
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/documentation-refresh/narrow-fresh-390.png",
+      "bytes": 47435,
+      "sha256": "ce03001bb489f2e756e5e5768323475f331cb37099b884993a83a99f23a29f2c",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/documentation-refresh/README.md",
+          "line": 64
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/documentation-refresh/README.md",
+          "line": 64
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/documentation-refresh/narrow-resize-390.png",
+      "bytes": 73455,
+      "sha256": "9b6f0b2ddc6cf67d364d4323cd073ea099a8a4717f4d4fa17f7c7030b4a28473",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/documentation-refresh/README.md",
+          "line": 62
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/documentation-refresh/README.md",
+          "line": 62
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/documentation-refresh/readme-en-1280.png",
+      "bytes": 200480,
+      "sha256": "bca348a3b1f95055282f9ef8be8ad42c872e4a0115b30d794f07e752a0964f7c",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/documentation-refresh/README.md",
+          "line": 53
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/documentation-refresh/README.md",
+          "line": 53
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/documentation-refresh/readme-en-390.png",
+      "bytes": 87841,
+      "sha256": "dc8ddcc65ea6e5d9c8ac5a1fec3e9797e42dec0ce18f5875771d22e35fa55df5",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/documentation-refresh/README.md",
+          "line": 53
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/documentation-refresh/README.md",
+          "line": 53
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/documentation-refresh/readme-zh-CN-1280.png",
+      "bytes": 199889,
+      "sha256": "1866db1f68c791c0b16f6c81b71f22b93890b54ba131b7356ad2c3ae5b9c1688",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/documentation-refresh/README.md",
+          "line": 54
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/documentation-refresh/README.md",
+          "line": 54
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/documentation-refresh/readme-zh-CN-390.png",
+      "bytes": 97081,
+      "sha256": "8da9e5cfd7592dd04031b7b78e0a9e8b1d75f1fe368be8ae88e59a3e3b763623",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/documentation-refresh/README.md",
+          "line": 54
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/documentation-refresh/README.md",
+          "line": 54
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/dsh-rc1-compat/rc1-conversation.png",
+      "bytes": 134311,
+      "sha256": "59deeb64125f9c6bff64bd69878a2f5d4628db9a4020b20f5a2e6b34bdc395d5",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/dsh-rc1-compat/README.md",
+          "line": 23
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/dsh-rc1-compat/README.md",
+          "line": 23
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/dsh-rc1-compat/rc1-status.png",
+      "bytes": 183291,
+      "sha256": "55a86ebea7acfd3c85c1c3ba31602d65b256d9925eb8548d13a0c8f637fac49b",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/dsh-rc1-compat/README.md",
+          "line": 19
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/dsh-rc1-compat/README.md",
+          "line": 19
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/dsh-rc1-compat/rc2-conversation.png",
+      "bytes": 147652,
+      "sha256": "82db6f333d485fb8bd910b153bb3d4a7b010762261c562b11f88e67c3f26428a",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/dsh-rc1-compat/README.md",
+          "line": 29
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/dsh-rc1-compat/README.md",
+          "line": 29
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/npm-sidebar-cli/after-controlled.jpg",
+      "bytes": 64712,
+      "sha256": "508f016b7ecbdb01b4e0b22fda269be8dab1dbf02a7ee36417cf4a06856bbe0a",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 87
+        },
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 173
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 87
+        },
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 173
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/npm-sidebar-cli/after-normal.jpg",
+      "bytes": 63438,
+      "sha256": "067a19e52938cbecfc371df97e73c87e5cee1946334deab2bad3c23eea4d85f1",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 85
+        },
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 171
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 85
+        },
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 171
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/npm-sidebar-cli/before-cli.jpg",
+      "bytes": 65129,
+      "sha256": "c0fee05751a6198239495da55872c1a44e6da70ea35119b49528f335766445d4",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 84
+        },
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 170
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 84
+        },
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 170
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/npm-sidebar-cli/before-controlled.jpg",
+      "bytes": 49835,
+      "sha256": "5263c5a696d9c253c29dba523a0453afdf3999ec1e51f1c5cc6c5850bb21cb48",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 86
+        },
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 172
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 86
+        },
+        {
+          "file": "docs/pr-assets/npm-sidebar-cli/README.md",
+          "line": 172
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/pr72-entity-rail-before-after.png",
+      "bytes": 17887,
+      "sha256": "59efe6f8e0f7e8f578e5208fed4e28b4f5e849b5ccf5df0e6368ffa3584dcf30",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/pr73-entity-live-filter.png",
+      "bytes": 51475,
+      "sha256": "8eecaf3370fa39f4eb284f9af467ce03e54f8c2c2b60a1fd1c174f7f52134427",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [],
+      "referencesAfter": [],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/session-events-156/after-alpha4.jpg",
+      "bytes": 38218,
+      "sha256": "a8b47ca1dcf6fa948a02205a1a606446ea91e06a07c7ad94de6d005e62ec5df5",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/session-events-156/README.md",
+          "line": 27
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/session-events-156/README.md",
+          "line": 27
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/session-events-156/after-alpha5.jpg",
+      "bytes": 38251,
+      "sha256": "11c0af265e17c861ed24dca7d037ba7bde35599939eebbbc6d089a1c72b5245a",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/session-events-156/README.md",
+          "line": 31
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/session-events-156/README.md",
+          "line": 31
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/session-events-156/after-rc2.jpg",
+      "bytes": 40385,
+      "sha256": "b33568671afd9a6c5065c13f320425ba57ffdbc883cadd28eedc8f975db15c19",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/session-events-156/README.md",
+          "line": 35
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/session-events-156/README.md",
+          "line": 35
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/session-events-156/before-alpha4-v0.4.4.jpg",
+      "bytes": 27570,
+      "sha256": "14b40422ac19cf4844a2560504e1066ee5465f2f038ff463fe1505121e79fcba",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/session-events-156/README.md",
+          "line": 23
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/session-events-156/README.md",
+          "line": 23
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/sidebar-icon/after-classic-dark.jpg",
+      "bytes": 21809,
+      "sha256": "86aa71431789c54b24fe8ef6d4147401bb576fda45200186d1b01ac73fd9434c",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 40
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 40
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/sidebar-icon/after-classic-light-expanded.jpg",
+      "bytes": 25672,
+      "sha256": "92082644ddad438fb7b26f3aa80529ddda081c45227ef5bbf607404520cb08ae",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 43
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 43
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/sidebar-icon/after-classic-light.jpg",
+      "bytes": 21734,
+      "sha256": "043d37d83e2c33f61fc658d6da11f01acfbbb99a85926bd2a8ab83ea983dfdec",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 39
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 39
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/sidebar-icon/after-web-0.3.9-expanded.jpg",
+      "bytes": 95599,
+      "sha256": "205bfd4a19d9926da0c35d08dc3a820809ee926bbe9a661142af82dfd7e15864",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 43
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 43
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/sidebar-icon/after-web-0.3.9.jpg",
+      "bytes": 95675,
+      "sha256": "e9d3cbce9cfad5bbca59900b1dd4372dcc77b263c782236ac56ad1c3ddac0468",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 41
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 41
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/sidebar-icon/before-classic-dark.jpg",
+      "bytes": 21631,
+      "sha256": "bde2cf9cee71f65a5c4b20c949a0b09b952ebeef2b48161a6a5b8dba77d1bbf2",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 40
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 40
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/sidebar-icon/before-classic-light.jpg",
+      "bytes": 21532,
+      "sha256": "b35d6d5fb4ffe82dfa0faefe4ba5f90b526359be9264b05869e6c57a2f8a8bc7",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 39
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 39
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/sidebar-icon/before-web-0.3.9.jpg",
+      "bytes": 95655,
+      "sha256": "7021f9a5284a33f2ef0741ea3ada24c064a068ccf99180a62614074a0c903266",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 41
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/sidebar-icon/README.md",
+          "line": 41
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/status-version-maintenance/desktop-collapsed.png",
+      "bytes": 58136,
+      "sha256": "70b916a4bb1ca399960e5e92aab0caed4e8abb7a90ad3876ae8b01510204648e",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/status-version-maintenance/README.md",
+          "line": 5
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/status-version-maintenance/README.md",
+          "line": 5
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/status-version-maintenance/desktop-expanded.png",
+      "bytes": 66344,
+      "sha256": "847e817dd3d003fd84cc3f115b7175dd76e07672d75acecc21e9af1f003d7e5b",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": true
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/status-version-maintenance/README.md",
+          "line": 6
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/status-version-maintenance/README.md",
+          "line": 6
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    },
+    {
+      "file": "docs/pr-assets/status-version-maintenance/mobile-expanded.png",
+      "bytes": 43601,
+      "sha256": "df32e1ab55fcc326968b1c38f126ab9a0bbd83e0cb937a36fbe8412483e1b398",
+      "classification": "historical_evidence",
+      "action": "retained_unchanged",
+      "ocr": {
+        "checked": true,
+        "legacyLabelsDetected": false
+      },
+      "referencesBefore": [
+        {
+          "file": "docs/pr-assets/status-version-maintenance/README.md",
+          "line": 7
+        }
+      ],
+      "referencesAfter": [
+        {
+          "file": "docs/pr-assets/status-version-maintenance/README.md",
+          "line": 7
+        }
+      ],
+      "currentGuideReferencesReplaced": false
+    }
+  ]
+}

@@ -1,0 +1,155 @@
+name: PR 贡献规范校验 / Enforce PR Contribution Rules
+
+on:
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  enforce:
+    name: 校验 PR 贡献信息 / Validate PR contribution evidence
+    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+
+    steps:
+      - name: 校验 PR 描述 / Validate pull request body
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const body = pr.body || '';
+            const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const readSection = (label) => {
+              const heading = escapeRegExp(label);
+              const pattern = new RegExp(`(?:^|\\n)##\\s+${heading}\\s*\\n+([\\s\\S]*?)(?=\\n##\\s+|$)`, 'i');
+              const match = body.match(pattern);
+              return match ? match[1].replace(/<!--[\s\S]*?-->/g, '').trim() : '';
+            };
+            const isBlank = (value) => {
+              const normalized = value.replace(/\s+/g, ' ').trim().toLowerCase();
+              return normalized === '' || normalized === 'no response' || normalized === '_no response_';
+            };
+            const checkedLines = (value) => value.match(/^-\s*\[[xX]\]\s+\S.*$/gm) || [];
+            const hasCheckedLine = (value, label) => {
+              const pattern = new RegExp(`^-\\s*\\[[xX]\\]\\s*${escapeRegExp(label)}\\s*$`, 'm');
+              return pattern.test(value);
+            };
+            const cleanText = (value) => value
+              .replace(/```[a-zA-Z0-9_-]*\s*/g, '')
+              .replace(/```/g, '')
+              .trim();
+            const readLabeledPart = (value, label, nextLabel = null) => {
+              const start = escapeRegExp(label);
+              const end = nextLabel ? `\\n\\s*${escapeRegExp(nextLabel)}\\s*[：:]` : '$';
+              const pattern = new RegExp(`${start}\\s*[：:]\\s*([\\s\\S]*?)(?=${end})`, 'i');
+              const match = value.match(pattern);
+              return match ? cleanText(match[1]) : '';
+            };
+            const hasEvidence = (value) => /!\[[^\]]*]\([^)]+\)/i.test(value)
+              || /https?:\/\/\S*(?:github\.com\/user-attachments\/assets\/|github\.com\/[^)\s]+\/assets\/|githubusercontent\.com\/|[./][^)\s]+\.(?:png|jpe?g|gif|webp|mp4|mov|webm))(?:[?#]\S*)?/i.test(value);
+
+            let isMaintainer = false;
+            try {
+              const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                username: pr.user.login,
+              });
+              isMaintainer = ['admin', 'maintain', 'write'].includes(data.permission);
+            } catch (error) {
+              core.info(`Contributor permission lookup returned no write grant: ${error.message}`);
+            }
+
+            const sections = {
+              summary: '摘要 / Summary',
+              related: '关联 Issue 或背景 / Related Issue or Context',
+              affected: '涉及区域 / Affected Areas',
+              type: 'PR 类型 / PR Type',
+              latest: '最新代码确认 / Latest Codebase Confirmation',
+              ai: 'AI 编码披露 / AI Coding Disclosure',
+              rules: '仓库规范检查 / Repository Rules',
+              compatibility: '兼容性与数据安全 / Compatibility and Data Safety',
+              validation: '本地验证 / Local Validation',
+              evidence: '用户可见变更证据 / Local Feature Evidence',
+            };
+            const labels = {
+              latestConfirmation: '我已基于最新 `main` 分支开发，或在提交前已 rebase 或合并最新 `main`。 / I developed from the latest `main`, or rebased or merged the latest `main` before submitting.',
+              syncCommand: '同步命令 / Sync command',
+              aiModel: '使用的 AI 模型 / AI model used',
+              aiTool: '使用的编码 Agent 工具 / Coding Agent tool used',
+              commands: '执行的命令 / Commands run',
+              result: '结果摘要 / Result summary',
+              userFacing: '面向用户的功能或行为变更 / User-facing feature or behavior change',
+            };
+
+            const summary = readSection(sections.summary);
+            const related = readSection(sections.related);
+            const affected = readSection(sections.affected);
+            const prType = readSection(sections.type);
+            const latest = readSection(sections.latest);
+            const ai = readSection(sections.ai);
+            const repoRules = readSection(sections.rules);
+            const compatibility = readSection(sections.compatibility);
+            const validation = readSection(sections.validation);
+            const evidence = readSection(sections.evidence);
+
+            const errors = [];
+            const titlePattern = /^(feat|fix|chore|docs|test|refactor|perf|build|ci|revert)(\([^)]+\))?!?:\s+\S.+$/;
+            if (!titlePattern.test((pr.title || '').trim())) {
+              errors.push('PR 标题必须使用 Conventional Commits：`type(scope): subject`。 / The PR title must use Conventional Commits: `type(scope): subject`.');
+            }
+            if (isBlank(summary)) errors.push('请填写“摘要 / Summary”。 / Complete “摘要 / Summary”.');
+            if (isBlank(related)) errors.push('请填写“关联 Issue 或背景 / Related Issue or Context”；没有 Issue 时填写 N/A 并解释。 / Complete “关联 Issue 或背景 / Related Issue or Context”; enter N/A with an explanation when no Issue exists.');
+            if (checkedLines(affected).length === 0) errors.push('请在“涉及区域 / Affected Areas”中至少勾选一项。 / Check at least one item in “涉及区域 / Affected Areas”.');
+            if (checkedLines(prType).length === 0) errors.push('请在“PR 类型 / PR Type”中至少勾选一项。 / Check at least one item in “PR 类型 / PR Type”.');
+
+            if (!hasCheckedLine(latest, labels.latestConfirmation)) {
+              errors.push('请确认本 PR 基于最新 `main`。 / Confirm that this PR is based on the latest `main`.');
+            }
+            if (isBlank(readLabeledPart(latest, labels.syncCommand))) {
+              errors.push('请填写同步最新 `main` 时执行的命令。 / Provide the command used to synchronize with the latest `main`.');
+            }
+
+            if (checkedLines(ai).length !== 1) {
+              errors.push('“AI 编码披露 / AI Coding Disclosure”必须且只能勾选一项。 / Check exactly one option in “AI 编码披露 / AI Coding Disclosure”.');
+            }
+            const aiModel = readLabeledPart(ai, labels.aiModel, labels.aiTool);
+            const aiTool = readLabeledPart(ai, labels.aiTool);
+            if (isBlank(aiModel) || isBlank(aiTool)) {
+              errors.push('请填写使用的 AI 模型和编码 Agent 工具；未使用时两项均填 N/A。 / Provide the AI model and coding Agent tool; enter N/A in both fields when none were used.');
+            }
+
+            const requiredRuleCount = 7;
+            if (checkedLines(repoRules).length < requiredRuleCount) {
+              errors.push('请逐项确认“仓库规范检查 / Repository Rules”的全部七项。 / Confirm all seven items in “仓库规范检查 / Repository Rules”.');
+            }
+            if (isBlank(compatibility)) {
+              errors.push('请填写“兼容性与数据安全 / Compatibility and Data Safety”；没有影响时填 N/A 并说明理由。 / Complete “兼容性与数据安全 / Compatibility and Data Safety”; enter N/A with a reason when there is no impact.');
+            }
+
+            const validationCommands = readLabeledPart(validation, labels.commands, labels.result);
+            const validationSummary = readLabeledPart(validation, labels.result);
+            if (isBlank(validationCommands) || isBlank(validationSummary)) {
+              errors.push('请填写“本地验证 / Local Validation”中的执行命令与结果摘要。 / Provide commands and a result summary in “本地验证 / Local Validation”.');
+            }
+
+            const userFacing = hasCheckedLine(prType, labels.userFacing);
+            if (userFacing && !isMaintainer && !hasEvidence(evidence)) {
+              errors.push('外部贡献者提交用户可见变更时，必须附本地截图或短视频证据。 / External contributors must attach local screenshot or short-video evidence for user-facing changes.');
+            }
+
+            if (errors.length === 0) {
+              return;
+            }
+
+            await core.summary
+              .addHeading('PR contribution requirements')
+              .addRaw('Update the PR description and keep the complete template.\n')
+              .addList(errors)
+              .addRaw('After correction, edit the PR description or push a commit to rerun this check.\n')
+              .write();
+            for (const error of errors) core.error(error);
+            core.setFailed(errors.join('\n'));

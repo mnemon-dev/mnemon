@@ -1,0 +1,115 @@
+{
+  "date": "2026-09-14",
+  "issue": 250,
+  "status": "baseline-and-fixed-browser-cli-verified",
+  "baselineRevision": "6ad99cc1890714355e1bb0e9230f3fce674bfb73",
+  "implementationRevision": "246a50e2ae3cd63ef2fa05354c1297c7c8de5d57",
+  "environment": {
+    "os": "macOS arm64",
+    "node": "25.1.0",
+    "pnpm": "11.19.0",
+    "dsh": "0.1.5-rc.1",
+    "mnemon": "0.2.8",
+    "nativeReleaseArchiveSha256": "96159ad2fe8f0531b5a00ab009849614c234032146b95fa2db5aa726a8922e2d",
+    "model": "loopback fixture only",
+    "strategyExtensions": [
+      "scoped",
+      "light-context",
+      "auto-capture"
+    ],
+    "memoryLimitBytes": 512
+  },
+  "baseline": {
+    "rootToolCalls": 7,
+    "initialAdd": "rejected",
+    "runtimeEntriesAfterRejection": 2,
+    "activeNativeSpaces": 2,
+    "archivedMemoriesAfterRejection": 0,
+    "sameInputNextTurn": "committed-after-archival"
+  },
+  "automated": {
+    "verify": "passed",
+    "rootTests": {
+      "passed": 1003,
+      "skipped": 5
+    },
+    "memorySpacesTests": {
+      "passed": 169,
+      "skipped": 1
+    },
+    "nativeTwoDestinationHostTest": "passed",
+    "standalonePluginRepositories": 16,
+    "packedArtifacts": 17,
+    "fixtureTestsPassed": 4,
+    "unpackedBytes": 1281433,
+    "baselineUnpackedBytes": 1279223,
+    "maximumUnpackedBytes": 1284000
+  },
+  "screenshots": [
+    {
+      "file": "after-exact-native-content.jpg",
+      "bytes": 89486,
+      "sha256": "395d3d38c8321210b6dc1b1e3552ce3e70bc6b1b91a908115f511580021f906d"
+    },
+    {
+      "file": "after-first-turn-success.jpg",
+      "bytes": 44149,
+      "sha256": "daccc762fb171c04876ac4e491bd4e8d37be38d0a9a6fa1a19ae7580aca92281"
+    },
+    {
+      "file": "after-pending-runtime.jpg",
+      "bytes": 73965,
+      "sha256": "78dece5eec47abc0018ccae4fb493ac3c999760b3e8e74b3a1536f13a82ff8a2"
+    },
+    {
+      "file": "after-two-archived-spaces.jpg",
+      "bytes": 64753,
+      "sha256": "47e4af0e667b0ca8fef960d2efec3e977bebd6900e89cb150f2f188aa1dacac4"
+    },
+    {
+      "file": "before-capacity-error.jpg",
+      "bytes": 58511,
+      "sha256": "17d7e9cbd4932da7eb6f7ade1f300ce2b5764e32686b488d4390cbd681f0eaad"
+    },
+    {
+      "file": "before-next-turn-retry.jpg",
+      "bytes": 62849,
+      "sha256": "47c91856a845bcb9f5f87d4b87f434467203d48122cbd7e60460b494b998b2d6"
+    },
+    {
+      "file": "before-two-active-spaces.jpg",
+      "bytes": 64771,
+      "sha256": "dec5a3fe7dc9b6ff6fbcbe48d4d13d6d4d9c81c1fc0c7829357d496dde9b152e"
+    }
+  ],
+  "fixed": {
+    "revision": "246a50e2ae3cd63ef2fa05354c1297c7c8de5d57",
+    "rootToolCalls": 7,
+    "delegatedChildren": 4,
+    "turns": 1,
+    "steps": 8,
+    "firstTurnSucceeded": true,
+    "activeNativeSpaces": 2,
+    "archivedEntries": 2,
+    "runtimeEntries": 1,
+    "runtimeProjectionBytes": 269,
+    "cliReadOnly": true,
+    "savedContentByteExact": true,
+    "pendingContentByteExact": true,
+    "archivedContent": [
+      {
+        "utf8Bytes": 209,
+        "sha256": "8d7834b2d1320bc0f8fd28db05a53c1263a6912d7b7f444428830d86e65499de"
+      },
+      {
+        "utf8Bytes": 179,
+        "sha256": "477ddb25e7b7e6f0729f65c4dd637d64eeb1c0a0fc0cb2c76c95fa6451aab47b"
+      }
+    ],
+    "runtimeContent": {
+      "utf8Bytes": 269,
+      "sha256": "c9410b0ef083d5c0c4cd398fd8e057ed796fd667c0f6cffc57690e6f15547a10"
+    },
+    "readbackJsonSha256": "888fe9e74435ede178ff002ce7a2f958aaf53b3f7f8bb6fb5acc2505ff805fe3"
+  }
+}

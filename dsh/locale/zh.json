@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "可组合记忆 (dsh-mnemon)",
+    "description": "面向 DeepSeek Harness 的可组合视图记忆。记忆来源与策略可插拔，开箱即用提供分层记忆。"
+  }
+}

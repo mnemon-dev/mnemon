@@ -1,0 +1,743 @@
+{
+  "date": "2026-08-31",
+  "baselineCommit": "d6fa55027527e1483233aca3ede4ac56987cb2bd",
+  "baseAfterRebase": "0b4a9af",
+  "codeCommit": "66ce4bea1fa68784811729bbd87bc630b18568e4",
+  "sourceFile": "src/client/MnemonWorkspace.module.css",
+  "sourceSha256Before": "6eeda37aba59995c533377459efcee780d9a24fef22fcfc3928897ae30ffe0e4",
+  "sourceSha256After": "a343bc612dd452d0a834e1ca6850dccf2c7bf2f6f7274845495c2bc4f5ccbf49",
+  "clientBundleSha256": "26c0ebbf4059a8c7fda5b9799249af980c1b8530e6a8c4fe3fcd3d482b747959",
+  "environment": {
+    "dsh": "0.1.1-rc.2",
+    "webUi": "@linxin666/dsh-web-all@0.3.9",
+    "mnemonCli": "0.2.6",
+    "node": "25.1.0",
+    "pnpm": "11.19.0",
+    "isolated": true
+  },
+  "checks": {
+    "expandedNativeMatchesBaseline": true,
+    "expandedWebSvgRetainedAt18px": true,
+    "collapsedPaintedHeightDifferenceBelowHalfPixel": true,
+    "taskBoardRoundTripRetainsMemoryPage": true,
+    "returnToConversation": true,
+    "browserErrors": {
+      "classic": [],
+      "web": []
+    }
+  },
+  "measurements": [
+    {
+      "scenario": "before-classic-light-collapsed",
+      "accessibleName": "记忆系统",
+      "active": false,
+      "centerOffsetX": 4,
+      "collapsed": true,
+      "decoratedFrame": false,
+      "entryColor": "rgb(97, 102, 107)",
+      "entryRect": {
+        "bottom": 150,
+        "height": 36,
+        "left": 10,
+        "right": 45,
+        "top": 114,
+        "width": 35,
+        "x": 10,
+        "y": 114
+      },
+      "iconColor": "rgb(97, 102, 107)",
+      "iconRect": {
+        "bottom": 141,
+        "height": 18,
+        "left": 23,
+        "right": 41,
+        "top": 123,
+        "width": 18,
+        "x": 23,
+        "y": 123
+      },
+      "labelDisplay": "block",
+      "labelWidth": 0,
+      "nativeButtonRect": {
+        "bottom": 102,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 66,
+        "width": 36,
+        "x": 10,
+        "y": 66
+      },
+      "nativeIconColor": "rgb(15, 17, 21)",
+      "nativeIconRect": {
+        "bottom": 93,
+        "height": 18,
+        "left": 19,
+        "right": 37,
+        "top": 75,
+        "width": 18,
+        "x": 19,
+        "y": 75
+      },
+      "title": "记忆系统",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      }
+    },
+    {
+      "scenario": "before-web-0.3.9-collapsed",
+      "accessibleName": "记忆系统",
+      "active": false,
+      "centerOffsetX": 0,
+      "collapsed": true,
+      "decoratedFrame": true,
+      "entryColor": "rgb(169, 183, 208)",
+      "entryRect": {
+        "bottom": 246,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 210,
+        "width": 36,
+        "x": 10,
+        "y": 210
+      },
+      "iconColor": "rgb(169, 183, 208)",
+      "iconRect": {
+        "bottom": 237,
+        "height": 18,
+        "left": 19,
+        "right": 37,
+        "top": 219,
+        "width": 18,
+        "x": 19,
+        "y": 219
+      },
+      "labelDisplay": "none",
+      "labelWidth": 0,
+      "nativeButtonRect": {
+        "bottom": 102,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 66,
+        "width": 36,
+        "x": 10,
+        "y": 66
+      },
+      "nativeIconColor": "rgb(219, 226, 242)",
+      "nativeIconRect": {
+        "bottom": 93,
+        "height": 18,
+        "left": 19,
+        "right": 37,
+        "top": 75,
+        "width": 18,
+        "x": 19,
+        "y": 75
+      },
+      "title": "记忆系统",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      }
+    },
+    {
+      "scenario": "before-classic-light-expanded",
+      "accessibleName": "记忆系统",
+      "active": false,
+      "centerOffsetX": -82,
+      "collapsed": false,
+      "decoratedFrame": false,
+      "entryColor": "rgb(97, 102, 107)",
+      "entryRect": {
+        "bottom": 156,
+        "height": 36,
+        "left": 12,
+        "right": 268,
+        "top": 120,
+        "width": 256,
+        "x": 12,
+        "y": 120
+      },
+      "iconColor": "rgb(97, 102, 107)",
+      "iconRect": {
+        "bottom": 147,
+        "height": 18,
+        "left": 25,
+        "right": 43,
+        "top": 129,
+        "width": 18,
+        "x": 25,
+        "y": 129
+      },
+      "labelDisplay": "block",
+      "labelWidth": 52,
+      "nativeButtonRect": {
+        "bottom": 112,
+        "height": 38,
+        "left": 14,
+        "right": 266,
+        "top": 74,
+        "width": 252,
+        "x": 14,
+        "y": 74
+      },
+      "nativeIconColor": "rgb(15, 17, 21)",
+      "nativeIconRect": {
+        "bottom": 100,
+        "height": 14,
+        "left": 109,
+        "right": 123,
+        "top": 86,
+        "width": 14,
+        "x": 109,
+        "y": 86
+      },
+      "title": "记忆系统",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      }
+    },
+    {
+      "scenario": "before-classic-dark-collapsed",
+      "accessibleName": "记忆系统",
+      "active": false,
+      "centerOffsetX": 4,
+      "collapsed": true,
+      "decoratedFrame": false,
+      "entryColor": "rgb(207, 211, 214)",
+      "entryRect": {
+        "bottom": 150,
+        "height": 36,
+        "left": 10,
+        "right": 45,
+        "top": 114,
+        "width": 35,
+        "x": 10,
+        "y": 114
+      },
+      "iconColor": "rgb(207, 211, 214)",
+      "iconRect": {
+        "bottom": 141,
+        "height": 18,
+        "left": 23,
+        "right": 41,
+        "top": 123,
+        "width": 18,
+        "x": 23,
+        "y": 123
+      },
+      "labelDisplay": "block",
+      "labelWidth": 0,
+      "nativeButtonRect": {
+        "bottom": 102,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 66,
+        "width": 36,
+        "x": 10,
+        "y": 66
+      },
+      "nativeIconColor": "rgb(249, 250, 251)",
+      "nativeIconRect": {
+        "bottom": 93,
+        "height": 18,
+        "left": 19,
+        "right": 37,
+        "top": 75,
+        "width": 18,
+        "x": 19,
+        "y": 75
+      },
+      "title": "记忆系统",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      }
+    },
+    {
+      "scenario": "after-web-0.3.9-expanded",
+      "accessibleName": "记忆系统",
+      "active": false,
+      "centerOffsetX": -82,
+      "collapsed": false,
+      "decoratedFrame": true,
+      "entryColor": "rgb(169, 183, 208)",
+      "entryRect": {
+        "bottom": 228,
+        "height": 36,
+        "left": 12,
+        "right": 268,
+        "top": 192,
+        "width": 256,
+        "x": 12,
+        "y": 192
+      },
+      "iconColor": "rgb(169, 183, 208)",
+      "iconRect": {
+        "bottom": 219,
+        "height": 18,
+        "left": 25,
+        "right": 43,
+        "top": 201,
+        "width": 18,
+        "x": 25,
+        "y": 201
+      },
+      "labelDisplay": "block",
+      "labelWidth": 52,
+      "nativeButtonRect": {
+        "bottom": 112,
+        "height": 38,
+        "left": 14,
+        "right": 266,
+        "top": 74,
+        "width": 252,
+        "x": 14,
+        "y": 74
+      },
+      "nativeIconColor": "rgb(219, 226, 242)",
+      "nativeIconRect": {
+        "bottom": 100,
+        "height": 14,
+        "left": 109,
+        "right": 123,
+        "top": 86,
+        "width": 14,
+        "x": 109,
+        "y": 86
+      },
+      "title": "记忆系统",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      }
+    },
+    {
+      "scenario": "after-web-0.3.9-collapsed",
+      "accessibleName": "记忆系统",
+      "active": false,
+      "centerOffsetX": 0,
+      "collapsed": true,
+      "decoratedFrame": true,
+      "entryColor": "rgb(219, 226, 242)",
+      "entryRect": {
+        "bottom": 246,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 210,
+        "width": 36,
+        "x": 10,
+        "y": 210
+      },
+      "iconColor": "rgb(219, 226, 242)",
+      "iconRect": {
+        "bottom": 238,
+        "height": 20,
+        "left": 18,
+        "right": 38,
+        "top": 218,
+        "width": 20,
+        "x": 18,
+        "y": 218
+      },
+      "labelDisplay": "none",
+      "labelWidth": 0,
+      "nativeButtonRect": {
+        "bottom": 102,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 66,
+        "width": 36,
+        "x": 10,
+        "y": 66
+      },
+      "nativeIconColor": "rgb(219, 226, 242)",
+      "nativeIconRect": {
+        "bottom": 93,
+        "height": 18,
+        "left": 19,
+        "right": 37,
+        "top": 75,
+        "width": 18,
+        "x": 19,
+        "y": 75
+      },
+      "title": "记忆系统",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      }
+    },
+    {
+      "scenario": "after-classic-dark-collapsed",
+      "accessibleName": "记忆系统",
+      "active": false,
+      "centerOffsetX": 0,
+      "collapsed": true,
+      "decoratedFrame": false,
+      "entryColor": "rgb(249, 250, 251)",
+      "entryRect": {
+        "bottom": 150,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 114,
+        "width": 36,
+        "x": 10,
+        "y": 114
+      },
+      "iconColor": "rgb(249, 250, 251)",
+      "iconRect": {
+        "bottom": 142,
+        "height": 20,
+        "left": 18,
+        "right": 38,
+        "top": 122,
+        "width": 20,
+        "x": 18,
+        "y": 122
+      },
+      "labelDisplay": "none",
+      "labelWidth": 0,
+      "nativeButtonRect": {
+        "bottom": 102,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 66,
+        "width": 36,
+        "x": 10,
+        "y": 66
+      },
+      "nativeIconColor": "rgb(249, 250, 251)",
+      "nativeIconRect": {
+        "bottom": 93,
+        "height": 18,
+        "left": 19,
+        "right": 37,
+        "top": 75,
+        "width": 18,
+        "x": 19,
+        "y": 75
+      },
+      "title": "记忆系统",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      }
+    },
+    {
+      "scenario": "after-classic-dark-hover",
+      "accessibleName": "记忆系统",
+      "active": false,
+      "centerOffsetX": 0,
+      "collapsed": true,
+      "decoratedFrame": false,
+      "entryColor": "rgb(249, 250, 251)",
+      "entryRect": {
+        "bottom": 150,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 114,
+        "width": 36,
+        "x": 10,
+        "y": 114
+      },
+      "iconColor": "rgb(249, 250, 251)",
+      "iconRect": {
+        "bottom": 142,
+        "height": 20,
+        "left": 18,
+        "right": 38,
+        "top": 122,
+        "width": 20,
+        "x": 18,
+        "y": 122
+      },
+      "labelDisplay": "none",
+      "labelWidth": 0,
+      "nativeButtonRect": {
+        "bottom": 102,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 66,
+        "width": 36,
+        "x": 10,
+        "y": 66
+      },
+      "nativeIconColor": "rgb(249, 250, 251)",
+      "nativeIconRect": {
+        "bottom": 93,
+        "height": 18,
+        "left": 19,
+        "right": 37,
+        "top": 75,
+        "width": 18,
+        "x": 19,
+        "y": 75
+      },
+      "title": "记忆系统",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      }
+    },
+    {
+      "scenario": "after-classic-dark-active",
+      "accessibleName": "记忆系统",
+      "active": true,
+      "centerOffsetX": 0,
+      "collapsed": true,
+      "decoratedFrame": false,
+      "entryColor": "rgb(249, 250, 251)",
+      "entryRect": {
+        "bottom": 150,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 114,
+        "width": 36,
+        "x": 10,
+        "y": 114
+      },
+      "iconColor": "rgb(249, 250, 251)",
+      "iconRect": {
+        "bottom": 142,
+        "height": 20,
+        "left": 18,
+        "right": 38,
+        "top": 122,
+        "width": 20,
+        "x": 18,
+        "y": 122
+      },
+      "labelDisplay": "none",
+      "labelWidth": 0,
+      "nativeButtonRect": {
+        "bottom": 102,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 66,
+        "width": 36,
+        "x": 10,
+        "y": 66
+      },
+      "nativeIconColor": "rgb(249, 250, 251)",
+      "nativeIconRect": {
+        "bottom": 93,
+        "height": 18,
+        "left": 19,
+        "right": 37,
+        "top": 75,
+        "width": 18,
+        "x": 19,
+        "y": 75
+      },
+      "title": "记忆系统",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      }
+    },
+    {
+      "scenario": "after-classic-light-expanded",
+      "accessibleName": "记忆系统",
+      "active": false,
+      "centerOffsetX": -82,
+      "collapsed": false,
+      "decoratedFrame": false,
+      "entryColor": "rgb(97, 102, 107)",
+      "entryRect": {
+        "bottom": 156,
+        "height": 36,
+        "left": 12,
+        "right": 268,
+        "top": 120,
+        "width": 256,
+        "x": 12,
+        "y": 120
+      },
+      "iconColor": "rgb(97, 102, 107)",
+      "iconRect": {
+        "bottom": 147,
+        "height": 18,
+        "left": 25,
+        "right": 43,
+        "top": 129,
+        "width": 18,
+        "x": 25,
+        "y": 129
+      },
+      "labelDisplay": "block",
+      "labelWidth": 52,
+      "nativeButtonRect": {
+        "bottom": 112,
+        "height": 38,
+        "left": 14,
+        "right": 266,
+        "top": 74,
+        "width": 252,
+        "x": 14,
+        "y": 74
+      },
+      "nativeIconColor": "rgb(15, 17, 21)",
+      "nativeIconRect": {
+        "bottom": 100,
+        "height": 14,
+        "left": 109,
+        "right": 123,
+        "top": 86,
+        "width": 14,
+        "x": 109,
+        "y": 86
+      },
+      "title": "记忆系统",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      }
+    },
+    {
+      "scenario": "after-classic-light-collapsed",
+      "accessibleName": "记忆系统",
+      "active": false,
+      "centerOffsetX": 0,
+      "collapsed": true,
+      "decoratedFrame": false,
+      "entryColor": "rgb(15, 17, 21)",
+      "entryRect": {
+        "bottom": 150,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 114,
+        "width": 36,
+        "x": 10,
+        "y": 114
+      },
+      "iconColor": "rgb(15, 17, 21)",
+      "iconRect": {
+        "bottom": 142,
+        "height": 20,
+        "left": 18,
+        "right": 38,
+        "top": 122,
+        "width": 20,
+        "x": 18,
+        "y": 122
+      },
+      "labelDisplay": "none",
+      "labelWidth": 0,
+      "nativeButtonRect": {
+        "bottom": 102,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 66,
+        "width": 36,
+        "x": 10,
+        "y": 66
+      },
+      "nativeIconColor": "rgb(15, 17, 21)",
+      "nativeIconRect": {
+        "bottom": 93,
+        "height": 18,
+        "left": 19,
+        "right": 37,
+        "top": 75,
+        "width": 18,
+        "x": 19,
+        "y": 75
+      },
+      "title": "记忆系统",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      },
+      "glyphSizes": [
+        {
+          "name": "记忆系统",
+          "svgWidth": 20,
+          "svgHeight": 20,
+          "paintedWidth": 14.375,
+          "paintedHeight": 16.875
+        },
+        {
+          "name": "新建会话",
+          "svgWidth": 18,
+          "svgHeight": 18,
+          "paintedWidth": 17.27164077758789,
+          "paintedHeight": 17.27166748046875
+        }
+      ]
+    },
+    {
+      "scenario": "after-web-0.3.9-active-collapsed",
+      "accessibleName": "记忆系统",
+      "active": true,
+      "centerOffsetX": 0,
+      "collapsed": true,
+      "decoratedFrame": true,
+      "entryColor": "rgb(219, 226, 242)",
+      "entryRect": {
+        "bottom": 246,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 210,
+        "width": 36,
+        "x": 10,
+        "y": 210
+      },
+      "iconColor": "rgb(219, 226, 242)",
+      "iconRect": {
+        "bottom": 238,
+        "height": 20,
+        "left": 18,
+        "right": 38,
+        "top": 218,
+        "width": 20,
+        "x": 18,
+        "y": 218
+      },
+      "labelDisplay": "none",
+      "labelWidth": 0,
+      "nativeButtonRect": {
+        "bottom": 102,
+        "height": 36,
+        "left": 10,
+        "right": 46,
+        "top": 66,
+        "width": 36,
+        "x": 10,
+        "y": 66
+      },
+      "nativeIconColor": "rgb(219, 226, 242)",
+      "nativeIconRect": {
+        "bottom": 93,
+        "height": 18,
+        "left": 19,
+        "right": 37,
+        "top": 75,
+        "width": 18,
+        "x": 19,
+        "y": 75
+      },
+      "title": "记忆系统",
+      "viewport": {
+        "height": 720,
+        "width": 1280
+      }
+    }
+  ]
+}

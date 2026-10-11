@@ -1,0 +1,148 @@
+{
+  "date": "2026-09-11",
+  "sourceRevision": "1e19caf40f0bf37edf678c3d829f2398ab28792a",
+  "existingFixPR": 226,
+  "releasePR": 228,
+  "starter": "0.5.7",
+  "dsh": "0.1.5-rc.1",
+  "node": "25.1.0",
+  "pnpm": "11.19.0",
+  "platform": "macOS arm64",
+  "nativeCli": "0.2.7",
+  "worktrees": {
+    "issue225": "codex/fix-225-legacy-session-summary",
+    "issue230": "codex/verify-230-dsh-compatibility"
+  },
+  "tests": {
+    "targetedPassed": 58,
+    "repairPassed": 17,
+    "lifecyclePassed": 39,
+    "connectionPassed": 2,
+    "fullVerifyPassed": 1249,
+    "fullVerifySkipped": 7,
+    "nativeSourceSuitePassed": 169,
+    "nativeSourceSuiteSkipped": 1,
+    "nativeOptInPassed": 1,
+    "headlessTotalTools": 38,
+    "headlessRepresentativeMnemonTools": 8
+  },
+  "legacyRepair": {
+    "mode": "copy",
+    "format": 0,
+    "encoding": "zstd",
+    "repairedMessages": 2,
+    "inputSha256": "74ba9572caf1b816b18e39b994a036f70d9a262960b6df423b39cee7dffc9f01",
+    "outputSha256": "3ff415c237c85d7dddd4d64a574d1352f3363fe7ddd7e041ce3212f0bcc567d2",
+    "originalPreserved": true
+  },
+  "legacyDelta": {
+    "onlyTwoKnownSummariesRemoved": true,
+    "originalPreserved": true,
+    "originalSha256": "74ba9572caf1b816b18e39b994a036f70d9a262960b6df423b39cee7dffc9f01",
+    "originalLines": 16,
+    "repairedLines": 16
+  },
+  "legacyFinal": {
+    "version": 3,
+    "eventCount": 29,
+    "userMessages": 6,
+    "assistantMessages": 2,
+    "mnemonMessages": [
+      {
+        "seq": 6,
+        "source": {
+          "kind": "plugin",
+          "plugin": "dsh-mnemon",
+          "form": "instructions"
+        }
+      },
+      {
+        "seq": 7,
+        "source": {
+          "kind": "plugin",
+          "plugin": "dsh-mnemon",
+          "form": "recall"
+        }
+      },
+      {
+        "seq": 22,
+        "source": {
+          "kind": "plugin",
+          "plugin": "dsh-mnemon",
+          "form": "recall"
+        }
+      }
+    ],
+    "originalBackupSha256": "74ba9572caf1b816b18e39b994a036f70d9a262960b6df423b39cee7dffc9f01",
+    "coldReopenedInWebUI": true
+  },
+  "status": {
+    "authenticatedStatus": 200,
+    "unauthenticatedStatus": 401,
+    "rpcSucceeded": true,
+    "healthy": true,
+    "commandFound": true,
+    "cliPath": "/opt/homebrew/bin/mnemon",
+    "activeStores": [
+      "default",
+      "f3020dc8-3197-4be7-bc58-6380081ee82b"
+    ]
+  },
+  "browser": {
+    "legacyFailureReproduced": true,
+    "legacyReadAfterRepair": true,
+    "legacyResumeAndColdReopen": true,
+    "currentStatusConnected": true,
+    "settingsConnected": true,
+    "optionalStrategiesEnabled": [
+      "scoped",
+      "light-context",
+      "auto-capture"
+    ],
+    "nativeSpaceCreatedAndActivatedInUI": true,
+    "nativeFactSeededBy": "real CLI without embeddings or LLM",
+    "nativeKeywordRecall": true,
+    "nativeContentRetainedAfterRestart": true,
+    "nativeSoftDeleteInUI": true
+  },
+  "screenshots": [
+    {
+      "path": "225-before-repair.png",
+      "bytes": 56267,
+      "sha256": "0c7d4f226e3928d861a7825e0551fe1e0008f134e877961394c479164d4adc72"
+    },
+    {
+      "path": "225-cold-reopen.png",
+      "bytes": 54765,
+      "sha256": "8bf8c6f2af437067158248845e5e5e32b425403fc0a571164e24a633ced49cdd"
+    },
+    {
+      "path": "230-current-settings.png",
+      "bytes": 86249,
+      "sha256": "b36db44220630cf361f8d3e96c430432e6feaf02d7035bf7c12d5b10811b573a"
+    },
+    {
+      "path": "230-native-recall.png",
+      "bytes": 70390,
+      "sha256": "c4c06e81255f850ce24994423f74410291f4598505eff50dd0ea7f5c0f969dc5"
+    },
+    {
+      "path": "230-restarted-status.png",
+      "bytes": 78384,
+      "sha256": "7ee2cb27bdadc8bebc02fb74b147bd41fea5fbcce2983f0cb8183a5b9c6ecb1e"
+    },
+    {
+      "path": "230-content-after-restart.png",
+      "bytes": 73069,
+      "sha256": "828fd66f322b91ae47f26bc1b910b5f4bdf51b4bd2e46ebee4b4356cd715edf1"
+    }
+  ],
+  "limits": [
+    "No source changes; this rechecks the already-merged 0.5.7 fix.",
+    "The original 0.5.5 installation and absent-CLI environment from issue 230 were not recreated; the historical HTTP 405 capture belongs to PR 226.",
+    "Loopback fixed model responses; no live model-quality measurement.",
+    "No Windows, Electron, physical mobile, or live third-party Provider retest.",
+    "No user sessions or personal memory data were accessed.",
+    "Standalone tarball verification remains the recorded PR 226 evidence; not rerun for this documentation-only addition."
+  ]
+}

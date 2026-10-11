@@ -1,0 +1,483 @@
+/*
+ * The dsh-mnemon configuration on its DSH Plugins page, between the plugin's
+ * description and its components. Groups follow the page's own sections,
+ * rows follow the DSH preference row, the Provider list follows the DSH model
+ * provider cards, and controls are the DSH Switch, the Menu-backed selector
+ * and the settings-form fields.
+ */
+.page {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: 32px;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+}
+
+/* Every root the settings draw in: the page, and each component page, which
+   DSH's Modal renders outside it. Element resets carry no weight, so every
+   control class below wins. */
+.surface { color: var(--dsw-alias-label-primary); }
+:where(.page, .surface) *, :where(.page, .surface) *::before, :where(.page, .surface) *::after { box-sizing: border-box; }
+:where(.page, .surface) :where(button, input, select, textarea) { color: inherit; font: inherit; }
+
+.loading {
+  min-height: 140px;
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 140px;
+  text-align: center;
+}
+
+.section { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.sectionHeading { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: start; column-gap: 12px; }
+.sectionHeading h2 { grid-column: 1; margin: 0; font-size: 14px; font-weight: 500; line-height: 20px; }
+.sectionHeading p { grid-column: 1; max-width: 66ch; margin: 2px 0 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+.sectionHeading .miniSpinner { grid-column: 2; grid-row: 1; }
+.sectionHeading > .boardLinks { grid-column: 1; padding-top: 6px; }
+/* About DSH's component list below the configuration, where the Starter's group row cannot be switched. */
+.componentListNote { max-width: 72ch; margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+/* Groups whose controls write at once, unlike the staged groups saved from the bar below. */
+.appliesNow { grid-column: 2; grid-row: 1; align-self: center; border: .5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-xs); padding: 1px 6px; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 16px; white-space: nowrap; }
+
+/* Preference rows: title and hint on the left, one control on the right, hairline between rows. */
+.rows { display: flex; min-width: 0; flex-direction: column; }
+.settingRow,
+.toggleRow {
+  display: flex;
+  position: relative;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 14px 0;
+  border-bottom: .5px solid var(--dsw-alias-border-l2);
+}
+.rows > :last-child,
+.rows > .packRow:last-child > .settingRow { border-bottom: 0; }
+.rows > .packRow:last-child { padding-bottom: 0; }
+.settingRow[data-stacked] { flex-direction: column; align-items: stretch; }
+.settingCopy { display: flex; min-width: min(240px, 100%); flex: 1 1 0; flex-direction: column; gap: 2px; }
+.settingCopy strong,
+.settingCopy label { color: var(--dsw-alias-label-primary); font-size: 14px; font-weight: 400; line-height: 22px; }
+.settingCopy small { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.settingCopy code { font-family: var(--ds-font-family-code, ui-monospace, monospace); }
+.settingControl { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; justify-content: flex-end; gap: 8px; }
+.settingRow[data-stacked] .settingControl { flex: 1 1 auto; justify-content: stretch; }
+.switch { flex: none; }
+/* What a switch depends on, with the action that resolves it; the dot carries the tone. */
+.rowNote { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px 8px; padding-top: 4px; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.groupCallout { margin: 8px 0 4px; }
+
+/* The memory composition, operated in place: a status line, the main
+   Strategy as a choice of one, then a switch per Source and enhancement with
+   its state beside it as DSH's component list shows it. */
+.boardSection { container-type: inline-size; }
+.board { display: flex; min-width: 0; flex-direction: column; margin-top: 10px; }
+/* Only a problem speaks: what is wrong with the composition and its one fix. */
+.boardProblem { margin: 0 0 4px; }
+.boardLoading { display: flex; min-height: 40px; align-items: center; gap: 8px; margin: 0; color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 20px; }
+.boardGroup { display: flex; min-width: 0; flex-direction: column; padding-top: 14px; }
+.boardGroupHead { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 8px; }
+.boardGroupHead h3 { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; font-weight: 500; line-height: 18px; }
+.boardGroupHead span { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; white-space: nowrap; }
+/* A component's name opens its page too, underlined on hover; the gear is the visible way in. */
+.pageLink { appearance: none; display: inline-flex; max-width: 100%; align-items: center; border: 0; border-radius: var(--dsw-radius-sm); padding: 0; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; }
+.pageLink > span { min-width: 0; overflow-wrap: anywhere; }
+.pageLink:hover > span { text-decoration: underline; text-underline-offset: 3px; }
+.settingCopy .pageLink { width: fit-content; color: var(--dsw-alias-label-primary); font-size: 14px; line-height: 22px; }
+/* The gear: a component's settings, on its page. */
+.boardIconButton { display: inline-grid; width: 28px; height: 28px; flex: none; place-items: center; border: 0; border-radius: var(--dsw-radius-sm); padding: 0; color: var(--dsw-alias-label-secondary); background: transparent; cursor: pointer; }
+.boardIconButton:hover { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
+/* The components a row relates to, named at a glance; each opens its page. */
+.boardLinks { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 4px; padding-top: 4px; }
+.boardLink { appearance: none; display: inline-flex; max-width: 100%; align-items: center; gap: 4px; border: .5px solid var(--dsw-alias-border-l3); border-radius: 999px; padding: 0 8px; color: var(--dsw-alias-label-tertiary); background: transparent; font: inherit; font-size: 11px; line-height: 18px; white-space: nowrap; cursor: pointer; transition: color 120ms ease, border-color 120ms ease; }
+.boardLink[data-on] { color: var(--dsw-alias-label-secondary); }
+.boardLink:hover { border-color: var(--dsw-alias-border-l4); color: var(--dsw-alias-label-primary); }
+.boardLink > svg { flex: none; }
+.boardLinksLabel { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+.pageLink:focus-visible, .boardIconButton:focus-visible, .boardLink:focus-visible, .detailsBack:focus-visible, .boardSearch:focus-within { outline: none; box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); }
+.boardSearch { display: flex; min-width: 0; align-items: center; gap: 8px; margin: 12px 0 0; border: .5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md); padding: 0 10px; color: var(--dsw-alias-label-tertiary); background: var(--dsw-alias-bg-base); }
+.boardSearch input { min-width: 0; height: 32px; flex: 1; border: 0; outline: none; color: var(--dsw-alias-label-primary); background: transparent; font: inherit; font-size: 13px; }
+/* A component's page: what it is, how it relates to the others, its options.
+   The card grows to fit a component's own settings and scrolls inside the
+   Modal's padding box, as DSH asks of its consumers. */
+.detailsDialog { width: min(560px, 100%); max-height: 100%; }
+.detailsScroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.detailsBody { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
+.detailsHead { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
+.detailsHeadLine { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.detailsPackage { min-width: 0; overflow: hidden; color: var(--dsw-alias-label-tertiary); font-family: var(--ds-font-family-code, ui-monospace, monospace); font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.detailsControl { display: flex; align-items: center; margin-left: auto; }
+.detailsSection { display: flex; min-width: 0; flex-direction: column; gap: 8px; border-top: .5px solid var(--dsw-alias-border-l2); padding-top: 14px; }
+.detailsSection > h3 { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; font-weight: 500; line-height: 18px; }
+.detailsRelations { display: grid; min-width: 0; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin: 0; font-size: 13px; line-height: 20px; }
+.detailsRelations > div { display: contents; }
+.detailsRelations dt { color: var(--dsw-alias-label-secondary); }
+.detailsRelations dd { display: flex; min-width: 0; flex-wrap: wrap; gap: 4px 12px; margin: 0; color: var(--dsw-alias-label-primary); }
+.detailsName { appearance: none; display: inline-flex; align-items: center; gap: 6px; border: 0; padding: 0; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.detailsName:hover > span { text-decoration: underline; text-underline-offset: 3px; }
+/* Back to the page this one was opened from. */
+.detailsBack { appearance: none; display: inline-flex; width: fit-content; align-items: center; gap: 2px; margin: -4px 0 -6px -4px; border: 0; border-radius: var(--dsw-radius-sm); padding: 2px 4px; color: var(--dsw-alias-label-secondary); background: transparent; font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; }
+.detailsBack:hover { color: var(--dsw-alias-label-primary); }
+.detailsMissing { color: var(--dsw-alias-label-secondary); }
+.detailsEffect { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.detailsBody .optionsPanel { margin: 0; border-radius: 0; padding: 0; background: transparent; }
+/* A component's page on DSH's own row page, under the title DSH draws. */
+.componentRowPage { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
+/* What a component contributed to its page, after what its declarations give. */
+.detailsContributed { display: flex; min-width: 0; flex-direction: column; gap: 16px; border-top: .5px solid var(--dsw-alias-border-l2); padding-top: 14px; }
+.panelSection { display: flex; min-width: 0; flex-direction: column; gap: 8px; }
+.panelHeading { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; }
+.panelHeading h3 { margin: 0; color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 500; line-height: 20px; }
+.panelHeading p { grid-column: 1; margin: 2px 0 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+.panelHeading .miniSpinner { grid-column: 2; grid-row: 1; }
+.panelNote { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.panelActions { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 8px; }
+.panelActions > span { min-width: 0; flex: 1; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; }
+.panelActions > span.panelError, .panelError { color: var(--dsw-alias-state-error-primary); }
+/* A group's Apply among preference rows reads as one more row. */
+.rows > .panelActions { padding: 10px 0; border-bottom: .5px solid var(--dsw-alias-border-l2); }
+.rows > .panelNote { padding: 8px 0; }
+.panelError { margin: 0; font-size: 12px; line-height: 18px; }
+.boardRow { display: flex; min-width: 0; flex-direction: column; padding: 14px 0; border-bottom: .5px solid var(--dsw-alias-border-l2); }
+.boardRowLine { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.boardGroup > .boardRow:last-child,
+.boardOthersList > .boardRow:last-child { border-bottom: 0; padding-bottom: 4px; }
+.boardMain { padding-top: 12px; }
+.boardEmpty { margin: 0; padding: 12px 0 4px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+/* Enhancements for other main Strategies, closed until asked for. */
+.boardOthers { display: flex; min-width: 0; flex-direction: column; padding-top: 10px; }
+.boardOthersToggle { display: inline-flex; width: fit-content; align-items: center; gap: 6px; margin-left: -4px; border: 0; border-radius: var(--dsw-radius-sm); padding: 2px 4px; color: var(--dsw-alias-label-secondary); background: transparent; font: inherit; font-size: 12px; font-weight: 500; line-height: 18px; cursor: pointer; }
+.boardOthersToggle:hover { color: var(--dsw-alias-label-primary); }
+.boardOthersToggle > svg { transition: transform .14s; transform: rotate(-90deg); }
+.boardOthersToggle[aria-expanded='true'] > svg { transform: rotate(0deg); }
+.boardOthersList { display: flex; min-width: 0; flex-direction: column; }
+.boardFootnote { margin: 12px 0 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+/* A component's own options, drawn from the fields it declares. */
+.optionsPanel { display: flex; min-width: 0; flex-direction: column; gap: 14px; margin-top: 12px; border-radius: var(--dsw-radius-lg); padding: 14px 16px; background: var(--dsw-alias-bg-module-platform); }
+.optionField { display: flex; min-width: 0; flex-direction: column; gap: 6px; }
+.optionLabel { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
+.optionLabel label { color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 500; line-height: 20px; }
+.optionDefault { border: .5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-xs); padding: 0 6px; color: var(--dsw-alias-label-tertiary); font-size: 11px; line-height: 16px; }
+.optionReset { border: 0; border-radius: var(--dsw-radius-sm); padding: 0 4px; color: var(--dsw-alias-state-business-primary); background: transparent; font: inherit; font-size: 12px; line-height: 18px; cursor: pointer; }
+.optionReset:disabled { cursor: default; opacity: .5; }
+.optionInput { width: 100%; min-width: 0; box-sizing: border-box; border: .5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md); outline: none; padding: 7px 10px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); font: inherit; font-size: 13px; line-height: 20px; resize: vertical; }
+.optionInput:focus-visible { border-color: var(--dsw-alias-state-business-primary); }
+.optionInput[aria-invalid='true'] { border-color: var(--dsw-alias-state-error-primary); }
+.optionInput:disabled { opacity: .5; }
+.optionHint { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.optionHint[data-error] { color: var(--dsw-alias-state-error-primary); }
+.optionChoices { display: flex; min-width: 0; flex-wrap: wrap; gap: 6px 16px; }
+.optionEmpty { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+/* The row's state then its control, kept together when the row wraps. */
+.boardControl { display: flex; min-width: 0; flex: 0 1 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 12px; margin-left: auto; }
+.boardState { display: inline-flex; min-width: 0; align-items: center; gap: 6px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; white-space: nowrap; }
+.boardState[data-tone='warning'],
+.boardState[data-tone='error'] { color: var(--dsw-alias-label-secondary); }
+.boardValue { color: var(--dsw-alias-label-secondary); font-size: 13px; line-height: 20px; }
+@container (max-width: 420px) {
+  .boardMain .boardControl { width: 100%; justify-content: stretch; }
+  .boardMain .boardControl > :last-child { flex: 1; }
+}
+/* A host layout can leave a very narrow content column on phones. Keep each
+   row's name, state and switch; the explanations return at wider sizes. */
+@container (max-width: 180px) {
+  .boardSection .sectionHeading p,
+  .boardSection .settingCopy small { display: none; }
+  .boardSection .boardRow { padding: 10px 0; }
+  .boardSection .boardRowLine { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .boardSection .settingCopy { min-width: 0; }
+  .boardSection .settingCopy strong { overflow-wrap: anywhere; }
+  .boardSection .boardControl { justify-self: end; }
+}
+/* Placeholder rows hold a group's height while its state loads. */
+.placeholderRow { display: flex; min-height: 70px; align-items: center; justify-content: space-between; gap: 16px; border-bottom: .5px solid var(--dsw-alias-border-l2); }
+.placeholderRow span { height: 12px; border-radius: 6px; background: var(--dsw-alias-bg-module-platform); animation: placeholder-pulse 1400ms ease-in-out infinite; }
+.placeholderRow span:first-child { width: 38%; }
+.placeholderRow span:last-child { width: 36px; height: 20px; border-radius: 10px; }
+@keyframes placeholder-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) {
+  .boardRowCopy { transition: none; }
+  .boardOthersToggle > svg { transition: none; }
+  .placeholderRow span { animation: none; }
+}
+
+/* The DSH settings selector: platform fill, chevron, Menu below. */
+.selector {
+  appearance: none;
+  display: inline-flex;
+  max-width: 280px;
+  height: 36px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--dsw-radius-md);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  font-size: 14px;
+  line-height: 22px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.selector > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.selector > svg { flex: none; color: var(--dsw-alias-label-tertiary); }
+.selector:hover:not(:disabled),
+.selector[aria-expanded='true'] { background: var(--dsw-alias-interactive-bg-hover); }
+.selector:disabled { cursor: default; opacity: .4; }
+.selectMenu { min-width: 220px; }
+.selectOption { display: grid; min-width: 0; gap: 1px; white-space: normal; }
+.selectOption > small { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+
+.directoryInput {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: .5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-md);
+  outline: none;
+  padding: 0 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-3);
+  font-family: var(--ds-font-family-code, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 20px;
+}
+.directoryInput::placeholder { color: var(--dsw-alias-label-dimmed); font-family: var(--dsw-font-family); font-size: 13px; }
+.directoryInput:focus-visible { border-color: var(--dsw-alias-state-business-primary); }
+.directoryInput[aria-invalid='true'] { border-color: var(--dsw-alias-state-error-primary); }
+.directoryInput:disabled { cursor: default; opacity: .5; }
+
+/* A follow-up under the row above it, such as a chosen task model route. */
+.rowDetail { display: flex; min-width: 0; flex-direction: column; gap: 10px; padding: 0 0 14px; border-bottom: .5px solid var(--dsw-alias-border-l2); }
+.settingRow:has(+ .rowDetail) { padding-bottom: 10px; border-bottom: 0; }
+.effectiveRoute { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+.effectiveRoute code { min-width: 0; overflow: hidden; border: .5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-xs); padding: 1px 6px; color: var(--dsw-alias-label-secondary); font-family: var(--ds-font-family-code, ui-monospace, monospace); font-size: 11px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+.effectiveRoute small { min-width: 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.warning { margin: 0; color: var(--dsw-alias-label-secondary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+
+.advanced { min-width: 0; padding: 12px 0 2px; }
+.advanced > summary { display: inline-flex; width: fit-content; align-items: center; gap: 6px; margin-left: -4px; border-radius: var(--dsw-radius-sm); padding: 2px 4px; color: var(--dsw-alias-label-secondary); font-size: 12px; font-weight: 500; line-height: 18px; list-style: none; cursor: pointer; }
+.advanced > summary::-webkit-details-marker { display: none; }
+.advanced > summary > svg { transition: transform .14s; }
+.advanced[open] > summary > svg { transform: rotate(180deg); }
+.advanced > summary:hover { color: var(--dsw-alias-label-primary); }
+.advanced > .fieldGrid { padding-top: 12px; }
+
+
+.miniSpinner {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  margin-top: 4px;
+  border: 2px solid var(--dsw-alias-border-l2);
+  border-top-color: var(--dsw-alias-label-secondary);
+  border-radius: 50%;
+  animation: settings-spin .7s linear infinite;
+}
+@keyframes settings-spin { to { transform: rotate(360deg); } }
+
+/* Provider cards, as the DSH model provider cards; the editor is the platform-filled block. */
+.providerList { display: flex; min-width: 0; flex-direction: column; gap: 8px; margin-top: 10px; }
+.providerRow {
+  overflow: hidden;
+  border: .5px solid var(--dsw-alias-settings-card-stroke);
+  border-radius: var(--dsw-radius-xl);
+  background: var(--dsw-alias-settings-card-fill);
+}
+.providerRowHeader { display: flex; min-width: 0; align-items: center; gap: 12px; padding: 12px 14px; }
+summary.providerRowHeader { list-style: none; cursor: pointer; }
+summary.providerRowHeader::-webkit-details-marker { display: none; }
+.providerDisclosure { appearance: none; display: flex; min-width: 0; flex: 1; align-items: center; gap: 8px; border: 0; outline: none; padding: 0; color: inherit; background: transparent; cursor: pointer; text-align: left; }
+.providerDisclosure:disabled { cursor: default; }
+.providerDisclosure:focus-visible,
+summary.providerRowHeader:focus-visible { border-radius: var(--dsw-radius-md); box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); }
+.providerIdentity { display: flex; min-width: 0; flex: 1; align-items: center; gap: 12px; }
+.providerIdentity > span { display: flex; min-width: 0; flex-direction: column; }
+.providerIdentity strong { font-size: 14px; font-weight: 500; line-height: 22px; }
+.providerIdentity small { overflow: hidden; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.providerMark { display: grid; width: 36px; height: 36px; box-sizing: border-box; flex: 0 0 auto; place-items: center; overflow: hidden; border: .5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-md); padding: 6px; background: var(--dsw-alias-bg-layer-1); }
+.providerMark > img,
+.providerMark > svg { display: block; width: 100%; height: 100%; border-radius: 4px; object-fit: contain; }
+.providerEnableControl { display: flex; flex: 0 0 auto; align-items: center; gap: 10px; }
+.providerScopeTag { flex: 0 0 auto; border: .5px solid var(--dsw-alias-border-l3); border-radius: var(--dsw-radius-xs); padding: 1px 6px; color: var(--dsw-alias-label-secondary); font-size: 11px; line-height: 16px; }
+.providerScopeTag[data-scope='workspace'] { border-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 30%, transparent); color: var(--dsw-alias-state-business-primary); }
+.providerState { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 6px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; white-space: nowrap; }
+.providerState::before { width: 6px; height: 6px; flex: none; border-radius: 50%; content: ''; background: var(--dsw-alias-state-idle-primary); }
+.providerState[data-enabled]::before { background: var(--dsw-alias-state-success-primary); }
+.providerChevron { flex: 0 0 auto; color: var(--dsw-alias-label-tertiary); transition: transform .14s; }
+.providerDisclosure[aria-expanded='true'] .providerChevron,
+details[open] > summary .providerChevron { transform: rotate(180deg); }
+.providerToggle { display: inline-flex; position: relative; cursor: pointer; }
+.providerInlineBody { padding: 0 14px 14px; }
+.providerToggleError { margin: 0; padding: 0 14px 12px; color: var(--dsw-alias-state-error-primary); font-size: 12px; line-height: 18px; }
+.providerServiceForm,
+.editor { display: flex; min-width: 0; flex-direction: column; gap: 12px; border-radius: var(--dsw-radius-lg); padding: 14px 16px; background: var(--dsw-alias-bg-module-platform); }
+.providerServicePrompt,
+.editorNote { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+.editorHeading h3 { margin: 0; font-size: 14px; font-weight: 500; line-height: 22px; }
+.editorHeading p { margin: 2px 0 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.editor .toggleRow { padding: 10px 0; border-top: .5px solid var(--dsw-alias-border-l3); border-bottom: .5px solid var(--dsw-alias-border-l3); }
+.embeddingTest { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 12px; }
+.embeddingTest > span { min-width: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.embeddingTest > span.error { color: var(--dsw-alias-state-error-primary); }
+.globalLocationSetting { display: flex; min-width: 0; flex-direction: column; }
+.providerServiceLocation { border-bottom: .5px solid var(--dsw-alias-border-l3); padding-bottom: 12px; }
+.providerServiceLocation > .nativeLocation { padding: 0 0 12px; }
+.providerLocationField { padding-top: 2px; }
+.nativeLocation { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+
+/* Default or custom location, as the DSH SegmentedControl. */
+.inlineChoices { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 2px; border-radius: var(--dsw-radius-md); padding: 3px; background: var(--dsw-alias-interactive-bg-hover); }
+.inlineChoices label { position: relative; cursor: pointer; }
+.inlineChoices input { position: absolute; inset: 0; z-index: 1; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
+.inlineChoices span { display: inline-flex; height: 28px; align-items: center; border-radius: var(--dsw-radius-sm); padding: 0 12px; color: var(--dsw-alias-label-secondary); font-size: 13px; font-weight: 500; line-height: 20px; white-space: nowrap; }
+.inlineChoices input:checked + span { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); box-shadow: var(--dsw-elevation-soft); }
+.inlineChoices input:focus-visible + span { box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); }
+.inlineChoices input:disabled + span { cursor: default; opacity: .4; }
+
+/* Stacked fields, as the DSH settings form: label above a 34px input. */
+.fieldGrid,
+.providerSettingsGrid { display: grid; min-width: 0; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 12px; }
+.providerSettingsGrid { grid-template-columns: minmax(0, 1fr); }
+.fieldGrid > label,
+.providerFieldControl > label:not(.providerBoolean) { display: flex; min-width: 0; flex-direction: column; gap: 6px; color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 500; line-height: 20px; }
+.fieldGrid input,
+.fieldGrid select,
+.providerFieldControl input:not([type='checkbox']),
+.providerFieldControl select {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: .5px solid var(--dsw-alias-border-l4);
+  border-radius: var(--dsw-radius-md);
+  outline: none;
+  padding: 0 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-3);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+}
+.fieldGrid input::placeholder,
+.providerFieldControl input::placeholder { color: var(--dsw-alias-label-dimmed); }
+
+/* Selects inside editors use the DSH model editor's select: the OS arrow is
+   replaced by a 12px chevron inset on the right. THEME-DEPENDENT: data-URI SVGs
+   cannot resolve CSS variables, so the chevron gray #81858C (the caption gray
+   shared by both themes, as in DSH) is hardcoded here. */
+.fieldGrid select,
+.providerFieldControl select {
+  appearance: none;
+  padding-right: 32px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12' fill='none'%3E%3Cpath d='M3 4.5L6 7.5L9 4.5' stroke='%2381858C' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 12px;
+}
+.fieldGrid select:disabled,
+.providerFieldControl select:disabled { cursor: default; }
+.fieldGrid input:focus-visible,
+.fieldGrid select:focus-visible,
+.providerFieldControl input:focus-visible,
+.providerFieldControl select:focus-visible { border-color: var(--dsw-alias-state-business-primary); }
+.fieldGrid input[aria-invalid='true'],
+.providerFieldControl input:invalid { border-color: var(--dsw-alias-state-error-primary); }
+.fieldGrid input:disabled,
+.fieldGrid select:disabled,
+.providerFieldControl input:disabled,
+.providerFieldControl select:disabled { opacity: .5; }
+.providerFieldControl { display: flex; min-width: 0; flex-direction: column; justify-content: flex-end; gap: 4px; }
+.providerBoolean { display: flex; min-height: 34px; align-items: center; gap: 8px; color: var(--dsw-alias-label-primary); font-size: 13px; }
+.providerBoolean input { width: 16px; height: 16px; margin: 0; accent-color: var(--dsw-alias-brand-primary); }
+.providerSecretInput { position: relative; min-width: 0; }
+.providerSecretInput > input { padding-right: 40px; }
+.providerSecretVisibility { appearance: none; display: grid; position: absolute; top: 3px; right: 3px; width: 28px; height: 28px; place-items: center; border: 0; border-radius: var(--dsw-radius-sm); padding: 0; color: var(--dsw-alias-label-tertiary); background: transparent; cursor: pointer; }
+.providerSecretVisibility:hover:not(:disabled) { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-interactive-bg-hover); }
+.providerSecretVisibility:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary)); }
+.providerSecretVisibility:disabled { cursor: default; opacity: .35; }
+.providerSecretVisibility svg { width: 16px; height: 16px; }
+
+.memoryConfigFooter { display: flex; min-height: 36px; align-items: center; justify-content: space-between; gap: 10px; }
+.memoryConfigFooter > div { display: flex; align-items: center; gap: 6px; }
+.providerServiceFooter { min-height: 0; align-items: flex-end; }
+.configFeedback { min-width: 0; flex: 1; font-size: 12px; line-height: 18px; }
+.scopeChanging,
+.providerTarget { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+.scopeChanging { border-radius: var(--dsw-radius-md); padding: 8px 12px; color: var(--dsw-alias-state-warn-label, var(--dsw-alias-label-secondary)); background: var(--dsw-alias-state-warn-tertiary, var(--dsw-alias-bg-module-platform)); }
+.providerLoadError { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
+
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Where memory lives: the path, after a label when it needs one. */
+.location { display: flex; min-width: 0; align-items: baseline; gap: 6px; }
+/* The data directory: default or custom, and the field for a custom one. */
+.locationRow { gap: 10px; padding: 14px 0; border-bottom: .5px solid var(--dsw-alias-border-l2); }
+.rowActions { display: flex; flex: none; align-items: center; gap: 8px; }
+.packRow { display: flex; min-width: 0; flex-direction: column; gap: 8px; padding-bottom: 14px; }
+.packRow > .settingRow { padding-bottom: 6px; border-bottom: 0; }
+.packRow:has(> .packFeedback:empty):not(:has(> .importBar)) > .settingRow { padding-bottom: 0; }
+.rows > .packRow:not(:last-child) { border-bottom: .5px solid var(--dsw-alias-border-l2); }
+
+.importBar {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--dsw-radius-md);
+  padding: 10px 12px;
+  background: var(--dsw-alias-bg-module-platform);
+}
+.importBar > div { display: grid; min-width: 0; }
+.importBar strong { overflow: hidden; font-size: 13px; font-weight: 500; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.importBar small { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+
+.packFeedback { display: grid; gap: 4px; }
+.packFeedback:empty { display: none; }
+.packFeedback p { margin: 0; font-size: 12px; line-height: 18px; overflow-wrap: anywhere; }
+.error { color: var(--dsw-alias-state-error-primary); }
+.readOnlyNotice { margin: 0 0 -20px; color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+.packSuccess { color: var(--dsw-alias-state-success-primary); }
+
+.selector:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+}
+
+@media (max-width: 620px) {
+  .page { gap: 28px; }
+  .rowActions { width: 100%; }
+  .rowActions button { flex: 1; }
+  .importBar { grid-template-columns: minmax(0, 1fr) auto; }
+  .importBar > button:last-child { grid-column: 1 / -1; }
+  .inlineChoices { width: 100%; }
+  .inlineChoices label { flex: 1; }
+  .inlineChoices span { width: 100%; justify-content: center; }
+  .providerRowHeader { align-items: flex-start; gap: 8px; }
+  .providerEnableControl { max-width: 132px; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+  .providerState { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+  .memoryConfigFooter { align-items: stretch; flex-direction: column; }
+  .memoryConfigFooter > div:last-child { width: 100%; }
+  .memoryConfigFooter button { flex: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .providerChevron, .advanced > summary > svg { transition: none; }
+  .miniSpinner { animation: none; }
+}

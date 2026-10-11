@@ -1,0 +1,65 @@
+{
+  "issue": 266,
+  "date": "2026-09-22",
+  "baselineRevision": "65c0e23ba410993e16c00c8b3adf92d59d853425",
+  "implementationRevision": "1750e497e58c24406c0092e4fc1549996283aab8",
+  "localEnvironment": {
+    "os": "macOS",
+    "architecture": "arm64",
+    "node": "v25.1.0",
+    "pnpm": "10.13.1",
+    "dsh": "0.1.5-rc.1",
+    "nativeCli": "0.2.8",
+    "nativeCliSha256": "f8f21151ce9777983b8d2dfb9cbea1a00b223de6063659af232d04aa57cedad0"
+  },
+  "baselineRegression": {
+    "command": "pnpm exec vitest run tests/workspace-storage.spec.ts",
+    "testsPassed": 5,
+    "testsFailed": 1,
+    "failure": "rejects a file ancestor when native realpath reports ENOENT for its child",
+    "scope": "Only the first realpath call is mocked to throw ENOENT; subsequent realpath and filesystem type checks use a real temporary file."
+  },
+  "fixedFocusedTests": {
+    "files": [
+      "tests/workspace-storage.spec.ts",
+      "tests/client-platform-boundary.spec.ts",
+      "tests/async-subagent-memory.spec.ts"
+    ],
+    "passed": 31
+  },
+  "verify": {
+    "command": "MNEMON_NATIVE_TEST_CLI=/absolute/path/to/mnemon npx --yes pnpm@10.13.1 run verify",
+    "exitCode": 0,
+    "rootTestsPassed": 1185,
+    "rootTestsSkipped": 5,
+    "pluginTestsPassed": 382,
+    "pluginTestsSkipped": 2,
+    "deterministicBuildFiles": 39,
+    "nativeIntegrationEnabled": true,
+    "nativeCapacityWorkflowEnabled": true,
+    "headlessProfile": "activation, settings persistence, restart and complete Starter disable passed",
+    "packageValidation": "contents, public imports/types, publint and attw passed"
+  },
+  "plugins": {
+    "command": "MNEMON_NATIVE_TEST_CLI=/absolute/path/to/mnemon MNEMON_PLUGIN_VERIFY_CONCURRENCY=4 npx --yes pnpm@10.13.1 run verify:plugins --skip-build",
+    "exitCode": 0,
+    "independentRepositories": 16,
+    "packedArtifacts": 17,
+    "externalConsumer": "public SDK-only composition and Client tests passed",
+    "headlessProfile": "packed Starter and simultaneous optional Strategies passed"
+  },
+  "skips": [
+    "5 live Flash tests require authorized credentials",
+    "1 live OpenViking integration requires a disposable backend",
+    "1 Windows Native binary smoke does not apply to macOS"
+  ],
+  "scope": "Windows observations use native node:fs calls, separately from the portable simulated-ENOENT regression. All stores are disposable; no personal data, credentials, external model calls or DSH source changes.",
+  "webui": {
+    "evidence": "webui-verification.json",
+    "platform": "macOS Chrome",
+    "dsh": "0.1.5-rc.2",
+    "packedArtifacts": 17,
+    "runtimeEntries": 2,
+    "status": "passed"
+  }
+}

@@ -1,0 +1,6 @@
+# Installation registers the Strategy contribution. Activation remains an
+# explicit Profile choice made through Mnemon or the DSH Loader configuration.
+- insert:
+    - id: mnemon-strategy-auto-capture
+      name: dsh-mnemon-strategy-auto-capture
+      disabled: true

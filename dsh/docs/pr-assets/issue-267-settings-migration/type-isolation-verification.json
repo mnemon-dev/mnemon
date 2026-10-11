@@ -1,0 +1,732 @@
+{
+  "verifiedAt": "2026-09-22",
+  "sourceCommit": "d57e14054a4c523097b382ff36ca6bd3a993ff03",
+  "cleanSourceCheckout": true,
+  "previousBrowserSourceCommit": "dc10b5b6a2b39bd3093823741e286592dc640cd6",
+  "reason": "Clean CI exposed conflicting global Schemastery generics from legacy schemas and the live fork; a private static ESM bridge isolates the published runtime from legacy type builders.",
+  "typeIsolation": {
+    "runtimeAlias": {
+      "name": "schemastery-live",
+      "target": "npm:@deepseek-ai/schemastery@^3.18.3"
+    },
+    "canonicalDevelopmentDependency": "@deepseek-ai/schemastery@3.18.2",
+    "officialPackagesModified": false,
+    "typescriptSourceAliases": false,
+    "cjsBridge": false,
+    "topLevelAwaitAdded": false,
+    "emittedDeclarationLeaks": [],
+    "existingMainLockPackageAndSnapshotValuesPreserved": true
+  },
+  "localValidation": {
+    "verify": {
+      "node": "22.19.0",
+      "pnpm": "10.13.1",
+      "result": "pass",
+      "nativeCli": "0.2.8",
+      "publishedV4CodecEnabled": true,
+      "rootTests": {
+        "passed": 1342,
+        "skipped": 5
+      },
+      "pluginTests": {
+        "passed": 382,
+        "skipped": 2
+      },
+      "package": {
+        "files": 49,
+        "packedBytes": 308200,
+        "unpackedBytes": 1370296,
+        "nodeCompatibleEntries": 12,
+        "publicTypeDependencies": 28,
+        "executableHelpEntries": 1
+      },
+      "logSha256": "a8896f8b52ce80ec571876cf55ecd9b9733361f48db6a75ecb1afd5d4fdf087f"
+    },
+    "verifyPlugins": {
+      "node": "24.20.0",
+      "pnpm": "10.13.1",
+      "result": "pass",
+      "independentPluginRepositories": 16,
+      "packedArtifacts": 17,
+      "externalSdkOnlyConsumer": true,
+      "threeOptionalStrategiesTogether": true,
+      "starterOnlyActivation": true,
+      "logSha256": "c05fe93e0d7e886a4f5a574a1eb65e6e7fc627c06730948640e497ed91a2d7f3"
+    }
+  },
+  "artifacts": [
+    {
+      "name": "dsh-mnemon",
+      "version": "0.5.12",
+      "filename": "dsh-mnemon-0.5.12.tgz",
+      "sha256": "552eb9c23846e23e958100974888351a74666c471d614d2f098f2426d5a81cb3",
+      "integrity": "sha512-T8dsk+cwEVC4WwofiQ3sNCv3qOcCWTa6Hl/I6m36N/sIxoeFQS/nR64in8oL/MeJG30+hrGgr6PtXLt+nVmi2g=="
+    },
+    {
+      "name": "dsh-mnemon-provider-byterover",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-byterover-0.5.4.tgz",
+      "sha256": "94677bb5a27261dd2051f67c9ae5bc41c17ea86a4ea95cbd0baee1728203633f",
+      "integrity": "sha512-0/ru18uVKNILv3Q2Dx7soOpm+9SrARnbxCsewmQKPy8fvj14zwd7TNLlI9/lV0/vN5SgjKq95PnOvsJZVD/krw=="
+    },
+    {
+      "name": "dsh-mnemon-provider-hindsight",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-hindsight-0.5.4.tgz",
+      "sha256": "bf527bc83d51bd7b2e510ed3be59665ae6b3ddbd4e1c3beee16c32235fa0afbb",
+      "integrity": "sha512-nQ3rQ83J2ugNLXDkG1eYPjpibFANoe3n9OkxfyPCxXkAHHKYdmIZ35mzCFG8sMWsDeSt8y1RezulWjima4ZAVw=="
+    },
+    {
+      "name": "dsh-mnemon-provider-holographic",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-holographic-0.5.4.tgz",
+      "sha256": "67f9cc593a7bcf33001e0817a4932e23cf9f0927e90b6bc2b2ccd5ef49b91259",
+      "integrity": "sha512-ULO6MBVq8rmRMlMnDcqJ26XPsk1K5j3HPjtTXHoBlEy6GdYQ7/2vZLtDQZ9FNjMZ9VT/W6Qj+RAc1HfgIj3bZA=="
+    },
+    {
+      "name": "dsh-mnemon-provider-honcho",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-honcho-0.5.4.tgz",
+      "sha256": "c102952aa1b9fdd953b25068663635a9ffad606bb39c68b56eafa538c8fab72d",
+      "integrity": "sha512-xbbDeshwpiFZHlIUFveMbv6o6xTRY1sjNUvkcXKN/oInxCYdV4sC7Q6pBMRoSoSXYoAgUVExLLXxG+p9Z7uDZA=="
+    },
+    {
+      "name": "dsh-mnemon-provider-mem0",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-mem0-0.5.4.tgz",
+      "sha256": "42cd225bb376d387d8e7f5503d64b6a00ddae4f5aea26b495cb9d5aa44dab3b0",
+      "integrity": "sha512-jriF73KpQp6DoH0RbdfJx+6HzUGEGq1/zy1Y8DmyRaRF62OhBmySGSTHZHasVu1kw61NWzSqIBFWFVn6La0wYQ=="
+    },
+    {
+      "name": "dsh-mnemon-provider-mnemon-native",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-provider-mnemon-native-0.5.5.tgz",
+      "sha256": "cb1532ec04e1bc2550456340b453717686c2bc399e742e61be529bdae5e6f812",
+      "integrity": "sha512-M6v7W2MomcPaPEcf5vUVfJa0j1HUdEmHwdCYR+jmK05doyuP/Vfg/+S2ZnpySKWEGu7jDlgRQbd5hb8RANKahg=="
+    },
+    {
+      "name": "dsh-mnemon-provider-openviking",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-provider-openviking-0.5.5.tgz",
+      "sha256": "da3505e93462a7860d331e830930a04d4e2406be5b540333f340f9351346920f",
+      "integrity": "sha512-7XP4we0/Zl9QasILR5SvEGEONk7YSXj1X9PTpPZ7eS6IgCV3uauhTV5aqZ0d2VPgSR7MYaq1nWnc0MuEZfVbXA=="
+    },
+    {
+      "name": "dsh-mnemon-provider-retaindb",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-retaindb-0.5.4.tgz",
+      "sha256": "a7b5f1efb4e68df2d7ccc7e6078cd8c3229c82cf14f0162a196c975cbe19727f",
+      "integrity": "sha512-wztasXBFvV0M4xnJM0G0K819EMWLB0gVE0rvc4CY7XkmnqTAPoZ/26pZT9WY6ENHj84onkC2ck58xy7eqiX70A=="
+    },
+    {
+      "name": "dsh-mnemon-provider-supermemory",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-supermemory-0.5.4.tgz",
+      "sha256": "d04b900f7f9e9359ba53b349bdbc4550fc19b350771e61df3aa451e8f67f9afd",
+      "integrity": "sha512-hB6G2B5hu1ktMyqP5Al7b9uLVfV876Fs5zrgh5URlaE25e4s3VrJBkzebq5ZuhSocTDYFKMsZL4AWQGLFkb0Rg=="
+    },
+    {
+      "name": "dsh-mnemon-source-documents",
+      "version": "0.5.6",
+      "filename": "dsh-mnemon-source-documents-0.5.6.tgz",
+      "sha256": "411900a7eef2e2d9b90e83bb4a3669269d150a46142fcfe51cc4ba3819ccb9ec",
+      "integrity": "sha512-GlSzJs5C4nR1fG7dLRWMx7KOEF5ZDyKbU2UQGaBKXWeQrD5xZKfu/fZUbvUr/yj0HVfRKxbhvwkK1Iv9Oq3BLQ=="
+    },
+    {
+      "name": "dsh-mnemon-source-memory-spaces",
+      "version": "0.5.8",
+      "filename": "dsh-mnemon-source-memory-spaces-0.5.8.tgz",
+      "sha256": "a98a8b03fd384785406d85548254b1182276057c6f9b98784a7a35cee58f90c6",
+      "integrity": "sha512-OuNWar7KABXPS+6XKan5FVcJPrjIV9vdeNUkXNzvp9ofc2CRiKqwpBNjDADPemza3XqIeWZQYF6SrBCN6r+1kg=="
+    },
+    {
+      "name": "dsh-mnemon-source-runtime",
+      "version": "0.5.8",
+      "filename": "dsh-mnemon-source-runtime-0.5.8.tgz",
+      "sha256": "f9cdd113522fc62b08b4993260e03ca7cf71d14f0f2bd188cacb400f6e27f607",
+      "integrity": "sha512-QPZBv2dvwa7so77NvyAZcAC0YkfXRfRzgTogaLWCbkrBf0Xk39zz0noo+4GgE8idMh0M/oLS6Erb2fErWSz2AQ=="
+    },
+    {
+      "name": "dsh-mnemon-strategy-auto-capture",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-auto-capture-0.5.4.tgz",
+      "sha256": "3816601abd83f0c5c679f3e4c9ae96c8f697e8e15f6546e975a96fd7f86b8c02",
+      "integrity": "sha512-SYHrc0H2Pxgs5dqa48AgoYudnAlkB450H8dqAz7ILiFGEo4V2u6RQuBsF5A7QOJXwV9v3fd0YQ9eAcc5tFds9Q=="
+    },
+    {
+      "name": "dsh-mnemon-strategy-default-three-tier",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-strategy-default-three-tier-0.5.5.tgz",
+      "sha256": "52af5caf635f2cf2b165feff1ff3d35d241e6d073771b7b92b3ea37b36ff589f",
+      "integrity": "sha512-6cg2mz8QyYKYjdk0YnW+IYp2TEQQsZatj89CwsDXU50sN2D8dDal5TZwBl5+qRa5MZj11mIN5ZENWCDcBqTFxw=="
+    },
+    {
+      "name": "dsh-mnemon-strategy-light-context",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-light-context-0.5.4.tgz",
+      "sha256": "62947c3ff777fbb8d42724acf2a9c651d2b2302b387bb8579c59cd79f82a9e0d",
+      "integrity": "sha512-7qbo0e9igj0x03ekcBbAunkldWOme07d/R+tI/U+0P6WsyiPGy8EX0UnqYAervd1oZ8G06+srJ0zDX6tcFX0JA=="
+    },
+    {
+      "name": "dsh-mnemon-strategy-scoped",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-scoped-0.5.4.tgz",
+      "sha256": "f3f945add93d2d5f8f48f0e70f5de9360814499a552218af7fa93f574dd3457a",
+      "integrity": "sha512-aWPYgkexWdmg8LWFddnlnX9HbFRA6E43pbQxMTnkC8YOFja/EAArpqa0McBlffYMZedvCg7FhGWuQV7Qy7nezw=="
+    }
+  ],
+  "cohorts": [
+    {
+      "result": "pass",
+      "normalPeers": true,
+      "freshInstall": true,
+      "frameworkVersion": "0.1.5-rc.2",
+      "dshPackageCount": 234,
+      "mnemonPackageCount": 17,
+      "artifactCount": 17,
+      "verifiedArtifactHashes": true,
+      "verifiedLockIntegrities": true,
+      "publicBytesChecked": 8,
+      "verifiedPublicBytesAgain": true,
+      "commit": "d57e14054a4c523097b382ff36ca6bd3a993ff03",
+      "cleanCommit": true,
+      "rootSha256": "552eb9c23846e23e958100974888351a74666c471d614d2f098f2426d5a81cb3",
+      "schemaAlias": {
+        "alias": "schemastery-live",
+        "declaration": "npm:@deepseek-ai/schemastery@^3.18.3",
+        "actualName": "@deepseek-ai/schemastery",
+        "actualVersion": "3.18.3",
+        "devCanonicalVersion": "3.18.2",
+        "officialIntegrity": "sha512-plZIZADuGLT/3PoYmUaEDZd0vG1rVahU89MevnxXsyQhFEi2D6DUuTJel7FUb3cUM9aCzqGMN99sHJe1RIushA==",
+        "officialArchiveSha256": "3e8c63ab919f13c75773a2cbcd3ae72c7bd9a5fb0a6f753cf1f427a996727644",
+        "officialFilesCompared": 8,
+        "allOfficialFilesByteIdentical": true,
+        "staticEsmImportInPackedRoot": true,
+        "esmExport": "./lib/index.mjs",
+        "esmSha256": "cfcbe46c7416bdb35ce891c252152bbf519e08199bede5930dd7cb880c65f1ef",
+        "cjsSha256": "aca1c1a47c7b6034feee01501aefca3e6dd97a0bac4fe334fd30647ae5a9e480"
+      },
+      "nativeCli": "mnemon version 0.2.8",
+      "dshCli": "0.1.5-rc.2",
+      "node": "v25.1.0",
+      "checkedAt": "2026-09-22T13:28:05.493Z"
+    },
+    {
+      "result": "pass",
+      "normalPeers": true,
+      "freshInstall": true,
+      "frameworkVersion": "0.1.6-alpha.2",
+      "dshPackageCount": 251,
+      "mnemonPackageCount": 17,
+      "artifactCount": 17,
+      "verifiedArtifactHashes": true,
+      "verifiedLockIntegrities": true,
+      "publicBytesChecked": 8,
+      "verifiedPublicBytesAgain": true,
+      "commit": "d57e14054a4c523097b382ff36ca6bd3a993ff03",
+      "cleanCommit": true,
+      "rootSha256": "552eb9c23846e23e958100974888351a74666c471d614d2f098f2426d5a81cb3",
+      "schemaAlias": {
+        "alias": "schemastery-live",
+        "declaration": "npm:@deepseek-ai/schemastery@^3.18.3",
+        "actualName": "@deepseek-ai/schemastery",
+        "actualVersion": "3.18.3",
+        "devCanonicalVersion": "3.18.2",
+        "officialIntegrity": "sha512-plZIZADuGLT/3PoYmUaEDZd0vG1rVahU89MevnxXsyQhFEi2D6DUuTJel7FUb3cUM9aCzqGMN99sHJe1RIushA==",
+        "officialArchiveSha256": "3e8c63ab919f13c75773a2cbcd3ae72c7bd9a5fb0a6f753cf1f427a996727644",
+        "officialFilesCompared": 8,
+        "allOfficialFilesByteIdentical": true,
+        "staticEsmImportInPackedRoot": true,
+        "esmExport": "./lib/index.mjs",
+        "esmSha256": "cfcbe46c7416bdb35ce891c252152bbf519e08199bede5930dd7cb880c65f1ef",
+        "cjsSha256": "aca1c1a47c7b6034feee01501aefca3e6dd97a0bac4fe334fd30647ae5a9e480"
+      },
+      "nativeCli": "mnemon version 0.2.8",
+      "dshCli": "0.1.6-alpha.2",
+      "node": "v25.1.0",
+      "checkedAt": "2026-09-22T13:28:05.510Z"
+    },
+    {
+      "result": "pass",
+      "normalPeers": true,
+      "freshInstall": true,
+      "frameworkVersion": "0.1.7-alpha.1",
+      "dshPackageCount": 267,
+      "mnemonPackageCount": 17,
+      "artifactCount": 17,
+      "verifiedArtifactHashes": true,
+      "verifiedLockIntegrities": true,
+      "publicBytesChecked": 10,
+      "verifiedPublicBytesAgain": true,
+      "commit": "d57e14054a4c523097b382ff36ca6bd3a993ff03",
+      "cleanCommit": true,
+      "rootSha256": "552eb9c23846e23e958100974888351a74666c471d614d2f098f2426d5a81cb3",
+      "schemaAlias": {
+        "alias": "schemastery-live",
+        "declaration": "npm:@deepseek-ai/schemastery@^3.18.3",
+        "actualName": "@deepseek-ai/schemastery",
+        "actualVersion": "3.18.3",
+        "devCanonicalVersion": "3.18.2",
+        "officialIntegrity": "sha512-plZIZADuGLT/3PoYmUaEDZd0vG1rVahU89MevnxXsyQhFEi2D6DUuTJel7FUb3cUM9aCzqGMN99sHJe1RIushA==",
+        "officialArchiveSha256": "3e8c63ab919f13c75773a2cbcd3ae72c7bd9a5fb0a6f753cf1f427a996727644",
+        "officialFilesCompared": 8,
+        "allOfficialFilesByteIdentical": true,
+        "staticEsmImportInPackedRoot": true,
+        "esmExport": "./lib/index.mjs",
+        "esmSha256": "cfcbe46c7416bdb35ce891c252152bbf519e08199bede5930dd7cb880c65f1ef",
+        "cjsSha256": "aca1c1a47c7b6034feee01501aefca3e6dd97a0bac4fe334fd30647ae5a9e480"
+      },
+      "nativeCli": "mnemon version 0.2.8",
+      "dshCli": "0.1.7-alpha.1",
+      "node": "v25.1.0",
+      "checkedAt": "2026-09-22T13:28:05.523Z"
+    }
+  ],
+  "browserVerification": {
+    "driver": "Codex CUA Chrome browser operations",
+    "model": "deterministic loopback fixture; no external model provider",
+    "frameworkVersions": [
+      "0.1.5-rc.2",
+      "0.1.6-alpha.2",
+      "0.1.7-alpha.1"
+    ],
+    "completedToolsOnEach": [
+      "mnemon_runtime_memory action:add",
+      "mnemon_status"
+    ],
+    "fixturePrompt": "compatibility-261",
+    "fixtureTitle": "Issue 261 compatibility",
+    "fixtureReuseNote": "The prompt and title are inherited from the deterministic fixture; all consumers and artifacts in this verification belong to Issue 267.",
+    "alpha7DraftAcrossPluginWrite": {
+      "prepared": [
+        "displayMode=builtin",
+        "intervalMs=350000",
+        "turnBar=false"
+      ],
+      "immediateWrite": "Light Context disabled",
+      "saveResult": "saved and live without a false revision conflict"
+    },
+    "alpha7AfterCompleteHostRestart": {
+      "profileOrDataRecreated": false,
+      "displayMode": "builtin",
+      "intervalMs": 350000,
+      "conversationInteraction": {
+        "turnBar": false,
+        "saveAction": true
+      },
+      "strategies": {
+        "lightContext": false,
+        "autoCapture": true,
+        "scoped": true
+      },
+      "threeSourcesEnabled": true,
+      "conversationHistoryRestored": true,
+      "runtimeMemoryCount": 1,
+      "builtinWorkbenchConnected": true,
+      "nativeProviderReady": true
+    }
+  },
+  "screenshots": [
+    {
+      "file": "v4-alpha7-session-tools.png",
+      "sha256": "60c21ac88080b6aff998764d3274445a6665f48834815a158714bb696d12acab"
+    },
+    {
+      "file": "v4-rc2-session-tools.png",
+      "sha256": "9a64f290a90eecc0a3bc5104de2973a7962fd84d12bffd25488190a60d1f7004"
+    },
+    {
+      "file": "v4-alpha2-session-tools.png",
+      "sha256": "db154c9d38a32b3727357b54aadfa84ad034c1878209d7122283d7b52bc88c18"
+    },
+    {
+      "file": "v4-alpha7-settings-restart.png",
+      "sha256": "2e0d64c820b764220609e4175fd903fa120795d55ef1efa35ce4857b1ef619ec"
+    },
+    {
+      "file": "v4-alpha7-strategies-restart.png",
+      "sha256": "bbeaea7bc8d90f97a4234b1ebe11036d23c181f8a6dacee2a29c94b4575cb0db"
+    },
+    {
+      "file": "v4-alpha7-builtin-restart.png",
+      "sha256": "5302afe30ceee4c2ad72dd389123dd37d28f7ba9fddb5206918de84cc0e4684d"
+    }
+  ],
+  "ci": {
+    "sourceCommit": "d57e14054a4c523097b382ff36ca6bd3a993ff03",
+    "conclusion": "success",
+    "run": "https://github.com/omdsh-dev/dsh-mnemon/actions/runs/35733033143",
+    "sourceNode22": "https://github.com/omdsh-dev/dsh-mnemon/actions/runs/35733033143/job/106763140386",
+    "packedNode24": "https://github.com/omdsh-dev/dsh-mnemon/actions/runs/35733033143/job/106763140029"
+  },
+  "limits": [
+    "The browser consumers ran on macOS with Node 25.1.0; final full local source and packed checks ran on Node 22.19.0 and 24.20.0.",
+    "The minimal DSH fixture omits terminal, deliverables and workspace-change services; general permission-preset requests and the alpha.2 terminal retry button are outside Mnemon verification.",
+    "No external model quality, cloud Provider account or embedding endpoint was exercised.",
+    "Legacy migration and native memory-space creation are recorded in settings-verification.json and final-verification.json with their earlier implementation commits.",
+    "Bootstrap URLs, raw server/model logs and private data are excluded."
+  ],
+  "persistenceAudit": {
+    "audit": "Issue 267 final-v4 read-only persistence verification",
+    "checkedAt": "2026-09-22T13:42:55.980Z",
+    "expectedRuntimeCommit": "d57e14054a4c523097b382ff36ca6bd3a993ff03",
+    "fixtureModel": "Deterministic compatibility-261 model exercises real Mnemon Runtime add and status tools.",
+    "artifacts": {
+      "expectedCount": 17,
+      "actualTarballCount": 17,
+      "rootArchiveSha256": "552eb9c23846e23e958100974888351a74666c471d614d2f098f2426d5a81cb3",
+      "packedRootIndexSha256": "efcc45beeed1efe215f4e4d1eb89529c5b0043e2c0877742359bd3fe67f943f2"
+    },
+    "cohorts": [
+      {
+        "cohort": "alpha7",
+        "frameworkVersion": "0.1.7-alpha.1",
+        "artifactCommit": "d57e14054a4c523097b382ff36ca6bd3a993ff03",
+        "artifactCount": 17,
+        "allArtifactFilesMatchRecordedHashes": true,
+        "artifactSetMatchesFirstCohort": true,
+        "rootArchiveSha256": "552eb9c23846e23e958100974888351a74666c471d614d2f098f2426d5a81cb3",
+        "installedRootIndexSha256": "efcc45beeed1efe215f4e4d1eb89529c5b0043e2c0877742359bd3fe67f943f2",
+        "installedRootMatchesPackedRootIndex": true,
+        "cli": {
+          "recordedDshVersion": "0.1.7-alpha.1",
+          "recordedNativeVersion": "0.2.8",
+          "dshVersionMatchesCohort": true,
+          "nativeExecutableSha256": "f8f21151ce9777983b8d2dfb9cbea1a00b223de6063659af232d04aa57cedad0",
+          "probeSource": "Fixture preparation version probes; actual runtime/status receipts are checked below."
+        },
+        "runtimeMemory": {
+          "count": 1,
+          "exactlyOneFixtureMemory": true,
+          "target": "memory",
+          "importance": "normal",
+          "contentSha256": "b4b99ca1dd86117d5ecfe875ed2af85d6d38486722167d114294cb52532e5045",
+          "fileSha256": "4d758f7e9555949bec15eb8e5b547f001467473a2e195f3a931c126b73fd0067"
+        },
+        "sessions": [
+          {
+            "ordinal": 1,
+            "formatVersion": 4,
+            "compressedSha256": "9e21444892d730c9a9e3ab0859c10faf932d4f8017c9e3de44b82c9995e4f33e",
+            "frameCount": 13,
+            "allFramesDecoded": true,
+            "eventCount": 33,
+            "sourceKinds": [
+              "dsh-mnemon",
+              "fallback",
+              "model",
+              "provider",
+              "runtime-context",
+              "system-prompt",
+              "tool",
+              "user"
+            ],
+            "mnemonSourceMessageCount": 2,
+            "toolCalls": [
+              {
+                "tool": "mnemon_runtime_memory",
+                "action": "add",
+                "target": "memory",
+                "contentMatchesFixture": true
+              },
+              {
+                "tool": "mnemon_status"
+              }
+            ],
+            "toolReceipts": [
+              {
+                "tool": "mnemon_runtime_memory",
+                "success": true,
+                "target": "memory",
+                "entryCount": 1,
+                "sourceTypeId": "runtime"
+              },
+              {
+                "tool": "mnemon_status",
+                "healthy": true,
+                "commandFound": true,
+                "writeEnabled": true
+              }
+            ],
+            "completedTurnCount": 1,
+            "runtimeAddSucceeded": true,
+            "statusHealthy": true
+          },
+          {
+            "ordinal": 2,
+            "formatVersion": 4,
+            "compressedSha256": "651d182e36fef439bb8981c57f09293630290630094ab726e58003ce6367684f",
+            "frameCount": 1,
+            "allFramesDecoded": true,
+            "eventCount": 1,
+            "sourceKinds": [],
+            "mnemonSourceMessageCount": 0,
+            "toolCalls": [],
+            "toolReceipts": [],
+            "completedTurnCount": 0,
+            "runtimeAddSucceeded": false,
+            "statusHealthy": false
+          }
+        ],
+        "sessionTotals": {
+          "count": 2,
+          "mnemonSourceMessageCount": 2,
+          "runtimeAddCallCount": 1,
+          "statusCallCount": 1,
+          "successfulFixtureSessionCount": 1
+        },
+        "mnemonLogScan": {
+          "scope": "Lines naming Mnemon and error/failed markers; not a whole-host error audit.",
+          "candidateCount": 0
+        },
+        "afterRestartProfile": {
+          "settings": {
+            "displayMode": "builtin",
+            "minIntervalMs": 350000,
+            "turnBar": false,
+            "saveAction": true,
+            "light": {
+              "id": "mnemon-strategy-light-context",
+              "nativeDisabled": false,
+              "viewOverridePresent": true,
+              "viewEnabled": false,
+              "resolvedStoredEnabled": false
+            },
+            "autoCapture": {
+              "id": "mnemon-strategy-auto-capture",
+              "nativeDisabled": false,
+              "viewOverridePresent": false,
+              "resolvedStoredEnabled": true
+            },
+            "scoped": {
+              "id": "mnemon-strategy-scoped",
+              "nativeDisabled": false,
+              "viewOverridePresent": false,
+              "resolvedStoredEnabled": true
+            },
+            "memoryViewEntryCount": 1
+          },
+          "patchSha256": "17248e61632a8f54187a41f9a23345cbee0e2b81c5d3d44d871838e94db9c47f",
+          "allExpectedValuesMatch": true
+        },
+        "restartEvidence": {
+          "reportedMechanism": "Parent sent SIGUSR2 to the existing harness; this audit made no process-control calls.",
+          "harnessPid": 72589,
+          "initialHarnessPid": 72589,
+          "initialWebPid": 73834,
+          "currentWebPid": 74967,
+          "initialActivationCheckedAt": "2026-09-22T13:28:05.523Z",
+          "currentWebStartedAt": "2026-09-22T13:35:56.638Z",
+          "currentProcess": {
+            "pid": 74967,
+            "parentPid": 72589,
+            "startedAtLocal": "Tue Sep 22 21:35:56 2026"
+          },
+          "sameHarness": true,
+          "webChildReplaced": true,
+          "currentChildOwnedByHarness": true,
+          "sessionWithToolsPersistedBeforeCurrentWebStart": true,
+          "runtimeMemoryFilePredatesCurrentWebStart": false,
+          "runtimeMemoryTimestampNote": "The runtime JSON modification time is after current child startup. No pre-restart memory-file byte snapshot was captured, so this audit makes no memory-file byte-idempotence claim."
+        }
+      },
+      {
+        "cohort": "alpha2",
+        "frameworkVersion": "0.1.6-alpha.2",
+        "artifactCommit": "d57e14054a4c523097b382ff36ca6bd3a993ff03",
+        "artifactCount": 17,
+        "allArtifactFilesMatchRecordedHashes": true,
+        "artifactSetMatchesFirstCohort": true,
+        "rootArchiveSha256": "552eb9c23846e23e958100974888351a74666c471d614d2f098f2426d5a81cb3",
+        "installedRootIndexSha256": "efcc45beeed1efe215f4e4d1eb89529c5b0043e2c0877742359bd3fe67f943f2",
+        "installedRootMatchesPackedRootIndex": true,
+        "cli": {
+          "recordedDshVersion": "0.1.6-alpha.2",
+          "recordedNativeVersion": "0.2.8",
+          "dshVersionMatchesCohort": true,
+          "nativeExecutableSha256": "f8f21151ce9777983b8d2dfb9cbea1a00b223de6063659af232d04aa57cedad0",
+          "probeSource": "Fixture preparation version probes; actual runtime/status receipts are checked below."
+        },
+        "runtimeMemory": {
+          "count": 1,
+          "exactlyOneFixtureMemory": true,
+          "target": "memory",
+          "importance": "normal",
+          "contentSha256": "b4b99ca1dd86117d5ecfe875ed2af85d6d38486722167d114294cb52532e5045",
+          "fileSha256": "fac1fa14df37829efd534b64744f02654c1875d0dd08b61150c8d693d937e733"
+        },
+        "sessions": [
+          {
+            "ordinal": 1,
+            "formatVersion": 3,
+            "compressedSha256": "3abc6bfa016e575241f7f6a11e8663f3ad3e0761b8cf9ded84c455037dbb4368",
+            "frameCount": 12,
+            "allFramesDecoded": true,
+            "eventCount": 32,
+            "sourceKinds": [
+              "dsh-mnemon",
+              "fallback",
+              "model",
+              "plugin",
+              "provider",
+              "tool",
+              "user"
+            ],
+            "mnemonSourceMessageCount": 2,
+            "toolCalls": [
+              {
+                "tool": "mnemon_runtime_memory",
+                "action": "add",
+                "target": "memory",
+                "contentMatchesFixture": true
+              },
+              {
+                "tool": "mnemon_status"
+              }
+            ],
+            "toolReceipts": [
+              {
+                "tool": "mnemon_runtime_memory",
+                "success": true,
+                "target": "memory",
+                "entryCount": 1,
+                "sourceTypeId": "runtime"
+              },
+              {
+                "tool": "mnemon_status",
+                "healthy": true,
+                "commandFound": true,
+                "writeEnabled": true
+              }
+            ],
+            "completedTurnCount": 1,
+            "runtimeAddSucceeded": true,
+            "statusHealthy": true
+          }
+        ],
+        "sessionTotals": {
+          "count": 1,
+          "mnemonSourceMessageCount": 2,
+          "runtimeAddCallCount": 1,
+          "statusCallCount": 1,
+          "successfulFixtureSessionCount": 1
+        },
+        "mnemonLogScan": {
+          "scope": "Lines naming Mnemon and error/failed markers; not a whole-host error audit.",
+          "candidateCount": 0
+        }
+      },
+      {
+        "cohort": "rc2",
+        "frameworkVersion": "0.1.5-rc.2",
+        "artifactCommit": "d57e14054a4c523097b382ff36ca6bd3a993ff03",
+        "artifactCount": 17,
+        "allArtifactFilesMatchRecordedHashes": true,
+        "artifactSetMatchesFirstCohort": true,
+        "rootArchiveSha256": "552eb9c23846e23e958100974888351a74666c471d614d2f098f2426d5a81cb3",
+        "installedRootIndexSha256": "efcc45beeed1efe215f4e4d1eb89529c5b0043e2c0877742359bd3fe67f943f2",
+        "installedRootMatchesPackedRootIndex": true,
+        "cli": {
+          "recordedDshVersion": "0.1.5-rc.2",
+          "recordedNativeVersion": "0.2.8",
+          "dshVersionMatchesCohort": true,
+          "nativeExecutableSha256": "f8f21151ce9777983b8d2dfb9cbea1a00b223de6063659af232d04aa57cedad0",
+          "probeSource": "Fixture preparation version probes; actual runtime/status receipts are checked below."
+        },
+        "runtimeMemory": {
+          "count": 1,
+          "exactlyOneFixtureMemory": true,
+          "target": "memory",
+          "importance": "normal",
+          "contentSha256": "b4b99ca1dd86117d5ecfe875ed2af85d6d38486722167d114294cb52532e5045",
+          "fileSha256": "44dcea2ab462c8f12c87757a1dfcf594f455fdcdb3079de4d03ed029ce2e917b"
+        },
+        "sessions": [
+          {
+            "ordinal": 1,
+            "formatVersion": 3,
+            "compressedSha256": "25eb7acffbf65ca817ef25232a195123369d237d2df0a8bc6634f31617992b3c",
+            "frameCount": 12,
+            "allFramesDecoded": true,
+            "eventCount": 28,
+            "sourceKinds": [
+              "dsh-mnemon",
+              "fallback",
+              "model",
+              "plugin",
+              "provider",
+              "tool",
+              "user"
+            ],
+            "mnemonSourceMessageCount": 2,
+            "toolCalls": [
+              {
+                "tool": "mnemon_runtime_memory",
+                "action": "add",
+                "target": "memory",
+                "contentMatchesFixture": true
+              },
+              {
+                "tool": "mnemon_status"
+              }
+            ],
+            "toolReceipts": [
+              {
+                "tool": "mnemon_runtime_memory",
+                "success": true,
+                "target": "memory",
+                "entryCount": 1,
+                "sourceTypeId": "runtime"
+              },
+              {
+                "tool": "mnemon_status",
+                "healthy": true,
+                "commandFound": true,
+                "writeEnabled": true
+              }
+            ],
+            "completedTurnCount": 1,
+            "runtimeAddSucceeded": true,
+            "statusHealthy": true
+          }
+        ],
+        "sessionTotals": {
+          "count": 1,
+          "mnemonSourceMessageCount": 2,
+          "runtimeAddCallCount": 1,
+          "statusCallCount": 1,
+          "successfulFixtureSessionCount": 1
+        },
+        "mnemonLogScan": {
+          "scope": "Lines naming Mnemon and error/failed markers; not a whole-host error audit.",
+          "candidateCount": 0
+        }
+      }
+    ],
+    "checks": {
+      "allCohortsUseExpectedCommit": true,
+      "exactly17Artifacts": true,
+      "allArtifactHashesMatch": true,
+      "allInstalledRootBytesMatchArchive": true,
+      "allHaveExactlyOneFixtureMemory": true,
+      "allHaveOnePersistedRuntimeAddAndStatus": true,
+      "allPersistMnemonSourceKind": true,
+      "alpha7PostRestartSettingsMatch": true,
+      "alpha7WebChildReplacedUnderSameHarness": true,
+      "zeroMnemonErrorCandidates": true
+    },
+    "verifiedScope": [
+      "Exact local package archive hashes and installed root module bytes for three published DSH cohorts.",
+      "Actual persisted session frames, Mnemon source kinds, runtime add success, healthy CLI/status receipt, and the resulting single fixture memory.",
+      "Alpha7 persisted Core/UI/View settings and absence of unwanted AutoCapture or Scoped overrides after host child replacement."
+    ],
+    "limitations": [
+      "This is an isolated deterministic-model fixture, not a real external model/provider or production-account test.",
+      "Version strings come from fixture preparation probes; native command availability and health are additionally confirmed in actual persisted tool receipts.",
+      "The read-only audit does not operate a browser; the parent separately performed the reported WebUI actions and post-restart visual checks.",
+      "No pre-restart v4 byte snapshot was captured by this audit. It verifies settings values, exact fixture-memory content, and the pre-restart persisted tool session after restart, not before/after byte identity.",
+      "Restart evidence compares the activation snapshot with current metadata and OS PID/PPID; the specific SIGUSR2 dispatch is parent-reported.",
+      "The error scan is limited to Mnemon-named error/failed lines and does not assert all host logs are error-free."
+    ]
+  }
+}

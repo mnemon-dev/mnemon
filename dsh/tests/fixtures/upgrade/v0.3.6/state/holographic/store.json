@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "facts": [
+    {
+      "id": "holo-f4f3b28e-331e-4464-97e6-3b16e3cd8f28",
+      "content": "upgradesentinel keeps existing provider evidence.",
+      "category": "fact",
+      "tags": [],
+      "entities": [],
+      "trustScore": 1,
+      "createdAt": "2026-08-30T17:29:04.967Z",
+      "updatedAt": "2026-08-30T17:29:04.967Z"
+    }
+  ]
+}

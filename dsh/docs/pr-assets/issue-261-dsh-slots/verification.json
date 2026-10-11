@@ -1,0 +1,107 @@
+{
+  "recordedOn": "2026-09-18",
+  "issue": 261,
+  "baselineCommit": "02ce994c8f05b6bf83a6b5872bd018bbfc8970ce",
+  "mainBase": "245c9e2f6a50e6a77e7ba3c679ce07ba80458925",
+  "productionFixCommit": "2a593c9a6f6510afc0e12704ff2103abc1a1f597",
+  "environment": {
+    "os": "macOS",
+    "arch": "arm64",
+    "node": "v25.1.0",
+    "nativeCli": "0.2.8"
+  },
+  "releaseBeforeFix": {
+    "version": "0.5.11",
+    "pullRequest": 262,
+    "workflow": 35301166613,
+    "result": "success"
+  },
+  "validation": {
+    "verify": "pass",
+    "rootTests": {
+      "passed": 1183,
+      "skipped": 5,
+      "skipReason": "Opt-in live Flash tests"
+    },
+    "nativeMemorySpaceIntegration": "pass: real CLI create, write, recall and forget",
+    "nativeRuntimeArchival": "pass: two same-View Native namespaces through actual Host tools",
+    "verifyPlugins": {
+      "result": "pass",
+      "independentPlugins": 16,
+      "packedArtifacts": 17,
+      "externalConsumer": true,
+      "starterUpgradeFrom": "0.4.7",
+      "enabledOptionalStrategies": 3
+    },
+    "otherSkips": [
+      "Live OpenViking integration: 1",
+      "Windows-only smoke on macOS: 1"
+    ],
+    "package": {
+      "files": 47,
+      "packedBytes": 299146,
+      "unpackedBytes": 1338363,
+      "maximumUnpackedBytes": 1339000
+    }
+  },
+  "screenshots": [
+    {
+      "file": "01-alpha-before-missing-turn-bar.png",
+      "bytes": 59306,
+      "sha256": "8fc4cf43084a7e66a1eb5a221c6e505c050a24820798bb214011983ac74f50d9",
+      "edited": false
+    },
+    {
+      "file": "02-alpha-after-peer-turn-bar.png",
+      "bytes": 64144,
+      "sha256": "d10cec649958868a4f5ff3c93b62b037a73d0e3bbfe7fc38088fd0f1de724bfd",
+      "edited": false
+    },
+    {
+      "file": "03-alpha-runtime-navigation.png",
+      "bytes": 68643,
+      "sha256": "07e5b625a26cc1cf904a5878039732ceab080aef95a0b20a3069aaaace729d2c",
+      "edited": false
+    },
+    {
+      "file": "04-alpha-bar-off-peers-retained.png",
+      "bytes": 60057,
+      "sha256": "8cba336c93b6ebe45d41d072dbec026bb815a299e892176c27356c266148b7e3",
+      "edited": false
+    },
+    {
+      "file": "05-alpha-builtin-navigation.png",
+      "bytes": 78530,
+      "sha256": "6bf5347d9aef4fe8ddfeddb53f6874b5ed18494e0ac9c3dbe0229b6173518bad",
+      "edited": false
+    },
+    {
+      "file": "06-alpha-workspace-b-memory.png",
+      "bytes": 80924,
+      "sha256": "38c735c12601187aabf0ac726b582ab3ae8639dc0b1209218b65a26b7f07a147",
+      "edited": false
+    },
+    {
+      "file": "07-alpha-workspace-a-isolated.png",
+      "bytes": 72942,
+      "sha256": "0afc4e0d0a0bea12810c51e6cb9fc5592e998931c299033f96cfd94b51eea5ce",
+      "edited": false
+    },
+    {
+      "file": "08-rc-after-turn-bar.png",
+      "bytes": 59000,
+      "sha256": "9f05d7d752523fc187af49e964f59407f63d14c622f63cedcb187f183a94a49b",
+      "edited": false
+    }
+  ],
+  "verificationLogHashes": [
+    {
+      "name": "verify.log",
+      "sha256": "5047086535fcd384031b72d472cc9428f836d514bd606afdfa1454b39322d453"
+    },
+    {
+      "name": "verify-plugins.log",
+      "sha256": "ee7d40f81b1b0e9c36cf61a405bb6be78cf0f65152ee2d1354443d52c34cbfbf"
+    }
+  ]
+}

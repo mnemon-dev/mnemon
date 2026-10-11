@@ -1,0 +1,30 @@
+{
+  "cliVersion": "0.2.9",
+  "binarySha256": "bd1b080b0f98e8703b7cd942bd9b7ea3e15f69081e26c302e129d306ac86aaf4",
+  "scope": "isolated acceptance store",
+  "beforeSoftDelete": {
+    "results": [
+      {
+        "id": "452446fd-15fd-45ee-a6f8-47ed5e14ebd4",
+        "content": "CLI280273_CHECK: the disposable acceptance project stores durable facts in SQLite.",
+        "category": "fact",
+        "importance": 4,
+        "intent": "GENERAL",
+        "matched_via": "hybrid",
+        "confidence": "medium",
+        "score": 0.45
+      }
+    ],
+    "hint": "sparse_results"
+  },
+  "softDelete": {
+    "id": "452446fd-15fd-45ee-a6f8-47ed5e14ebd4",
+    "message": "Insight soft-deleted successfully",
+    "status": "deleted"
+  },
+  "afterSoftDelete": {
+    "results": [],
+    "hint": "sparse_results"
+  },
+  "passed": true
+}

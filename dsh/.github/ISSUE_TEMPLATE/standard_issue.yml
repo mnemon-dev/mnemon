@@ -1,0 +1,105 @@
+name: 功能请求或问题 / Request or question
+description: 请求功能、更新文档或提出项目问题。 / Request a feature or documentation update, or ask a project question.
+title: "[Issue]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请填写请求、预期结果、使用场景和相关环境。信息不足时机器人会提示补充，模板检查不会自动关闭 Issue。Bug 请使用“Bug 报告 / Bug report”表单。
+        Describe the request, expected outcome, use case and relevant environment. Missing information prompts a request for details; template checks do not close issues. Use the “Bug 报告 / Bug report” form for bugs.
+
+        通过 CLI/API 提交时可使用相同段落标题组织正文；补充信息可直接编辑原 Issue，机器人会更新已有提示。
+        CLI/API reports may use the same section headings. Edit the original issue to add information; the bot updates its existing reminder.
+
+        提交前请先搜索确认没有重复 / Search for existing issues before submitting: [Issues](https://github.com/mnemon-dev/mnemon/issues?q=is%3Aissue)
+
+        不要公开提交漏洞、token、密钥、私有记忆内容或未脱敏日志。安全问题请按 [SECURITY.md](../../SECURITY.md) 私下报告。
+        Do not post vulnerabilities, tokens, credentials, private memory, or unredacted logs. Report security concerns privately through [SECURITY.md](../../SECURITY.md).
+  - type: checkboxes
+    id: duplicate-check
+    attributes:
+      label: 提交前查重 / Duplicate check
+      description: 请搜索 open 和 closed Issue。 / Search both open and closed issues.
+      options:
+        - label: 我已搜索 open/closed Issue，确认没有重复。 / I searched open and closed issues and found no duplicate.
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及区域 / Affected area
+      description: 选择请求或问题主要涉及的组件或边界。 / Select the component or boundary most closely related to the request or question.
+      options:
+        - 安装、更新或发布 / Installation, update, or release
+        - Host 激活或 Headless / Host activation or Headless
+        - 运行时记忆 / Runtime Memory
+        - 项目档案 / Project Documents
+        - 记忆空间或 Provider / Memory Spaces or Providers
+        - 子 Agent 或 Agent 工作流 / Subagent or Agent workflow
+        - Web UI 或对话交互 / Web UI or conversation interaction
+        - 设置、存储或安全 / Settings, storage, or security
+        - CLI、RPC、命令或工具 / CLI, RPC, commands, or tools
+        - 文档 / Documentation
+        - 其他或不确定 / Other or unsure
+    validations:
+      required: true
+  - type: dropdown
+    id: issue-type
+    attributes:
+      label: Issue 类型 / Issue type
+      description: 选择最接近的分类。 / Select the closest category.
+      options:
+        - 功能请求 / Feature request
+        - 增强或优化 / Enhancement or optimization
+        - 文档 / Documentation
+        - 问题 / Question
+        - 其他 / Other
+    validations:
+      required: true
+  - type: textarea
+    id: summary
+    attributes:
+      label: 摘要 / Summary
+      description: 用一两句话描述问题或请求。 / Describe the question or request in one or two sentences.
+      placeholder: 希望解决什么问题或增加什么能力？ / What problem should be solved or capability added?
+    validations:
+      required: true
+  - type: textarea
+    id: expected-outcome
+    attributes:
+      label: 预期结果 / Expected outcome
+      description: 描述完成后的可观察行为和验收结果。 / Describe the observable behavior and acceptance result after completion.
+      placeholder: 怎样才算完成？ / What would count as complete?
+    validations:
+      required: true
+  - type: textarea
+    id: details-reproduction
+    attributes:
+      label: 详情或复现步骤 / Details or reproduction steps
+      description: 说明使用场景、现有行为、约束和替代方案；若涉及问题，请给出复现步骤。 / Explain the use case, current behavior, constraints, and alternatives; include reproduction steps when relevant.
+      placeholder: |
+        - 使用场景 / Use case:
+        - 当前限制 / Current limitation:
+        - 建议方案 / Proposed approach:
+        - 不在范围内的内容 / Out of scope:
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息 / Environment
+      description: 请提供 DSH、dsh-mnemon、Mnemon、操作系统及相关配置；与环境无关时填写 N/A。 / Provide DSH, dsh-mnemon, Mnemon, OS, and relevant configuration details, or enter N/A when environment-independent.
+      placeholder: |
+        - DSH 版本 / DSH version:
+        - dsh-mnemon 版本或 commit / dsh-mnemon version or commit:
+        - Mnemon 版本 / Mnemon version:
+        - 操作系统或浏览器 / OS or browser:
+        - 相关配置（已脱敏）/ Related configuration (redacted):
+    validations:
+      required: true
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: 补充信息 / Additional context
+      description: 补充截图、日志、设计草图、相关 Issue/PR 或其他上下文。 / Add screenshots, logs, design sketches, related issues or pull requests, or other context.
+    validations:
+      required: false

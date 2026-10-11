@@ -1,0 +1,47 @@
+{
+  "versions": {
+    "node": "v24.20.0",
+    "pnpm": "10.13.1"
+  },
+  "realNativeCli": "0.2.9",
+  "vitestWorkers": 1,
+  "artifactConcurrency": 1,
+  "stages": [
+    {
+      "stage": "verify",
+      "exitCode": 0,
+      "seconds": 357.75
+    },
+    {
+      "stage": "verify:plugins",
+      "exitCode": 0,
+      "seconds": 557.52
+    }
+  ],
+  "commands": [
+    "pnpm run verify",
+    "pnpm run verify:plugins --skip-build"
+  ],
+  "root": {
+    "filesPassed": 98,
+    "filesSkipped": 2,
+    "testsPassed": 1351,
+    "testsSkipped": 6
+  },
+  "plugins": {
+    "packages": 16,
+    "testsPassed": 382,
+    "testsSkipped": 2
+  },
+  "artifacts": {
+    "independentRepositories": 16,
+    "packedArtifacts": 17,
+    "externalConsumer": "passed",
+    "realHeadlessStarter": "passed",
+    "threeOptionalStrategies": "passed"
+  },
+  "localLogSha256": {
+    "verify-final.log": "b47965d48dadb9ff04f56aa6931245fbc14302fbb625d4d8749817c3411cfae0",
+    "verify-plugins-final.log": "e26014d10b584b37931c2695b0cc9c03147ddfc1882fc5e0690db0d18b36a34a"
+  }
+}

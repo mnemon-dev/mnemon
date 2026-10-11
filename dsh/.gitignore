@@ -1,0 +1,23 @@
+node_modules/
+coverage/
+/lib/
+/plugins/*/lib/
+*.log
+.DS_Store
+*.tgz
+
+# Local API keys and endpoints (never committed)
+.env
+.env.*
+!.env.example
+
+# Local IDE settings
+/.idea/
+
+# Local tool state: agent worktrees and settings, research and benchmark caches
+/.claude/worktrees/
+/.claude/settings.local.json
+/.cache/
+
+# Mnemon workspace-local data
+/.mnemon/

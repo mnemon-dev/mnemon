@@ -1,0 +1,165 @@
+{
+  "verifiedAt": "2026-09-28T19:14:32Z",
+  "base": {
+    "main": "fa43e28087e04c4decd938705841e88f95cd0034",
+    "stackedOn": "4b2ef349636ca70d0a0b4037ca33500da3a22bfa (#313)"
+  },
+  "candidate": {
+    "name": "dsh-mnemon",
+    "version": "0.5.19",
+    "status": "unreleased PR candidate; the changeset requests a patch release",
+    "sha256": "cdc59ed345f9d834b6df55c32b02d74fcbf0855329b1bd5bbe728ba53c7aac76",
+    "installFlow": "Plugins -> Add plugin with the packed root tarball -> Install -> Enable now; the other 17 packages at the 0.5.19 pins from the registry DSH chose"
+  },
+  "baseline": {
+    "dsh": "0.2.0-rc.1",
+    "package": "dsh-mnemon 0.5.19 from npm, installed with dsh plugin --profile web add dsh-mnemon@0.5.19",
+    "components": "11 total · 6 running · 5 off",
+    "firstRows": [
+      "dsh-mnemon/starter (running)",
+      "cordis:group (off)"
+    ]
+  },
+  "hosts": {
+    "0.2.0-rc.1": {
+      "freshProfileStartup": "no warnings",
+      "enableNowWithoutRestart": {
+        "memorySystem": true,
+        "notices": [],
+        "hostWarnings": [],
+        "consoleErrors": []
+      },
+      "components": "10 total · 5 running · 5 off",
+      "firstRows": [
+        "dsh-mnemon/bundle (off, the container)",
+        "dsh-mnemon (running)"
+      ],
+      "restart": {
+        "hostWarnings": [],
+        "memorySystem": true
+      },
+      "leftoverStarterRow": {
+        "patch": "- id: mnemon-starter / disabled: true",
+        "hostWarnings": [],
+        "memorySystem": true
+      },
+      "childToggle": {
+        "component": "General strategy",
+        "on": "running",
+        "off": "off",
+        "otherComponentsStayedRunning": true,
+        "memorySystem": true,
+        "consoleErrors": []
+      },
+      "functional": {
+        "hostLaunches": 1,
+        "status": {
+          "starter": "0.5.19",
+          "nominal": true,
+          "nativeCli": "0.2.7",
+          "sameAsReleaseV0519Screenshot": true
+        },
+        "runtimeWriteAndReadAfterReload": true,
+        "nativeSpaceCreatedAndActive": "1 / 1",
+        "cliRememberAndRecall": true,
+        "webDirectRecallFindsCliFact": true,
+        "consoleErrors": []
+      }
+    },
+    "0.1.7-rc.2": {
+      "freshProfileStartup": "no warnings",
+      "enableNowWithoutRestart": {
+        "memorySystem": true,
+        "notices": [],
+        "hostWarnings": [],
+        "consoleErrors": []
+      },
+      "components": "10 total · 5 running · 5 off",
+      "restart": {
+        "hostWarnings": [],
+        "memorySystem": true
+      },
+      "leftoverStarterRow": {
+        "patch": "- id: mnemon-starter / disabled: true",
+        "hostWarnings": [],
+        "memorySystem": true
+      }
+    }
+  },
+  "activationFixture": {
+    "hosts": [
+      "0.1.7-rc.2",
+      "0.2.0-rc.1"
+    ],
+    "cases": [
+      "isolated cold start, bundle enabled later",
+      "other bundle's routes retained",
+      "legacy mnemon gate and component choices",
+      "manager component and bundle toggles"
+    ],
+    "result": "passed on both hosts",
+    "managerComponentsExcludingGroups": 9,
+    "generationLayoutComparison": {
+      "layout": "only the root package visible in the profile, components in a separate generation (as the desktop app projects plugins); bundle not selected at startup, then enabled through the plugin manager",
+      "nativeGroupWithoutPreparation": {
+        "0.1.7-rc.2": "4 entries did not activate: mnemon-source-runtime, mnemon-source-memory-spaces, mnemon-strategy-default-three-tier, mnemon-strategy-auto-capture (failed to import)",
+        "0.2.0-rc.1": "4 entries did not activate: mnemon-source-runtime, mnemon-source-memory-spaces, mnemon-strategy-default-three-tier, mnemon-strategy-auto-capture (failed to import)"
+      },
+      "componentGroup": {
+        "0.1.7-rc.2": "all enabled components active",
+        "0.2.0-rc.1": "all enabled components active"
+      }
+    }
+  },
+  "configSchemaExport": {
+    "command": "dsh web --dump-config-schema",
+    "baseline0519OnDsh020": {
+      "exit": 1,
+      "complete": false,
+      "unrecognizedCarriers": [
+        "preset-standard",
+        "preset-ptc",
+        "preset-minimal",
+        "preset-cordis"
+      ],
+      "mnemonEntriesWithSchema": [
+        "mnemon",
+        "mnemon-source-runtime",
+        "mnemon-source-documents",
+        "mnemon-source-memory-spaces (partial)"
+      ]
+    },
+    "candidateOnDsh020": {
+      "exit": 1,
+      "complete": false,
+      "unrecognizedCarriers": [
+        "preset-standard",
+        "preset-ptc",
+        "preset-minimal",
+        "preset-cordis",
+        "mnemon-bundle"
+      ],
+      "mnemonEntriesWithSchema": []
+    },
+    "candidateOnDsh017": {
+      "exit": 1,
+      "complete": false,
+      "unrecognizedCarriers": [
+        "preset-standard",
+        "preset-ptc",
+        "preset-minimal",
+        "preset-cordis",
+        "mnemon-bundle"
+      ],
+      "mnemonEntriesWithSchema": []
+    }
+  },
+  "environment": {
+    "os": "macOS",
+    "node": "24.19.0",
+    "pnpm": "11.19.0",
+    "browser": "headless Google Chrome over the DevTools protocol, light scheme",
+    "dshModified": false
+  },
+  "webProfileLayout": "dsh web profiles link packages with nodeLinker: hoisted, so all 18 packages sit in the profile's node_modules and the preparation finds them already visible"
+}

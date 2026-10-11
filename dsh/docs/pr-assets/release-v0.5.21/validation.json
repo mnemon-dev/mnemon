@@ -1,0 +1,90 @@
+{
+  "verifiedAt": "2026-09-30T21:40:00Z",
+  "revision": {
+    "base": "73beea9abf5d18b959a5dc748138a78d7737846d",
+    "tested": "73beea9a (main with #321, #322 and #323) with pnpm release:version, the release pull request working tree"
+  },
+  "packages": {
+    "dsh-mnemon": {
+      "version": "0.5.21",
+      "sha256": "a5992e7c55ede9f77be2a45e58d804c97310c225e716ce457488e371a09ebb7b"
+    },
+    "dsh-mnemon-source-memory-spaces": {
+      "version": "0.5.14",
+      "sha256": "90dce5b634421a0eae321d6c46cabb09e6e8b9bca55bd463ab6cad0cbdd5383f"
+    },
+    "dsh-mnemon-provider-mnemon-native": {
+      "version": "0.5.8",
+      "sha256": "616fb6afed893d354365991adc82ae8f980def9579d1ac0e6d65f3e5e6563823"
+    },
+    "components": "the other 15 pinned component packages from npm, unchanged since 0.5.20"
+  },
+  "registry": "a loopback registry with npm's real metadata plus the three new versions, published 168 hours earlier; a pnpm wrapper sends the npm and npmmirror registries DSH asks to it",
+  "hosts": {
+    "0.2.0-rc.2": {
+      "home": "fresh HOME, DSH home and pnpm store",
+      "flow": "Plugins -> Add plugin -> dsh-mnemon -> Install -> Enable now",
+      "installSource": "chosen by DSH (mainland China mirror)",
+      "installedVersions": {
+        "dsh-mnemon": "0.5.21",
+        "dsh-mnemon-source-memory-spaces": "0.5.14",
+        "dsh-mnemon-provider-mnemon-native": "0.5.8",
+        "dsh-mnemon-source-runtime": "0.5.11"
+      },
+      "status": {
+        "starter": "0.5.21",
+        "nominal": true,
+        "nativeCli": "0.2.9"
+      },
+      "runtimeWriteAndReadAfterReload": true,
+      "nativeSpaceActive": "1 / 1",
+      "cliRememberAndRecall": true,
+      "webDirectRecallFindsCliFact": true,
+      "hostLaunches": 1,
+      "hostWarnings": [],
+      "consoleErrors": []
+    },
+    "0.1.7-rc.2": {
+      "home": "fresh HOME, DSH home and pnpm store",
+      "flow": "Plugins -> Add plugin -> dsh-mnemon -> Install -> Enable now",
+      "installSource": "chosen by DSH (mainland China mirror)",
+      "installedVersions": {
+        "dsh-mnemon": "0.5.21",
+        "dsh-mnemon-source-memory-spaces": "0.5.14",
+        "dsh-mnemon-provider-mnemon-native": "0.5.8",
+        "dsh-mnemon-source-runtime": "0.5.11"
+      },
+      "status": {
+        "starter": "0.5.21",
+        "nominal": true,
+        "nativeCli": "0.2.9"
+      },
+      "runtimeWriteAndReadAfterReload": true,
+      "nativeSpaceActive": "1 / 1",
+      "cliRememberAndRecall": true,
+      "webDirectRecallFindsCliFact": true,
+      "hostLaunches": 1,
+      "hostWarnings": [],
+      "consoleErrors": []
+    }
+  },
+  "moreEvidence": [
+    "../issue-320-native-store-dumps/verification.json",
+    "../issue-319-review-layers/verification.json",
+    "../issue-318-sidebar-entry/measurements.json"
+  ],
+  "environment": {
+    "os": "macOS",
+    "node": "24.19.0",
+    "pnpm": "11.19.0",
+    "mnemonCli": "0.2.9",
+    "browser": "headless Google Chrome over the DevTools protocol",
+    "dshModified": false
+  },
+  "screenshots": {
+    "status.png": "46b76f240d5f803549fe728d98a59e3f047724afe5daa156562225aa837eff15",
+    "runtime.png": "92aef6a14827587d85a5eba99497fd8b1b6e9138b500568af8a50812ba5bf9eb",
+    "spaces.png": "d0e077e5455d4043c5bbf1910b0aaafe87642393a2fb2b9723974a24c5c12436",
+    "recall.png": "0de5832071e760ed3c8e68538c1b47553c964cabdf6dbdf4628f27bd38706449"
+  }
+}

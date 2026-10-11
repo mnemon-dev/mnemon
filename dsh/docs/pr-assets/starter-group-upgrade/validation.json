@@ -1,0 +1,72 @@
+{
+  "verifiedAt": "2026-09-28T20:50:48Z",
+  "revision": "94d1e84fa7d82b1528e3c0ebce749a59f41f7392",
+  "candidate": {
+    "name": "dsh-mnemon",
+    "version": "0.5.20",
+    "status": "built with pnpm release:version from the revision above; not published",
+    "sha256": "c446c553c00043d34c3f178e418499689121ec109090f20ac39ecd00276fb342",
+    "otherPackages": "the 17 components at the pins shared with 0.5.19, from npm"
+  },
+  "registry": {
+    "afterRelease": "npm's real metadata with every dsh-mnemon* publish time moved 48 hours back, so 0.5.19 and its components are older than a day, plus 0.5.20 published 26 hours earlier",
+    "releaseDay": "the same, with 0.5.20 published 1 hour earlier",
+    "wrapper": "a pnpm wrapper sends the npm and npmmirror registries DSH asks to the local registry named in the profile's .npmrc"
+  },
+  "newUsers": {
+    "web": {
+      "0.2.0-rc.1": { "flow": "Plugins -> Add plugin -> dsh-mnemon -> Install -> Enable now", "installSource": "chosen by DSH (mainland China mirror)", "installSeconds": 21.8, "enableSeconds": 0.8, "status": "0.5.20, nominal, Mnemon 0.2.7", "runtimeWriteAndReadAfterReload": true, "nativeSpaceActive": "1 / 1", "webDirectRecallFindsCliFact": true, "hostLaunches": 1, "hostWarnings": [], "consoleErrors": [] },
+      "0.1.7-rc.2": { "flow": "Plugins -> Add plugin -> dsh-mnemon -> Install -> Enable now", "installSource": "chosen by DSH (mainland China mirror)", "installSeconds": 13.2, "enableSeconds": 1.1, "status": "0.5.20, nominal, Mnemon 0.2.7", "runtimeWriteAndReadAfterReload": true, "nativeSpaceActive": "1 / 1", "webDirectRecallFindsCliFact": true, "hostLaunches": 1, "hostWarnings": [], "consoleErrors": [] }
+    },
+    "commandLine": {
+      "0.2.0-rc.1": { "command": "dsh plugin --profile web add dsh-mnemon, then dsh web", "installSeconds": 9, "readySeconds": 2, "status": "0.5.20, nominal", "components": "10 total · 5 running · 5 off", "hostWarnings": [] },
+      "0.1.7-rc.2": { "command": "dsh plugin --profile web add dsh-mnemon, then dsh web", "installSeconds": 8, "readySeconds": 1.3, "status": "0.5.20, nominal", "components": "10 total · 5 running · 5 off", "hostWarnings": [] }
+    },
+    "headless": {
+      "script": "scripts/verify-headless-profile.mjs --package dsh-mnemon@0.5.20",
+      "0.1.7-rc.2": "passed: 37 tools with the 8 representative Mnemon tools, legacy settings import, restart, core gate",
+      "0.2.0-rc.1": "passed: 37 tools with the 8 representative Mnemon tools, legacy settings import, restart, core gate"
+    },
+    "desktopLayout": {
+      "layout": "0.5.20 installed into its own generation with pnpm's isolated linker; the profile exposes only a link to the root; not selected at startup",
+      "0.1.7-rc.2": "switched on in the Plugins list: Memory System without a restart, no notices; after a restart 0.5.20 nominal with 10 components",
+      "0.2.0-rc.1": "switched on in the Plugins list: Memory System without a restart, no notices; after a restart 0.5.20 nominal with 10 components"
+    },
+    "releaseDay": {
+      "0.2.0-rc.1": "plain command-line install picks 0.5.19 (0.5.20 is younger than a day); Memory System, 11 components",
+      "0.1.7-rc.2": "plain command-line install picks 0.5.19 (0.5.20 is younger than a day); Memory System, 11 components"
+    }
+  },
+  "existingUsers": {
+    "commandLineUpdate": {
+      "state": "a runtime entry written in the UI (0.5.17 and later), General strategy on, Project Documents off",
+      "cases": [
+        { "dsh": "0.1.7-rc.2", "from": "0.5.16", "spec": "^0.5.16", "command": "dsh plugin --profile web update dsh-mnemon", "to": "0.5.20", "choicesKept": true, "hostWarnings": [], "note": "0.5.16's tab is named 运行时; runtime continuity covered by the Headless upgrade" },
+        { "dsh": "0.1.7-rc.2", "from": "0.5.17", "spec": "^0.5.17", "command": "dsh plugin --profile web update dsh-mnemon", "to": "0.5.20", "runtimeEntryKept": true, "choicesKept": true, "hostWarnings": [] },
+        { "dsh": "0.1.7-rc.2", "from": "0.5.18", "starterRow": "on", "spec": "^0.5.18", "command": "dsh plugin --profile web update dsh-mnemon", "to": "0.5.20", "runtimeEntryKept": true, "choicesKept": true, "starterRowGone": true, "hostWarnings": [] },
+        { "dsh": "0.1.7-rc.2", "from": "0.5.19", "starterRow": "on", "spec": "^0.5.19", "command": "dsh plugin --profile web update dsh-mnemon", "to": "0.5.20", "runtimeEntryKept": true, "choicesKept": true, "starterRowGone": true, "hostWarnings": [] },
+        { "dsh": "0.1.7-rc.2", "from": "0.5.19", "starterRow": "off (stuck: no Memory System, 11 off)", "spec": "0.5.19", "command": "dsh plugin --profile web update --latest dsh-mnemon", "to": "0.5.20", "recovered": true, "choicesKept": true, "hostWarnings": [] },
+        { "dsh": "0.2.0-rc.1", "from": "0.5.19", "starterRow": "on", "spec": "^0.5.19", "command": "dsh plugin --profile web update dsh-mnemon", "to": "0.5.20", "runtimeEntryKept": true, "choicesKept": true, "starterRowGone": true, "hostWarnings": [] },
+        { "dsh": "0.2.0-rc.1", "from": "0.5.19", "starterRow": "off (stuck: no Memory System, 11 off)", "spec": "0.5.19", "command": "dsh plugin --profile web update --latest dsh-mnemon", "to": "0.5.20", "recovered": true, "choicesKept": true, "hostWarnings": [] }
+      ]
+    },
+    "headlessUpgrade": {
+      "script": "scripts/verify-headless-profile.mjs --upgrade-from <old> --package dsh-mnemon@0.5.20",
+      "0.1.7-rc.2": ["0.5.16", "0.5.17", "0.5.18", "0.5.19"],
+      "0.2.0-rc.1": ["0.5.19"],
+      "runtimeMemoryBytesUnchanged": true
+    },
+    "desktopLayout": {
+      "stuck": "0.5.19 generation with mnemon-starter disabled: no Memory System, 11 off, mnemon-bundle (cordis:group) waiting for mnemonStarterReady; on both hosts",
+      "updateAndRestart": "link moved to the 0.5.20 generation, then a restart: Memory System, 0.5.20 nominal, 10 components, no warnings; on both hosts",
+      "inPlaceWithoutRestart": "link moved while DSH ran, then a component switched: the Memory System disappears with mnemon-bundle (dsh-mnemon/bundle): pending (waiting for service: mnemonStarterReady), because a running Loader entry keeps its module; a restart brings 0.5.20 up; on both hosts"
+    }
+  },
+  "realNpmAt": {
+    "checkedAt": "2026-09-28T20:12:00Z",
+    "pnpm": "11.19.0",
+    "installs": { "dsh-mnemon": "0.5.17", "dsh-mnemon@latest": "0.5.17", "dsh-mnemon@0.5.19": "0.5.19" },
+    "reason": "0.5.18 (09-28 13:20Z) and 0.5.19 (09-28 17:31Z) are younger than a day, so pnpm's minimum release age falls back to 0.5.17, which DSH 0.2 refuses; an exact version installs at once"
+  },
+  "environment": { "os": "macOS", "node": "24.19.0", "pnpm": "11.19.0", "mnemonCli": "0.2.7", "browser": "headless Google Chrome over the DevTools protocol", "homes": "a fresh HOME, DSH_HOME and pnpm store for every web and command-line run", "dshModified": false }
+}

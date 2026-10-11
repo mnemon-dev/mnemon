@@ -1,0 +1,607 @@
+{
+  "release": "0.5.16",
+  "memorySpacesSource": "0.5.10",
+  "host": "DSH 0.1.7-rc.2 (published, unmodified)",
+  "mnemonCli": "0.2.9",
+  "model": "deepseek-flash",
+  "fixture": "Isolated storage and synthetic data; all three optional Strategy extensions enabled; loopback proxy forwards actual Flash requests, without scripted tool choices.",
+  "modelRequests": [
+    {
+      "request": 3,
+      "activity": "agent",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": [
+        "mnemon_status"
+      ]
+    },
+    {
+      "request": 4,
+      "activity": "session-title",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": []
+    },
+    {
+      "request": 5,
+      "activity": "agent",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": [
+        "mnemon_runtime_memory"
+      ]
+    },
+    {
+      "request": 6,
+      "activity": "agent",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": [
+        "mnemon_runtime_memory"
+      ]
+    },
+    {
+      "request": 7,
+      "activity": "agent",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": []
+    },
+    {
+      "request": 8,
+      "activity": "agent",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": [
+        "mnemon_subagent_result"
+      ]
+    },
+    {
+      "request": 9,
+      "activity": "agent",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": [
+        "mnemon_memory_bodies",
+        "mnemon_recall"
+      ]
+    },
+    {
+      "request": 10,
+      "activity": "agent",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": [
+        "mnemon_remember"
+      ]
+    },
+    {
+      "request": 11,
+      "activity": "agent",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": [
+        "mnemon_subagent_result"
+      ]
+    },
+    {
+      "request": 12,
+      "activity": "agent",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": [
+        "mnemon_recall"
+      ]
+    },
+    {
+      "request": 13,
+      "activity": "session-title",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": []
+    },
+    {
+      "request": 14,
+      "activity": "agent",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": []
+    },
+    {
+      "request": 15,
+      "activity": "agent",
+      "requestedModel": "deepseek-flash",
+      "returnedModels": [
+        "deepseek-flash"
+      ],
+      "httpStatus": 200,
+      "toolCalls": []
+    }
+  ],
+  "committedToolReceipts": [
+    {
+      "toolResultAction": "Entry added.",
+      "receipt": {
+        "status": "succeeded",
+        "completion": "committed",
+        "committedAt": "2026-09-26T14:26:11.163Z"
+      }
+    },
+    {
+      "toolResultAction": "Entry already exists (no duplicate added).",
+      "receipt": {
+        "status": "succeeded",
+        "completion": "committed",
+        "committedAt": "2026-09-26T14:26:12.190Z"
+      }
+    },
+    {
+      "toolResultAction": "added",
+      "receipt": {
+        "status": "succeeded",
+        "completion": "committed",
+        "committedAt": "2026-09-26T14:29:40.385Z"
+      }
+    }
+  ],
+  "restart": {
+    "hostProcessReplaced": true,
+    "runtimeAndDocumentsFilesUnchanged": true,
+    "fileCount": 5,
+    "hashes": {
+      "runtime/memories.json": "ff63b0466387ee0add097f3f766498139d010569bb1ad8588f4548087d34ee02",
+      "runtime/MEMORY.md": "1ae87b4c4090813be1eedbf4ce23af8877cb142df9f706b7b054804ecac94ebb",
+      "runtime/USER.md": "935003a7b196f759757598c32ff86452f981a9337ba7bd7f643729da51f230da",
+      "documents/index.json": "aac3bcc96e0db5be8e73c18773a78b9a34bed4df759d6f20fe6d5bcb803d38cd",
+      "documents/archived/release-0-5-16-document-acceptance-b00a00e3.md": "6a96379fa6568209e906391c213f179469c47885526cae48c749d058fac108be"
+    },
+    "nativeInsightCounts": [
+      4,
+      4
+    ],
+    "nativeEdgeCounts": [
+      8,
+      8
+    ]
+  },
+  "geometry": [
+    {
+      "tab": "状态",
+      "headings": [
+        {
+          "text": "记忆系统",
+          "x": 400,
+          "y": 15
+        },
+        {
+          "text": "系统状态",
+          "x": 296,
+          "y": 101.1484375
+        },
+        {
+          "text": "三方 Provider",
+          "x": 313,
+          "y": 373.1171875
+        },
+        {
+          "text": "存储域",
+          "x": 313,
+          "y": 948.9609375
+        }
+      ]
+    },
+    {
+      "tab": "运行时",
+      "headings": [
+        {
+          "text": "记忆系统",
+          "x": 400,
+          "y": 15
+        },
+        {
+          "text": "运行时记忆",
+          "x": 296,
+          "y": 101.1484375
+        },
+        {
+          "text": "用户画像",
+          "x": 312,
+          "y": 214.5390625
+        },
+        {
+          "text": "工作记忆",
+          "x": 798.5,
+          "y": 214.5390625
+        }
+      ]
+    },
+    {
+      "tab": "档案",
+      "headings": [
+        {
+          "text": "记忆系统",
+          "x": 400,
+          "y": 15
+        },
+        {
+          "text": "项目档案",
+          "x": 296,
+          "y": 101.1484375
+        },
+        {
+          "text": "选择一份档案",
+          "x": 811.171875,
+          "y": 617.2578125
+        }
+      ]
+    },
+    {
+      "tab": "记忆空间",
+      "headings": [
+        {
+          "text": "记忆系统",
+          "x": 400,
+          "y": 15
+        },
+        {
+          "text": "记忆空间",
+          "x": 296,
+          "y": 101.1484375
+        },
+        {
+          "text": "概览",
+          "x": 296,
+          "y": 220.1875
+        },
+        {
+          "text": "记忆空间目录",
+          "x": 311,
+          "y": 289.9296875
+        }
+      ]
+    }
+  ],
+  "sidebarRows": {
+    "x": 14,
+    "width": 252,
+    "height": 36,
+    "viewport": [
+      1280,
+      720
+    ]
+  },
+  "relatedCloseButton": {
+    "x": 1214,
+    "y": 242.5703125,
+    "width": 26,
+    "height": 26
+  },
+  "artifacts": [
+    {
+      "name": "dsh-mnemon",
+      "version": "0.5.16",
+      "filename": "dsh-mnemon-0.5.16.tgz",
+      "size": 305603,
+      "unpackedSize": 1345270,
+      "integrity": "sha512-4uMYSYxyc6283C1YEgozdBFldPZS/UAexFHB1gayYFptyAx8Ug3X2QQmH2ZTHW4YBrKlu2pVHMZz8qQo+UHouw==",
+      "sha256": "7bc4ec7fc3a4403ecacbdf7c8f221d1db570891e358d3e8503739e6196d54d07"
+    },
+    {
+      "name": "dsh-mnemon-provider-byterover",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-byterover-0.5.4.tgz",
+      "size": 6460,
+      "unpackedSize": 15882,
+      "integrity": "sha512-XEu6dwuGLzQzoZv9Aata+xMGmXBrAMDMycy0YayXtXj2rD78GfgQiL8V3dOFDQkqi3nKSLn70LcxEavpmGhfqQ==",
+      "sha256": "17dcd57cb35c0c81af2b93c92be66c2e6b7e8180d5d1cf634c589281003dddc1"
+    },
+    {
+      "name": "dsh-mnemon-provider-hindsight",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-hindsight-0.5.4.tgz",
+      "size": 14827,
+      "unpackedSize": 28850,
+      "integrity": "sha512-T7myWzmHdM8VP0Id6yKhG4o1EWcOkk2jEWLMAfwlCOoos6vjHjcZMyc9RiuYvzrld5Vq5G2WIegvuYF/tqT4dg==",
+      "sha256": "739dec0d42689fdbdb8183ba75f7b6afc4be899b585c03c2a85842e0e998a170"
+    },
+    {
+      "name": "dsh-mnemon-provider-holographic",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-holographic-0.5.4.tgz",
+      "size": 7002,
+      "unpackedSize": 18929,
+      "integrity": "sha512-y92jU17pDE71Vl440SQsi2IpKoVtCaLAKYgt4NBU5avm9TTeLscVsGRx7U7jQIVEwUkh3G8j3m24VnXQYZk0eQ==",
+      "sha256": "700fa0f94387ee04f5202dbbe0d410afb7114ba2486b25c32d64d7b059245f8c"
+    },
+    {
+      "name": "dsh-mnemon-provider-honcho",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-honcho-0.5.4.tgz",
+      "size": 7620,
+      "unpackedSize": 18569,
+      "integrity": "sha512-rfO7GKZ7USYTBOroiOOnY/NRHvUF9m5QuRdb6Rc4IVuKoU9tNJB7I+PtuogS75OWqYRuskcEYBRce2h/BAj3Sg==",
+      "sha256": "db8ffcbbc1df42555295a1ff818e2059b5c09776a0dc4cc9c311779355b06fd7"
+    },
+    {
+      "name": "dsh-mnemon-provider-mem0",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-mem0-0.5.4.tgz",
+      "size": 8209,
+      "unpackedSize": 22624,
+      "integrity": "sha512-alI5h2edY5SufWmvU8rjeEwonn9L9OkWZ44K8bDuWIPfsY1qbfIsIQahu5OqcvS88ibBm4hZGeKR1j75M+s4Gg==",
+      "sha256": "ccd61716ead4d9462e15a662edb59c9850d812e8660bc33c4cc574601b816255"
+    },
+    {
+      "name": "dsh-mnemon-provider-mnemon-native",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-provider-mnemon-native-0.5.5.tgz",
+      "size": 7382,
+      "unpackedSize": 22315,
+      "integrity": "sha512-d/tLkxWOFy2GHYTOPPDkflR+2quIvvFOYk7YHpo+eS63VMaVjEl+++hzAWkeFyRwAkgCbwUR0izchn+JAyQQYg==",
+      "sha256": "8b839950e17b086578490b9eb3ef438331afa96a85ccd588ddaf7af9649f1f32"
+    },
+    {
+      "name": "dsh-mnemon-provider-openviking",
+      "version": "0.5.6",
+      "filename": "dsh-mnemon-provider-openviking-0.5.6.tgz",
+      "size": 15668,
+      "unpackedSize": 35130,
+      "integrity": "sha512-r5cYcsg4jjosnQ1FKWR9hz+KDwAgYMladO8hE108crSzCQFcv4FXHkQILfKzHrPhza8Puom6moygpSDgIA3TWw==",
+      "sha256": "e5b3f9c80c6c450e5cb0e0103f30f8df39550dd980aac70dc4d44e069e2bc570"
+    },
+    {
+      "name": "dsh-mnemon-provider-retaindb",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-retaindb-0.5.4.tgz",
+      "size": 5452,
+      "unpackedSize": 14986,
+      "integrity": "sha512-zX9NShhMwyfbVVdz9pj6XLH2n732mu+8VkxyiEpK1c4ElqyVm2P7Os1KFoOzNzdUHeNuHEHf98pWfKgmdWDFPA==",
+      "sha256": "8962cfc5b8e777a86c8816dfd47f32943aa6a1f1973bc8882727b4b430579e3a"
+    },
+    {
+      "name": "dsh-mnemon-provider-supermemory",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-supermemory-0.5.4.tgz",
+      "size": 5713,
+      "unpackedSize": 15541,
+      "integrity": "sha512-z70tDyX+J6LwmOFkQJtZqmnO1EUNjOrvAihtPlTQGnQVukZ/mRJ2FpMCFYb69Mteyi/SUaOrx0uAaDJc9ePCoA==",
+      "sha256": "c117f467d0eb66954ab5b27a8ae08722770699e0f9113fa4bdc9f0724485b508"
+    },
+    {
+      "name": "dsh-mnemon-source-documents",
+      "version": "0.5.6",
+      "filename": "dsh-mnemon-source-documents-0.5.6.tgz",
+      "size": 40041,
+      "unpackedSize": 160056,
+      "integrity": "sha512-om966kGR67djbb/7ohqATdxLaGuWWEK4bsOyamAvAlwJsJidoHhF5bl5OYjig74FLCOzh6chDwxTc+JHEfnbNw==",
+      "sha256": "abf9921a2ab5044fc8eecd88371fa18cbf1fe74ccd54e9de21a6fa193901dd18"
+    },
+    {
+      "name": "dsh-mnemon-source-memory-spaces",
+      "version": "0.5.10",
+      "filename": "dsh-mnemon-source-memory-spaces-0.5.10.tgz",
+      "size": 139989,
+      "unpackedSize": 659951,
+      "integrity": "sha512-B5p+lQXsM7GKm3emXQQNxRd+P2rdJ93PLUv1lU86PPmVnkldn40BrzonJrtO4XLAnk3EelPcW4+GkVpZtgXckg==",
+      "sha256": "0304a57c3e93378ea4d640d8d51ba54394330379f1c8e43f0cfcb6930f21ab7c"
+    },
+    {
+      "name": "dsh-mnemon-source-runtime",
+      "version": "0.5.9",
+      "filename": "dsh-mnemon-source-runtime-0.5.9.tgz",
+      "size": 28344,
+      "unpackedSize": 115354,
+      "integrity": "sha512-SxW2dlG7mBWlpJzQCDXNaBcaMwF340ulkbIqpLxvgi+1onF+hTq8ByBJSKO+618Zov6TutNEZuAzCJht58mMYQ==",
+      "sha256": "4b7798c925d42de3b40e9b9aa9f96b337ad68d049d71bb030c2e638cb627bca7"
+    },
+    {
+      "name": "dsh-mnemon-strategy-auto-capture",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-auto-capture-0.5.4.tgz",
+      "size": 3792,
+      "unpackedSize": 8663,
+      "integrity": "sha512-l6Xsfjp3/2EXZbTQB1+AdU6GXlCKgG2qhmQN7WhHmAL488APZ88MTKwvKc+1Np89+JWM4UfN1/h2rlOOK6RCdw==",
+      "sha256": "a653c1ebec85da0fe2c878e42a0eea84e20da877682fa1c9c97f5d8f8f70c074"
+    },
+    {
+      "name": "dsh-mnemon-strategy-default-three-tier",
+      "version": "0.5.6",
+      "filename": "dsh-mnemon-strategy-default-three-tier-0.5.6.tgz",
+      "size": 15287,
+      "unpackedSize": 50565,
+      "integrity": "sha512-AwJSMRYvE6E0JUYIpyiUJJQV9swDzNzTQwrLj0L9eY9ogdS+bdpK2jWCFbFblQCyGB33E8PvXZosgELocsUPLg==",
+      "sha256": "4506f6a025832395ea0fbefeb58c4ddaa34ee0af369f258000619ba9a5f9efd4"
+    },
+    {
+      "name": "dsh-mnemon-strategy-light-context",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-light-context-0.5.4.tgz",
+      "size": 3202,
+      "unpackedSize": 7266,
+      "integrity": "sha512-QmQ9s3ie45kGNcXDNmWZKhpzpD2FsdoQtRC8gRGFjtj94Ru8ppnmZnzZtTDGG3gHURuig4Lhcgtqj1vRUG3RcA==",
+      "sha256": "eac6b61e9652ed54d03dd013bec285afe8714547a27c33ace286439e5958250b"
+    },
+    {
+      "name": "dsh-mnemon-strategy-scoped",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-scoped-0.5.4.tgz",
+      "size": 3648,
+      "unpackedSize": 8543,
+      "integrity": "sha512-kGfA+Z4PTNHVL3PunrG+4QsYBq0C8xSiica6l74qfQC/02hVf86v1nJq4dStPnyVQI4NQ02HkYlDrS2drpZIGA==",
+      "sha256": "c751c30b61f5ae60eca489cda936ed17a5b86dadaae538d9657dd76fe8467843"
+    }
+  ],
+  "installedArtifactMatch": [
+    {
+      "name": "dsh-mnemon",
+      "version": "0.5.16",
+      "runtimeFilesMatched": 10,
+      "sha256": "7bc4ec7fc3a4403ecacbdf7c8f221d1db570891e358d3e8503739e6196d54d07"
+    },
+    {
+      "name": "dsh-mnemon-provider-byterover",
+      "version": "0.5.4",
+      "runtimeFilesMatched": 3,
+      "sha256": "17dcd57cb35c0c81af2b93c92be66c2e6b7e8180d5d1cf634c589281003dddc1"
+    },
+    {
+      "name": "dsh-mnemon-provider-hindsight",
+      "version": "0.5.4",
+      "runtimeFilesMatched": 3,
+      "sha256": "739dec0d42689fdbdb8183ba75f7b6afc4be899b585c03c2a85842e0e998a170"
+    },
+    {
+      "name": "dsh-mnemon-provider-holographic",
+      "version": "0.5.4",
+      "runtimeFilesMatched": 3,
+      "sha256": "700fa0f94387ee04f5202dbbe0d410afb7114ba2486b25c32d64d7b059245f8c"
+    },
+    {
+      "name": "dsh-mnemon-provider-honcho",
+      "version": "0.5.4",
+      "runtimeFilesMatched": 3,
+      "sha256": "db8ffcbbc1df42555295a1ff818e2059b5c09776a0dc4cc9c311779355b06fd7"
+    },
+    {
+      "name": "dsh-mnemon-provider-mem0",
+      "version": "0.5.4",
+      "runtimeFilesMatched": 3,
+      "sha256": "ccd61716ead4d9462e15a662edb59c9850d812e8660bc33c4cc574601b816255"
+    },
+    {
+      "name": "dsh-mnemon-provider-mnemon-native",
+      "version": "0.5.5",
+      "runtimeFilesMatched": 2,
+      "sha256": "8b839950e17b086578490b9eb3ef438331afa96a85ccd588ddaf7af9649f1f32"
+    },
+    {
+      "name": "dsh-mnemon-provider-openviking",
+      "version": "0.5.6",
+      "runtimeFilesMatched": 3,
+      "sha256": "e5b3f9c80c6c450e5cb0e0103f30f8df39550dd980aac70dc4d44e069e2bc570"
+    },
+    {
+      "name": "dsh-mnemon-provider-retaindb",
+      "version": "0.5.4",
+      "runtimeFilesMatched": 3,
+      "sha256": "8962cfc5b8e777a86c8816dfd47f32943aa6a1f1973bc8882727b4b430579e3a"
+    },
+    {
+      "name": "dsh-mnemon-provider-supermemory",
+      "version": "0.5.4",
+      "runtimeFilesMatched": 3,
+      "sha256": "c117f467d0eb66954ab5b27a8ae08722770699e0f9113fa4bdc9f0724485b508"
+    },
+    {
+      "name": "dsh-mnemon-source-documents",
+      "version": "0.5.6",
+      "runtimeFilesMatched": 3,
+      "sha256": "abf9921a2ab5044fc8eecd88371fa18cbf1fe74ccd54e9de21a6fa193901dd18"
+    },
+    {
+      "name": "dsh-mnemon-source-memory-spaces",
+      "version": "0.5.10",
+      "runtimeFilesMatched": 9,
+      "sha256": "0304a57c3e93378ea4d640d8d51ba54394330379f1c8e43f0cfcb6930f21ab7c"
+    },
+    {
+      "name": "dsh-mnemon-source-runtime",
+      "version": "0.5.9",
+      "runtimeFilesMatched": 4,
+      "sha256": "4b7798c925d42de3b40e9b9aa9f96b337ad68d049d71bb030c2e638cb627bca7"
+    },
+    {
+      "name": "dsh-mnemon-strategy-auto-capture",
+      "version": "0.5.4",
+      "runtimeFilesMatched": 1,
+      "sha256": "a653c1ebec85da0fe2c878e42a0eea84e20da877682fa1c9c97f5d8f8f70c074"
+    },
+    {
+      "name": "dsh-mnemon-strategy-default-three-tier",
+      "version": "0.5.6",
+      "runtimeFilesMatched": 2,
+      "sha256": "4506f6a025832395ea0fbefeb58c4ddaa34ee0af369f258000619ba9a5f9efd4"
+    },
+    {
+      "name": "dsh-mnemon-strategy-light-context",
+      "version": "0.5.4",
+      "runtimeFilesMatched": 1,
+      "sha256": "eac6b61e9652ed54d03dd013bec285afe8714547a27c33ace286439e5958250b"
+    },
+    {
+      "name": "dsh-mnemon-strategy-scoped",
+      "version": "0.5.4",
+      "runtimeFilesMatched": 1,
+      "sha256": "c751c30b61f5ae60eca489cda936ed17a5b86dadaae538d9657dd76fe8467843"
+    }
+  ],
+  "screenshots": {
+    "flash-runtime-write.jpg": "4be1113d34d653efe4d9268d81d88131f29452219e551daf690201609fa5b6f2",
+    "documents-archived.jpg": "daf639e079493d7ac78bead9198bb3b1ba93878ed8c4e31da8c69ed76c0a6b07",
+    "native-related.jpg": "1666ffbd15a47be8174cd88bcc46dcf7dc3109c57829bbd6f97b0f021fd1ce22",
+    "runtime-capacity-archive.jpg": "e31df999e2ddf57146354378014506f95ad5cc077e52ed4b18d89e1466408c2e",
+    "status-after-restart.jpg": "3ff6c6382a7a1c23c5fd26b00531e4da2b3e641c2bd8b902808f58e8ec2cd90a",
+    "cold-restart-flash-recall.jpg": "02efe44e9824d42afcd0d00edcfaa4eabf59dee6b753a07f97504f25f640e468"
+  },
+  "limitations": [
+    "Third-party provider credentials were not configured; their package/contract tests do not establish live service availability.",
+    "The published DSH cordis:group management issue is upstream and is not patched by these Mnemon packages."
+  ],
+  "testedVersionTree": "87cf6a07cbf2dc7bc195f1ba56c51dcd2a2ca9ce",
+  "mergedFeatureTree": "f5ad2783eb0ecc6c33e1ed2c2071bf8bd4e0da42",
+  "automated": {
+    "root": {
+      "passedTests": 1421,
+      "skippedTests": 8,
+      "passedFiles": 103,
+      "skippedFiles": 3,
+      "maxWorkers": 2
+    },
+    "nativeRuntimeCapacityTests": 43,
+    "nativeSourceCompositionTests": 1,
+    "independentPluginRepositories": 16,
+    "packedArtifacts": 17,
+    "pluginVerifyConcurrency": 1,
+    "externalConsumer": "passed",
+    "realDshUpgradeFrom": "0.4.7",
+    "realDshUpgrade": "passed",
+    "threeOptionalStrategiesTogether": "passed",
+    "headlessAndPackageChecks": "passed"
+  }
+}

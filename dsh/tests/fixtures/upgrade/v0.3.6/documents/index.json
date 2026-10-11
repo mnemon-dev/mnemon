@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "documents": [
+    {
+      "id": "7aad2578-c1ac-404d-9a4d-2c6c090cbdd8",
+      "title": "Upgrade sentinel",
+      "description": "Synthetic old-format Document.",
+      "status": "active",
+      "filename": "upgrade-sentinel-7aad2578.md",
+      "relativePath": "documents/active/upgrade-sentinel-7aad2578.md",
+      "sourcePaths": [
+        "README.md"
+      ],
+      "sessionIds": [
+        "legacy-session"
+      ],
+      "createdAt": "2026-08-20T10:00:00.000Z",
+      "updatedAt": "2026-08-20T10:00:00.000Z",
+      "lastAccessedAt": "2026-08-20T10:00:00.000Z",
+      "revision": 1,
+      "contentHash": "1e6af6fd6c00f4098605d1bc65726d450f54dea1a28b86343a0b88d20a3624a6",
+      "sizeBytes": 477,
+      "memoryBodyIds": []
+    }
+  ]
+}

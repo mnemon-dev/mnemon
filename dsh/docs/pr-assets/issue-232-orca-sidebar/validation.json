@@ -1,0 +1,91 @@
+{
+  "issue": 232,
+  "date": "2026-09-11",
+  "baseRevision": "1e19caf40f0bf37edf678c3d829f2398ab28792a",
+  "change": "src/client/sidebar-entry.ts: add data-dsh-plugin=dsh-mnemon and data-dsh-part=sidebar-entry",
+  "sourceSha256": "2943652859be52df7b8f4099aa802ed2d9e55ac7b4cdfb3e726aa367e5188bf1",
+  "environment": {
+    "dsh": "0.1.5-rc.1",
+    "starter": "0.5.7 plus this patch",
+    "node": "25.1.0",
+    "pnpm": "11.19.0",
+    "mnemon": "0.2.7",
+    "browser": "Codex in-app Chromium",
+    "viewport": [
+      1280,
+      720
+    ],
+    "skin": "@dsh-external/dsh-client-ui-skin-orca-link@0.0.1",
+    "skinRevision": "a0c9573c508e463441d804f03f116ae606f5f5ea",
+    "strategyExtensions": [
+      "scoped",
+      "light-context",
+      "auto-capture"
+    ]
+  },
+  "before": {
+    "data-dsh-part": null,
+    "data-dsh-plugin": null,
+    "color": "rgba(0, 0, 0, 0)",
+    "iconOpacity": "0",
+    "labelOpacity": "0",
+    "wide": true
+  },
+  "after": {
+    "data-dsh-part": "sidebar-entry",
+    "data-dsh-plugin": "dsh-mnemon",
+    "color": "rgb(200, 210, 226)",
+    "iconOpacity": "1",
+    "labelOpacity": "1",
+    "zIndex": "3",
+    "wide": true
+  },
+  "browserChecks": [
+    "ORCA wide entry visible and clickable",
+    "ORCA collapsed entry visible and clickable",
+    "open Runtime before creating a conversation",
+    "add synthetic runtime memory",
+    "edit synthetic runtime memory",
+    "return to conversation",
+    "create and activate Native memory space",
+    "status shows Native 0.2.7 connected",
+    "restart with skin disabled retains data and working entry"
+  ],
+  "checks": {
+    "pnpm verify": "passed, root 926 passed / 5 opt-in skipped; all workspace packages passed",
+    "realNativeIntegration": "passed: create, write via View, recall, forget",
+    "verifyPlugins": "passed: 16 independent plugin repositories / 17 packed artifacts, external public SDK Client, real DSH packed Starter and three simultaneous strategy enhancements",
+    "skinRegression": "fails against base main; patched complete sidebar suite 21/21 passed"
+  },
+  "screenshots": [
+    {
+      "file": "../../assets/issues/232/after-default-status.png",
+      "sha256": "258189d94cf3c3660042cf6630499576322cd0f6167f6b506a192bdc6b8a734c"
+    },
+    {
+      "file": "../../assets/issues/232/after-orca-collapsed.png",
+      "sha256": "ab9319e5c851e8dcea036b652a4f3dd0712d0c10fafd4dcf0bf2e57778701e9a"
+    },
+    {
+      "file": "../../assets/issues/232/after-orca-native-status.png",
+      "sha256": "fe52fa3ee1cf53c3f861bcb94d633747a506de1ffa64a1e09413779021dfb3d7"
+    },
+    {
+      "file": "../../assets/issues/232/after-orca-runtime-write.png",
+      "sha256": "f825e2360f537ea80d5973d77ed705d1d46a72343c6f78130273e6225a3e7793"
+    },
+    {
+      "file": "../../assets/issues/232/after-orca-wide.png",
+      "sha256": "45b9a0c1ae3a50dfaeaa87d675c09f49ff6df44ba11a4251574970927d703fdf"
+    },
+    {
+      "file": "../../assets/issues/232/before-orca-wide.png",
+      "sha256": "7bc57b2a90a1747162d3297f7d9966391200908e4296f12abcbe7ee19c6ca25f"
+    }
+  ],
+  "limits": [
+    "macOS only; Windows and reported Edge version not tested",
+    "No live model API was necessary for this DOM/navigation fix",
+    "Upstream DSH UI primitive package missing sourcemap warnings do not fail verification"
+  ]
+}

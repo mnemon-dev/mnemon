@@ -1,0 +1,92 @@
+[
+  {
+    "phase": "before",
+    "platform": "darwin",
+    "pid": 74494,
+    "timestamp": "2026-09-17T15:21:11.231Z",
+    "windowsHide": null,
+    "timeout": 2000,
+    "stdio": [
+      "ignore",
+      "pipe",
+      "ignore"
+    ],
+    "outcome": "success",
+    "branch": "webui-main"
+  },
+  {
+    "phase": "before",
+    "platform": "darwin",
+    "pid": 74494,
+    "timestamp": "2026-09-17T15:24:44.214Z",
+    "windowsHide": null,
+    "timeout": 2000,
+    "stdio": [
+      "ignore",
+      "pipe",
+      "ignore"
+    ],
+    "outcome": "success",
+    "branch": "webui-main"
+  },
+  {
+    "phase": "after",
+    "platform": "darwin",
+    "pid": 92855,
+    "timestamp": "2026-09-17T15:30:29.562Z",
+    "windowsHide": true,
+    "timeout": 2000,
+    "stdio": [
+      "ignore",
+      "pipe",
+      "ignore"
+    ],
+    "outcome": "success",
+    "branch": "webui-main"
+  },
+  {
+    "phase": "after",
+    "platform": "darwin",
+    "pid": 92855,
+    "timestamp": "2026-09-17T15:31:43.478Z",
+    "windowsHide": true,
+    "timeout": 2000,
+    "stdio": [
+      "ignore",
+      "pipe",
+      "ignore"
+    ],
+    "outcome": "success",
+    "branch": "webui-main"
+  },
+  {
+    "phase": "after",
+    "platform": "darwin",
+    "pid": 92855,
+    "timestamp": "2026-09-17T15:33:10.714Z",
+    "windowsHide": true,
+    "timeout": 2000,
+    "stdio": [
+      "ignore",
+      "pipe",
+      "ignore"
+    ],
+    "outcome": "success",
+    "branch": "webui-other"
+  },
+  {
+    "phase": "after",
+    "platform": "darwin",
+    "pid": 92855,
+    "timestamp": "2026-09-17T15:33:36.977Z",
+    "windowsHide": true,
+    "timeout": 2000,
+    "stdio": [
+      "ignore",
+      "pipe",
+      "ignore"
+    ],
+    "outcome": "success",
+    "branch": ""
+  }
+]

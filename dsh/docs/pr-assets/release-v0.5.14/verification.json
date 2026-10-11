@@ -1,0 +1,154 @@
+{
+  "testedRevision": "07dac3d3d2d029ce3e4610226d40a757509d6dc7",
+  "date": "2026-09-25",
+  "node": "24.20.0",
+  "pnpm": "10.13.1",
+  "dsh": "0.1.7-rc.1",
+  "mnemonCli": "0.2.9",
+  "rootTests": {
+    "passed": 1360,
+    "skipped": 7
+  },
+  "workspacePluginTests": {
+    "passed": 402,
+    "skipped": 2
+  },
+  "independentPluginRepositories": 16,
+  "packedArtifacts": 17,
+  "nativeCliIntegration": true,
+  "nativeSameViewArchive": true,
+  "integratedTeamMatrix": {
+    "rc1Combinations": 16,
+    "legacyCombinations": 16,
+    "performedBeforeVersionBump": true
+  },
+  "webui": {
+    "packedOnly": true,
+    "runtimeAdd": true,
+    "runtimeEdit": true,
+    "coldRestart": true,
+    "runtimeSha256BeforeAndAfter": "c572b748e973e0579be4d85169c3baa66a216a7b91d6a9fd09fdb55334843da3",
+    "runtimeContent": "Release v0.5.14 smoke: SQLite remains the durable local store after editing and a cold Host restart.",
+    "agentTeamsBefore": "pause",
+    "agentTeamsAfterSaveAndRestart": "scoped",
+    "strategyEnhancementsAfterRestart": {
+      "auto-capture": true,
+      "light-context": true,
+      "scoped": true
+    }
+  },
+  "limitations": [
+    "The optional source-link DSH 0.1.5-rc.1 WebUI fixture failed to load its dsh-client-hmr bundle; the cause was not established. The packed 0.1.7-rc.1 Profile passed without upstream source changes.",
+    "The release smoke does not repeat live cloud-account or real-model acceptance; the individual fix records own their broader scope."
+  ],
+  "artifacts": [
+    {
+      "name": "dsh-mnemon-source-documents",
+      "version": "0.5.6",
+      "integrity": "sha512-rwXBAYE3FkelvWtc7Cl7WeSAZ9BWxAt6bCCTudlWbtEjVF6ZUATkUaEIkFw0p+05KP59fsfLOrSkaPyhcvUs0A==",
+      "size": 40052
+    },
+    {
+      "name": "dsh-mnemon-source-memory-spaces",
+      "version": "0.5.9",
+      "integrity": "sha512-S8dhyx6w5v3UJA06ADjnUq+7uQTbDjVBPzuSow0gjrUT5wgF48ziw9ZkdrHa0X7inRWVHGemSKcL0PT2gAKkTQ==",
+      "size": 139712
+    },
+    {
+      "name": "dsh-mnemon-source-runtime",
+      "version": "0.5.8",
+      "integrity": "sha512-RejWqgJmRCGQ6IYBDLm6BPcAjM7JLkmj+YFmTvTLgqvu1H03wLwCJycHZsYBP6dKYkoDG94Htw+E6XwvbChB/Q==",
+      "size": 27783
+    },
+    {
+      "name": "dsh-mnemon-strategy-default-three-tier",
+      "version": "0.5.5",
+      "integrity": "sha512-NF472CgnCqPm94hde6e+EIGrAHq861fxm8pMeJ03BuFksDqzQxVKgPkcA+ibn+/wSSaQPwIMQrjWaTGeEyNnFA==",
+      "size": 15257
+    },
+    {
+      "name": "dsh-mnemon-provider-byterover",
+      "version": "0.5.4",
+      "integrity": "sha512-XEu6dwuGLzQzoZv9Aata+xMGmXBrAMDMycy0YayXtXj2rD78GfgQiL8V3dOFDQkqi3nKSLn70LcxEavpmGhfqQ==",
+      "size": 6460
+    },
+    {
+      "name": "dsh-mnemon-provider-hindsight",
+      "version": "0.5.4",
+      "integrity": "sha512-T7myWzmHdM8VP0Id6yKhG4o1EWcOkk2jEWLMAfwlCOoos6vjHjcZMyc9RiuYvzrld5Vq5G2WIegvuYF/tqT4dg==",
+      "size": 14827
+    },
+    {
+      "name": "dsh-mnemon-provider-holographic",
+      "version": "0.5.4",
+      "integrity": "sha512-y92jU17pDE71Vl440SQsi2IpKoVtCaLAKYgt4NBU5avm9TTeLscVsGRx7U7jQIVEwUkh3G8j3m24VnXQYZk0eQ==",
+      "size": 7002
+    },
+    {
+      "name": "dsh-mnemon-provider-honcho",
+      "version": "0.5.4",
+      "integrity": "sha512-rfO7GKZ7USYTBOroiOOnY/NRHvUF9m5QuRdb6Rc4IVuKoU9tNJB7I+PtuogS75OWqYRuskcEYBRce2h/BAj3Sg==",
+      "size": 7620
+    },
+    {
+      "name": "dsh-mnemon-provider-mem0",
+      "version": "0.5.4",
+      "integrity": "sha512-alI5h2edY5SufWmvU8rjeEwonn9L9OkWZ44K8bDuWIPfsY1qbfIsIQahu5OqcvS88ibBm4hZGeKR1j75M+s4Gg==",
+      "size": 8209
+    },
+    {
+      "name": "dsh-mnemon-provider-mnemon-native",
+      "version": "0.5.5",
+      "integrity": "sha512-d/tLkxWOFy2GHYTOPPDkflR+2quIvvFOYk7YHpo+eS63VMaVjEl+++hzAWkeFyRwAkgCbwUR0izchn+JAyQQYg==",
+      "size": 7382
+    },
+    {
+      "name": "dsh-mnemon-provider-openviking",
+      "version": "0.5.6",
+      "integrity": "sha512-r5cYcsg4jjosnQ1FKWR9hz+KDwAgYMladO8hE108crSzCQFcv4FXHkQILfKzHrPhza8Puom6moygpSDgIA3TWw==",
+      "size": 15668
+    },
+    {
+      "name": "dsh-mnemon-provider-retaindb",
+      "version": "0.5.4",
+      "integrity": "sha512-zX9NShhMwyfbVVdz9pj6XLH2n732mu+8VkxyiEpK1c4ElqyVm2P7Os1KFoOzNzdUHeNuHEHf98pWfKgmdWDFPA==",
+      "size": 5452
+    },
+    {
+      "name": "dsh-mnemon-provider-supermemory",
+      "version": "0.5.4",
+      "integrity": "sha512-z70tDyX+J6LwmOFkQJtZqmnO1EUNjOrvAihtPlTQGnQVukZ/mRJ2FpMCFYb69Mteyi/SUaOrx0uAaDJc9ePCoA==",
+      "size": 5713
+    },
+    {
+      "name": "dsh-mnemon-strategy-auto-capture",
+      "version": "0.5.4",
+      "integrity": "sha512-l6Xsfjp3/2EXZbTQB1+AdU6GXlCKgG2qhmQN7WhHmAL488APZ88MTKwvKc+1Np89+JWM4UfN1/h2rlOOK6RCdw==",
+      "size": 3792
+    },
+    {
+      "name": "dsh-mnemon-strategy-light-context",
+      "version": "0.5.4",
+      "integrity": "sha512-QmQ9s3ie45kGNcXDNmWZKhpzpD2FsdoQtRC8gRGFjtj94Ru8ppnmZnzZtTDGG3gHURuig4Lhcgtqj1vRUG3RcA==",
+      "size": 3202
+    },
+    {
+      "name": "dsh-mnemon-strategy-scoped",
+      "version": "0.5.4",
+      "integrity": "sha512-kGfA+Z4PTNHVL3PunrG+4QsYBq0C8xSiica6l74qfQC/02hVf86v1nJq4dStPnyVQI4NQ02HkYlDrS2drpZIGA==",
+      "size": 3648
+    },
+    {
+      "name": "dsh-mnemon",
+      "version": "0.5.14",
+      "integrity": "sha512-d6NsrbPqpo7lZ0e0AXiy9fB3h5MUXiA+J20cf8r0XAmTxmqcy9+BHfFRi2VBV8BVgZLsz1oIWso3FqrJ0NUJ5w==",
+      "size": 309416
+    }
+  ],
+  "screenshots": {
+    "runtime-after-restart.png": "bf34b2ab9714db1e287ea8a21635d6851efca27d07446c93677c9788a778a7c8",
+    "runtime-saved.png": "9895498f8ea63641de04a1e2ddcf88f757e5d8187a449209877fcbfceef78121",
+    "settings-after-restart.png": "e962bbd9b28a56906d72ea6fa5f1fe9e9a15b2d0e5e65d02a52d612c03d697ce",
+    "status-after-restart.png": "33c75acf55ac55bbe4effe523b0f91ac2597d1b9403e2d027fffb3bc04ed6363"
+  }
+}

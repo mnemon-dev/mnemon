@@ -1,0 +1,53 @@
+{
+  "short": {
+    "codeCommit": "fce3873e9669c9a9eefb902b76ca8d0ddbf68700",
+    "harnessSha256": {
+      "tests/runtime-memory-flash-quality.spec.ts": "f48d5c4d7e2ea27983eacf1dd852997fe3f837b6a966a056cf0d708dad2187f4",
+      "tests/fixtures/flash-quality/workload.ts": "215805cad70fa0aaa05d37aff682a4e719f1ef72ec81a631e53c28c78792d009",
+      "tests/fixtures/flash-quality/live.ts": "605ad4719d65a551b6fbb1d19dd55a13cbf11c14cec9aa6167dbbf51bbb6a37e"
+    },
+    "scenarios": [
+      "one shared Native space",
+      "four preconfigured Native spaces"
+    ],
+    "developerSessionsPerScenario": 4,
+    "developerTurnsPerScenario": 48,
+    "freshRecallSessionsPerScenario": 12,
+    "currentFactsPerScenario": 36,
+    "correctedFactsPerScenario": 4,
+    "model": "deepseek-v4-flash",
+    "thinking": "disabled",
+    "idleReviewMs": 5000,
+    "productionIdleReviewMs": 30000,
+    "recallMode": "guided",
+    "writebackMode": "guided",
+    "manualReview": "Review every final retained row and every wrong or unknown answer; exact configuration-key matching is only an automated lower bound on semantic coverage."
+  },
+  "long": {
+    "codeCommit": "fce3873e9669c9a9eefb902b76ca8d0ddbf68700",
+    "harnessSha256": {
+      "tests/runtime-memory-flash-quality.spec.ts": "e3b2b4072a8017a4b3a3d8cb0a5645299eab665fcc6c859094c761f9dae132eb",
+      "tests/fixtures/flash-quality/workload.ts": "536ba45bdd691bacb819744a5c8666f121cf4ad83a4103011a1c0300d1f74de0",
+      "tests/fixtures/flash-quality/live.ts": "60b44354fd5e27c02b33cfad7bf7afea37612543083551317e610638c7a7f508"
+    },
+    "scenario": "four preconfigured spaces, extended natural developer workload",
+    "waves": 24,
+    "developerSessions": 4,
+    "developerTurns": 96,
+    "currentFacts": 80,
+    "correctedFacts": 8,
+    "freshRecallQuestions": 28,
+    "modelCallBudget": 900,
+    "model": "deepseek-v4-flash",
+    "thinking": "disabled",
+    "changesFromShortRun": "Extended the workload after 48 developer turns naturally remained below 10 KiB; no direct seeding of hot memory, no production code or threshold changes."
+  },
+  "reportOnlyChangesAfterExecution": [
+    "The committed reporter distinguishes recovered test-before-edit failures from incomplete development turns; original recorded violations are retained in results.json.",
+    "The committed reporter records the current git revision and harness hashes, redacts fixture roots and credentials throughout the report, and restores its request observer if fixture setup fails."
+  ],
+  "rawResultSha256": {
+    "dsh-mnemon-flash-quality-full.json": "f56241df30e09668979c2218aefbecc54c43829a0047d4eb1b69379adacd0edb",
+    "dsh-mnemon-flash-quality-long.json": "72aa45df5f3a637aff5587ad8d2f5214d17b7103fa91c59f69bc418d6a318cf7"
+  }
+}

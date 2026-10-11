@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict';
+import { readFile, writeFile, copyFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { resolve, join } from 'node:path';
+const args = new Map();
+for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i], process.argv[i + 1]);
+const source = resolve(args.get('--source'));
+const baseline = resolve(args.get('--baseline'));
+const output = resolve(args.get('--output'));
+const git = (...argv) => { const result = spawnSync('git', argv, { cwd: source, encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr); return result.stdout.trim(); };
+const original = JSON.parse(await readFile(join(baseline, 'artifacts.json'), 'utf8'));
+const [packed] = JSON.parse(await readFile(join(output, 'root-pack.json'), 'utf8'));
+const rootManifestResult = spawnSync('tar', ['-xOf', join(output, packed.filename), 'package/package.json'], { encoding: 'utf8' });
+assert.equal(rootManifestResult.status, 0);
+const manifest = JSON.parse(rootManifestResult.stdout);
+const bytes = await readFile(join(output, packed.filename));
+assert.equal(packed.integrity, 'sha512-' + createHash('sha512').update(bytes).digest('base64'));
+const artifacts = [{ name: manifest.name, version: manifest.version, filename: packed.filename, integrity: packed.integrity, shasum: createHash('sha1').update(bytes).digest('hex'), sha256: createHash('sha256').update(bytes).digest('hex'), source, manifest, files: packed.files }];
+const reuse = [];
+for (const item of original.artifacts.filter(item => item.name !== 'dsh-mnemon')) {
+  const relative = 'plugins/' + item.name;
+  assert.equal(git('diff', original.provenance.commit, 'HEAD', '--', relative), '', `${relative} tracked source changed`);
+  assert.equal(git('diff', 'HEAD', '--', relative), '', `${relative} working source changed`);
+  const current = JSON.parse(await readFile(join(source, relative, 'package.json'), 'utf8'));
+  assert.deepEqual(current, item.manifest, `${item.name} manifest changed`);
+  const oldBytes = await readFile(join(baseline, item.filename));
+  assert.equal(item.integrity, 'sha512-' + createHash('sha512').update(oldBytes).digest('base64'));
+  await copyFile(join(baseline, item.filename), join(output, item.filename));
+  artifacts.push({ ...item, reusedFrom: baseline, unchangedSourceComparedAt: source });
+  reuse.push({ name: item.name, integrity: item.integrity, trackedSourceIdentical: true, manifestIdentical: true });
+}
+assert.equal(artifacts.length, 17);
+const provenance = { source, commit: git('rev-parse', 'HEAD'), status: git('status', '--porcelain=v1'), capturedAt: new Date().toISOString(), node: process.version, companionBaseline: original.provenance, reuse };
+await writeFile(join(output, 'source-diff.patch'), git('diff', '--binary', 'HEAD') + '\n');
+await writeFile(join(output, 'artifacts.json'), JSON.stringify({ provenance, artifacts }, null, 2) + '\n');
+console.log(JSON.stringify({ source, commit: provenance.commit, artifactCount: artifacts.length, rootIntegrity: artifacts[0].integrity, reusedCompanions: reuse.length, output }));

@@ -1,0 +1,101 @@
+{
+  "fixture": "deterministic-openviking-user-key",
+  "cloudAccountVerified": false,
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/v1/fs/ls",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": false,
+      "uri": "viking://user/alice/memories"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fs/ls",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": false,
+      "uri": "viking://user/bob/memories"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fs/ls",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": false,
+      "uri": "viking://user/alice/memories"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fs/ls",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": false,
+      "uri": "viking://user/alice/memories"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fs/ls",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": false,
+      "uri": "viking://user/alice/memories"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/content/read",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": false,
+      "uri": "viking://user/alice/memories/entities/issue-271-canary.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fs/ls",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": false,
+      "uri": "viking://user/alice/memories"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/content/read",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": false,
+      "uri": "viking://user/alice/memories/entities/issue-271-canary.md"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/search/find",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": false,
+      "uri": "viking://user/alice/memories"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/content/read",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": false,
+      "uri": "viking://user/alice/memories/entities/issue-271-canary.md"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/fs/ls",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": false,
+      "uri": "viking://user/alice/memories"
+    }
+  ],
+  "files": [
+    {
+      "account": "fixture",
+      "uri": "viking://user/alice/memories/entities/issue-271-canary.md",
+      "content": "Issue 271 synthetic memory: user-key discovery can browse this exact text.\n这是隔离夹具数据，不是真实火山云账号。"
+    }
+  ]
+}

@@ -1,0 +1,221 @@
+{
+  "verifiedAt": "2026-09-22",
+  "sourceCommit": "407eac75ee46e677f694e6c318ca9380357fae27",
+  "scope": "Settings, activation, migration, native CLI; the later Session V4 follow-up is recorded separately.",
+  "cohorts": [
+    {
+      "version": "0.1.7-alpha.1",
+      "dshPackageCount": 267,
+      "mnemonPackageCount": 17,
+      "publicBytesChecked": 10,
+      "normalNpmPeers": true,
+      "webui": {
+        "workbenchOpened": true,
+        "settingsSaved": true,
+        "pageReloadPreserved": true,
+        "idleReviewMinIntervalMs": 310000,
+        "autoCaptureEnabled": true,
+        "lightContextEnabled": false,
+        "scopedEnabled": true,
+        "turnBar": false,
+        "saveAction": false,
+        "hostRestartVerified": true
+      }
+    },
+    {
+      "version": "0.1.5-rc.2",
+      "dshPackageCount": 234,
+      "mnemonPackageCount": 17,
+      "publicBytesChecked": 8,
+      "normalNpmPeers": true,
+      "webui": {
+        "workbenchOpened": true,
+        "settingsSaved": true,
+        "pageReloadPreserved": true,
+        "idleReviewMinIntervalMs": 320000,
+        "autoCaptureEnabled": true,
+        "lightContextEnabled": false,
+        "scopedEnabled": true,
+        "turnBar": false,
+        "saveAction": true,
+        "hostRestartVerified": false
+      }
+    },
+    {
+      "version": "0.1.6-alpha.2",
+      "dshPackageCount": 251,
+      "mnemonPackageCount": 17,
+      "publicBytesChecked": 8,
+      "normalNpmPeers": true,
+      "webui": {
+        "workbenchOpened": true,
+        "settingsSaved": true,
+        "pageReloadPreserved": true,
+        "idleReviewMinIntervalMs": 330000,
+        "autoCaptureEnabled": true,
+        "lightContextEnabled": false,
+        "scopedEnabled": true,
+        "turnBar": false,
+        "saveAction": true,
+        "hostRestartVerified": false
+      }
+    }
+  ],
+  "retainedMigration": {
+    "publicState": {
+      "marker": true,
+      "defaultRecallLimit": 7,
+      "turnBar": true,
+      "saveAction": false,
+      "lightEnabled": true,
+      "lightMaxProjectionCharacters": 1200,
+      "autoCaptureEnabled": true,
+      "documentsEnabled": true,
+      "scopedEnabled": true,
+      "foreignScopedOverlayAbsent": true
+    },
+    "allFixtureExpectationsMatch": true,
+    "publicStateUnchanged": true,
+    "patchSha256": "abb1325a31201ec2134a9981c2c8163d34f92b5fce43b3f7be58c8c3e93f3857",
+    "patchBytesUnchanged": true,
+    "backupSha256": "5205ac9f024eab0f78224ee454e8e5c4145eb29d06f9665cec809288469f52a6",
+    "backupBytesUnchanged": true,
+    "backupMatchesOriginalFixture": true,
+    "rootConfigSha256": "1245122d323f86c2f289076ddb19c0f4c918a05cc29199117ec66322e2d8af70",
+    "rootUnchanged": true,
+    "nonRootRowsCount": 21,
+    "nonRootRowsSha256": "11adf9c0e4776ace5a080877b4bd5066fa38004cefe85aca5480d30fa63202e1",
+    "nonRootRowsUnchanged": true,
+    "nonRootRowFingerprintsUnchanged": true,
+    "welcomeNoticeVersion": "2026-08-13.1"
+  },
+  "nativeCli": {
+    "version": "0.2.8",
+    "webuiStatusExecuted": true,
+    "webuiSpaceCreated": "Issue 267 CLI smoke",
+    "webuiSpaceEnabled": true,
+    "embeddingEndpoint": "Not configured; the optional default Ollama endpoint is unavailable.",
+    "spaceStorageDisplay": "88.0 KB"
+  },
+  "artifacts": [
+    {
+      "name": "dsh-mnemon",
+      "version": "0.5.12",
+      "filename": "dsh-mnemon-0.5.12.tgz",
+      "sha256": "e4c174440665bce87f6ea59df9815f69cb26767aea25cd31a8eb3443a208a1d5",
+      "integrity": "sha512-QRtXd3BYplLp0Ee4+eNLoqDkaMkwvxpsiVmA5K/3GLwjW83LzCgXYeVNQmlw3SxTIVBgQQCjd9Mg6bTSXu3Ojg=="
+    },
+    {
+      "name": "dsh-mnemon-provider-byterover",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-byterover-0.5.4.tgz",
+      "sha256": "94677bb5a27261dd2051f67c9ae5bc41c17ea86a4ea95cbd0baee1728203633f",
+      "integrity": "sha512-0/ru18uVKNILv3Q2Dx7soOpm+9SrARnbxCsewmQKPy8fvj14zwd7TNLlI9/lV0/vN5SgjKq95PnOvsJZVD/krw=="
+    },
+    {
+      "name": "dsh-mnemon-provider-hindsight",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-hindsight-0.5.4.tgz",
+      "sha256": "bf527bc83d51bd7b2e510ed3be59665ae6b3ddbd4e1c3beee16c32235fa0afbb",
+      "integrity": "sha512-nQ3rQ83J2ugNLXDkG1eYPjpibFANoe3n9OkxfyPCxXkAHHKYdmIZ35mzCFG8sMWsDeSt8y1RezulWjima4ZAVw=="
+    },
+    {
+      "name": "dsh-mnemon-provider-holographic",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-holographic-0.5.4.tgz",
+      "sha256": "67f9cc593a7bcf33001e0817a4932e23cf9f0927e90b6bc2b2ccd5ef49b91259",
+      "integrity": "sha512-ULO6MBVq8rmRMlMnDcqJ26XPsk1K5j3HPjtTXHoBlEy6GdYQ7/2vZLtDQZ9FNjMZ9VT/W6Qj+RAc1HfgIj3bZA=="
+    },
+    {
+      "name": "dsh-mnemon-provider-honcho",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-honcho-0.5.4.tgz",
+      "sha256": "c102952aa1b9fdd953b25068663635a9ffad606bb39c68b56eafa538c8fab72d",
+      "integrity": "sha512-xbbDeshwpiFZHlIUFveMbv6o6xTRY1sjNUvkcXKN/oInxCYdV4sC7Q6pBMRoSoSXYoAgUVExLLXxG+p9Z7uDZA=="
+    },
+    {
+      "name": "dsh-mnemon-provider-mem0",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-mem0-0.5.4.tgz",
+      "sha256": "42cd225bb376d387d8e7f5503d64b6a00ddae4f5aea26b495cb9d5aa44dab3b0",
+      "integrity": "sha512-jriF73KpQp6DoH0RbdfJx+6HzUGEGq1/zy1Y8DmyRaRF62OhBmySGSTHZHasVu1kw61NWzSqIBFWFVn6La0wYQ=="
+    },
+    {
+      "name": "dsh-mnemon-provider-mnemon-native",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-provider-mnemon-native-0.5.5.tgz",
+      "sha256": "cb1532ec04e1bc2550456340b453717686c2bc399e742e61be529bdae5e6f812",
+      "integrity": "sha512-M6v7W2MomcPaPEcf5vUVfJa0j1HUdEmHwdCYR+jmK05doyuP/Vfg/+S2ZnpySKWEGu7jDlgRQbd5hb8RANKahg=="
+    },
+    {
+      "name": "dsh-mnemon-provider-openviking",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-provider-openviking-0.5.5.tgz",
+      "sha256": "da3505e93462a7860d331e830930a04d4e2406be5b540333f340f9351346920f",
+      "integrity": "sha512-7XP4we0/Zl9QasILR5SvEGEONk7YSXj1X9PTpPZ7eS6IgCV3uauhTV5aqZ0d2VPgSR7MYaq1nWnc0MuEZfVbXA=="
+    },
+    {
+      "name": "dsh-mnemon-provider-retaindb",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-retaindb-0.5.4.tgz",
+      "sha256": "a7b5f1efb4e68df2d7ccc7e6078cd8c3229c82cf14f0162a196c975cbe19727f",
+      "integrity": "sha512-wztasXBFvV0M4xnJM0G0K819EMWLB0gVE0rvc4CY7XkmnqTAPoZ/26pZT9WY6ENHj84onkC2ck58xy7eqiX70A=="
+    },
+    {
+      "name": "dsh-mnemon-provider-supermemory",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-supermemory-0.5.4.tgz",
+      "sha256": "d04b900f7f9e9359ba53b349bdbc4550fc19b350771e61df3aa451e8f67f9afd",
+      "integrity": "sha512-hB6G2B5hu1ktMyqP5Al7b9uLVfV876Fs5zrgh5URlaE25e4s3VrJBkzebq5ZuhSocTDYFKMsZL4AWQGLFkb0Rg=="
+    },
+    {
+      "name": "dsh-mnemon-source-documents",
+      "version": "0.5.6",
+      "filename": "dsh-mnemon-source-documents-0.5.6.tgz",
+      "sha256": "411900a7eef2e2d9b90e83bb4a3669269d150a46142fcfe51cc4ba3819ccb9ec",
+      "integrity": "sha512-GlSzJs5C4nR1fG7dLRWMx7KOEF5ZDyKbU2UQGaBKXWeQrD5xZKfu/fZUbvUr/yj0HVfRKxbhvwkK1Iv9Oq3BLQ=="
+    },
+    {
+      "name": "dsh-mnemon-source-memory-spaces",
+      "version": "0.5.8",
+      "filename": "dsh-mnemon-source-memory-spaces-0.5.8.tgz",
+      "sha256": "a98a8b03fd384785406d85548254b1182276057c6f9b98784a7a35cee58f90c6",
+      "integrity": "sha512-OuNWar7KABXPS+6XKan5FVcJPrjIV9vdeNUkXNzvp9ofc2CRiKqwpBNjDADPemza3XqIeWZQYF6SrBCN6r+1kg=="
+    },
+    {
+      "name": "dsh-mnemon-source-runtime",
+      "version": "0.5.8",
+      "filename": "dsh-mnemon-source-runtime-0.5.8.tgz",
+      "sha256": "f9cdd113522fc62b08b4993260e03ca7cf71d14f0f2bd188cacb400f6e27f607",
+      "integrity": "sha512-QPZBv2dvwa7so77NvyAZcAC0YkfXRfRzgTogaLWCbkrBf0Xk39zz0noo+4GgE8idMh0M/oLS6Erb2fErWSz2AQ=="
+    },
+    {
+      "name": "dsh-mnemon-strategy-auto-capture",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-auto-capture-0.5.4.tgz",
+      "sha256": "3816601abd83f0c5c679f3e4c9ae96c8f697e8e15f6546e975a96fd7f86b8c02",
+      "integrity": "sha512-SYHrc0H2Pxgs5dqa48AgoYudnAlkB450H8dqAz7ILiFGEo4V2u6RQuBsF5A7QOJXwV9v3fd0YQ9eAcc5tFds9Q=="
+    },
+    {
+      "name": "dsh-mnemon-strategy-default-three-tier",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-strategy-default-three-tier-0.5.5.tgz",
+      "sha256": "52af5caf635f2cf2b165feff1ff3d35d241e6d073771b7b92b3ea37b36ff589f",
+      "integrity": "sha512-6cg2mz8QyYKYjdk0YnW+IYp2TEQQsZatj89CwsDXU50sN2D8dDal5TZwBl5+qRa5MZj11mIN5ZENWCDcBqTFxw=="
+    },
+    {
+      "name": "dsh-mnemon-strategy-light-context",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-light-context-0.5.4.tgz",
+      "sha256": "62947c3ff777fbb8d42724acf2a9c651d2b2302b387bb8579c59cd79f82a9e0d",
+      "integrity": "sha512-7qbo0e9igj0x03ekcBbAunkldWOme07d/R+tI/U+0P6WsyiPGy8EX0UnqYAervd1oZ8G06+srJ0zDX6tcFX0JA=="
+    },
+    {
+      "name": "dsh-mnemon-strategy-scoped",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-scoped-0.5.4.tgz",
+      "sha256": "f3f945add93d2d5f8f48f0e70f5de9360814499a552218af7fa93f574dd3457a",
+      "integrity": "sha512-aWPYgkexWdmg8LWFddnlnX9HbFRA6E43pbQxMTnkC8YOFja/EAArpqa0McBlffYMZedvCg7FhGWuQV7Qy7nezw=="
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "date": "2026-09-10",
+  "sourceRevision": "f237e9a1b195c879472713fac160d965c7b0d522",
+  "baseRevision": "accabbd3ed4cd2e7fd0e2c6d399b4fe7d04a7122",
+  "previousReleaseRevision": "1790251919ec731f9dd49b43da78f78b37890a00",
+  "version": "0.5.7",
+  "environment": {
+    "node": "25.1.0",
+    "pnpm": "11.19.0",
+    "dsh": "0.1.5-rc.1",
+    "playwright": "1.63.0",
+    "chromium": "153",
+    "platform": "macOS arm64",
+    "viewport": "1440x1050"
+  },
+  "tests": {
+    "passed": 1218,
+    "skipped": 7,
+    "rootPassed": 895,
+    "pluginPassed": 323,
+    "independentPluginRepositories": 16,
+    "packedArtifacts": 17,
+    "selectedReleaseArtifacts": 4
+  },
+  "browser": {
+    "versionAndNoSessionStatus": true,
+    "spaceCreatedAndActivated": true,
+    "documentArchive": true,
+    "originalRereadAfterReload": true,
+    "nativeIndexReadAfterReload": true,
+    "nativeIndexCount": 1,
+    "archiveObservation": {
+      "archived": true,
+      "pageErrors": [],
+      "failedRpc": []
+    },
+    "syntheticDocument": {
+      "id": "e875e2a2-92cd-4dc5-a29f-837b4ddc994a",
+      "title": "Release 0.5.7 Archive Check",
+      "status": "archived",
+      "revision": 2,
+      "contentHash": "e7dba9cb5c44f8b640f609d4439d330a2f4a7a9ba4916b12fbfacf152326cf0e"
+    },
+    "exactSyntheticContentPreserved": true,
+    "model": "loopback scripted archive decisions; no live model API"
+  },
+  "screenshots": [
+    {
+      "path": "01-version-status.png",
+      "sha256": "c28547d0f56f45694b0746a2c3fa054a6491d806b74a89398b3a28702c191d0c",
+      "bytes": 135688
+    },
+    {
+      "path": "02-document-archived.png",
+      "sha256": "e90795ec8c99a41d1ee7f487add33e3280503e068f86c882b859672423fa322f",
+      "bytes": 145089
+    },
+    {
+      "path": "03-index-after-reload.png",
+      "sha256": "3656d43afb0b799ed412a2e9320221c8ae3e1cf29f47bb1598d6e912c0768146",
+      "bytes": 157928
+    }
+  ]
+}

@@ -15,6 +15,12 @@ func TestReleaseRepositoryHygiene(t *testing.T) {
 	root := repositoryRoot(t)
 	var violations []string
 	for _, trackedPath := range gitTrackedFiles(t, root) {
+		if strings.HasPrefix(trackedPath, dshWorkspacePrefix) {
+			if reason := dshWorkspacePathReason(trackedPath); reason != "" {
+				violations = append(violations, trackedPath+": "+reason)
+			}
+			continue
+		}
 		if reason := forbiddenTrackedPathReason(trackedPath); reason != "" {
 			violations = append(violations, trackedPath+": "+reason)
 			continue
@@ -90,6 +96,24 @@ func TestRepositoryHygieneRulesRejectGeneratedFiles(t *testing.T) {
 	}
 }
 
+func TestRepositoryHygieneRulesScopeTheDSHWorkspace(t *testing.T) {
+	for trackedPath, want := range map[string]string{
+		"dsh/docs/pr-assets/issue-1/logs/before.log":    "",
+		"dsh/docs/pr-assets/issue-1/trace.jsonl":        "",
+		"dsh/docs/assets/gallery/manifest.json":         "",
+		"dsh/tsconfig.json":                             "",
+		"dsh/.env":                                      "credential",
+		"dsh/plugins/example/credentials/provider.json": "credential",
+		"dsh/.claude/settings.local.json":               "local Host configuration",
+		"dsh/.testdata/run/report.json":                 ".testdata",
+	} {
+		got := dshWorkspacePathReason(trackedPath)
+		if want == "" && got != "" || want != "" && !strings.Contains(got, want) {
+			t.Errorf("dshWorkspacePathReason(%q) = %q, want %q", trackedPath, got, want)
+		}
+	}
+}
+
 func TestRepositoryHygieneRulesAcceptDurableJSONCategories(t *testing.T) {
 	for _, trackedPath := range []string{
 		"package.json",
@@ -154,19 +178,43 @@ func forbiddenTrackedPathReason(trackedPath string) string {
 	return forbiddenTrackedFilenameReason(trackedPath)
 }
 
+// dsh/ is the DeepSeek Harness plugin workspace. Its reviewed PR evidence
+// (logs, traces and JSON records under docs/pr-assets), gallery manifests and
+// TypeScript tooling configuration follow the workspace's own contribution
+// rules. Credentials and local state stay forbidden there as everywhere else.
+const dshWorkspacePrefix = "dsh/"
+
+func dshWorkspacePathReason(trackedPath string) string {
+	if reason := localStateDirectoryReason(trackedPath); reason != "" {
+		return reason
+	}
+	return credentialFilenameReason(trackedPath)
+}
+
 func forbiddenTrackedDirectoryReason(trackedPath string) string {
+	if reason := localStateDirectoryReason(trackedPath); reason != "" {
+		return reason
+	}
 	for _, component := range strings.Split(strings.ToLower(trackedPath), "/") {
 		switch component {
-		case ".testdata":
-			return "generated .testdata must remain local"
-		case ".mnemon-dev":
-			return "ignored .mnemon-dev state must remain local"
 		case "evidence", "run-evidence", "run_evidence", "runs":
 			return "generated run evidence directory"
 		case "log", "logs":
 			return "generated run log directory"
 		case "transcript", "transcripts":
 			return "generated run transcript directory"
+		}
+	}
+	return ""
+}
+
+func localStateDirectoryReason(trackedPath string) string {
+	for _, component := range strings.Split(strings.ToLower(trackedPath), "/") {
+		switch component {
+		case ".testdata":
+			return "generated .testdata must remain local"
+		case ".mnemon-dev":
+			return "ignored .mnemon-dev state must remain local"
 		case "credential", "credentials", "provider-credentials":
 			return "provider credential directory"
 		case ".agents", ".claude", ".codex", ".insight", ".kanna",
@@ -178,6 +226,22 @@ func forbiddenTrackedDirectoryReason(trackedPath string) string {
 }
 
 func forbiddenTrackedFilenameReason(trackedPath string) string {
+	if reason := credentialFilenameReason(trackedPath); reason != "" {
+		return reason
+	}
+	base := strings.ToLower(path.Base(trackedPath))
+	switch {
+	case strings.HasSuffix(base, ".log") || strings.HasSuffix(base, ".stderr") ||
+		strings.HasSuffix(base, ".stdout"):
+		return "generated run log"
+	case strings.HasSuffix(base, ".jsonl") || strings.HasSuffix(base, ".ndjson"):
+		return "generated run transcript stream"
+	default:
+		return ""
+	}
+}
+
+func credentialFilenameReason(trackedPath string) string {
 	base := strings.ToLower(path.Base(trackedPath))
 	switch {
 	case base == ".env" || strings.HasPrefix(base, ".env.local"):
@@ -188,11 +252,6 @@ func forbiddenTrackedFilenameReason(trackedPath string) string {
 		base == "credential.json" || base == "credentials.json" ||
 		strings.HasSuffix(base, ".token"):
 		return "provider credential file"
-	case strings.HasSuffix(base, ".log") || strings.HasSuffix(base, ".stderr") ||
-		strings.HasSuffix(base, ".stdout"):
-		return "generated run log"
-	case strings.HasSuffix(base, ".jsonl") || strings.HasSuffix(base, ".ndjson"):
-		return "generated run transcript stream"
 	default:
 		return ""
 	}

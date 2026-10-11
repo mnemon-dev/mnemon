@@ -1,0 +1,33 @@
+{
+  "runtime": "v24.20.0",
+  "files": [
+    {
+      "path": "host-module-fallback.mjs",
+      "sha256": "bf3ef86bbaa49560a9a1bb039ec26b6d0dc186f84e372282acc5a21af55f0bf1"
+    },
+    {
+      "path": "harness-node-entry.mjs",
+      "sha256": "615167048ce49b545f54942cdd50ffb14eddd504a0128fd44609157212e72fc3"
+    },
+    {
+      "path": "app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js",
+      "sha256": "4d9732122405bcbe0760847fbbc7eeda2f5c402e5d0bdb624be6a621bcc1226f"
+    },
+    {
+      "path": "app/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js",
+      "sha256": "c74879df2c5a79d593209d5d8c16d2025184b7148c42469d7844aa4224e657a6"
+    },
+    {
+      "path": "app/node_modules/@deepseek-ai/cosmokit/lib/index.js",
+      "sha256": "a024ad32ead85dd6708cedd5b56acacb578e048e8f71e78b20ed56053ac7beb4"
+    },
+    {
+      "path": "app/node_modules/dsh-desktop-market-installer/generations/installer.mjs",
+      "sha256": "272cc78ae041e70fa3cd8d2fb8e03e5a6c7ceaf7fe4eab449eeaa4e68bb11f22"
+    },
+    {
+      "path": "app/node_modules/dsh-desktop-market-installer/generations/projection.mjs",
+      "sha256": "32b818476f1e3ed834ae3846685947c322e3ab63f992d6f363f3dbacd3429eeb"
+    }
+  ]
+}

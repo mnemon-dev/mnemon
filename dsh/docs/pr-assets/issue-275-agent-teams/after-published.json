@@ -1,0 +1,536 @@
+{
+  "versions": {
+    "dsh": "0.1.7-rc.1",
+    "dsh-agent": "0.1.7-rc.1",
+    "dsh-tools": "0.1.7-rc.1",
+    "dsh-subagent": "0.1.7-rc.1",
+    "dsh-experimental-agent-team": "0.1.7-rc.1",
+    "dsh-experimental-tool-agent-team": "0.1.7-rc.1"
+  },
+  "reports": [
+    {
+      "provider": "spawn",
+      "teams": "off",
+      "mode": "native",
+      "policy": "scoped",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 4,
+      "children": 1,
+      "cancelled": false,
+      "receipts": [
+        {
+          "name": "spawn_teammate",
+          "isError": true
+        },
+        {
+          "name": "mnemon_runtime_memory",
+          "isError": false
+        },
+        {
+          "name": "mnemon_document_search",
+          "isError": false
+        },
+        {
+          "name": "mnemon_subagent_result",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "provider": "spawn",
+      "teams": "off",
+      "mode": "ptc",
+      "policy": "scoped",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 4,
+      "children": 1,
+      "cancelled": false,
+      "receipts": [
+        {
+          "name": "run_code",
+          "isError": true
+        },
+        {
+          "name": "mnemon_runtime_memory",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        },
+        {
+          "name": "mnemon_document_search",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        },
+        {
+          "name": "mnemon_subagent_result",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "provider": "spawn",
+      "teams": "service",
+      "mode": "native",
+      "policy": "scoped",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 4,
+      "children": 1,
+      "cancelled": false,
+      "receipts": [
+        {
+          "name": "spawn_teammate",
+          "isError": true
+        },
+        {
+          "name": "mnemon_runtime_memory",
+          "isError": false
+        },
+        {
+          "name": "mnemon_document_search",
+          "isError": false
+        },
+        {
+          "name": "mnemon_subagent_result",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "provider": "spawn",
+      "teams": "service",
+      "mode": "ptc",
+      "policy": "scoped",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 4,
+      "children": 1,
+      "cancelled": false,
+      "receipts": [
+        {
+          "name": "run_code",
+          "isError": true
+        },
+        {
+          "name": "mnemon_runtime_memory",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        },
+        {
+          "name": "mnemon_document_search",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        },
+        {
+          "name": "mnemon_subagent_result",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "provider": "spawn",
+      "teams": "tools",
+      "mode": "native",
+      "policy": "pause",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 0,
+      "children": 0,
+      "cancelled": false,
+      "receipts": []
+    },
+    {
+      "provider": "spawn",
+      "teams": "tools",
+      "mode": "native",
+      "policy": "scoped",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 5,
+      "children": 2,
+      "cancelled": true,
+      "receipts": [
+        {
+          "name": "spawn_teammate",
+          "isError": true
+        },
+        {
+          "name": "mnemon_runtime_memory",
+          "isError": false
+        },
+        {
+          "name": "mnemon_document_search",
+          "isError": false
+        },
+        {
+          "name": "mnemon_subagent_result",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "provider": "spawn",
+      "teams": "tools",
+      "mode": "ptc",
+      "policy": "pause",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 0,
+      "children": 0,
+      "cancelled": false,
+      "receipts": []
+    },
+    {
+      "provider": "spawn",
+      "teams": "tools",
+      "mode": "ptc",
+      "policy": "scoped",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 4,
+      "children": 1,
+      "cancelled": false,
+      "receipts": [
+        {
+          "name": "spawn_teammate",
+          "isError": true
+        },
+        {
+          "name": "run_code",
+          "isError": true
+        },
+        {
+          "name": "mnemon_runtime_memory",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        },
+        {
+          "name": "mnemon_document_search",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        },
+        {
+          "name": "mnemon_subagent_result",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "provider": "fork",
+      "teams": "off",
+      "mode": "native",
+      "policy": "scoped",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 4,
+      "children": 1,
+      "cancelled": false,
+      "receipts": [
+        {
+          "name": "spawn_teammate",
+          "isError": true
+        },
+        {
+          "name": "mnemon_runtime_memory",
+          "isError": false
+        },
+        {
+          "name": "mnemon_document_search",
+          "isError": false
+        },
+        {
+          "name": "mnemon_subagent_result",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "provider": "fork",
+      "teams": "off",
+      "mode": "ptc",
+      "policy": "scoped",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 4,
+      "children": 1,
+      "cancelled": false,
+      "receipts": [
+        {
+          "name": "run_code",
+          "isError": true
+        },
+        {
+          "name": "mnemon_runtime_memory",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        },
+        {
+          "name": "mnemon_document_search",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        },
+        {
+          "name": "mnemon_subagent_result",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "provider": "fork",
+      "teams": "service",
+      "mode": "native",
+      "policy": "scoped",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 4,
+      "children": 1,
+      "cancelled": false,
+      "receipts": [
+        {
+          "name": "spawn_teammate",
+          "isError": true
+        },
+        {
+          "name": "mnemon_runtime_memory",
+          "isError": false
+        },
+        {
+          "name": "mnemon_document_search",
+          "isError": false
+        },
+        {
+          "name": "mnemon_subagent_result",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "provider": "fork",
+      "teams": "service",
+      "mode": "ptc",
+      "policy": "scoped",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 4,
+      "children": 1,
+      "cancelled": false,
+      "receipts": [
+        {
+          "name": "run_code",
+          "isError": true
+        },
+        {
+          "name": "mnemon_runtime_memory",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        },
+        {
+          "name": "mnemon_document_search",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        },
+        {
+          "name": "mnemon_subagent_result",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "provider": "fork",
+      "teams": "tools",
+      "mode": "native",
+      "policy": "pause",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 0,
+      "children": 0,
+      "cancelled": false,
+      "receipts": []
+    },
+    {
+      "provider": "fork",
+      "teams": "tools",
+      "mode": "native",
+      "policy": "scoped",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 5,
+      "children": 2,
+      "cancelled": true,
+      "receipts": [
+        {
+          "name": "spawn_teammate",
+          "isError": true
+        },
+        {
+          "name": "mnemon_runtime_memory",
+          "isError": false
+        },
+        {
+          "name": "mnemon_document_search",
+          "isError": false
+        },
+        {
+          "name": "mnemon_subagent_result",
+          "isError": false
+        }
+      ]
+    },
+    {
+      "provider": "fork",
+      "teams": "tools",
+      "mode": "ptc",
+      "policy": "pause",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 0,
+      "children": 0,
+      "cancelled": false,
+      "receipts": []
+    },
+    {
+      "provider": "fork",
+      "teams": "tools",
+      "mode": "ptc",
+      "policy": "scoped",
+      "strategyExtensions": [
+        "scoped",
+        "light-context",
+        "auto-capture"
+      ],
+      "childCalls": 4,
+      "children": 1,
+      "cancelled": false,
+      "receipts": [
+        {
+          "name": "spawn_teammate",
+          "isError": true
+        },
+        {
+          "name": "run_code",
+          "isError": true
+        },
+        {
+          "name": "mnemon_runtime_memory",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        },
+        {
+          "name": "mnemon_document_search",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        },
+        {
+          "name": "mnemon_subagent_result",
+          "isError": false
+        },
+        {
+          "name": "run_code",
+          "isError": false
+        }
+      ]
+    }
+  ]
+}

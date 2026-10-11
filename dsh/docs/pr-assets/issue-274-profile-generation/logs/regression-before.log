@@ -1,0 +1,54 @@
+
+ RUN  v3.2.7 <checkout>
+
+ ❯ tests/profile-generation-loading.spec.ts (2 tests | 1 failed) 439ms
+   × profile generation imports against host-owned framework packages > loads the complete built Starter with public Cosmokit cosmokit-legacy 228ms
+     → file://<tmp>/mnemon-generation-import-v6usRT/profiles/.generations/live/mnemon/node_modules/schemastery-live/lib/index.mjs:1
+import { Binary, clone, createVolatile, deepEqual, filterKeys, isNullable, isPlainObject, isVolatile, pick, valueMap } from "@deepseek-ai/cosmokit";
+                        ^^^^^^^^^^^^^^
+SyntaxError: The requested module '@deepseek-ai/cosmokit' does not provide an export named 'createVolatile'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:455:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:553:5)
+    at async node:internal/modules/esm/loader:647:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.20.0
+: expected 1 to be +0 // Object.is equality
+   ✓ profile generation imports against host-owned framework packages > loads the complete built Starter with public Cosmokit @deepseek-ai/cosmokit 210ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/profile-generation-loading.spec.ts > profile generation imports against host-owned framework packages > loads the complete built Starter with public Cosmokit cosmokit-legacy
+AssertionError: file://<tmp>/mnemon-generation-import-v6usRT/profiles/.generations/live/mnemon/node_modules/schemastery-live/lib/index.mjs:1
+import { Binary, clone, createVolatile, deepEqual, filterKeys, isNullable, isPlainObject, isVolatile, pick, valueMap } from "@deepseek-ai/cosmokit";
+                        ^^^^^^^^^^^^^^
+SyntaxError: The requested module '@deepseek-ai/cosmokit' does not provide an export named 'createVolatile'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:455:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:553:5)
+    at async node:internal/modules/esm/loader:647:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.20.0
+: expected 1 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 1
+
+ ❯ tests/profile-generation-loading.spec.ts:71:44
+     69|       const result = spawnSync(process.execPath, [entry], { encoding: …
+     70|       expect(result.error).toBeUndefined()
+     71|       expect(result.status, result.stderr).toBe(0)
+       |                                            ^
+     72|       expect(JSON.parse(result.stdout)).toEqual({ loaded: true, live })
+     73|     } finally { rmSync(fixture.directory, { recursive: true, force: tr…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  00:42:40
+   Duration  1.05s (transform 53ms, setup 0ms, collect 52ms, tests 439ms, environment 0ms, prepare 85ms)

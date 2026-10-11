@@ -1,0 +1,27 @@
+{
+  "mnemonCliVersion": "0.2.9",
+  "officialArchiveSha256": "6fbb1d572d8b4c080c36080e23ae0a183fce6841748f6c426e712136ac756b24",
+  "realExecutable": true,
+  "globalUserInstallModified": false,
+  "automaticCompositionChecks": [
+    {
+      "file": "plugins/dsh-mnemon-source-memory-spaces/tests/native-integration.spec.ts",
+      "scenario": "Real Native Provider through Source composition: create space, View write, recall and forget",
+      "passed": 1,
+      "failed": 0,
+      "durationMs": 680
+    },
+    {
+      "file": "tests/runtime-capacity-workflow.spec.ts",
+      "scenario": "Exact checkpoints archived to two same-View Native namespaces through real Host tools",
+      "passed": true,
+      "scenarioDurationMs": 464
+    }
+  ],
+  "webUiComposition": {
+    "runtimeCanaryWritten": true,
+    "openVikingCanaryRemainedReadable": true,
+    "record": "browser-after.json"
+  },
+  "scope": "CLI checks used disposable Native stores. Browser OpenViking calls used the separate deterministic loopback fixture; the GUI Runtime write is not represented as a Native CLI write."
+}

@@ -1,0 +1,14 @@
+{
+  "framework": "0.1.7-rc.1",
+  "node": "v24.20.0",
+  "generation": "dsh-mnemon+0.5.13+2775bb3fa512",
+  "checks": [
+    "retained root/UI/View/Source settings recover under the same profile namespaces",
+    "all three Strategy extensions remain active",
+    "backup bytes and the dynamic expression are preserved",
+    "live update preserves the owning fiber and rejects stale revisions",
+    "independent Source re-enable survives profile reconciliation",
+    "full host restart retains values, expressions and profile bytes",
+    "the original root gate disables all eight entries without pending services"
+  ]
+}

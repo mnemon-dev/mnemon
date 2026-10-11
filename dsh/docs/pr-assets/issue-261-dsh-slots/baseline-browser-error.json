@@ -1,0 +1,12 @@
+[
+  {
+    "level": "warn",
+    "message": "dsh-mnemon: settings listener failed; keeping the published Host snapshot Error: list slot \"conversation.chat.turnTail\" requires options.id",
+    "timestamp": "2026-09-18T03:18:31.970Z"
+  },
+  {
+    "level": "warn",
+    "message": "dsh-mnemon: settings listener failed; keeping the published Host snapshot Error: list slot \"conversation.chat.turnTail\" requires options.id",
+    "timestamp": "2026-09-18T03:28:34.522Z"
+  }
+]

@@ -1,0 +1,191 @@
+{
+  "issue": 266,
+  "date": "2026-09-22",
+  "implementationRevision": "1750e497e58c24406c0092e4fc1549996283aab8",
+  "packedFromCleanWorktree": true,
+  "environment": {
+    "platform": "macOS arm64",
+    "browser": "Chrome",
+    "node": "v25.1.0",
+    "dshCli": "0.1.5-rc.2",
+    "nativeCli": "mnemon version 0.2.8",
+    "nativeCliSha256": "f8f21151ce9777983b8d2dfb9cbea1a00b223de6063659af232d04aa57cedad0"
+  },
+  "setup": {
+    "baseHarness": "docs/pr-assets/issue-261-dsh-slots/harness/packed-e2e.mjs",
+    "externalCopySha256": "9de47863b19cae46122ab030675879c11b6e598bd46f31c302bd9eeb59b598d2",
+    "delta": "webui-rc2-pins.patch",
+    "frameworkRootUsed": true,
+    "reason": "The task encountered an incomplete public rc3 transitive release during unpinned installation. The external harness copy accepts --framework-root in fixed mode to reuse exact published RC2 pins from a previously verified profile.",
+    "reusedExistingInstall": false,
+    "legacyPeerDeps": false,
+    "dshPackageCount": 234,
+    "allDshPackageVersions": [
+      "0.1.5-rc.2"
+    ],
+    "publicContractByteChecks": [
+      {
+        "package": "@deepseek-ai/dsh-client-ui-slots",
+        "file": "lib/index.js",
+        "sha256": "5433ef2cb74699a59000052c4b1899808c83544f45ba6176f297efc68414c588"
+      },
+      {
+        "package": "@deepseek-ai/dsh-client-ui-chat",
+        "file": "lib/client.js",
+        "sha256": "6527556d25c7b2a27f2e3bfb96cc2ae3d9244f1213147e245b17684ad8d9e396"
+      },
+      {
+        "package": "@deepseek-ai/dsh-client-ui-renderer",
+        "file": "lib/client.js",
+        "sha256": "859d0a187e436d682c71d18f0266d588f923d7e1628157ad73000f99a377d151"
+      },
+      {
+        "package": "@deepseek-ai/dsh-client-ui-conversation",
+        "file": "lib/client.js",
+        "sha256": "81314dfd95864f2522f8edb812e3f8e08b04a8ef2141913e6e8cbdaae1ffc37f"
+      }
+    ],
+    "isolatedPeerResolutions": 51,
+    "allPeerResolutionsInsideConsumer": true,
+    "testClientPackages": []
+  },
+  "composition": {
+    "packedArtifactCount": 17,
+    "enabledOptionalStrategies": [
+      "mnemon-strategy-scoped",
+      "mnemon-strategy-light-context",
+      "mnemon-strategy-auto-capture"
+    ],
+    "artifacts": [
+      {
+        "name": "dsh-mnemon",
+        "version": "0.5.12",
+        "sha256": "3d5259f8a995a662ecf3e015282f42490a4be13e006e4672715aa05a8f6c353b"
+      },
+      {
+        "name": "dsh-mnemon-provider-byterover",
+        "version": "0.5.4",
+        "sha256": "94677bb5a27261dd2051f67c9ae5bc41c17ea86a4ea95cbd0baee1728203633f"
+      },
+      {
+        "name": "dsh-mnemon-provider-hindsight",
+        "version": "0.5.4",
+        "sha256": "bf527bc83d51bd7b2e510ed3be59665ae6b3ddbd4e1c3beee16c32235fa0afbb"
+      },
+      {
+        "name": "dsh-mnemon-provider-holographic",
+        "version": "0.5.4",
+        "sha256": "67f9cc593a7bcf33001e0817a4932e23cf9f0927e90b6bc2b2ccd5ef49b91259"
+      },
+      {
+        "name": "dsh-mnemon-provider-honcho",
+        "version": "0.5.4",
+        "sha256": "c102952aa1b9fdd953b25068663635a9ffad606bb39c68b56eafa538c8fab72d"
+      },
+      {
+        "name": "dsh-mnemon-provider-mem0",
+        "version": "0.5.4",
+        "sha256": "42cd225bb376d387d8e7f5503d64b6a00ddae4f5aea26b495cb9d5aa44dab3b0"
+      },
+      {
+        "name": "dsh-mnemon-provider-mnemon-native",
+        "version": "0.5.5",
+        "sha256": "cb1532ec04e1bc2550456340b453717686c2bc399e742e61be529bdae5e6f812"
+      },
+      {
+        "name": "dsh-mnemon-provider-openviking",
+        "version": "0.5.5",
+        "sha256": "da3505e93462a7860d331e830930a04d4e2406be5b540333f340f9351346920f"
+      },
+      {
+        "name": "dsh-mnemon-provider-retaindb",
+        "version": "0.5.4",
+        "sha256": "a7b5f1efb4e68df2d7ccc7e6078cd8c3229c82cf14f0162a196c975cbe19727f"
+      },
+      {
+        "name": "dsh-mnemon-provider-supermemory",
+        "version": "0.5.4",
+        "sha256": "d04b900f7f9e9359ba53b349bdbc4550fc19b350771e61df3aa451e8f67f9afd"
+      },
+      {
+        "name": "dsh-mnemon-source-documents",
+        "version": "0.5.6",
+        "sha256": "94ff6441881b73f490ed02fd038234232d119be311703a383ed45a20c8de7126"
+      },
+      {
+        "name": "dsh-mnemon-source-memory-spaces",
+        "version": "0.5.8",
+        "sha256": "18e3d346f5289aeac3944c1be222e1520ae6adf8235fd4da0a9ee900a0c04568"
+      },
+      {
+        "name": "dsh-mnemon-source-runtime",
+        "version": "0.5.8",
+        "sha256": "de1e147ab3437d8c9f377c138a3e4a06d0930b7b6c92986db4b023d3df575d4f"
+      },
+      {
+        "name": "dsh-mnemon-strategy-auto-capture",
+        "version": "0.5.4",
+        "sha256": "3816601abd83f0c5c679f3e4c9ae96c8f697e8e15f6546e975a96fd7f86b8c02"
+      },
+      {
+        "name": "dsh-mnemon-strategy-default-three-tier",
+        "version": "0.5.5",
+        "sha256": "52af5caf635f2cf2b165feff1ff3d35d241e6d073771b7b92b3ea37b36ff589f"
+      },
+      {
+        "name": "dsh-mnemon-strategy-light-context",
+        "version": "0.5.4",
+        "sha256": "62947c3ff777fbb8d42724acf2a9c651d2b2302b387bb8579c59cd79f82a9e0d"
+      },
+      {
+        "name": "dsh-mnemon-strategy-scoped",
+        "version": "0.5.4",
+        "sha256": "f3f945add93d2d5f8f48f0e70f5de9360814499a552218af7fa93f574dd3457a"
+      }
+    ]
+  },
+  "workspace": {
+    "displayName": "项目 with spaces",
+    "storageScope": "workspaces",
+    "centralRoot": "<run-root>/mnemon-data",
+    "inputPath": "<run-root>/workspace/项目 with spaces",
+    "canonicalization": "macOS resolves the temporary /tmp alias to /private/tmp before hashing; both forms identify the same workspace",
+    "storageId": "b541b67e760240d3e9cf9985777163114eb92d9dad1ce95546b73fd0e04c4c12",
+    "root": "<central-root>/workspaces/b541b67e760240d3e9cf9985777163114eb92d9dad1ce95546b73fd0e04c4c12",
+    "noWorkspaceLocalMnemon": true,
+    "globalRuntimeEntryCount": 0
+  },
+  "actions": {
+    "conversationPrompt": "compatibility-261",
+    "model": "Local deterministic compatibility fixture; no external model API",
+    "realHostTools": [
+      "mnemon_runtime_memory (add)",
+      "mnemon_status"
+    ],
+    "initialStatus": "healthy; 1 Runtime entry",
+    "uiAction": "Runtime -> 添加记忆",
+    "exactAddedContent": "Issue 266 WebUI: 中文与空格工作区使用稳定集中存储，Runtime 写入后可读回。",
+    "addedContentSha256": "1d93b3626ab20a6ff65703547c559888017309a1ecb56043e8a014645597e64e",
+    "finalRuntimeEntryCount": 2,
+    "memoriesJsonSha256": "a27b0da65535b224f77e641fab69c710bd7823921e249591703f0748e5663232",
+    "memoryMarkdownSha256": "966a59fbb1d25dec88edbb9d5d0bc9bb24a78fadc5acb9494c3e120c51b13ad2",
+    "exactContentPersistedInJsonAndMarkdown": true,
+    "fixtureLabelNote": "The existing compatibility harness intentionally retains Issue 261 in its preset/session title and first synthetic Runtime entry."
+  },
+  "screenshots": [
+    {
+      "file": "webui-centralized-status.png",
+      "sha256": "7bb77b1df3e14001edbf4f3fbe12f51a7966d1119fe6372c241c799a4a4ae58a"
+    },
+    {
+      "file": "webui-runtime-write.png",
+      "sha256": "b90ffaf45572ee5f9355288ef63f47148cddff239112ab97085604aa191a87ef"
+    }
+  ],
+  "limits": [
+    "This is a macOS Chrome compatibility smoke for valid centralized workspace paths. Actual Windows rejection evidence is the separate Actions before/after run.",
+    "The Native executable version was checked; this browser smoke did not create a Native Memory Space. Real Native write/recall/forget and capacity checks passed in full verification.",
+    "All three optional Strategies were enabled together; this smoke did not exercise every Strategy behavior.",
+    "All data are disposable synthetic fixture content. No personal data or personal credentials, DSH source overlays or external model API calls were used."
+  ]
+}
