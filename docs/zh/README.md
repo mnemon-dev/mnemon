@@ -433,6 +433,10 @@ Sub-agent 委派是可选执行策略。当 runtime 支持时，主 agent 可以
 | `MNEMON_EMBED_API_KEY` | *（无）* | OpenAI 兼容服务器（oMLX、vLLM 等）的 Bearer 令牌 |
 | `MNEMON_EMBED_KEEP_ALIVE` | `30m` | 每次请求后 Ollama 保持嵌入模型加载的时长（OpenAI 兼容服务器忽略此项） |
 | `MNEMON_EMBED_DIMENSIONS` | *（原生维度）* | 可选的 Matryoshka 维度截断 |
+| `MNEMON_JUDGE_MODEL` | *（空 = 禁用）* | `--judge` 使用的 System One 模型（`clef`、`clef-flash`、`jev-latest` 等） |
+| `MNEMON_JUDGE_ENDPOINT` | `http://localhost:11434` | System One 基础 URL，请求发往 `{endpoint}/v1/systemone`；云端端点会收到查询以及被判断记忆的文本 |
+| `MNEMON_JUDGE_API_KEY` | *（无）* | 云端 System One 端点的 Bearer 令牌 |
+| `MNEMON_JUDGE_TIMEOUT` | `15s` | 单次判断的总时间预算（Go duration） |
 
 每次自动删除均为软删除，以 `prune` 操作记录到 oplog，并通过触发命令的
 `auto_pruned_ids` 字段返回具体 ID。

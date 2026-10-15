@@ -147,6 +147,9 @@ mnemon recall "why did we choose Qdrant" --intent WHY
 # Recall with category/source filter
 mnemon recall "auth" --cat decision --source agent
 
+# Score results with the decision-model judge and drop irrelevant ones
+MNEMON_JUDGE_MODEL=clef mnemon recall "vector database" --judge --judge-min 0.5
+
 # Simple SQL LIKE matching (faster, no graph traversal)
 mnemon recall "auth" --basic
 
@@ -186,6 +189,7 @@ authorizes replacement. Capacity-based auto-pruning still applies separately.
 | `--entity-mode` | `merge` | Entity handling: `merge` (provided + auto), `provided` (only `--entities`), `auto` (only auto-extraction) |
 | `--source` | `user` | Source: `user`, `agent`, `external` |
 | `--no-diff` | `false` | Skip duplicate/conflict detection |
+| `--judge` | `false` | Classify each semantic candidate with the decision-model judge (`judgment.relation`: `duplicate`, `supersedes`, `contradicts`, `related`, `unrelated`); creates no edges. Needs `MNEMON_JUDGE_MODEL` |
 
 **Recall flags:**
 
@@ -198,6 +202,8 @@ authorizes replacement. Capacity-based auto-pruning still applies separately.
 | `--basic` | `false` | Use simple SQL LIKE matching instead of smart recall |
 | `--brief` | `false` | Emit compact JSON with short excerpts for discovery; fetch selected full content with `mnemon show <id>` |
 | `--excerpt-chars` | `240` | Maximum Unicode characters per `--brief` excerpt |
+| `--judge` | `false` | Score results with the decision-model judge, add a `relevance` field, and drop results below `--judge-min`. Needs `MNEMON_JUDGE_MODEL`; on a missing or failing judge it warns on stderr and returns normal output |
+| `--judge-min` | `0.5` | Minimum judge relevance (0-1) a result needs to be kept with `--judge` |
 | `--verbose` | `false` | Output full recall response (signals, meta, timestamps) |
 
 The default compact output is optimized for LLM/agent consumption. It includes
@@ -390,8 +396,19 @@ Nodes are colored by category (decision, fact, insight, preference, context); ed
 | `MNEMON_EMBED_API_KEY` | (none) | Bearer token for OpenAI-compatible servers |
 | `MNEMON_EMBED_KEEP_ALIVE` | 30m | How long Ollama keeps the embedding model loaded after each request |
 | `MNEMON_EMBED_DIMENSIONS` | (native) | Embedding dimensions; set to truncate (e.g., `256` for Matryoshka models) |
+| `MNEMON_JUDGE_MODEL` | (empty = disabled) | System One model for `--judge` (`clef`, `clef-flash`, `jev-latest`, ...) |
+| `MNEMON_JUDGE_ENDPOINT` | `http://localhost:11434` | System One base URL; requests go to `{endpoint}/v1/systemone` |
+| `MNEMON_JUDGE_API_KEY` | (none) | Bearer token for cloud System One endpoints |
+| `MNEMON_JUDGE_TIMEOUT` | `15s` | Total time budget for one judgment (Go duration) |
 | `MNEMON_MAX_INSIGHTS` | `1000` | Active-insight ceiling before auto-pruning starts; `0` disables auto-pruning |
 | `MNEMON_AUTO_PRUNE_MIN_AGE` | `24h` | Minimum age before automatic pruning; accepts durations such as `24h`, integer days such as `7d`, or `0` to disable the grace period |
+
+`--judge` talks to a [System One](https://docs.ollama.com/api/systemone) decision-model API. A
+local Ollama (>= 0.35) serving `clef` or `clef-flash` keeps all text on the
+machine. Pointing `MNEMON_JUDGE_ENDPOINT` at a cloud provider sends the recall
+query and the text of the judged memories (each clipped to about 1200
+characters) to that provider. Questions are sent in requests of at most 16, each
+repeating the same state.
 
 Auto-prune may temporarily leave the active count above the ceiling when every
 eligible insight is still inside the grace period. Age is measured from local

@@ -117,6 +117,9 @@ type RecallResult struct {
 	// Surfaced so a caller can see why a result ranked low, and so an agent
 	// reading raw results is not silently handed stale content.
 	Superseded bool `json:"superseded,omitempty"`
+	// Relevance is the decision-model judge's probability that this result
+	// answers the query. It is nil unless recall ran with --judge.
+	Relevance *float64 `json:"relevance,omitempty"`
 }
 
 // IntentAwareRecall performs MAGMA-aligned intent-aware retrieval:

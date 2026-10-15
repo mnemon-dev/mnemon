@@ -526,6 +526,28 @@ export MNEMON_EMBED_API_KEY=pa-...
 mnemon embed --status
 ```
 
+**Decision-model judge** (optional, opt-in per command):
+
+| Environment Variable | Default | Description |
+|---|---|---|
+| `MNEMON_JUDGE_MODEL` | *(empty = disabled)* | System One model name, e.g. `clef` or `clef-flash` (local Ollama), `jev-latest` (TypeSafe) |
+| `MNEMON_JUDGE_ENDPOINT` | `http://localhost:11434` | Base URL of a System One server (`POST {endpoint}/v1/systemone`) |
+| `MNEMON_JUDGE_API_KEY` | *(none)* | Bearer token for cloud endpoints such as `https://api.typesafe.ai` or `https://api.subq.ai` |
+| `MNEMON_JUDGE_TIMEOUT` | `15s` | Total time budget for one judgment, across all of its requests (Go duration) |
+
+`mnemon recall --judge` asks the judge whether each ranked result is about the
+same subject as the query, adds a `relevance` probability to every result, and
+drops results below `--judge-min` (default `0.5`). `mnemon remember --judge`
+classifies each semantic candidate as `duplicate`,
+`supersedes`, `contradicts`, `related`, or `unrelated` and reports it as
+`judgment` on that candidate; it never creates edges. Without `--judge`, output
+is unchanged, and if the judge is missing or fails, mnemon prints a one-line
+warning to stderr and returns normal output.
+
+> **Privacy:** the judge sends the query and the text of the judged memories to
+> `MNEMON_JUDGE_ENDPOINT`. A cloud endpoint therefore receives that text; keep
+> the default local Ollama endpoint if memories must not leave the machine.
+
 ## Development
 
 ```bash

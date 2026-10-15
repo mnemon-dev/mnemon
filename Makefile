@@ -26,6 +26,7 @@ DETERMINISTIC_PKGS := \
 	./internal/memory/embed \
 	./internal/memory/graph \
 	./internal/memory/importdraft \
+	./internal/memory/judge \
 	./internal/memory/internal/topk \
 	./internal/memory/model \
 	./internal/memory/search \

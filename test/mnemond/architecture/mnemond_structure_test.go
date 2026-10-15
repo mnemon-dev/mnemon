@@ -69,6 +69,7 @@ func assertMnemondPackageGraph(t *testing.T, root string) {
 	t.Helper()
 	want := map[string][]string{
 		"internal/memory/embed":         {},
+		"internal/memory/judge":         {},
 		"internal/memory/internal/topk": {},
 		"internal/memory/model":         {},
 		"internal/memory/importdraft":   {"internal/memory/model"},
@@ -95,7 +96,7 @@ func assertMnemondPackageGraph(t *testing.T, root string) {
 		"cmd/agency": {"internal/agency/attach", "internal/agency/client", "internal/daemon"},
 		"cmd/memory": {
 			"internal/memory/embed", "internal/memory/graph", "internal/memory/importdraft",
-			"internal/memory/model", "internal/memory/search", "internal/memory/setup",
+			"internal/memory/judge", "internal/memory/model", "internal/memory/search", "internal/memory/setup",
 			"internal/memory/setup/assets", "internal/memory/store",
 		},
 	}

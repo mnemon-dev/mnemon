@@ -177,6 +177,7 @@ mnemon forget <id>
 | `--entity-mode` | `merge` | 实体处理模式：`merge`（传入实体 + 自动抽取）、`provided`（只用 `--entities`）、`auto`（只用自动抽取） |
 | `--source` | `user` | 来源：`user`、`agent`、`external` |
 | `--no-diff` | `false` | 跳过重复/冲突检测 |
+| `--judge` | `false` | 用决策模型 judge 对每个语义候选分类（`judgment.relation`：`duplicate`、`supersedes`、`contradicts`、`related`、`unrelated`）；不会创建任何边。需要 `MNEMON_JUDGE_MODEL` |
 
 **Recall 标志：**
 
@@ -189,6 +190,8 @@ mnemon forget <id>
 | `--basic` | `false` | 使用简单 SQL LIKE 匹配代替智能召回 |
 | `--brief` | `false` | 输出仅含短摘要的紧凑 JSON；使用 `mnemon show <id>` 获取选中项全文 |
 | `--excerpt-chars` | `240` | 每条 `--brief` 摘要最多包含的 Unicode 字符数 |
+| `--judge` | `false` | 用决策模型 judge 为结果打分，添加 `relevance` 字段，并丢弃低于 `--judge-min` 的结果。需要 `MNEMON_JUDGE_MODEL`；judge 缺失或失败时在 stderr 输出警告并返回正常结果 |
+| `--judge-min` | `0.5` | 使用 `--judge` 时保留结果所需的最低 judge 相关度（0-1） |
 | `--verbose` | `false` | 输出完整召回响应（signals、meta、时间戳） |
 
 默认紧凑输出针对 LLM/agent 消费优化，包含 `id`、`content`、`category`、
@@ -357,6 +360,10 @@ open graph.html
 | `MNEMON_EMBED_API_KEY` | （无） | OpenAI 兼容服务器的 Bearer 令牌 |
 | `MNEMON_EMBED_KEEP_ALIVE` | 30m | 每次请求后 Ollama 保持嵌入模型加载的时长 |
 | `MNEMON_EMBED_DIMENSIONS` | (原生维度) | 嵌入向量维度；可设置截断值（例如 Matryoshka 模型使用 `256`） |
+| `MNEMON_JUDGE_MODEL` | （空 = 禁用） | `--judge` 使用的 System One 模型（`clef`、`clef-flash`、`jev-latest` 等） |
+| `MNEMON_JUDGE_ENDPOINT` | `http://localhost:11434` | System One 基础 URL，请求发往 `{endpoint}/v1/systemone`；云端端点会收到查询以及被判断记忆的文本 |
+| `MNEMON_JUDGE_API_KEY` | （无） | 云端 System One 端点的 Bearer 令牌 |
+| `MNEMON_JUDGE_TIMEOUT` | `15s` | 单次判断的总时间预算（Go duration） |
 | `MNEMON_MAX_INSIGHTS` | `1000` | 触发自动清理的活跃洞察数量上限；设为 `0` 可关闭自动清理 |
 | `MNEMON_AUTO_PRUNE_MIN_AGE` | `24h` | 可被自动清理前的最短存活时间；支持 `24h`、整数天 `7d`，设为 `0` 可关闭保护期 |
 

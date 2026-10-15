@@ -24,6 +24,8 @@ var (
 	recVerbose  bool
 	recBrief    bool
 	recExcerpt  int
+	recJudge    bool
+	recJudgeMin float64
 )
 
 // compactResult is the LLM-friendly projection of a recall result.
@@ -42,6 +44,8 @@ type compactResult struct {
 	// It must survive the compact projection: an agent reading only this
 	// shape would otherwise be handed corrected content with no signal.
 	Superseded bool `json:"superseded,omitempty"`
+	// Relevance is the judge's relevance probability; absent unless --judge ran.
+	Relevance *float64 `json:"relevance,omitempty"`
 }
 
 // compactResponse wraps compact results with an optional hint.
@@ -94,6 +98,7 @@ func toCompact(resp search.RecallResponse) compactResponse {
 			Confidence: confidenceLabel(rounded),
 			Score:      rounded,
 			Superseded: r.Superseded,
+			Relevance:  r.Relevance,
 		}
 		results = append(results, cr)
 	}
@@ -130,6 +135,9 @@ meta.intent and meta.intent_source (auto or override). --basic bypasses intent.`
 		if recBrief && recVerbose {
 			return fmt.Errorf("--brief and --verbose cannot be used together")
 		}
+		if recJudge && !(recJudgeMin >= 0 && recJudgeMin <= 1) {
+			return fmt.Errorf("--judge-min must be between 0 and 1, got %v", recJudgeMin)
+		}
 
 		db, err := openDB()
 		if err != nil {
@@ -141,6 +149,9 @@ meta.intent and meta.intent_source (auto or override). --basic bypasses intent.`
 		enc.SetIndent("", "  ")
 
 		if recBasic {
+			if recJudge {
+				warnJudge("--judge is ignored with --basic")
+			}
 			// Legacy SQL LIKE recall.
 			results, err := db.QueryInsights(store.QueryFilter{
 				Keyword:  keyword,
@@ -202,6 +213,9 @@ meta.intent and meta.intent_source (auto or override). --basic bypasses intent.`
 		if err != nil {
 			return fmt.Errorf("recall: %w", err)
 		}
+		if recJudge {
+			judgeRecall(keyword, &resp)
+		}
 		for _, r := range resp.Results {
 			_ = db.IncrementAccessCount(r.Insight.ID)
 		}
@@ -221,6 +235,7 @@ meta.intent and meta.intent_source (auto or override). --basic bypasses intent.`
 					Score:      scorePointer(score),
 					Confidence: confidenceLabel(score),
 					Superseded: result.Superseded,
+					Relevance:  result.Relevance,
 				})
 			}
 			return encodeBrief(os.Stdout, newBriefResponse(brief, resp.Meta.Hint))
@@ -240,5 +255,7 @@ func init() {
 	recallCmd.Flags().BoolVar(&recVerbose, "verbose", false, "output full recall response (signals, meta, timestamps)")
 	recallCmd.Flags().BoolVar(&recBrief, "brief", false, "output short excerpts for discovery; use 'mnemon show <id>' for full content")
 	recallCmd.Flags().IntVar(&recExcerpt, "excerpt-chars", defaultBriefExcerptChars, "maximum characters per --brief excerpt")
+	recallCmd.Flags().BoolVar(&recJudge, "judge", false, "score results with the decision-model judge and drop irrelevant ones (env: MNEMON_JUDGE_MODEL)")
+	recallCmd.Flags().Float64Var(&recJudgeMin, "judge-min", 0.5, "minimum judge relevance (0-1) a result needs to be kept with --judge")
 	rootCmd.AddCommand(recallCmd)
 }
