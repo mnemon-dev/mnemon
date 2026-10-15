@@ -214,17 +214,31 @@ func (db *DB) UpdateEntities(id string, entities []string) error {
 	return err
 }
 
+// An entity on more than about 1% of a store carries little ranking signal,
+// and wide-cast admission lets ordinary words snowball across writes. The
+// floor keeps useful vocabulary admissible in small stores.
+const (
+	hotEntityShare    = 0.01
+	hotEntityMinCount = 20
+)
+
 // LoadKnownEntities returns the set of distinct entities that appear on at
-// least one active (non-deleted) insight. It returns an empty (non-nil) map
-// when no insights carry entities. The result is intended for use as a
-// read-only filter — for example, by an index-aware entity extractor that
-// admits wide-cast candidates only when they match a previously stored
-// entity.
+// least one active (non-deleted) insight and on at most
+// max(hotEntityMinCount, hotEntityShare x active insights) of them. It returns
+// an empty (non-nil) map when no insights carry entities. The result is
+// intended for use as a read-only filter, for example by an index-aware entity
+// extractor that admits wide-cast candidates only when they match a
+// previously stored entity. Strict extraction and explicitly provided
+// entities do not depend on it.
 func (db *DB) LoadKnownEntities() (map[string]bool, error) {
 	known := make(map[string]bool)
 	rows, err := db.execer().Query(
-		`SELECT DISTINCT je.value FROM insights i, json_each(i.entities) je
-		 WHERE i.deleted_at IS NULL`)
+		`SELECT je.value FROM insights i, json_each(i.entities) je
+		 WHERE i.deleted_at IS NULL AND je.value IS NOT NULL
+		 GROUP BY je.value
+		 HAVING COUNT(DISTINCT i.id) <= MAX(?, ? * (
+		     SELECT COUNT(*) FROM insights WHERE deleted_at IS NULL
+		 ))`, hotEntityMinCount, hotEntityShare)
 	if err != nil {
 		return nil, fmt.Errorf("load known entities: %w", err)
 	}
@@ -247,12 +261,21 @@ func (db *DB) LoadKnownEntities() (map[string]bool, error) {
 // KnownEntities is LoadKnownEntities over insights the caller already loaded
 // (GetAllActiveInsights), sparing recall a second scan of the table.
 func KnownEntities(active []*model.Insight) map[string]bool {
-	known := make(map[string]bool)
+	counts := make(map[string]int)
 	for _, ins := range active {
+		seen := make(map[string]bool, len(ins.Entities))
 		for _, e := range ins.Entities {
-			if e != "" {
-				known[e] = true
+			if e != "" && !seen[e] {
+				counts[e]++
+				seen[e] = true
 			}
+		}
+	}
+	limit := max(float64(hotEntityMinCount), hotEntityShare*float64(len(active)))
+	known := make(map[string]bool)
+	for e, n := range counts {
+		if float64(n) <= limit {
+			known[e] = true
 		}
 	}
 	return known

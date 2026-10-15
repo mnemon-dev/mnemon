@@ -162,9 +162,10 @@ func ResolveEntities(content string, provided []string, mode EntityMode) []strin
 // ExtractEntitiesIndexed extends ExtractEntities with a fourth extraction
 // path: a wide-cast regex over capitalized tokens plus a tokenized scan over
 // the rest of the text, whose candidates are admitted only when they appear
-// in knownEntities. The index is used purely as a filter (never as a
-// generator), so this stays read-only with respect to the entity store and
-// never feeds its own output back into the index.
+// in knownEntities. Store callers exclude hot entities from this filter using
+// active-insight document frequency. This call does not mutate the index, but
+// write callers persist its output, feeding later writes; the frequency gate
+// bounds that feedback. Strict regex and dictionary paths bypass the filter.
 //
 // The fourth path exists because the default regex+dictionary paths
 // short-circuit to an empty entity set on text whose only entities are
