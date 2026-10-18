@@ -98,9 +98,10 @@ func (s *Store) serveConnection(ctx context.Context, conn net.Conn) {
 		if !scanner.Scan() {
 			return
 		}
-		requestCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
-		result, err := s.dispatch(requestCtx, scanner.Bytes())
-		cancel()
+		// A backfill can exceed the normal request window. Keep its response
+		// writable long enough to report a bounded embedding timeout.
+		conn.SetWriteDeadline(time.Now().Add(31 * time.Minute))
+		result, err := s.dispatch(ctx, scanner.Bytes())
 		if err != nil {
 			result = map[string]string{"error": err.Error()}
 		}
@@ -118,6 +119,12 @@ func (s *Store) dispatch(ctx context.Context, raw []byte) (any, error) {
 	if err := json.Unmarshal(raw, &route); err != nil {
 		return nil, errors.New("Invalid records request JSON")
 	}
+	window := 5 * time.Minute
+	if route.Operation == "embed" && !route.Status {
+		window = 30 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, window)
+	defer cancel()
 	switch route.Operation {
 	case "get":
 		var req GetRequest
