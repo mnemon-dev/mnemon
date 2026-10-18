@@ -105,17 +105,23 @@ func TestTSGolden(t *testing.T) {
 		t.Fatalf("revision %s != TS %s", rev, fixture.Revision)
 	}
 	cfg := &EmbeddingConfig{URL: server.URL, Model: "golden", QueryPrefix: "search_query: ", DocumentPrefix: "search_document: "}
-	for _, cached := range []bool{false, true} {
-		if cached {
+	for _, backend := range []string{"cli", "cached", "fts", "fts-cached"} {
+		s.cache = nil
+		if strings.Contains(backend, "cached") {
 			s.cache = newQueryCache()
+		}
+		if backend == "fts" {
+			if err := s.buildLexical(ctx); err != nil {
+				t.Fatal(err)
+			}
 		}
 		for i, tc := range fixture.Queries {
 			got, err := s.Query(ctx, QueryRequest{Revision: rev, Input: tc.Input, Scope: tc.Scope, Embedding: cfg})
 			if err != nil {
-				t.Fatalf("query %d (cached=%v): %v", i, cached, err)
+				t.Fatalf("query %d (%s): %v", i, backend, err)
 			}
 			if !reflect.DeepEqual(got.IDs, tc.IDs) || !reflect.DeepEqual(got.Expansion, tc.Expansion) {
-				t.Errorf("query %d (cached=%v) %s: got %+v expansion=%v; want %v expansion=%v", i, cached, tc.Input["query"], got, got.Expansion, tc.IDs, tc.Expansion)
+				t.Errorf("query %d (%s) %s: got %+v expansion=%v; want %v expansion=%v", i, backend, tc.Input["query"], got, got.Expansion, tc.IDs, tc.Expansion)
 			}
 		}
 	}

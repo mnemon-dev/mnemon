@@ -58,6 +58,8 @@ type record struct {
 	Data                        map[string]json.RawMessage `json:"data"`
 	Raw, SearchText, VectorText string                     `json:"-"`
 	Seq                         int64                      `json:"-"`
+	VersionID                   int64                      `json:"-"`
+	TokenCount                  int                        `json:"-"`
 }
 
 // Match JS's case-sensitive property lookup. Extra record properties are opaque.
@@ -87,6 +89,7 @@ type Store struct {
 	db       *sql.DB
 	readonly bool
 	cache    *queryCache // enabled only for the lifetime of Serve
+	fts      bool
 }
 
 func Open(directory string, readonly bool) (*Store, error) {
@@ -120,6 +123,12 @@ func Open(directory string, readonly bool) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	var tables int
+	if err = db.QueryRow("SELECT count(*) FROM sqlite_schema WHERE name IN ('lexical_documents','lexical_terms')").Scan(&tables); err != nil {
+		db.Close()
+		return nil, err
+	}
+	s.fts = tables == 2
 	return s, nil
 }
 
@@ -136,6 +145,10 @@ CREATE INDEX IF NOT EXISTS record_versions_revision ON record_versions(rev_from,
 CREATE UNIQUE INDEX IF NOT EXISTS record_versions_current ON record_versions(id) WHERE rev_to IS NULL;
 CREATE TABLE IF NOT EXISTS embeddings(text_hash TEXT NOT NULL, model TEXT NOT NULL, prefix TEXT NOT NULL,
  vector BLOB NOT NULL, PRIMARY KEY(text_hash,model,prefix));
+CREATE TABLE IF NOT EXISTS lexical_documents(version_id INTEGER PRIMARY KEY, tokens TEXT NOT NULL, token_count INTEGER NOT NULL);
+CREATE VIRTUAL TABLE IF NOT EXISTS lexical_fts USING fts5(tokens, content='lexical_documents', content_rowid='version_id',
+ tokenize="unicode61 remove_diacritics 0 categories 'L* N* M* S* Co Cn' tokenchars '-_:'");
+CREATE VIRTUAL TABLE IF NOT EXISTS lexical_terms USING fts5vocab(lexical_fts, 'instance');
 INSERT OR IGNORE INTO meta VALUES('schema','1'),('tokenizer','ts-v1'),('revision','0'),('seq','0'),
  ('digest','` + emptyRevision + `'),('revision/` + emptyRevision + `','0');`)
 	return err

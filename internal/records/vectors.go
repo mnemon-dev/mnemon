@@ -218,6 +218,11 @@ func (s *Store) vectorRank(ctx context.Context, query string, records []record, 
 }
 
 func (s *Store) Embed(ctx context.Context, req EmbedRequest, statusOnly bool) (EmbedStatus, error) {
+	if !statusOnly {
+		if err := s.buildLexical(ctx); err != nil {
+			return EmbedStatus{}, err
+		}
+	}
 	rev, hash, err := revision(ctx, s.db, req.Revision)
 	if err != nil {
 		return EmbedStatus{}, err

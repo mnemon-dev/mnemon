@@ -142,7 +142,10 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 	records := candidates(all, req, term, words)
 	result := QueryResult{IDs: []string{}}
 	if words {
-		index, err := s.lexical(ctx, hash, req, records)
+		index, precomputed, err := s.precomputedLexical(ctx, records, term)
+		if err == nil && !precomputed {
+			index, err = s.lexical(ctx, hash, req, records)
+		}
 		if err != nil {
 			return QueryResult{}, err
 		}
@@ -158,6 +161,12 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 			ids := result.IDs
 			if len(ids) > 10 {
 				ids = ids[:10]
+			}
+			if precomputed {
+				index, err = s.precomputedFeedback(ctx, records, ids, term)
+				if err != nil {
+					return QueryResult{}, err
+				}
 			}
 			expansion := index.feedback(ids, term)
 			result.Expansion = &expansion

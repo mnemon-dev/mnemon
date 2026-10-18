@@ -59,6 +59,20 @@ func TestServeCASRevisionAndCancellation(t *testing.T) {
 	if first == "" {
 		t.Fatal(put)
 	}
+	deadline = time.Now().Add(3 * time.Second)
+	for {
+		var indexed int
+		if err := s.db.QueryRow("SELECT count(*) FROM lexical_documents").Scan(&indexed); err != nil {
+			t.Fatal(err)
+		}
+		if indexed == 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("serve did not finish the background lexical build after put")
+		}
+		time.Sleep(time.Millisecond)
+	}
 	q := func(rev string) map[string]any {
 		return map[string]any{"operation": "query", "revision": rev, "input": map[string]any{"query": "dog", "match": "words", "expand": true}}
 	}

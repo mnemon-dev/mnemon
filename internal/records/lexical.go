@@ -62,6 +62,7 @@ type lexicalIndex struct {
 	docs  []lexicalDoc
 	df    map[string]int
 	total int
+	n     int
 }
 type scored struct {
 	id    string
@@ -69,7 +70,7 @@ type scored struct {
 }
 
 func newLexical(records []record) *lexicalIndex {
-	index := &lexicalIndex{df: map[string]int{}}
+	index := &lexicalIndex{df: map[string]int{}, n: len(records)}
 	for _, r := range records {
 		d := lexicalDoc{id: r.ID, tf: map[string]int{}}
 		tokens := Tokens(r.SearchText)
@@ -100,7 +101,7 @@ func (index *lexicalIndex) search(query string) []string {
 			seen[t] = true
 		}
 	}
-	n := float64(len(index.docs))
+	n := float64(index.n)
 	average := 1.0
 	if n > 0 {
 		average = float64(index.total) / n
@@ -156,13 +157,13 @@ func (index *lexicalIndex) feedback(ids []string, query string) []string {
 	for _, id := range ids {
 		for _, term := range docs[id].terms {
 			token := term.token
-			if exclude[token] || stop[token] || digits.MatchString(token) || !strings.ContainsFunc(token, func(r rune) bool { return unicode.Is(unicode.Han, r) }) && len(token) < 3 {
+			if !feedbackToken(token, exclude) {
 				continue
 			}
 			if _, ok := scores[token]; !ok {
 				order = append(order, token)
 			}
-			scores[token] += float64(float64(term.count) * jsLog(1+float64(len(index.docs))/(float64(index.df[token])+0.5)))
+			scores[token] += float64(float64(term.count) * jsLog(1+float64(index.n)/(float64(index.df[token])+0.5)))
 		}
 	}
 	hits := make([]scored, len(order))
@@ -170,6 +171,11 @@ func (index *lexicalIndex) feedback(ids []string, query string) []string {
 		hits[i] = scored{t, scores[t]}
 	}
 	return rank(hits, 10)
+}
+
+func feedbackToken(token string, exclude map[string]bool) bool {
+	return !exclude[token] && !stop[token] && !digits.MatchString(token) &&
+		(strings.ContainsFunc(token, func(r rune) bool { return unicode.Is(unicode.Han, r) }) || len(token) >= 3)
 }
 
 func fuse(rankings ...[]string) []string {

@@ -21,10 +21,21 @@ type queryCache struct {
 	queryOrder   []string
 	snapshotHash string
 	snapshot     []record
+	lexicalWake  chan struct{}
+	lexicalBuild uint64
 }
 
 func newQueryCache() *queryCache {
-	return &queryCache{indexes: map[string]*lexicalIndex{}, vectors: map[string][]float32{}, queries: map[string][]float32{}}
+	return &queryCache{indexes: map[string]*lexicalIndex{}, vectors: map[string][]float32{}, queries: map[string][]float32{}, lexicalWake: make(chan struct{}, 1)}
+}
+
+func (s *Store) wakeLexical() {
+	if s.cache != nil && !s.readonly {
+		select {
+		case s.cache.lexicalWake <- struct{}{}:
+		default: // One queued build also covers every intervening committed write.
+		}
+	}
 }
 
 func (s *Store) lexical(ctx context.Context, hash string, req QueryRequest, docs []record) (*lexicalIndex, error) {

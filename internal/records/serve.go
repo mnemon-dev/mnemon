@@ -42,6 +42,14 @@ func (s *Store) Serve(ctx context.Context, path string) error {
 	var mu sync.Mutex
 	connections := map[net.Conn]bool{}
 	slots := make(chan struct{}, 16)
+	if !s.readonly {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			s.runLexicalWorker(ctx)
+		}()
+		s.wakeLexical()
+	}
 	watcher.Add(1)
 	go func() {
 		defer watcher.Done()
@@ -138,6 +146,9 @@ func (s *Store) dispatch(ctx context.Context, raw []byte) (any, error) {
 			return nil, err
 		}
 		rev, err := s.Put(ctx, req)
+		if err == nil {
+			s.wakeLexical()
+		}
 		return map[string]string{"revision": rev}, err
 	case "query":
 		var req QueryRequest
