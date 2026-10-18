@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/mnemon-dev/mnemon/internal/memory/store"
 	"github.com/mnemon-dev/mnemon/internal/records"
@@ -15,20 +18,10 @@ func init() {
 	for _, operation := range []string{"get", "put", "query", "embed"} {
 		operation := operation
 		command := &cobra.Command{Use: operation, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
-			if !cmd.Flags().Changed("data-dir") && !cmd.InheritedFlags().Changed("data-dir") {
-				return fmt.Errorf("records requires an explicit --data-dir")
-			}
-			name := storeName
-			if name == "" {
-				name = "default"
-			}
-			if !store.ValidStoreName(name) {
-				return fmt.Errorf("invalid store name %q", name)
-			}
 			if readOnly && operation == "put" {
 				return readOnlyWriteError("records put")
 			}
-			db, err := records.Open(store.StoreDir(dataDir, name), readOnly)
+			db, err := openRecordsStore(cmd)
 			if err != nil {
 				return err
 			}
@@ -72,5 +65,32 @@ func init() {
 		}
 		group.AddCommand(command)
 	}
+	serve := &cobra.Command{Use: "serve", Args: cobra.NoArgs, Short: "Serve records NDJSON on a local Unix socket", RunE: func(cmd *cobra.Command, args []string) error {
+		db, err := openRecordsStore(cmd)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
+		path, _ := cmd.Flags().GetString("socket")
+		ctx, cancel := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		return db.Serve(ctx, path)
+	}}
+	serve.Flags().String("socket", "", "Unix socket path (required)")
+	group.AddCommand(serve)
 	rootCmd.AddCommand(group)
+}
+
+func openRecordsStore(cmd *cobra.Command) (*records.Store, error) {
+	if !cmd.Flags().Changed("data-dir") && !cmd.InheritedFlags().Changed("data-dir") {
+		return nil, fmt.Errorf("records requires an explicit --data-dir")
+	}
+	name := storeName
+	if name == "" {
+		name = "default"
+	}
+	if !store.ValidStoreName(name) {
+		return nil, fmt.Errorf("invalid store name %q", name)
+	}
+	return records.Open(store.StoreDir(dataDir, name), readOnly)
 }

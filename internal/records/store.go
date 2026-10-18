@@ -86,6 +86,7 @@ func (r *record) decode(raw string) error {
 type Store struct {
 	db       *sql.DB
 	readonly bool
+	cache    *queryCache // enabled only for the lifetime of Serve
 }
 
 func Open(directory string, readonly bool) (*Store, error) {

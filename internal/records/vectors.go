@@ -133,6 +133,10 @@ func (s *Store) vectors(ctx context.Context, texts []string, cfg EmbeddingConfig
 			continue
 		}
 		seen[key] = true
+		if v := s.cachedVector(key, cfg, prefix); v != nil {
+			known[key] = v
+			continue
+		}
 		var blob []byte
 		err := s.db.QueryRowContext(ctx, "SELECT vector FROM embeddings WHERE text_hash=? AND model=? AND prefix=?", key, cfg.Model, prefix).Scan(&blob)
 		if errors.Is(err, sql.ErrNoRows) {
@@ -149,6 +153,7 @@ func (s *Store) vectors(ctx context.Context, texts []string, cfg EmbeddingConfig
 			return nil, err
 		}
 		known[key] = v
+		s.keepVector(key, cfg, prefix, v)
 	}
 	if len(missing) > 0 && s.readonly {
 		return nil, errors.New("Missing record embeddings; run records embed before --readonly query")
@@ -168,6 +173,7 @@ func (s *Store) vectors(ctx context.Context, texts []string, cfg EmbeddingConfig
 		}
 		for i, text := range part {
 			known[textHash(text)] = values[i]
+			s.keepVector(textHash(text), cfg, prefix, values[i])
 		}
 	}
 	for i, text := range texts {
@@ -200,13 +206,13 @@ func (s *Store) vectorRank(ctx context.Context, query string, records []record, 
 		return nil, err
 	}
 	// Query vectors need not be written by a readonly query.
-	targets, err := embed(ctx, []string{query}, cfg, cfg.QueryPrefix)
+	target, err := s.queryVector(ctx, query, cfg)
 	if err != nil {
 		return nil, err
 	}
 	hits := make([]scored, len(records))
 	for i, r := range records {
-		hits[i] = scored{r.ID, dot(targets[0], values[i])}
+		hits[i] = scored{r.ID, dot(target, values[i])}
 	}
 	return rank(hits, 200), nil
 }

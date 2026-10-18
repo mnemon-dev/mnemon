@@ -127,7 +127,7 @@ func candidates(all []record, req QueryRequest, term string, words bool) []recor
 }
 
 func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error) {
-	rev, _, err := revision(ctx, s.db, req.Revision)
+	rev, hash, err := revision(ctx, s.db, req.Revision)
 	if err != nil {
 		return QueryResult{}, err
 	}
@@ -142,7 +142,10 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 	records := candidates(all, req, term, words)
 	result := QueryResult{IDs: []string{}}
 	if words {
-		index := newLexical(records)
+		index, err := s.lexical(ctx, hash, req, records)
+		if err != nil {
+			return QueryResult{}, err
+		}
 		result.IDs = index.search(term)
 		if match == "hybrid" && req.Embedding != nil {
 			semantic, err := s.vectorRank(ctx, query, records, *req.Embedding)
