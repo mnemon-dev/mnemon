@@ -121,6 +121,7 @@ FROM record_versions r`+join+` WHERE r.rev_from<=? AND (r.rev_to IS NULL OR r.re
 	}
 	if c := s.cache; c != nil && len(out) <= 200000 {
 		prepared := newSelection(out)
+		prepared.prefixLimit = min(150000, len(out))
 		c.mu.Lock()
 		if c.current == current && c.lexicalBuild == lexicalBuild {
 			if c.snapshotHash != hash {

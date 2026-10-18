@@ -170,4 +170,18 @@ func TestTSMultiTermRoundingGolden(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got.IDs, fixture.Expected) {
 		t.Fatalf("sparse long-query tie differs from original TS: %v %v", got, err)
 	}
+	s.cache = newQueryCache()
+	if _, err = s.queryRecords(ctx, 1, hash); err != nil {
+		t.Fatal(err)
+	}
+	s.cache.allSelection.prefixLimit = 1
+	if _, err = s.selectionDF(ctx, s.cache.allSelection); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.Query(ctx, QueryRequest{Revision: hash, Input: map[string]json.RawMessage{
+		"query": json.RawMessage(strconvJSON(fixture.Query)), "match": json.RawMessage(`"words"`),
+	}})
+	if err != nil || !reflect.DeepEqual(got.IDs, fixture.Expected) {
+		t.Fatalf("partitioned TS rounding: %v %v", got, err)
+	}
 }

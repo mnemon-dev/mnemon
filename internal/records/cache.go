@@ -28,6 +28,7 @@ type queryCache struct {
 	selectionOrder  []string
 	selectionDocs   int
 	allSelection    *querySelection
+	prepared        *preparedLexical
 }
 
 func newQueryCache() *queryCache {
@@ -105,10 +106,13 @@ func (s *Store) lexical(ctx context.Context, hash string, req QueryRequest, docs
 	if c.current != current {
 		return index, nil
 	}
+	if len(docs) > c.lexicalCapacity() {
+		return index, nil
+	}
 	if existing := c.indexes[key]; existing != nil {
 		return existing, nil
 	}
-	for c.documents+len(docs) > 150000 && len(c.order) > 0 {
+	for c.documents+len(docs) > c.lexicalCapacity() && len(c.order) > 0 {
 		oldest := c.order[0]
 		c.order = c.order[1:]
 		c.documents -= len(c.indexes[oldest].docs)
@@ -118,6 +122,15 @@ func (s *Store) lexical(ctx context.Context, hash string, req QueryRequest, docs
 	c.order = append(c.order, key)
 	c.documents += len(docs)
 	return index, nil
+}
+
+// mu is held: cached full document terms and sparse query indexes share the
+// original hard budget, rather than giving a large snapshot a second budget.
+func (c *queryCache) lexicalCapacity() int {
+	if c.prepared != nil {
+		return 150000 - len(c.prepared.index.docs)
+	}
+	return 150000
 }
 
 func vectorKey(hash string, cfg EmbeddingConfig, prefix string) string {

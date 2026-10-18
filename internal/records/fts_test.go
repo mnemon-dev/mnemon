@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"maps"
 	"path/filepath"
 	"reflect"
@@ -182,4 +183,50 @@ func TestPreparedStatisticsCancellationAndConcurrentQueries(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestPreparedLexicalRemainderUsesWholeCandidateStatistics(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	rows := make([]Upsert, 3000)
+	for i := range rows {
+		rows[i] = sample(fmt.Sprintf("%04d", i), "dog common lake "+strings.Repeat("cat ", i%50))
+	}
+	rows[0] = sample("0000", strings.Repeat("dog ", 100)+"rare_unique")
+	rows[2999] = sample("2999", "tail_rare")
+	hash, err := s.Put(ctx, PutRequest{Upsert: rows})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.buildLexical(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s.cache = newQueryCache()
+	all, err := s.queryRecords(ctx, 1, hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A small preparation budget exercises both partitions without making the
+	// deterministic unit suite build a 150,001-document fixture.
+	s.cache.allSelection.prefixLimit = 32
+	if _, err = s.selectionDF(ctx, s.cache.allSelection); err != nil {
+		t.Fatal(err)
+	}
+	for _, query := range []string{"dog", "common lake", "rare_unique tail_rare", "anythingabsent", "cat dog rare_unique"} {
+		for _, filtered := range []bool{false, true} {
+			input := map[string]json.RawMessage{"query": json.RawMessage(strconvJSON(query)), "match": json.RawMessage(`"words"`), "expand": json.RawMessage(`true`)}
+			if filtered {
+				input["ids"] = json.RawMessage(`["0000","2999","0042"]`)
+			}
+			req := QueryRequest{Revision: hash, Input: input}
+			oracle := newLexical(candidates(all, req, "", true))
+			ids := oracle.search(query)
+			expansion := oracle.feedback(ids[:min(10, len(ids))], query)
+			want := QueryResult{IDs: ids, Expansion: &expansion}
+			got, err := s.Query(ctx, req)
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Fatalf("query=%q filtered=%v: got=%+v want=%+v %v", query, filtered, got, want, err)
+			}
+		}
+	}
 }

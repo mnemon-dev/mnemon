@@ -16,6 +16,7 @@ type querySelection struct {
 	byID          map[string]int
 	total         int
 	ready         bool
+	prefixLimit   int
 	first, last   int64
 	mu            sync.Mutex
 	df            map[string]int
@@ -106,12 +107,12 @@ func (s *Store) prepareSnapshot(ctx context.Context) error {
 }
 
 func newSelection(docs []record) *querySelection {
-	v := &querySelection{docs: docs, wanted: make(map[int64]int, len(docs)), byID: make(map[string]int, len(docs)), ready: true}
+	v := &querySelection{docs: docs, wanted: make(map[int64]int, len(docs)), byID: make(map[string]int, len(docs)), ready: uint64(len(docs)) <= uint64(^uint32(0))}
 	for i, r := range docs {
 		v.wanted[r.VersionID] = i
 		v.byID[r.ID] = i
 		v.total += r.TokenCount
-		v.ready = v.ready && r.VersionID != 0 && r.TokenCount >= 0
+		v.ready = v.ready && r.VersionID != 0 && r.TokenCount >= 0 && uint64(r.TokenCount) <= uint64(^uint32(0))
 		if i == 0 || r.VersionID < v.first {
 			v.first = r.VersionID
 		}
@@ -127,6 +128,7 @@ func newSelection(docs []record) *querySelection {
 func (c *queryCache) clearSelections() {
 	c.selections = map[string]*querySelection{}
 	c.selectionOrder, c.selectionDocs, c.allSelection = nil, 0, nil
+	c.prepared = nil
 }
 
 func (s *Store) selectRecords(all []record, hash string, req QueryRequest) *querySelection {
@@ -216,19 +218,10 @@ func (s *Store) selectionDF(ctx context.Context, v *querySelection) (map[string]
 		}
 		v.loading = make(chan struct{})
 		v.mu.Unlock()
-		df, seen := map[string]int{}, map[string]int64{}
-		err := s.selectionTokens(ctx, v, "", func(version int64, text string) {
-			for token := range strings.SplitSeq(text, " ") {
-				if token == "" || seen[token] == version {
-					continue
-				}
-				if _, ok := seen[token]; !ok {
-					token = strings.Clone(token)
-				}
-				seen[token] = version
-				df[token]++
-			}
-		})
+		df, prepared, err := s.buildStatistics(ctx, v)
+		if err == nil && len(df) <= 150000 && prepared != nil {
+			s.keepPrepared(v, prepared)
+		}
 		v.mu.Lock()
 		// A bounded aggregate vocabulary; oversized selections still execute
 		// exactly, but do not retain arbitrarily large statistics in Serve.
@@ -247,31 +240,43 @@ func (s *Store) selectionDF(ctx context.Context, v *querySelection) (map[string]
 // retrieve only matching documents, then enforce exact candidate membership.
 // There is no instance expansion or GROUP BY over all historical occurrences.
 func (s *Store) selectionTokens(ctx context.Context, v *querySelection, match string, visit func(int64, string)) error {
+	versions := []int64{}
 	if match != "" && len(v.docs) > 2048 {
-		rows, err := s.readDB().QueryContext(ctx, `SELECT l.version_id,l.tokens FROM lexical_fts
-JOIN lexical_documents l ON l.version_id=lexical_fts.rowid
-WHERE lexical_fts MATCH ? AND lexical_fts.rowid>=? AND lexical_fts.rowid<=?`, match, v.first, v.last)
+		rows, err := s.readDB().QueryContext(ctx, `SELECT rowid FROM lexical_fts
+WHERE lexical_fts MATCH ? AND rowid>=? AND rowid<=?`, match, v.first, v.last)
 		if err != nil {
 			return err
 		}
-		defer rows.Close()
 		for rows.Next() {
 			var version int64
-			var text string
-			if err := rows.Scan(&version, &text); err != nil {
+			if err = rows.Scan(&version); err != nil {
+				rows.Close()
 				return err
 			}
 			if _, ok := v.wanted[version]; ok {
-				visit(version, text)
+				versions = append(versions, version)
 			}
 		}
-		return rows.Err()
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+	} else {
+		versions = make([]int64, len(v.docs))
+		for i, r := range v.docs {
+			versions[i] = r.VersionID
+		}
 	}
-	for start := 0; start < len(v.docs); start += 512 {
-		part := v.docs[start:min(start+512, len(v.docs))]
+	return s.readTokenVersions(ctx, versions, visit)
+}
+
+func (s *Store) readTokenVersions(ctx context.Context, versions []int64, visit func(int64, string)) error {
+	for start := 0; start < len(versions); start += 512 {
+		part := versions[start:min(start+512, len(versions))]
 		args := make([]any, len(part))
-		for i, r := range part {
-			args[i] = r.VersionID
+		for i, version := range part {
+			args[i] = version
 		}
 		rows, err := s.readDB().QueryContext(ctx, "SELECT version_id,tokens FROM lexical_documents WHERE version_id IN ("+strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")+")", args...)
 		if err != nil {

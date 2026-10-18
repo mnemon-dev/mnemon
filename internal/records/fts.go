@@ -131,10 +131,10 @@ func (s *Store) saveLexical(ctx context.Context, batch []record) error {
 }
 
 func (s *Store) precomputedLexical(ctx context.Context, docs []record, query string) (*lexicalIndex, bool, error) {
-	return s.selectionLexical(ctx, newSelection(docs), query)
+	return s.selectionLexical(ctx, newSelection(docs), query, nil)
 }
 
-func (s *Store) selectionLexical(ctx context.Context, v *querySelection, query string) (*lexicalIndex, bool, error) {
+func (s *Store) selectionLexical(ctx context.Context, v *querySelection, query string, reference *preparedLexical) (*lexicalIndex, bool, error) {
 	if !s.fts || !v.ready {
 		s.wakeLexical()
 		return nil, false, nil
@@ -154,7 +154,19 @@ func (s *Store) selectionLexical(ctx context.Context, v *querySelection, query s
 	if len(terms) == 0 {
 		return index, true, nil
 	}
-	err := s.selectionTokens(ctx, v, strings.Join(terms, " OR "), func(version int64, text string) {
+	match := strings.Join(terms, " OR ")
+	if reference != nil {
+		frequency := 0
+		for token := range wanted {
+			frequency += reference.index.df[token]
+		}
+		// Broad queries read the short remainder directly. Sparse MATCH uses
+		// only row IDs; cap its historical range relative to current documents.
+		if frequency > len(v.docs)/4 || reference.owner.last > 2*int64(len(reference.owner.docs)) {
+			match = ""
+		}
+	}
+	err := s.selectionTokens(ctx, v, match, func(version int64, text string) {
 		tf := map[string]int{}
 		for token := range strings.SplitSeq(text, " ") {
 			if wanted[token] {
@@ -169,7 +181,7 @@ func (s *Store) selectionLexical(ctx context.Context, v *querySelection, query s
 		index.docs = append(index.docs, lexicalDoc{id: r.ID, length: r.TokenCount})
 		for token, count := range tf {
 			index.df[token]++
-			index.postings[token] = append(index.postings[token], posting{pos, count})
+			index.postings[token] = append(index.postings[token], posting{uint32(pos), uint32(count)})
 		}
 	})
 	return index, true, err
@@ -180,17 +192,28 @@ func (s *Store) queryLexical(ctx context.Context, hash string, req QueryRequest,
 	if c := s.cache; c != nil {
 		c.mu.Lock()
 		index := c.indexes[key]
+		prepared := c.prepared
 		c.mu.Unlock()
 		if index != nil {
 			return index, true, nil
 		}
+		if prepared != nil && prepared.owner == v {
+			if len(prepared.remainder.docs) == 0 {
+				return prepared.index, true, nil
+			}
+			tail, ready, err := s.selectionLexical(ctx, prepared.remainder, query, prepared)
+			if err != nil || !ready {
+				return tail, ready, err
+			}
+			return &lexicalIndex{n: len(v.docs), total: v.total, df: prepared.index.df, parts: []*lexicalIndex{prepared.index, tail}}, true, nil
+		}
 	}
-	index, ready, err := s.selectionLexical(ctx, v, query)
+	index, ready, err := s.selectionLexical(ctx, v, query, nil)
 	if err == nil && ready && s.cache != nil && len(index.docs) <= 150000 {
 		c := s.cache
 		c.mu.Lock()
-		if c.snapshotHash == hash && c.indexes[key] == nil {
-			for len(c.order) >= 256 || c.documents+len(index.docs) > 150000 {
+		if c.snapshotHash == hash && c.indexes[key] == nil && len(index.docs) <= c.lexicalCapacity() {
+			for len(c.order) >= 256 || c.documents+len(index.docs) > c.lexicalCapacity() {
 				oldest := c.order[0]
 				c.order = c.order[1:]
 				c.documents -= len(c.indexes[oldest].docs)

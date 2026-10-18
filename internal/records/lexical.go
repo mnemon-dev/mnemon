@@ -67,8 +67,9 @@ type lexicalIndex struct {
 	total    int
 	n        int
 	postings map[string][]posting
+	parts    []*lexicalIndex
 }
-type posting struct{ doc, count int }
+type posting struct{ doc, count uint32 }
 type scored struct {
 	id    string
 	score float64
@@ -107,12 +108,22 @@ func (index *lexicalIndex) search(query string) []string {
 		}
 	}
 	n := float64(index.n)
+	if len(terms) == 0 {
+		return []string{}
+	}
 	average := 1.0
 	if n > 0 {
 		average = float64(index.total) / n
 	}
 	if index.postings != nil {
-		return index.searchPostings(terms, n, average)
+		return rank(index.appendPostingScores(nil, terms, n, average, index.df), len(index.docs))
+	}
+	if index.parts != nil {
+		hits := []scored{}
+		for _, part := range index.parts {
+			hits = part.appendPostingScores(hits, terms, n, average, index.df)
+		}
+		return rank(hits, len(hits))
 	}
 	idfs := make([]float64, len(terms))
 	for i, token := range terms {
@@ -138,7 +149,17 @@ func (index *lexicalIndex) search(query string) []string {
 	return rank(hits, len(hits))
 }
 
-func (index *lexicalIndex) searchPostings(terms []string, n, average float64) []string {
+func (index *lexicalIndex) appendPostingScores(hits []scored, terms []string, n, average float64, dfCounts map[string]int) []scored {
+	potential := 0
+	for _, token := range terms {
+		potential += len(index.postings[token])
+	}
+	if potential == 0 {
+		return hits
+	}
+	if potential < len(index.docs)/8 {
+		return index.appendSparseScores(hits, terms, n, average, dfCounts, potential)
+	}
 	scores := make([]float64, len(index.docs))
 	scaled := make([]float64, len(index.docs))
 	for i, doc := range index.docs {
@@ -147,20 +168,40 @@ func (index *lexicalIndex) searchPostings(terms []string, n, average float64) []
 	// Query order is the original TS Map insertion order. Only documents with
 	// a nonzero tf are visited; each document's additions retain that order.
 	for _, token := range terms {
-		df := float64(index.df[token])
+		df := float64(dfCounts[token])
 		idf := jsLog(1 + (n-df+0.5)/(df+0.5))
 		for _, p := range index.postings[token] {
 			tf := float64(p.count)
 			scores[p.doc] += 1 * idf * (tf * 2.2) / (tf + scaled[p.doc])
 		}
 	}
-	hits := make([]scored, 0, len(index.docs))
 	for i, score := range scores {
 		if score > 0 {
 			hits = append(hits, scored{index.docs[i].id, score})
 		}
 	}
-	return rank(hits, len(hits))
+	return hits
+}
+
+func (index *lexicalIndex) appendSparseScores(hits []scored, terms []string, n, average float64, dfCounts map[string]int, capacity int) []scored {
+	scores := make(map[uint32]float64, capacity)
+	for _, token := range terms {
+		df := float64(dfCounts[token])
+		idf := jsLog(1 + (n-df+0.5)/(df+0.5))
+		for _, p := range index.postings[token] {
+			tf := float64(p.count)
+			scaled := float64(1.2 * (0.25 + 0.75*float64(index.docs[p.doc].length)/average))
+			scores[p.doc] += 1 * idf * (tf * 2.2) / (tf + scaled)
+		}
+	}
+	// Each score was accumulated in query order. Unique IDs give the final
+	// rank a total order, independent of this integer-map enumeration order.
+	for pos, score := range scores {
+		if score > 0 {
+			hits = append(hits, scored{index.docs[pos].id, score})
+		}
+	}
+	return hits
 }
 
 func rank(hits []scored, limit int) []string {
