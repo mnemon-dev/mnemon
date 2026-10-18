@@ -3,6 +3,7 @@ package records
 import (
 	"cmp"
 	"context"
+	"math/bits"
 	"slices"
 	"strings"
 )
@@ -109,6 +110,23 @@ func (s *Store) buildStatistics(ctx context.Context, v *querySelection) (map[str
 // Reuse cached terms for filtered candidates too. Membership is by immutable
 // version, never just ID; df/n/average below are local to this candidate set.
 func (s *Store) filteredPrepared(ctx context.Context, v *querySelection, query string, p *preparedLexical) (*lexicalIndex, bool, error) {
+	terms := Tokens(query)
+	seen := map[string]bool{}
+	frequency, probes := 0, 0
+	for _, token := range terms {
+		if !seen[token] {
+			seen[token] = true
+			frequency += p.index.df[token]
+			count := len(p.index.postings[token])
+			probes += min(count, len(v.docs)*bits.Len(uint(count)))
+		}
+	}
+	// Avoid a candidate projection for sparse FTS hits, or more posting probes
+	// than reading this selection's token stream. Both costs depend on sizes,
+	// never query text or document kind.
+	if len(v.docs) > 2048 && frequency < len(v.docs) || probes > v.total {
+		return s.selectionLexical(ctx, v, query, p)
+	}
 	base := &lexicalIndex{df: map[string]int{}, postings: map[string][]posting{}}
 	slots := map[uint32]int{}
 	tail := []record{}
@@ -125,14 +143,14 @@ func (s *Store) filteredPrepared(ctx context.Context, v *querySelection, query s
 	if len(slots) == 0 {
 		return s.selectionLexical(ctx, v, query, p)
 	}
-	seen := map[string]bool{}
-	for _, token := range Tokens(query) {
+	clear(seen)
+	for _, token := range terms {
 		if seen[token] {
 			continue
 		}
 		seen[token] = true
 		posts := p.index.postings[token]
-		if len(slots) < len(posts)/8 {
+		if len(slots)*bits.Len(uint(len(posts))) < len(posts) {
 			for cached, local := range slots {
 				at, ok := slices.BinarySearchFunc(posts, cached, func(a posting, b uint32) int { return cmp.Compare(a.doc, b) })
 				if ok {

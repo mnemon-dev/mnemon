@@ -130,10 +130,6 @@ func (s *Store) saveLexical(ctx context.Context, batch []record) error {
 	return tx.Commit()
 }
 
-func (s *Store) precomputedLexical(ctx context.Context, docs []record, query string) (*lexicalIndex, bool, error) {
-	return s.selectionLexical(ctx, newSelection(docs), query, nil)
-}
-
 func (s *Store) selectionLexical(ctx context.Context, v *querySelection, query string, reference *preparedLexical) (*lexicalIndex, bool, error) {
 	if !s.fts || !v.ready {
 		s.wakeLexical()
@@ -229,10 +225,6 @@ func (s *Store) queryLexical(ctx context.Context, hash string, req QueryRequest,
 		c.mu.Unlock()
 	}
 	return index, ready, err
-}
-
-func (s *Store) precomputedFeedback(ctx context.Context, docs []record, ids []string, query string) (*lexicalIndex, error) {
-	return s.selectionFeedback(ctx, newSelection(docs), ids)
 }
 
 func (s *Store) selectionFeedback(ctx context.Context, v *querySelection, ids []string) (*lexicalIndex, error) {

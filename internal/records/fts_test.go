@@ -111,7 +111,7 @@ func TestPersistentLexicalCandidateStatsAndHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ready, err := ro.precomputedLexical(ctx, docs, "dog"); err != nil || !ready {
+	if _, ready, err := ro.selectionLexical(ctx, newSelection(docs), "dog", nil); err != nil || !ready {
 		t.Fatalf("reopened store did not reuse FTS: ready=%v %v", ready, err)
 	}
 }
@@ -212,11 +212,16 @@ func TestPreparedLexicalRemainderUsesWholeCandidateStatistics(t *testing.T) {
 	if _, err = s.selectionDF(ctx, s.cache.allSelection); err != nil {
 		t.Fatal(err)
 	}
+	ids := make([]string, 2500)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("%04d", i)
+	}
+	broad, _ := json.Marshal(ids)
 	for _, query := range []string{"dog", "common lake", "rare_unique tail_rare", "anythingabsent", "cat dog rare_unique"} {
-		for _, filtered := range []bool{false, true} {
+		for _, filter := range []json.RawMessage{nil, json.RawMessage(`["0000","2999","0042"]`), broad} {
 			input := map[string]json.RawMessage{"query": json.RawMessage(strconvJSON(query)), "match": json.RawMessage(`"words"`), "expand": json.RawMessage(`true`)}
-			if filtered {
-				input["ids"] = json.RawMessage(`["0000","2999","0042"]`)
+			if filter != nil {
+				input["ids"] = filter
 			}
 			req := QueryRequest{Revision: hash, Input: input}
 			oracle := newLexical(candidates(all, req, "", true))
@@ -225,7 +230,7 @@ func TestPreparedLexicalRemainderUsesWholeCandidateStatistics(t *testing.T) {
 			want := QueryResult{IDs: ids, Expansion: &expansion}
 			got, err := s.Query(ctx, req)
 			if err != nil || !reflect.DeepEqual(got, want) {
-				t.Fatalf("query=%q filtered=%v: got=%+v want=%+v %v", query, filtered, got, want, err)
+				t.Fatalf("query=%q filter=%s: got=%+v want=%+v %v", query, filter, got, want, err)
 			}
 		}
 	}
