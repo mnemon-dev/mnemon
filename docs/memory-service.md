@@ -35,6 +35,8 @@ document and blocks or none of them. Corrections append another document.
 A View reference contains an ID and SHA-256 of the pinned original record JSON.
 Each displayed text span is a literal substring of the record. New memory blocks
 also prove their exact byte range against the original parent in the same scope.
+Evidence `start`/`end` and parent ranges count UTF-8 bytes; text budgets and block
+sizes count Unicode code points.
 Historical revisions remain readable. Derived index items cite original hashes;
 changed/deleted/out-of-scope references cannot supply index hints to a read.
 
@@ -85,6 +87,11 @@ consolidation lookup. A supplied policy object sets its boolean fields explicitl
 unspecified fields are false. Disabling planning also disables LLM rewrites.
 Coverage is required to drive the need loop. A retrieval-only diagnostic policy
 sets all six fields false. Model-free diagnostic results are not JEV judgments.
+
+A background-only configuration can set `policy` to `{"consolidation": true}`
+and configure only `planner` (plus the budget for a paid planner). Building and
+filling the index need no decision model. Reading those hints requires a `judge`;
+a builder-only configuration rejects that read explicitly.
 
 The planner sees the last six bounded dialogue messages. Two owned parallel calls
 produce up to three searches plus a hypothetical search cue, and up to three needs.

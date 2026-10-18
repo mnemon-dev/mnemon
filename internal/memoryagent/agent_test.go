@@ -353,6 +353,30 @@ func TestConsolidationRejectsMissingArrayAndExplainsInvalidFields(t *testing.T) 
 	}
 }
 
+func TestConsolidationBuilderNeedsOnlyACompletionModel(t *testing.T) {
+	s, dir := agentStore(t)
+	seedNote(t, s, "answer", "codename ORBIT")
+	overlay, err := OpenOverlay(filepath.Join(dir, "memory-index.db"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer overlay.Close()
+	planner := completeFunc(func(context.Context, string, string) (string, Usage, error) {
+		return `{"items":[{"kind":"value","title":"codename","text":"ORBIT","records":["r0"]}]}`, Usage{}, nil
+	})
+	a, err := New(s, Config{Version: 1, Policy: &ReadPolicy{Consolidation: true}}, Models{Planner: planner}, overlay)
+	if err != nil {
+		t.Fatal("builder unexpectedly requires a decision model", err)
+	}
+	result, err := a.Consolidate(context.Background(), ConsolidateRequest{})
+	if err != nil || result.Visited != 1 || result.Added != 1 {
+		t.Fatal(result, err)
+	}
+	if _, err := a.Read(context.Background(), ReadRequest{Question: "codename"}); err == nil || !strings.Contains(err.Error(), "decision model") {
+		t.Fatal("read accepted a builder-only model configuration", err)
+	}
+}
+
 func TestConsolidationResumesVectorsWithoutRepeatingModelWork(t *testing.T) {
 	s, dir := agentStore(t)
 	seedNote(t, s, "answer", "codename ORBIT")

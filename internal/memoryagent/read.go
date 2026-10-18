@@ -97,7 +97,7 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	if config.Policy == nil {
 		config.Policy = &ReadPolicy{Planning: true, Screening: true, Judging: true, Coverage: true, Loop: true, Consolidation: true}
 	}
-	if config.Policy.Planning && models.Planner == nil || (config.Policy.Screening || config.Policy.Judging || config.Policy.Coverage || config.Policy.Consolidation) && models.Judge == nil {
+	if config.Policy.Planning && models.Planner == nil || (config.Policy.Screening || config.Policy.Judging || config.Policy.Coverage) && models.Judge == nil {
 		return nil, errors.New("selected memory policy requires planner and decision models")
 	}
 	// Config and its nested pointers belong to this service, never its caller.
@@ -159,6 +159,9 @@ var errCallBudget = errors.New("memory model-call budget reached")
 func (a *Agent) Read(ctx context.Context, req ReadRequest) (View, error) {
 	if strings.TrimSpace(req.Question) == "" || len(req.Question) > 12000 {
 		return View{}, errors.New("read requires a question of at most 12000 bytes")
+	}
+	if a.config.Policy.Consolidation && a.models.Judge == nil {
+		return View{}, errors.New("reading consolidation hints requires a decision model")
 	}
 	if req.Scope.WorkspaceID != nil && !filepath.IsAbs(*req.Scope.WorkspaceID) || req.Scope.SessionID != nil && len(*req.Scope.SessionID) > 256 {
 		return View{}, errors.New("invalid read scope")
