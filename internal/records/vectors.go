@@ -32,6 +32,28 @@ type EmbedStatus struct {
 	Coverage float64 `json:"coverage"`
 }
 
+// DerivedVectors reuses the existing content-addressed embedding cache for a
+// bounded overlay batch. Filling is background work; reads may use fill=false.
+func (s *Store) DerivedVectors(ctx context.Context, texts []string, cfg EmbeddingConfig, fill bool) ([][]float32, error) {
+	if len(texts) > 512 {
+		return nil, errors.New("derived vector batch exceeds 512")
+	}
+	size := 0
+	for _, text := range texts {
+		size += len(text)
+	}
+	if size > 2<<20 {
+		return nil, errors.New("derived vector batch exceeds 2 MiB")
+	}
+	return s.vectors(ctx, texts, cfg, cfg.DocumentPrefix, fill)
+}
+
+func (s *Store) QueryVector(ctx context.Context, text string, cfg EmbeddingConfig) ([]float32, error) {
+	return s.queryVector(ctx, text, cfg)
+}
+
+func VectorDot(a, b []float32) float64 { return dot(a, b) }
+
 func unit(values []float64) []float32 {
 	out := make([]float32, len(values))
 	norm := 0.0

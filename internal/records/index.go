@@ -60,18 +60,23 @@ type IndexResult struct {
 // Link is an explicit claim by the record writer. Version binds the target's
 // record version; model suggestions do not get installed here automatically.
 type Link struct {
-	ID      string  `json:"id"`
-	Version int64   `json:"version"`
-	Type    string  `json:"type"`
-	Weight  float64 `json:"weight"`
+	ID            string  `json:"id"`
+	Version       int64   `json:"version"`
+	Type          string  `json:"type"`
+	Weight        float64 `json:"weight"`
+	authoritative bool
 }
 
 type indexMetadata struct {
-	Version  int64    `json:"version"`
-	Entities []string `json:"entities"`
-	Aliases  []string `json:"aliases"`
-	Links    []Link   `json:"links"`
-	EventAt  string   `json:"eventAt"`
+	Version    int64    `json:"version"`
+	Entities   []string `json:"entities"`
+	Aliases    []string `json:"aliases"`
+	Links      []Link   `json:"links"`
+	EventAt    string   `json:"eventAt"`
+	Supersedes *struct {
+		ID      string `json:"id"`
+		Version int64  `json:"version"`
+	} `json:"supersedes"`
 }
 
 type indexDocument struct {
@@ -97,19 +102,10 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 	if limit == 0 {
 		limit = 200
 	}
-	rev, hash, err := revision(ctx, s.readDB(), req.Revision)
+	hash, index, selection, err := s.indexedSelection(ctx, req)
 	if err != nil {
 		return QueryResult{}, err
 	}
-	all, err := s.queryRecords(ctx, rev, hash)
-	if err != nil {
-		return QueryResult{}, err
-	}
-	index, err := s.derived(ctx, rev, hash, all, req)
-	if err != nil {
-		return QueryResult{}, err
-	}
-	selection := s.keepSelection(searchKey(hash, req), hash, newSelection(index.docs), false)
 	result, err := s.rankSelection(ctx, hash, req, selection)
 	if err != nil {
 		return QueryResult{}, err
@@ -275,4 +271,21 @@ func timeBounds(input map[string]json.RawMessage) (time.Time, time.Time, error) 
 		return since, until, errors.New("since exceeds until")
 	}
 	return since, until, nil
+}
+
+func (s *Store) indexedSelection(ctx context.Context, req QueryRequest) (string, *derivedIndex, *querySelection, error) {
+	rev, hash, err := revision(ctx, s.readDB(), req.Revision)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	all, err := s.queryRecords(ctx, rev, hash)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	index, err := s.derived(ctx, rev, hash, all, req)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	selection := s.keepSelection(searchKey(hash, req), hash, newSelection(index.docs), false)
+	return hash, index, selection, nil
 }

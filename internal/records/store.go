@@ -95,6 +95,8 @@ type Store struct {
 	fts      bool
 }
 
+func (s *Store) ReadOnly() bool { return s.readonly }
+
 func Open(directory string, readonly bool) (*Store, error) {
 	if !readonly {
 		if err := os.MkdirAll(directory, 0o700); err != nil {

@@ -68,6 +68,8 @@ Browse the knowledge accumulated by your agents in a standalone local website:
 ```sh
 mnemon web
 # Open http://127.0.0.1:8484
+
+Optional: [shared Memory service and paper strategy](docs/memory-service.md), with [composable records indexes](docs/records-indexes.md).
 ```
 
 Explore a searchable memory library, readable memory pages, a relationship graph,

@@ -7,6 +7,31 @@ import (
 	"strings"
 )
 
+// Head exposes immutable version identities to bounded derived-index jobs.
+// It neither decodes raw content nor changes the existing wire protocol.
+type Head struct {
+	ID      string
+	Version int64
+}
+
+func (s *Store) Heads(ctx context.Context, hash string, scope Scope) (string, []Head, error) {
+	rev, hash, err := revision(ctx, s.readDB(), hash)
+	if err != nil {
+		return "", nil, err
+	}
+	docs, err := s.queryRecords(ctx, rev, hash)
+	if err != nil {
+		return "", nil, err
+	}
+	heads := []Head{}
+	for _, r := range docs {
+		if visible(r, scope) && r.State == "active" && r.Kind != "memory-document" && r.Kind != "memory-index" {
+			heads = append(heads, Head{ID: r.ID, Version: r.VersionID})
+		}
+	}
+	return hash, heads, nil
+}
+
 // get needs opaque JSON only; query needs the indexed retrieval fields only.
 // Neither path decodes a record's content/history/data into Go objects.
 func (s *Store) readRecords(ctx context.Context, rev int64, hash string, ids []string) (Snapshot, error) {

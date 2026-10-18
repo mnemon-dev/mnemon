@@ -33,7 +33,7 @@ func TestDerivedIndexIndependentRoutes(t *testing.T) {
 		indexedRecord("cause", "Disk filled completely", nil),
 		indexedRecord("dated", "release shipped", map[string]any{"eventAt": "2020-03-02T23:30:00-02:00"}),
 		indexedRecord("old", "alpha endpoint", nil),
-		indexedRecord("new", "beta endpoint", map[string]any{"links": []any{link("old", "supersedes")}}),
+		indexedRecord("new", "beta endpoint", map[string]any{"mnemonSupersedes": map[string]any{"id": "old", "version": 1}}),
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -81,7 +81,7 @@ func TestDerivedIndexHistoryScopeAndVersion(t *testing.T) {
 	s := testStore(t)
 	s.cache = newQueryCache()
 	old := indexedRecord("old", "alpha", nil)
-	newer := indexedRecord("new", "beta", map[string]any{"links": []Link{{ID: "old", Version: 1, Type: "supersedes", Weight: 1}}})
+	newer := indexedRecord("new", "beta", map[string]any{"mnemonSupersedes": map[string]any{"id": "old", "version": 1}})
 	secret := indexedRecord("private", "Athena", map[string]any{"entities": []string{"Athena"}})
 	var secretValue map[string]any
 	json.Unmarshal([]byte(secret.RecordJSON), &secretValue)
@@ -202,5 +202,28 @@ func TestTemporalIndexKeepsRelevanceUnlessOrderIsExplicit(t *testing.T) {
 	got, err = s.Query(ctx, q)
 	if err != nil || got.IDs[0] != "a-old" {
 		t.Fatal("explicit oldest order not honored", got, err)
+	}
+}
+
+func TestAdvisoryLinksCannotBecomeCorrectionAuthority(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	old := indexedRecord("a-old", "alpha endpoint", nil)
+	proposal := indexedRecord("z-proposal", "beta endpoint", map[string]any{"links": []Link{{ID: "a-old", Version: 1, Type: "supersedes", Weight: 1}}})
+	if _, err := s.Put(ctx, PutRequest{Upsert: []Upsert{old, proposal}}); err != nil {
+		t.Fatal(err)
+	}
+	q := indexRequest("alpha", &IndexPolicy{Version: 1, Supersedes: true})
+	got, err := s.Query(ctx, q)
+	if err != nil || got.IDs[0] != "a-old" {
+		t.Fatal("advisory proposal demoted original evidence", got, err)
+	}
+	approved := indexedRecord("z-proposal", "beta endpoint", map[string]any{"mnemonSupersedes": map[string]any{"id": "a-old", "version": 1}})
+	if _, err := s.Put(ctx, PutRequest{Upsert: []Upsert{approved}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err = s.Query(ctx, q)
+	if err != nil || got.IDs[0] != "z-proposal" {
+		t.Fatal("reserved correction claim was ignored", got, err)
 	}
 }

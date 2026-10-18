@@ -75,7 +75,7 @@ func (index *derivedIndex) demoteSuperseded(ids []string) {
 			continue
 		}
 		for _, link := range links {
-			if link.Type == "supersedes" {
+			if link.Type == "supersedes" && link.authoritative {
 				stale[link.ID] = true
 			}
 		}

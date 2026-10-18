@@ -128,6 +128,7 @@ func (s *Store) indexMetadata(ctx context.Context, rev int64, docs []record) (ma
 'entities',json_extract(record_json,'$.data.entities'),
 'aliases',json_extract(record_json,'$.data.aliases'),
 'links',json_extract(record_json,'$.data.links'),
+'supersedes',json_extract(record_json,'$.data.mnemonSupersedes'),
 'eventAt',json_extract(record_json,'$.data.eventAt'))
 FROM record_versions WHERE rev_from<=? AND (rev_to IS NULL OR rev_to>?) ORDER BY seq`, rev, rev)
 	if err != nil {
@@ -157,7 +158,14 @@ func (index *derivedIndex) buildLinks() {
 		docs[r.ID] = r
 	}
 	for _, source := range index.docs {
-		links := index.meta[source.ID].meta.Links
+		meta := index.meta[source.ID].meta
+		links := append([]Link(nil), meta.Links...)
+		if meta.Supersedes != nil {
+			// Only the existing reserved revision channel supplies authority.
+			// General link proposals remain retrieval hints, even if they say
+			// "supersedes". The Source SDK protects reserved revision fields.
+			links = append([]Link{{ID: meta.Supersedes.ID, Version: meta.Supersedes.Version, Type: "supersedes", Weight: 1, authoritative: true}}, links...)
+		}
 		for _, link := range links[:min(50, len(links))] {
 			target, ok := docs[link.ID]
 			if !ok || link.ID == source.ID || link.Version < 1 || link.Version != index.meta[link.ID].meta.Version || link.Weight <= 0 || link.Weight > 1 {

@@ -29,8 +29,11 @@ Allowed types are `entity`, `semantic`, `temporal`, `causal`, `supersedes`.
 Targets must exist in the same visible selection, have the exact record version,
 and have the same scope, workspace and session as the source. Entity and semantic
 links are mutual; causal/temporal links retain their stated direction.
-Supersession is an explicit writer claim, never inferred from similarity or
-installed automatically from a model's suggestion.
+General links, including a link labeled supersedes, are advisory retrieval hints.
+Only the existing reserved `data.mnemonSupersedes: {"id":"target","version":1}`
+channel supplies a correction claim for demotion. The Source SDK protects that
+channel from unreviewed model data. Similarity and consolidation proposals never
+become correction authority automatically.
 
 Nonempty queries fuse the selected routes with existing RRF. The candidate limit
 defaults to 200 and may be 1–2000. The response adds `index` with a canonical
