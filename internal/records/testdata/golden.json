@@ -1,4 +1,102 @@
 {
+  "logCases": [
+    {
+      "inputBits": "405b800000000000",
+      "expectedBits": "4012cd4ab99a4631"
+    },
+    {
+      "inputBits": "405b955555555555",
+      "expectedBits": "4012d063e64bcebd"
+    },
+    {
+      "inputBits": "4050800000000000",
+      "expectedBits": "4010c234da4a23a6"
+    },
+    {
+      "inputBits": "4050a66666666666",
+      "expectedBits": "4010cb7936788217"
+    },
+    {
+      "inputBits": "3ff4b4b4b4b4b4b5",
+      "expectedBits": "3fd08045aa1a326f"
+    },
+    {
+      "inputBits": "40024a4a4a4a4a4a",
+      "expectedBits": "3fea76289166b176"
+    },
+    {
+      "inputBits": "3ff02593f69b0259",
+      "expectedBits": "3f82b40d31e2548b"
+    },
+    {
+      "inputBits": "4000064353c48064",
+      "expectedBits": "3fe63ac7338caf32"
+    },
+    {
+      "inputBits": "3ff02593f69b0259",
+      "expectedBits": "3f82b40d31e2548b"
+    },
+    {
+      "inputBits": "4000064353c48064",
+      "expectedBits": "3fe63ac7338caf32"
+    },
+    {
+      "inputBits": "3ff00c73293d789c",
+      "expectedBits": "3f68dca783c012cb"
+    },
+    {
+      "inputBits": "3ffff38cd6c28764",
+      "expectedBits": "3fe621cd691d13d4"
+    },
+    {
+      "inputBits": "410046b000000000",
+      "expectedBits": "402799e9e2f1e202"
+    },
+    {
+      "inputBits": "410046b2aaaaaaab",
+      "expectedBits": "402799ea36d495c9"
+    },
+    {
+      "inputBits": "40f3880666666666",
+      "expectedBits": "4026945ef349d0bd"
+    },
+    {
+      "inputBits": "40f3881000000000",
+      "expectedBits": "4026945feef1c2d8"
+    },
+    {
+      "inputBits": "4098828a8a8a8a8b",
+      "expectedBits": "401d6e8d66eb20fa"
+    },
+    {
+      "inputBits": "4098868282828283",
+      "expectedBits": "401d6f3327a51512"
+    },
+    {
+      "inputBits": "40931cfda6c09650",
+      "expectedBits": "401c6fe312e26efd"
+    },
+    {
+      "inputBits": "409320f7636cd1cf",
+      "expectedBits": "401c70b7fa6cc7b4"
+    },
+    {
+      "inputBits": "3ff00007dd455d30",
+      "expectedBits": "3edf750db9a10abb"
+    },
+    {
+      "inputBits": "400000014f8b8f88",
+      "expectedBits": "3fe62e459e113d82"
+    },
+    {
+      "inputBits": "3ff000029f164329",
+      "expectedBits": "3ec4f8b0617ac28a"
+    },
+    {
+      "inputBits": "3ffffffd60e9bcd7",
+      "expectedBits": "3fe62e405fe3db49"
+    }
+  ],
   "revision": "63b56f88729ec586d15ef0b621593fa19d0baa884e38c42bb2c6c1cf4e4ab112",
   "tokens": [
     {

@@ -1,7 +1,6 @@
 package records
 
 import (
-	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -115,8 +114,9 @@ func (index *lexicalIndex) search(query string) []string {
 				continue
 			}
 			df := float64(index.df[token])
-			idf := math.Log(1 + (n-df+0.5)/(df+0.5))
-			score += 1 * idf * (tf * 2.2) / (tf + 1.2*(0.25+0.75*float64(doc.length)/average))
+			idf := jsLog(1 + (n-df+0.5)/(df+0.5))
+			scaled := float64(1.2 * (0.25 + 0.75*float64(doc.length)/average))
+			score += 1 * idf * (tf * 2.2) / (tf + scaled)
 		}
 		if score > 0 {
 			hits = append(hits, scored{doc.id, score})
@@ -162,7 +162,7 @@ func (index *lexicalIndex) feedback(ids []string, query string) []string {
 			if _, ok := scores[token]; !ok {
 				order = append(order, token)
 			}
-			scores[token] += float64(term.count) * math.Log(1+float64(len(index.docs))/(float64(index.df[token])+0.5))
+			scores[token] += float64(float64(term.count) * jsLog(1+float64(len(index.docs))/(float64(index.df[token])+0.5)))
 		}
 	}
 	hits := make([]scored, len(order))

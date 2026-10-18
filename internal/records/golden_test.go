@@ -3,16 +3,22 @@ package records
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
 
 func TestTSGolden(t *testing.T) {
 	var fixture struct {
+		LogCases []struct {
+			InputBits    string
+			ExpectedBits string
+		}
 		Revision string
 		Tokens   []struct {
 			Text     string
@@ -37,6 +43,19 @@ func TestTSGolden(t *testing.T) {
 	}
 	if err = json.Unmarshal(data, &fixture); err != nil {
 		t.Fatal(err)
+	}
+	for _, tc := range fixture.LogCases {
+		input, e := strconv.ParseUint(tc.InputBits, 16, 64)
+		if e != nil {
+			t.Fatal(e)
+		}
+		want, e := strconv.ParseUint(tc.ExpectedBits, 16, 64)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if got := math.Float64bits(jsLog(math.Float64frombits(input))); got != want {
+			t.Errorf("Math.log(%s): %016x != %016x", tc.InputBits, got, want)
+		}
 	}
 	for _, tc := range fixture.Tokens {
 		if got := Tokens(tc.Text); !reflect.DeepEqual(got, tc.Expected) {
@@ -94,5 +113,30 @@ func TestTSGolden(t *testing.T) {
 		if !reflect.DeepEqual(got.IDs, tc.IDs) || !reflect.DeepEqual(got.Expansion, tc.Expansion) {
 			t.Errorf("query %d %s: got %+v expansion=%v; want %v expansion=%v", i, tc.Input["query"], got, got.Expansion, tc.IDs, tc.Expansion)
 		}
+	}
+}
+
+func TestTSMultiTermRoundingGolden(t *testing.T) {
+	var fixture struct {
+		Query     string
+		Documents []struct {
+			ID   string
+			Text string
+		}
+		Expected []string
+	}
+	data, err := os.ReadFile("testdata/bm25-rounding.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	docs := make([]record, len(fixture.Documents))
+	for i, d := range fixture.Documents {
+		docs[i] = record{ID: d.ID, SearchText: d.Text}
+	}
+	if got := newLexical(docs).search(lower(fixture.Query)); !reflect.DeepEqual(got, fixture.Expected) {
+		t.Fatalf("long-query tie differs from original TS: %v", got)
 	}
 }
