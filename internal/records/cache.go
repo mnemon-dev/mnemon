@@ -11,14 +11,16 @@ import (
 // The BM25 budget is a hard 150k documents, so an oversized single index is not
 // retained. Historical reads remain valid but never substitute a newer revision.
 type queryCache struct {
-	mu         sync.Mutex
-	current    string
-	indexes    map[string]*lexicalIndex
-	order      []string
-	documents  int
-	vectors    map[string][]float32
-	queries    map[string][]float32
-	queryOrder []string
+	mu           sync.Mutex
+	current      string
+	indexes      map[string]*lexicalIndex
+	order        []string
+	documents    int
+	vectors      map[string][]float32
+	queries      map[string][]float32
+	queryOrder   []string
+	snapshotHash string
+	snapshot     []record
 }
 
 func newQueryCache() *queryCache {
@@ -59,6 +61,8 @@ func (s *Store) lexical(ctx context.Context, hash string, req QueryRequest, docs
 		c.indexes = map[string]*lexicalIndex{}
 		c.order = nil
 		c.documents = 0
+		c.snapshotHash = ""
+		c.snapshot = nil
 	}
 	index := c.indexes[key]
 	c.mu.Unlock()

@@ -131,7 +131,7 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 	if err != nil {
 		return QueryResult{}, err
 	}
-	all, err := load(ctx, s.db, rev)
+	all, err := s.queryRecords(ctx, rev, hash)
 	if err != nil {
 		return QueryResult{}, err
 	}

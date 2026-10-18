@@ -192,21 +192,7 @@ func (s *Store) Get(ctx context.Context, req GetRequest) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	records, err := load(ctx, s.db, rev)
-	if err != nil {
-		return Snapshot{}, err
-	}
-	out := Snapshot{Revision: hash, Records: []string{}}
-	ids := make(map[string]bool, len(req.IDs))
-	for _, id := range req.IDs {
-		ids[id] = true
-	}
-	for _, r := range records {
-		if req.IDs == nil || ids[r.ID] {
-			out.Records = append(out.Records, r.Raw)
-		}
-	}
-	return out, nil
+	return s.readRecords(ctx, rev, hash, req.IDs)
 }
 
 func parseUpserts(values []Upsert) ([]record, error) {
