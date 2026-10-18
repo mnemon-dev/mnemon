@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -118,7 +117,7 @@ func candidates(all []record, req QueryRequest, term string, words bool) []recor
 				return false
 			}
 		}
-		if term != "" && !words && !strings.Contains(lower(r.SearchText), term) {
+		if term != "" && !words && !strings.Contains(searchLower(r), term) {
 			return false
 		}
 		return true
@@ -157,9 +156,6 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 	words := (match == "words" || match == "hybrid") && term != ""
 	selection := s.selectRecords(all, hash, req)
 	records := selection.docs
-	if !words && term != "" {
-		records = candidates(records, req, term, false)
-	}
 	result := QueryResult{IDs: []string{}}
 	if words {
 		index, precomputed, err := s.queryLexical(ctx, hash, req, selection, term)
@@ -192,17 +188,9 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 			result.Expansion = &expansion
 		}
 	} else {
-		if string(req.Input["recent"]) != "false" {
-			records = append([]record(nil), records...)
-			sort.SliceStable(records, func(i, j int) bool {
-				if records[i].CreatedAt == records[j].CreatedAt {
-					return records[i].ID < records[j].ID
-				}
-				return records[i].CreatedAt > records[j].CreatedAt
-			})
-		}
-		for _, r := range records {
-			result.IDs = append(result.IDs, r.ID)
+		result.IDs, err = selection.queryIDs(ctx, term, string(req.Input["recent"]) != "false")
+		if err != nil {
+			return QueryResult{}, err
 		}
 	}
 	return result, nil

@@ -57,6 +57,7 @@ type record struct {
 	CreatedAt                   string                     `json:"createdAt"`
 	Data                        map[string]json.RawMessage `json:"data"`
 	Raw, SearchText, VectorText string                     `json:"-"`
+	SearchLower                 string                     `json:"-"`
 	Seq                         int64                      `json:"-"`
 	VersionID                   int64                      `json:"-"`
 	TokenCount                  int                        `json:"-"`

@@ -92,6 +92,9 @@ FROM record_versions r`+join+` WHERE r.rev_from<=? AND (r.rev_to IS NULL OR r.re
 		if status.Valid {
 			r.Data = map[string]json.RawMessage{"status": json.RawMessage(status.String)}
 		}
+		if s.cache != nil {
+			r.SearchLower = lower(r.SearchText)
+		}
 		out = append(out, r)
 	}
 	err = rows.Err()

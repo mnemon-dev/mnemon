@@ -207,14 +207,10 @@ func (s *Store) precomputedFeedback(ctx context.Context, docs []record, ids []st
 }
 
 func (s *Store) selectionFeedback(ctx context.Context, v *querySelection, ids []string) (*lexicalIndex, error) {
-	selected := map[string]bool{}
-	for _, id := range ids {
-		selected[id] = true
-	}
 	top := []record{}
-	for _, r := range v.docs {
-		if selected[r.ID] {
-			top = append(top, r)
+	for _, id := range ids {
+		if pos, ok := v.byID[id]; ok {
+			top = append(top, v.docs[pos])
 		}
 	}
 	index := newLexical(top)

@@ -1,7 +1,9 @@
 package records
 
 import (
+	"cmp"
 	"context"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -11,6 +13,7 @@ import (
 type querySelection struct {
 	docs          []record
 	wanted        map[int64]int
+	byID          map[string]int
 	total         int
 	ready         bool
 	first, last   int64
@@ -20,12 +23,61 @@ type querySelection struct {
 	vectors       map[string][][]float32
 	vectorOrder   []string
 	vectorLoading map[string]chan struct{}
+	recentOnce    sync.Once
+	recent        []int
+}
+
+func searchLower(r record) string {
+	if r.SearchLower != "" || r.SearchText == "" {
+		return r.SearchLower
+	}
+	return lower(r.SearchText)
+}
+
+func (v *querySelection) queryIDs(ctx context.Context, term string, recent bool) ([]string, error) {
+	if recent {
+		// Pure, bounded CPU work on this immutable view. Never sort borrowed
+		// records: lexical/vector positions and historical readers share them.
+		v.recentOnce.Do(func() {
+			v.recent = make([]int, len(v.docs))
+			for i := range v.recent {
+				v.recent[i] = i
+			}
+			slices.SortFunc(v.recent, func(i, j int) int {
+				a, b := &v.docs[i], &v.docs[j]
+				if a.CreatedAt == b.CreatedAt {
+					return cmp.Compare(a.ID, b.ID)
+				}
+				return cmp.Compare(b.CreatedAt, a.CreatedAt)
+			})
+		})
+	}
+	capacity := len(v.docs)
+	if term != "" {
+		capacity = min(capacity, 64)
+	}
+	ids := make([]string, 0, capacity)
+	for i := range v.docs {
+		if i%2048 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		pos := i
+		if recent {
+			pos = v.recent[i]
+		}
+		r := &v.docs[pos]
+		if term == "" || strings.Contains(searchLower(*r), term) {
+			ids = append(ids, r.ID)
+		}
+	}
+	return ids, nil
 }
 
 func newSelection(docs []record) *querySelection {
-	v := &querySelection{docs: docs, wanted: make(map[int64]int, len(docs)), ready: true}
+	v := &querySelection{docs: docs, wanted: make(map[int64]int, len(docs)), byID: make(map[string]int, len(docs)), ready: true}
 	for i, r := range docs {
 		v.wanted[r.VersionID] = i
+		v.byID[r.ID] = i
 		v.total += r.TokenCount
 		v.ready = v.ready && r.VersionID != 0 && r.TokenCount >= 0
 		if i == 0 || r.VersionID < v.first {
