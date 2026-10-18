@@ -207,6 +207,9 @@ func (s *Store) queryLexical(ctx context.Context, hash string, req QueryRequest,
 			}
 			return &lexicalIndex{n: len(v.docs), total: v.total, df: prepared.index.df, parts: []*lexicalIndex{prepared.index, tail}}, true, nil
 		}
+		if prepared != nil && v.ready {
+			return s.filteredPrepared(ctx, v, query, prepared)
+		}
 	}
 	index, ready, err := s.selectionLexical(ctx, v, query, nil)
 	if err == nil && ready && s.cache != nil && len(index.docs) <= 150000 {

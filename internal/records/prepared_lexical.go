@@ -14,6 +14,7 @@ type preparedLexical struct {
 	owner     *querySelection
 	index     *lexicalIndex
 	remainder *querySelection
+	positions []int
 }
 
 type tokenStatistic struct {
@@ -52,7 +53,7 @@ func prepareLexicalSubset(v *querySelection) (*preparedLexical, []int) {
 			tail = append(tail, r)
 		}
 	}
-	return &preparedLexical{owner: v, index: index, remainder: newSelection(tail)}, positions
+	return &preparedLexical{owner: v, index: index, remainder: newSelection(tail), positions: positions}, positions
 }
 
 func (s *Store) buildStatistics(ctx context.Context, v *querySelection) (map[string]int, *preparedLexical, error) {
@@ -95,6 +96,7 @@ func (s *Store) buildStatistics(ctx context.Context, v *querySelection) (map[str
 	for token, stat := range terms {
 		df[token] = stat.df
 		if prepared != nil && len(stat.postings) > 0 {
+			slices.SortFunc(stat.postings, func(a, b posting) int { return cmp.Compare(a.doc, b.doc) })
 			prepared.index.postings[token] = stat.postings
 		}
 	}
@@ -102,6 +104,63 @@ func (s *Store) buildStatistics(ctx context.Context, v *querySelection) (map[str
 		prepared.index.df = df
 	}
 	return df, prepared, nil
+}
+
+// Reuse cached terms for filtered candidates too. Membership is by immutable
+// version, never just ID; df/n/average below are local to this candidate set.
+func (s *Store) filteredPrepared(ctx context.Context, v *querySelection, query string, p *preparedLexical) (*lexicalIndex, bool, error) {
+	base := &lexicalIndex{df: map[string]int{}, postings: map[string][]posting{}}
+	slots := map[uint32]int{}
+	tail := []record{}
+	for _, r := range v.docs {
+		original, ok := p.owner.wanted[r.VersionID]
+		if !ok || p.positions[original] < 0 {
+			tail = append(tail, r)
+			continue
+		}
+		cached := p.positions[original]
+		slots[uint32(cached)] = len(base.docs)
+		base.docs = append(base.docs, p.index.docs[cached])
+	}
+	if len(slots) == 0 {
+		return s.selectionLexical(ctx, v, query, p)
+	}
+	seen := map[string]bool{}
+	for _, token := range Tokens(query) {
+		if seen[token] {
+			continue
+		}
+		seen[token] = true
+		posts := p.index.postings[token]
+		if len(slots) < len(posts)/8 {
+			for cached, local := range slots {
+				at, ok := slices.BinarySearchFunc(posts, cached, func(a posting, b uint32) int { return cmp.Compare(a.doc, b) })
+				if ok {
+					base.postings[token] = append(base.postings[token], posting{uint32(local), posts[at].count})
+					base.df[token]++
+				}
+			}
+		} else {
+			for _, post := range posts {
+				if local, ok := slots[post.doc]; ok {
+					base.postings[token] = append(base.postings[token], posting{uint32(local), post.count})
+					base.df[token]++
+				}
+			}
+		}
+	}
+	parts := []*lexicalIndex{base}
+	if len(tail) > 0 {
+		other, ready, err := s.selectionLexical(ctx, newSelection(tail), query, p)
+		if err != nil || !ready {
+			return other, ready, err
+		}
+		parts = append(parts, other)
+		for token, df := range other.df {
+			base.df[token] += df
+		}
+	}
+	return &lexicalIndex{n: len(v.docs), total: v.total, df: base.df, parts: parts}, true, nil
 }
 
 func (s *Store) keepPrepared(v *querySelection, prepared *preparedLexical) {
