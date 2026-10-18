@@ -3,10 +3,11 @@ package memory
 import (
 	"encoding/json"
 	"fmt"
+	"io"
+
 	"github.com/mnemon-dev/mnemon/internal/memory/store"
 	"github.com/mnemon-dev/mnemon/internal/records"
 	"github.com/spf13/cobra"
-	"io"
 )
 
 func init() {
