@@ -52,7 +52,15 @@ func (index *derivedIndex) byTime(seeds []string, input map[string]json.RawMessa
 			ids = append(ids, r.ID)
 		}
 	}
-	slices.SortStableFunc(ids, func(a, b string) int { return index.meta[b].at.Compare(index.meta[a].at) })
+	order := stringValue(input["timeOrder"])
+	if order != "" {
+		slices.SortStableFunc(ids, func(a, b string) int {
+			if order == "oldest" {
+				return index.meta[a].at.Compare(index.meta[b].at)
+			}
+			return index.meta[b].at.Compare(index.meta[a].at)
+		})
+	}
 	return ids
 }
 

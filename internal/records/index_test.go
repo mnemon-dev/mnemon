@@ -92,7 +92,7 @@ func TestDerivedIndexHistoryScopeAndVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p := &IndexPolicy{Version: 1, Entities: true, Relations: true, Supersedes: true, Temporal: true, Lexical: true}
+	p := &IndexPolicy{Version: 1, Supersedes: true}
 	q := indexRequest("alpha", p)
 	got, err := s.Query(ctx, q)
 	if err != nil || got.IDs[0] != "new" {
@@ -127,7 +127,7 @@ func TestDerivedIndexHistoryScopeAndVersion(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			q := indexRequest("Athena", p)
+			q := indexRequest("Athena", &IndexPolicy{Version: 1, Entities: true})
 			if i%2 == 1 {
 				w := "/private"
 				q.Scope.WorkspaceID = &w
@@ -170,5 +170,37 @@ func TestIndexPolicyAndDefaultCompatibility(t *testing.T) {
 	q.CandidateLimit = 2001
 	if _, err := s.Query(ctx, q); err == nil {
 		t.Fatal("unbounded candidates accepted")
+	}
+}
+
+func TestTemporalIndexKeepsRelevanceUnlessOrderIsExplicit(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	_, err := s.Put(ctx, PutRequest{Upsert: []Upsert{
+		indexedRecord("a-old", "song song song", map[string]any{"eventAt": "2020-01-01"}),
+		indexedRecord("z-new", "song", map[string]any{"eventAt": "2026-01-01"}),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := indexRequest("When song", nil)
+	baseline, err := s.Query(ctx, q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.Index = &IndexPolicy{Version: 1, Temporal: true}
+	got, err := s.Query(ctx, q)
+	if err != nil || !reflect.DeepEqual(got.IDs, baseline.IDs) {
+		t.Fatal("WHEN intent silently displaced relevance", got, baseline, err)
+	}
+	q.Input["timeOrder"] = json.RawMessage(`"newest"`)
+	got, err = s.Query(ctx, q)
+	if err != nil || got.IDs[0] != "z-new" {
+		t.Fatal("explicit newest order not honored", got, err)
+	}
+	q.Input["timeOrder"] = json.RawMessage(`"oldest"`)
+	got, err = s.Query(ctx, q)
+	if err != nil || got.IDs[0] != "a-old" {
+		t.Fatal("explicit oldest order not honored", got, err)
 	}
 }

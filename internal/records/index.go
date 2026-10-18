@@ -148,14 +148,19 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 	if req.Index.Relations {
 		appendRoute("relations", index.related(seeds, intent, false, limit))
 	}
-	if req.Index.Supersedes {
+	if req.Index.Supersedes && !trueValue(req.Input["history"]) && req.Input["until"] == nil {
 		appendRoute("supersedes", index.related(seeds, intent, true, limit))
 	}
-	if req.Index.Temporal && (intent == retrieval.IntentWhen || req.Input["since"] != nil || req.Input["until"] != nil) {
+	if req.Index.Temporal && req.Input["timeOrder"] != nil && stringValue(req.Input["timeOrder"]) != "oldest" && stringValue(req.Input["timeOrder"]) != "newest" {
+		return QueryResult{}, errors.New("timeOrder must be oldest or newest")
+	}
+	if req.Index.Temporal && (req.Input["timeOrder"] != nil || req.Input["since"] != nil || req.Input["until"] != nil) {
 		appendRoute("temporal", index.byTime(seeds, req.Input))
 	}
 	result.IDs = fuse(lists...)
-	if req.Index.Supersedes && !trueValue(req.Input["history"]) && req.Input["until"] == nil {
+	if req.Index.Temporal && req.Input["timeOrder"] != nil {
+		result.IDs = index.byTime(result.IDs, req.Input)
+	} else if req.Index.Supersedes && !trueValue(req.Input["history"]) && req.Input["until"] == nil {
 		index.demoteSuperseded(result.IDs)
 	}
 	info.Truncated = info.Truncated || len(result.IDs) > limit || info.Routes["base"] > limit

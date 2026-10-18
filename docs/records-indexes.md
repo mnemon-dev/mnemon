@@ -20,7 +20,7 @@ are unchanged. Indexes are derived in memory for an immutable, scoped selection.
 | `lexical` | Native Unicode token overlap through postings; existing BM25 stays available. |
 | `entities` | Native entity extraction and known vocabulary, plus explicit `data.entities` and `data.aliases`. Inferred hot entities are skipped. `input.entities` supplies explicit exact names. |
 | `relations` | At most five valid links from each of at most twenty query anchors. Native question intent selects causal/entity, temporal/entity, or entity/semantic links. `input.intent` overrides lexical intent. |
-| `temporal` | `data.eventAt`, then `date`, then `createdAt`, parsed as absolute time. Inclusive `since` and `until` constrain all routes. WHEN queries rerank existing anchors by event time. |
+| `temporal` | `data.eventAt`, then `date`, then `createdAt`, parsed as absolute time. Inclusive `since` and `until` constrain all routes. Only explicit `input.timeOrder: "oldest"` or `"newest"` reorders anchors by event time; lexical WHEN intent alone keeps relevance order. |
 | `supersedes` | Follow explicit corrections in both directions; current queries place retained, explicitly superseded evidence behind current evidence. `input.history: true`, explicit IDs and an `until` bound retain historical ranking. |
 
 An explicit link in `data.links` is
