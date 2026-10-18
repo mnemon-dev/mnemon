@@ -1,0 +1,242 @@
+package records
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"math"
+	"net/http"
+	"strings"
+	"time"
+)
+
+type EmbeddingConfig struct {
+	URL            string `json:"url"`
+	Model          string `json:"model"`
+	QueryPrefix    string `json:"queryPrefix,omitempty"`
+	DocumentPrefix string `json:"documentPrefix,omitempty"`
+}
+type EmbedRequest struct {
+	Revision  string          `json:"revision,omitempty"`
+	Embedding EmbeddingConfig `json:"embedding"`
+}
+type EmbedStatus struct {
+	Total    int     `json:"total"`
+	Embedded int     `json:"embedded"`
+	Coverage float64 `json:"coverage"`
+}
+
+func unit(values []float64) []float32 {
+	out := make([]float32, len(values))
+	norm := 0.0
+	for i, v := range values {
+		out[i] = float32(v)
+		f := float64(out[i])
+		norm += f * f
+	}
+	norm = math.Sqrt(norm)
+	if norm == 0 {
+		norm = 1
+	}
+	for i, v := range out {
+		out[i] = float32(float64(v) / norm)
+	}
+	return out
+}
+func dot(a, b []float32) float64 {
+	if len(b) < len(a) {
+		return math.NaN()
+	}
+	sum := 0.0
+	for i, v := range a {
+		sum += float64(v) * float64(b[i])
+	}
+	return sum
+}
+func encodeVector(v []float32) []byte {
+	b := make([]byte, len(v)*4)
+	for i, f := range v {
+		binary.LittleEndian.PutUint32(b[i*4:], math.Float32bits(f))
+	}
+	return b
+}
+func decodeVector(b []byte) ([]float32, error) {
+	if len(b)%4 != 0 {
+		return nil, errors.New("Invalid stored vector")
+	}
+	v := make([]float32, len(b)/4)
+	for i := range v {
+		v[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[i*4:]))
+	}
+	return v, nil
+}
+
+func embed(ctx context.Context, texts []string, cfg EmbeddingConfig, prefix string) ([][]float32, error) {
+	out := [][]float32{}
+	client := http.Client{Timeout: 5 * time.Minute}
+	for start := 0; start < len(texts); start += 64 {
+		end := start + 64
+		if end > len(texts) {
+			end = len(texts)
+		}
+		input := make([]string, end-start)
+		for i, t := range texts[start:end] {
+			input[i] = prefix + t
+		}
+		body, err := json.Marshal(struct {
+			Model    string   `json:"model"`
+			Input    []string `json:"input"`
+			Truncate bool     `json:"truncate"`
+		}{cfg.Model, input, true})
+		if err != nil {
+			return nil, err
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(cfg.URL, "/")+"/api/embed", bytes.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("content-type", "application/json")
+		response, err := client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("Embedding request failed: %w", err)
+		}
+		var reply struct {
+			Embeddings [][]float64 `json:"embeddings"`
+		}
+		err = json.NewDecoder(response.Body).Decode(&reply)
+		response.Body.Close()
+		if response.StatusCode < 200 || response.StatusCode >= 300 {
+			return nil, fmt.Errorf("Embedding request failed: %d", response.StatusCode)
+		}
+		if err != nil || len(reply.Embeddings) != len(input) {
+			return nil, errors.New("Embedding reply does not match its request")
+		}
+		for _, v := range reply.Embeddings {
+			out = append(out, unit(v))
+		}
+	}
+	return out, nil
+}
+
+func (s *Store) vectors(ctx context.Context, texts []string, cfg EmbeddingConfig, prefix string, fill bool) ([][]float32, error) {
+	out := make([][]float32, len(texts))
+	known := map[string][]float32{}
+	missing := []string{}
+	seen := map[string]bool{}
+	for _, text := range texts {
+		key := textHash(text)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		var blob []byte
+		err := s.db.QueryRowContext(ctx, "SELECT vector FROM embeddings WHERE text_hash=? AND model=? AND prefix=?", key, cfg.Model, prefix).Scan(&blob)
+		if errors.Is(err, sql.ErrNoRows) {
+			if fill {
+				missing = append(missing, text)
+			}
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		v, err := decodeVector(blob)
+		if err != nil {
+			return nil, err
+		}
+		known[key] = v
+	}
+	if len(missing) > 0 && s.readonly {
+		return nil, errors.New("Missing record embeddings; run records embed before --readonly query")
+	}
+	for start := 0; start < len(missing); start += 64 {
+		end := start + 64
+		if end > len(missing) {
+			end = len(missing)
+		}
+		part := missing[start:end]
+		values, err := embed(ctx, part, cfg, prefix)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.saveVectors(ctx, part, values, cfg, prefix); err != nil {
+			return nil, err
+		}
+		for i, text := range part {
+			known[textHash(text)] = values[i]
+		}
+	}
+	for i, text := range texts {
+		out[i] = known[textHash(text)]
+	}
+	return out, nil
+}
+
+func (s *Store) saveVectors(ctx context.Context, texts []string, values [][]float32, cfg EmbeddingConfig, prefix string) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for i, text := range texts {
+		if _, err := tx.ExecContext(ctx, "INSERT OR IGNORE INTO embeddings VALUES(?,?,?,?)", textHash(text), cfg.Model, prefix, encodeVector(values[i])); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func (s *Store) vectorRank(ctx context.Context, query string, records []record, cfg EmbeddingConfig) ([]string, error) {
+	texts := make([]string, len(records))
+	for i, r := range records {
+		texts[i] = r.VectorText
+	}
+	values, err := s.vectors(ctx, texts, cfg, cfg.DocumentPrefix, true)
+	if err != nil {
+		return nil, err
+	}
+	// Query vectors need not be written by a readonly query.
+	targets, err := embed(ctx, []string{query}, cfg, cfg.QueryPrefix)
+	if err != nil {
+		return nil, err
+	}
+	hits := make([]scored, len(records))
+	for i, r := range records {
+		hits[i] = scored{r.ID, dot(targets[0], values[i])}
+	}
+	return rank(hits, 200), nil
+}
+
+func (s *Store) Embed(ctx context.Context, req EmbedRequest, statusOnly bool) (EmbedStatus, error) {
+	rev, _, err := revision(ctx, s.db, req.Revision)
+	if err != nil {
+		return EmbedStatus{}, err
+	}
+	records, err := load(ctx, s.db, rev)
+	if err != nil {
+		return EmbedStatus{}, err
+	}
+	texts := make([]string, len(records))
+	for i, r := range records {
+		texts[i] = r.VectorText
+	}
+	values, err := s.vectors(ctx, texts, req.Embedding, req.Embedding.DocumentPrefix, !statusOnly)
+	if err != nil {
+		return EmbedStatus{}, err
+	}
+	status := EmbedStatus{Total: len(texts)}
+	for _, v := range values {
+		if v != nil {
+			status.Embedded++
+		}
+	}
+	status.Coverage = 1
+	if status.Total > 0 {
+		status.Coverage = float64(status.Embedded) / float64(status.Total)
+	}
+	return status, nil
+}

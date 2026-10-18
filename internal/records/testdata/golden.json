@@ -1,0 +1,618 @@
+{
+  "revision": "63b56f88729ec586d15ef0b621593fa19d0baa884e38c42bb2c6c1cf4e4ab112",
+  "tokens": [
+    {
+      "text": "HELLO auth-token path_123 foo:bar 42",
+      "expected": [
+        "hello",
+        "auth-token",
+        "path_123",
+        "foo:bar",
+        "42"
+      ]
+    },
+    {
+      "text": "猫 我家的猫叫小白",
+      "expected": [
+        "猫",
+        "我家",
+        "家的",
+        "的猫",
+        "猫叫",
+        "叫小",
+        "小白"
+      ]
+    },
+    {
+      "text": "École русский カタカナ 한국어",
+      "expected": [
+        "cole"
+      ]
+    },
+    {
+      "text": "alpha 中文 beta 汉字测试",
+      "expected": [
+        "alpha",
+        "beta",
+        "中文",
+        "汉字",
+        "字测",
+        "测试"
+      ]
+    },
+    {
+      "text": "İ Σ ASCII",
+      "expected": [
+        "i",
+        "ascii"
+      ]
+    }
+  ],
+  "upsert": [
+    {
+      "recordJSON": "{\"kind\":\"progress\",\"scope\":\"global\",\"state\":\"active\",\"data\":{\"status\":\"open\",\"nested\":{\"b\":1,\"a\":2}},\"signals\":1,\"version\":1,\"createdAt\":\"2026-10-17T03:00:00.000Z\",\"updatedAt\":\"2026-10-17T03:00:00.000Z\",\"history\":[],\"id\":\"0003\",\"title\":\"Dog\",\"content\":\"Caroline adopted a dog. Her dog plays by the lake.\"}",
+      "searchText": "Dog\nCaroline adopted a dog. Her dog plays by the lake.\n{\"status\":\"open\",\"nested\":{\"b\":1,\"a\":2}}",
+      "vectorText": "Caroline adopted a dog. Her dog plays by the lake."
+    },
+    {
+      "recordJSON": "{\"kind\":\"progress\",\"scope\":\"global\",\"state\":\"active\",\"data\":{\"status\":null},\"signals\":1,\"version\":1,\"createdAt\":\"2026-10-17T03:00:00.000Z\",\"updatedAt\":\"2026-10-17T03:00:00.000Z\",\"history\":[],\"id\":\"0001\",\"title\":\"Support group\",\"content\":\"Caroline found support in the support group.\"}",
+      "searchText": "Support group\nCaroline found support in the support group.\n{\"status\":null}",
+      "vectorText": "Caroline found support in the support group."
+    },
+    {
+      "recordJSON": "{\"kind\":\"progress\",\"scope\":\"project\",\"state\":\"active\",\"data\":{\"status\":1},\"signals\":1,\"version\":1,\"createdAt\":\"2026-10-17T03:00:00.000Z\",\"updatedAt\":\"2026-10-17T03:00:00.000Z\",\"history\":[],\"id\":\"0002\",\"title\":\"Camping\",\"content\":\"Melanie camped by the lake with her kids.\",\"workspaceId\":\"/golden/project\"}",
+      "searchText": "Camping\nMelanie camped by the lake with her kids.\n{\"status\":1}",
+      "vectorText": "Melanie camped by the lake with her kids."
+    },
+    {
+      "recordJSON": "{\"kind\":\"progress\",\"scope\":\"session\",\"state\":\"active\",\"data\":{\"status\":true},\"signals\":1,\"version\":1,\"createdAt\":\"2026-10-17T03:00:00.000Z\",\"updatedAt\":\"2026-10-17T03:00:00.000Z\",\"history\":[],\"id\":\"0004\",\"title\":\"中文\",\"content\":\"我家的猫叫小白。猫 auth-token PATH_123 http:server\",\"workspaceId\":\"/golden/project\",\"sessionId\":\"s1\"}",
+      "searchText": "中文\n我家的猫叫小白。猫 auth-token PATH_123 http:server\n{\"status\":true}",
+      "vectorText": "我家的猫叫小白。猫 auth-token PATH_123 http:server"
+    },
+    {
+      "recordJSON": "{\"kind\":\"progress\",\"scope\":\"global\",\"state\":\"archived\",\"data\":{\"status\":{\"value\":1}},\"signals\":1,\"version\":1,\"createdAt\":\"2026-10-17T03:00:00.000Z\",\"updatedAt\":\"2026-10-17T03:00:00.000Z\",\"history\":[],\"id\":\"0005\",\"title\":\"Archive\",\"content\":\"Caroline dog support\",\"date\":\"2026-10-16\"}",
+      "searchText": "Archive\nCaroline dog support\n{\"status\":{\"value\":1}}",
+      "vectorText": "Caroline dog support"
+    },
+    {
+      "recordJSON": "{\"kind\":\"progress\",\"scope\":\"global\",\"state\":\"pending\",\"data\":{},\"signals\":1,\"version\":1,\"createdAt\":\"2026-10-17T03:00:00.000Z\",\"updatedAt\":\"2026-10-17T03:00:00.000Z\",\"history\":[],\"id\":\"0006\",\"title\":\"Pending\",\"content\":\"Caroline lake dog\"}",
+      "searchText": "Pending\nCaroline lake dog\n{}",
+      "vectorText": "Caroline lake dog"
+    },
+    {
+      "recordJSON": "{\"kind\":\"progress\",\"scope\":\"daily\",\"state\":\"active\",\"data\":{\"status\":false},\"signals\":1,\"version\":1,\"createdAt\":\"2026-10-18T00:00:00.000Z\",\"updatedAt\":\"2026-10-17T03:00:00.000Z\",\"history\":[],\"id\":\"0007\",\"title\":\"Daily\",\"content\":\"\",\"date\":\"2026-10-18\"}",
+      "searchText": "Daily\n\n{\"status\":false}",
+      "vectorText": "Daily"
+    },
+    {
+      "recordJSON": "{\"kind\":\"progress\",\"scope\":\"project\",\"state\":\"active\",\"data\":{},\"signals\":1,\"version\":1,\"createdAt\":\"2026-10-17T03:00:00.000Z\",\"updatedAt\":\"2026-10-17T03:00:00.000Z\",\"history\":[],\"id\":\"0008\",\"title\":\"Other project\",\"content\":\"Caroline lake\",\"workspaceId\":\"/elsewhere\"}",
+      "searchText": "Other project\nCaroline lake\n{}",
+      "vectorText": "Caroline lake"
+    }
+  ],
+  "queries": [
+    {
+      "input": {
+        "query": "Caroline dog",
+        "match": "words",
+        "expand": true
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0003",
+        "0001"
+      ],
+      "expansion": [
+        "support",
+        "group",
+        "adopted",
+        "found",
+        "nested",
+        "null",
+        "open",
+        "plays",
+        "status",
+        "lake"
+      ]
+    },
+    {
+      "input": {
+        "query": "DOG lake dog",
+        "match": "hybrid",
+        "expand": true
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0003",
+        "0002",
+        "0004",
+        "0007",
+        "0001"
+      ],
+      "expansion": [
+        "support",
+        "status",
+        "group",
+        "caroline",
+        "adopted",
+        "auth-token",
+        "camped",
+        "camping",
+        "daily",
+        "false"
+      ]
+    },
+    {
+      "input": {
+        "query": "support group",
+        "match": "phrase"
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0001"
+      ]
+    },
+    {
+      "input": {
+        "query": "",
+        "recent": false
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0003",
+        "0001",
+        "0002",
+        "0004",
+        "0007"
+      ]
+    },
+    {
+      "input": {},
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0007",
+        "0001",
+        "0002",
+        "0003",
+        "0004"
+      ]
+    },
+    {
+      "input": {
+        "query": "dog",
+        "match": "words",
+        "archived": true,
+        "expand": true
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0003",
+        "0005"
+      ],
+      "expansion": [
+        "caroline",
+        "adopted",
+        "archive",
+        "nested",
+        "open",
+        "plays",
+        "value",
+        "status",
+        "lake",
+        "support"
+      ]
+    },
+    {
+      "input": {
+        "query": "Caroline",
+        "match": "words",
+        "kind": "progress",
+        "since": "2026-10-17",
+        "until": "2026-10-17",
+        "expand": true
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0001",
+        "0003"
+      ],
+      "expansion": [
+        "dog",
+        "support",
+        "group",
+        "adopted",
+        "found",
+        "nested",
+        "null",
+        "open",
+        "plays",
+        "status"
+      ]
+    },
+    {
+      "input": {
+        "ids": [
+          "0003",
+          "0001"
+        ],
+        "recent": false
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0003",
+        "0001"
+      ]
+    },
+    {
+      "input": {
+        "id": "0004",
+        "query": "中文",
+        "match": "hybrid"
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0004"
+      ]
+    },
+    {
+      "input": {
+        "status": "open",
+        "query": "dog",
+        "match": "words",
+        "expand": true
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0003"
+      ],
+      "expansion": [
+        "adopted",
+        "caroline",
+        "lake",
+        "nested",
+        "open",
+        "plays",
+        "status"
+      ]
+    },
+    {
+      "input": {
+        "status": null
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0001"
+      ]
+    },
+    {
+      "input": {
+        "status": 1
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0002"
+      ]
+    },
+    {
+      "input": {
+        "status": true
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0004"
+      ]
+    },
+    {
+      "input": {
+        "status": false
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0007"
+      ]
+    },
+    {
+      "input": {
+        "status": {
+          "value": 1
+        },
+        "archived": true
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": []
+    },
+    {
+      "input": {
+        "status": [
+          1
+        ]
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": []
+    },
+    {
+      "input": {
+        "since": "2026-10-17T04:00:00.000Z"
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0007"
+      ]
+    },
+    {
+      "input": {
+        "date": "2026-10-16",
+        "archived": true
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0005"
+      ]
+    },
+    {
+      "input": {
+        "query": "nomatch",
+        "match": "words",
+        "expand": true
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [],
+      "expansion": []
+    },
+    {
+      "input": {
+        "query": "nomatch",
+        "match": "hybrid",
+        "expand": true
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0004",
+        "0007",
+        "0001",
+        "0002",
+        "0003"
+      ],
+      "expansion": [
+        "dog",
+        "support",
+        "status",
+        "group",
+        "caroline",
+        "lake",
+        "adopted",
+        "auth-token",
+        "camped",
+        "camping"
+      ]
+    },
+    {
+      "input": {
+        "query": "auth-token",
+        "match": "words",
+        "expand": true
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0004"
+      ],
+      "expansion": [
+        "http:server",
+        "path_123",
+        "true",
+        "中文",
+        "叫小",
+        "家的",
+        "小白",
+        "我家",
+        "猫",
+        "猫叫"
+      ]
+    },
+    {
+      "input": {
+        "query": "",
+        "match": "words",
+        "recent": false
+      },
+      "scope": {
+        "workspaceId": "/golden/project",
+        "sessionId": "s1"
+      },
+      "ids": [
+        "0003",
+        "0001",
+        "0002",
+        "0004",
+        "0007"
+      ]
+    }
+  ],
+  "vectors": {
+    "Caroline adopted a dog. Her dog plays by the lake.": [
+      1.00000006,
+      1.076923136923077,
+      0.07451613003225806,
+      0.10677419454838709
+    ],
+    "Caroline found support in the support group.": [
+      0.010000001,
+      0.04225806551612903,
+      1.1538462138461538,
+      0.10677419454838709
+    ],
+    "Melanie camped by the lake with her kids.": [
+      0.010000001,
+      1.076923136923077,
+      0.07451613003225806,
+      0.10677419454838709
+    ],
+    "我家的猫叫小白。猫 auth-token PATH_123 http:server": [
+      0.010000001,
+      0.04225806551612903,
+      0.07451613003225806,
+      0.10677419454838709
+    ],
+    "Caroline dog support": [
+      1.00000006,
+      0.04225806551612903,
+      1.1538462138461538,
+      0.10677419454838709
+    ],
+    "Caroline lake dog": [
+      1.00000006,
+      1.076923136923077,
+      0.07451613003225806,
+      0.10677419454838709
+    ],
+    "Daily": [
+      0.010000001,
+      0.04225806551612903,
+      0.07451613003225806,
+      0.10677419454838709
+    ],
+    "Caroline lake": [
+      0.010000001,
+      1.076923136923077,
+      0.07451613003225806,
+      0.10677419454838709
+    ],
+    "Caroline dog": [
+      1.00000006,
+      0.04225806551612903,
+      0.07451613003225806,
+      0.10677419454838709
+    ],
+    "DOG lake dog": [
+      1.00000006,
+      1.076923136923077,
+      0.07451613003225806,
+      0.10677419454838709
+    ],
+    "support group": [
+      0.010000001,
+      0.04225806551612903,
+      1.1538462138461538,
+      0.10677419454838709
+    ],
+    "": [
+      0.010000001,
+      0.04225806551612903,
+      0.07451613003225806,
+      0.10677419454838709
+    ],
+    "dog": [
+      1.00000006,
+      0.04225806551612903,
+      0.07451613003225806,
+      0.10677419454838709
+    ],
+    "Caroline": [
+      0.010000001,
+      0.04225806551612903,
+      0.07451613003225806,
+      0.10677419454838709
+    ],
+    "中文": [
+      0.010000001,
+      0.04225806551612903,
+      0.07451613003225806,
+      1.230769290769231
+    ],
+    "nomatch": [
+      0.010000001,
+      0.04225806551612903,
+      0.07451613003225806,
+      0.10677419454838709
+    ],
+    "auth-token": [
+      0.010000001,
+      0.04225806551612903,
+      0.07451613003225806,
+      0.10677419454838709
+    ]
+  },
+  "fusion": {
+    "rankings": [
+      [
+        "0003",
+        "0001",
+        "0002"
+      ],
+      [
+        "0002",
+        "0001",
+        "0004"
+      ]
+    ],
+    "expected": [
+      "0002",
+      "0001",
+      "0003",
+      "0004"
+    ]
+  }
+}

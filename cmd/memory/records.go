@@ -11,9 +11,9 @@ import (
 
 func init() {
 	group := &cobra.Command{Use: "records", Short: "Store and retrieve raw records in an independent records.db"}
-	for _, operation := range []string{"get", "put"} {
+	for _, operation := range []string{"get", "put", "query", "embed"} {
 		operation := operation
-		group.AddCommand(&cobra.Command{Use: operation, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
+		command := &cobra.Command{Use: operation, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, args []string) error {
 			if !cmd.Flags().Changed("data-dir") && !cmd.InheritedFlags().Changed("data-dir") {
 				return fmt.Errorf("records requires an explicit --data-dir")
 			}
@@ -42,6 +42,17 @@ func init() {
 				if err == nil {
 					result, err = db.Get(cmd.Context(), req)
 				}
+			} else if operation == "query" {
+				var req records.QueryRequest
+				if err = decoder.Decode(&req); err == nil {
+					result, err = db.Query(cmd.Context(), req)
+				}
+			} else if operation == "embed" {
+				var req records.EmbedRequest
+				if err = decoder.Decode(&req); err == nil {
+					status, _ := cmd.Flags().GetBool("status")
+					result, err = db.Embed(cmd.Context(), req, status)
+				}
 			} else {
 				var req records.PutRequest
 				if err = decoder.Decode(&req); err == nil {
@@ -54,7 +65,11 @@ func init() {
 				return err
 			}
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
-		}})
+		}}
+		if operation == "embed" {
+			command.Flags().Bool("status", false, "Report vector coverage without embedding")
+		}
+		group.AddCommand(command)
 	}
 	rootCmd.AddCommand(group)
 }

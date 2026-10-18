@@ -23,6 +23,7 @@ DETERMINISTIC_PKGS := \
 	./internal/agency/attach \
 	./internal/agency/authority \
 	./internal/agency/artifact \
+	./internal/records \
 	./internal/memory/embed \
 	./internal/memory/graph \
 	./internal/memory/importdraft \
