@@ -56,8 +56,31 @@ type record struct {
 	State                       string                     `json:"state"`
 	CreatedAt                   string                     `json:"createdAt"`
 	Data                        map[string]json.RawMessage `json:"data"`
-	Raw, SearchText, VectorText string
-	Seq                         int64
+	Raw, SearchText, VectorText string                     `json:"-"`
+	Seq                         int64                      `json:"-"`
+}
+
+// Match JS's case-sensitive property lookup. Extra record properties are opaque.
+func (r *record) decode(raw string) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &fields); err != nil {
+		return err
+	}
+	for _, field := range []struct {
+		name  string
+		value any
+	}{
+		{"id", &r.ID}, {"kind", &r.Kind}, {"scope", &r.Scope},
+		{"workspaceId", &r.WorkspaceID}, {"sessionId", &r.SessionID},
+		{"date", &r.Date}, {"state", &r.State}, {"createdAt", &r.CreatedAt}, {"data", &r.Data},
+	} {
+		if value, ok := fields[field.name]; ok {
+			if err := json.Unmarshal(value, field.value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 type Store struct {
@@ -155,7 +178,7 @@ WHERE rev_from<=? AND (rev_to IS NULL OR rev_to>?) ORDER BY seq`, rev, rev)
 		if err := rows.Scan(&r.Raw, &r.SearchText, &r.VectorText, &r.Seq); err != nil {
 			return nil, err
 		}
-		if err := json.Unmarshal([]byte(r.Raw), &r); err != nil {
+		if err := r.decode(r.Raw); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -190,7 +213,7 @@ func parseUpserts(values []Upsert) ([]record, error) {
 	seen := map[string]bool{}
 	for _, value := range values {
 		var r record
-		if err := json.Unmarshal([]byte(value.RecordJSON), &r); err != nil {
+		if err := r.decode(value.RecordJSON); err != nil {
 			return nil, fmt.Errorf("invalid record JSON: %w", err)
 		}
 		if r.ID == "" || r.Kind == "" || r.Scope == "" || r.State == "" || r.CreatedAt == "" || seen[r.ID] {

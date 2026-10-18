@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -94,5 +95,23 @@ func TestRollbackAndReadOnly(t *testing.T) {
 	}
 	if filepath.Base(dir) == ".mnemon" {
 		t.Fatal("invalid test directory")
+	}
+}
+
+func TestOpaqueExtraPropertiesCannotOverrideMetadata(t *testing.T) {
+	s := testStore(t)
+	value := sample("a", "one")
+	value.RecordJSON = strings.TrimSuffix(value.RecordJSON, "}") + `,"ID":"other","State":"deleted","Data":{"status":"wrong"},"Raw":"opaque","SearchText":"wrong","VectorText":"wrong","Seq":999}`
+	rev, err := s.Put(context.Background(), PutRequest{Upsert: []Upsert{value}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Get(context.Background(), GetRequest{Revision: rev})
+	if err != nil || !reflect.DeepEqual(got.Records, []string{value.RecordJSON}) {
+		t.Fatal(got, err)
+	}
+	result, err := s.Query(context.Background(), QueryRequest{Revision: rev, Input: map[string]json.RawMessage{"query": json.RawMessage(`"one"`), "match": json.RawMessage(`"words"`), "status": json.RawMessage(`null`)}})
+	if err != nil || !reflect.DeepEqual(result.IDs, []string{"a"}) {
+		t.Fatal(result, err)
 	}
 }
