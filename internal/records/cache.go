@@ -12,6 +12,10 @@ import (
 // retained. Historical reads remain valid but never substitute a newer revision.
 type queryCache struct {
 	mu              sync.Mutex
+	derived         map[string]*derivedIndex
+	derivedOrder    []string
+	derivedDocs     int
+	derivedLoading  chan struct{}
 	current         string
 	indexes         map[string]*lexicalIndex
 	order           []string
@@ -69,6 +73,9 @@ func searchKey(hash string, req QueryRequest) string {
 	// JSON null and an absent filter are different candidate sets, even though
 	// JSON.stringify maps undefined tuple elements to null in TS's cache key.
 	raw, _ := json.Marshal([]any{hash, trueValue(in["archived"]), in["id"], ids, in["kind"], in["date"], in["status"], in["since"], in["until"], req.Scope, present})
+	if req.Index.Enabled() {
+		raw, _ = json.Marshal([]any{string(raw), req.Index})
+	}
 	return string(raw)
 }
 

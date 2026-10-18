@@ -12,14 +12,17 @@ type Scope struct {
 	SessionID   *string `json:"sessionId,omitempty"`
 }
 type QueryRequest struct {
-	Revision  string                     `json:"revision"`
-	Input     map[string]json.RawMessage `json:"input"`
-	Scope     Scope                      `json:"scope"`
-	Embedding *EmbeddingConfig           `json:"embedding,omitempty"`
+	Revision       string                     `json:"revision"`
+	Input          map[string]json.RawMessage `json:"input"`
+	Scope          Scope                      `json:"scope"`
+	Embedding      *EmbeddingConfig           `json:"embedding,omitempty"`
+	Index          *IndexPolicy               `json:"index,omitempty"`
+	CandidateLimit int                        `json:"candidateLimit,omitempty"`
 }
 type QueryResult struct {
-	IDs       []string  `json:"ids"`
-	Expansion *[]string `json:"expansion,omitempty"`
+	IDs       []string     `json:"ids"`
+	Expansion *[]string    `json:"expansion,omitempty"`
+	Index     *IndexResult `json:"index,omitempty"`
 }
 
 func stringValue(value json.RawMessage) string { var v string; _ = json.Unmarshal(value, &v); return v }
@@ -142,6 +145,12 @@ func candidates(all []record, req QueryRequest, term string, words bool) []recor
 }
 
 func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error) {
+	if err := req.Index.Validate(); err != nil {
+		return QueryResult{}, err
+	}
+	if req.Index.Enabled() {
+		return s.queryIndexed(ctx, req)
+	}
 	rev, hash, err := revision(ctx, s.readDB(), req.Revision)
 	if err != nil {
 		return QueryResult{}, err
@@ -150,12 +159,17 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 	if err != nil {
 		return QueryResult{}, err
 	}
+	selection := s.selectRecords(all, hash, req)
+	return s.rankSelection(ctx, hash, req, selection)
+}
+
+func (s *Store) rankSelection(ctx context.Context, hash string, req QueryRequest, selection *querySelection) (QueryResult, error) {
 	query := stringValue(req.Input["query"])
 	term := lower(query)
 	match := stringValue(req.Input["match"])
 	words := (match == "words" || match == "hybrid") && term != ""
-	selection := s.selectRecords(all, hash, req)
 	records := selection.docs
+	var err error
 	result := QueryResult{IDs: []string{}}
 	if words {
 		index, precomputed, err := s.queryLexical(ctx, hash, req, selection, term)
