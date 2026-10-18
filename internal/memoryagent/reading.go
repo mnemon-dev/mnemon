@@ -276,7 +276,7 @@ func (r *readRun) compose(ctx context.Context, stop string) (View, error) {
 	}
 	config, _ := json.Marshal(r.agent.config)
 	view := View{Revision: r.revision, Policy: "memory-agent/v1/" + reference("policy", string(config)).Hash, Records: []Evidence{}, Needs: r.needs, StopReason: stop, IndexStale: r.indexStale}
-	index, err := r.selectedIndex(ctx)
+	index, err := r.selectedIndex(ctx, byID)
 	if err != nil && !errors.Is(err, errCallBudget) {
 		return View{}, err
 	}
@@ -300,6 +300,7 @@ func (r *readRun) compose(ctx context.Context, stop string) (View, error) {
 		view.Truncated = view.Truncated || item.Truncated
 		view.Records = append(view.Records, item)
 	}
+	view.Index = retainedIndex(view.Index, view.Records)
 	for k := range view.Needs {
 		view.Needs[k].Evaluated = r.agent.config.Policy.Coverage
 		view.Needs[k].HasEvidence = r.agent.config.Policy.Coverage && slices.ContainsFunc(view.Records, func(item Evidence) bool { return !item.Truncated && slices.Contains(r.positives(k), item.ID) })
@@ -315,6 +316,17 @@ func (r *readRun) compose(ctx context.Context, stop string) (View, error) {
 	}
 	view.Stats = r.stats
 	return view, nil
+}
+
+func retainedIndex(items []IndexItem, values []Evidence) []IndexItem {
+	return slices.DeleteFunc(items, func(item IndexItem) bool {
+		for _, ref := range item.Records {
+			if !slices.ContainsFunc(values, func(value Evidence) bool { return !value.Truncated && value.Reference == ref }) {
+				return true
+			}
+		}
+		return false
+	})
 }
 
 func (r *readRun) screen(ctx context.Context, fresh []*candidate) error {

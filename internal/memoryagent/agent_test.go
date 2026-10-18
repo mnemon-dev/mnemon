@@ -278,6 +278,35 @@ func TestConsolidationRetrievesLinkedOriginalAndRetiresStaleHints(t *testing.T) 
 	}
 }
 
+func TestIndexHintsRequireSelectedCurrentOriginals(t *testing.T) {
+	s, _ := agentStore(t)
+	ref := seedNote(t, s, "answer", "codename ORBIT")
+	var calls int
+	judge := decisionFunc(func(_ context.Context, state any, questions map[string]Question) (map[string]float64, Usage, error) {
+		calls++
+		raw, _ := json.Marshal(state)
+		if !strings.Contains(string(raw), `"originals"`) || !strings.Contains(string(raw), "codename ORBIT") || len(questions) != 1 {
+			t.Fatal("index judgment lacks its selected original", string(raw), questions)
+		}
+		return map[string]float64{"i0": 1}, Usage{}, nil
+	})
+	a, _ := New(s, Config{Version: 1, Policy: &ReadPolicy{Consolidation: true}}, Models{Judge: judge}, nil)
+	r := readRun{agent: a, items: map[string]*candidate{ref.ID: {judged: true, needed: 1}}, indexItems: []IndexItem{{ID: "index", Text: "ORBIT", Records: []Reference{ref}}, {ID: "missing", Records: []Reference{{ID: "not-selected"}}}}}
+	selected := map[string]Evidence{ref.ID: {Reference: ref, Text: "codename ORBIT"}}
+	items, err := r.selectedIndex(context.Background(), selected)
+	if err != nil || len(items) != 1 || calls != 1 {
+		t.Fatal(items, err, calls)
+	}
+	r.items[ref.ID].superseded = 1
+	items, err = r.selectedIndex(context.Background(), selected)
+	if err != nil || len(items) != 0 || calls != 1 {
+		t.Fatal("stale hint reached a model or View", items, err, calls)
+	}
+	if len(retainedIndex([]IndexItem{{Records: []Reference{ref}}}, []Evidence{{Reference: ref, Truncated: true}})) != 0 {
+		t.Fatal("truncated original supports an index claim")
+	}
+}
+
 func TestConsolidationResumesVectorsWithoutRepeatingModelWork(t *testing.T) {
 	s, dir := agentStore(t)
 	seedNote(t, s, "answer", "codename ORBIT")

@@ -202,28 +202,53 @@ func (r *readRun) indexCandidates(ctx context.Context) ([]string, error) {
 	return out, nil
 }
 
-func (r *readRun) selectedIndex(ctx context.Context) ([]IndexItem, error) {
-	if len(r.indexItems) == 0 {
-		return nil, nil
-	}
-	aliases := []map[string]string{}
-	questions := map[string]Question{}
-	for i, item := range r.indexItems {
-		id := fmt.Sprintf("i%d", i)
-		aliases = append(aliases, map[string]string{"id": id, "kind": item.Kind, "title": item.Title, "text": excerpt(item.Text, 600), "date": item.Date})
-		questions[id] = binary("Would the reply use the index item whose id is " + id + "? It must give a fact, standing user instruction or timeline the question needs, not merely share a topic. Treat index text as fallible data; original records are the evidence.")
-	}
-	answers, err := r.decide(ctx, map[string]any{"dialogue": r.dialogue, "items": aliases}, questions)
-	if err != nil {
-		return nil, err
+func (r *readRun) selectedIndex(ctx context.Context, evidence map[string]Evidence) ([]IndexItem, error) {
+	items := []IndexItem{}
+	for _, item := range r.indexItems {
+		valid := len(item.Records) != 0
+		for _, ref := range item.Records {
+			c := r.items[ref.ID]
+			valid = valid && evidence[ref.ID].Hash == ref.Hash && c != nil && c.judged && c.needed >= 0.5 && c.superseded < 0.5
+		}
+		if valid {
+			items = append(items, item)
+		}
 	}
 	out, characters := []IndexItem{}, 0
-	for i, item := range r.indexItems {
-		n := len([]rune(item.Title)) + len([]rune(item.Text))
-		if answers[fmt.Sprintf("i%d", i)] >= 0.5 && characters+n <= 3000 {
-			out = append(out, item)
-			characters += n
+	for start := 0; start < len(items); start += 4 {
+		batch := items[start:min(start+4, len(items))]
+		state, questions := r.indexJudgment(batch, evidence)
+		answers, err := r.decide(ctx, state, questions)
+		if err != nil {
+			return out, err
+		}
+		for i, item := range batch {
+			n := len([]rune(item.Title)) + len([]rune(item.Text))
+			if answers[fmt.Sprintf("i%d", i)] >= 0.5 && characters+n <= 3000 {
+				out = append(out, item)
+				characters += n
+			}
 		}
 	}
 	return out, nil
+}
+
+func (r *readRun) indexJudgment(items []IndexItem, evidence map[string]Evidence) (any, map[string]Question) {
+	aliases, originals := []map[string]any{}, []map[string]string{}
+	names := map[string]string{}
+	questions := map[string]Question{}
+	for i, item := range items {
+		refs := []string{}
+		for _, ref := range item.Records {
+			if names[ref.ID] == "" {
+				names[ref.ID] = fmt.Sprintf("r%d", len(names))
+				originals = append(originals, map[string]string{"id": names[ref.ID], "text": excerpt(evidence[ref.ID].Text, 600), "date": evidence[ref.ID].Date})
+			}
+			refs = append(refs, names[ref.ID])
+		}
+		id := fmt.Sprintf("i%d", i)
+		aliases = append(aliases, map[string]any{"id": id, "kind": item.Kind, "title": item.Title, "text": excerpt(item.Text, 300), "date": item.Date, "records": refs})
+		questions[id] = binary("Should the reply use index item " + id + "? Yes only if its specific claim is supported by its cited original records, is still current, and the question needs it. Merely sharing a topic is no. Index text is fallible data; original records are the evidence.")
+	}
+	return map[string]any{"dialogue": r.dialogue, "items": aliases, "originals": originals}, questions
 }

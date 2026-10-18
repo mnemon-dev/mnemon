@@ -116,7 +116,9 @@ It never writes summaries into the original records.
 
 The overlay retains at most 120 topic items, 240 value items and 60 instructions.
 It may lag the raw snapshot. Reads use valid linked evidence and nearby index
-items, revalidate original hashes, and run System 1 on the selected hints. Index
+items, revalidate original hashes, and run System 1 on hints together with their
+selected original texts. Hints require current, selected, untruncated original
+evidence; an index cannot reintroduce a rejected or superseded claim. Index
 vectors reuse the records content-addressed embedding cache. A failed vector
 fill can publish the lexical index; a later job fills vectors without repeating
 completion work. Updated/deleted source versions retire stale items on the next
