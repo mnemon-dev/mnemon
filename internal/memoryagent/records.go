@@ -3,6 +3,7 @@
 package memoryagent
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -56,6 +57,31 @@ type recordValue struct {
 	CreatedAt   string         `json:"createdAt"`
 	UpdatedAt   string         `json:"updatedAt"`
 	History     []any          `json:"history"`
+}
+
+func (v *recordValue) UnmarshalJSON(raw []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	// Match records-v1 and JavaScript's exact property names. Opaque capitalized
+	// fields cannot replace content, identity, scope or the original proof.
+	for _, field := range []struct {
+		name  string
+		value any
+	}{
+		{"id", &v.ID}, {"kind", &v.Kind}, {"title", &v.Title}, {"content", &v.Content},
+		{"scope", &v.Scope}, {"workspaceId", &v.WorkspaceID}, {"sessionId", &v.SessionID},
+		{"date", &v.Date}, {"state", &v.State}, {"data", &v.Data}, {"signals", &v.Signals},
+		{"version", &v.Version}, {"createdAt", &v.CreatedAt}, {"updatedAt", &v.UpdatedAt}, {"history", &v.History},
+	} {
+		if value, ok := fields[field.name]; ok {
+			if err := json.Unmarshal(value, field.value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 type Evidence struct {
@@ -163,8 +189,41 @@ func documentRecords(req WriteRequest, at time.Time) ([]records.Upsert, WriteRes
 }
 
 func encodeRecord(value recordValue, text string) records.Upsert {
-	raw, _ := json.Marshal(value)
-	return records.Upsert{RecordJSON: string(raw), SearchText: text, VectorText: text}
+	return records.Upsert{RecordJSON: recordJSON(value), SearchText: text, VectorText: text}
+}
+
+func recordJSON(value recordValue) string {
+	// records-v1 revisions use JSON.stringify bytes. Go's default HTML and
+	// line-separator escaping would break the next SDK mutation's digest.
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(value) // All values originate from the typed writer.
+	raw := strings.TrimSuffix(buffer.String(), "\n")
+	var out strings.Builder
+	out.Grow(len(raw))
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' {
+			out.WriteByte(raw[i])
+			continue
+		}
+		if strings.HasPrefix(raw[i:], `\u2028`) || strings.HasPrefix(raw[i:], `\u2029`) {
+			separator := '\u2028'
+			if raw[i+5] == '9' {
+				separator = '\u2029'
+			}
+			out.WriteRune(separator)
+			i += 5
+			continue
+		}
+		// Copy escapes as pairs so a literal backslash-u2028 stays literal.
+		out.WriteByte(raw[i])
+		if i+1 < len(raw) {
+			i++
+			out.WriteByte(raw[i])
+		}
+	}
+	return out.String()
 }
 
 func reference(id, raw string) Reference {

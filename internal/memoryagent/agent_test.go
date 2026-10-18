@@ -54,7 +54,7 @@ func TestCorruptDerivedDatabaseKeepsOriginalsReadable(t *testing.T) {
 func TestOriginalWriteChunkProofAndCAS(t *testing.T) {
 	s, _ := agentStore(t)
 	ctx := context.Background()
-	text := " \n" + strings.Repeat("原文😀\t", 400) + "\r\nEND  "
+	text := " <&>\u2028\u2029 literal \\u2028 \n" + strings.Repeat("原文😀\t", 400) + "\r\nEND  "
 	result, err := Write(ctx, s, WriteRequest{ID: "original", Text: text, Source: "source/file", At: "2020-01-01T12:00:00+08:00"})
 	if err != nil || len(result.Records) < 2 {
 		t.Fatal(result, err)
@@ -110,6 +110,34 @@ func TestOriginalWriteChunkProofAndCAS(t *testing.T) {
 	}
 	if historical, err := evidence(ctx, s, result.Revision, records.Scope{}, ids[:1]); err != nil || historical[0].Text != items[0].Text {
 		t.Fatal("old snapshot lost original", historical, err)
+	}
+}
+
+func TestOpaqueCaseVariantsCannotReplaceOriginalEvidence(t *testing.T) {
+	s, _ := agentStore(t)
+	ctx := context.Background()
+	written, err := Write(ctx, s, WriteRequest{ID: "case-sensitive", Text: "Redis original"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, _ := s.Get(ctx, records.GetRequest{IDs: []string{written.Records[0].ID}})
+	raw := strings.TrimSuffix(snapshot.Records[0], "}") + `,"ID":"shadow","Kind":"note","Content":"wrong shadow","Scope":"project","Data":{}}`
+	revision, err := s.Put(ctx, records.PutRequest{Upsert: []records.Upsert{{RecordJSON: raw, SearchText: "Redis original", VectorText: "Redis original"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	values, err := evidence(ctx, s, revision, records.Scope{}, []string{written.Records[0].ID})
+	if err != nil || len(values) != 1 || values[0].ID != written.Records[0].ID || values[0].Text != "Redis original" || values[0].Parent == nil || *values[0].Parent != written.Document {
+		t.Fatal("opaque case variants replaced original fields", values, err)
+	}
+	raw = strings.Replace(raw, `"content":"Redis original"`, `"content":"changed without parent proof"`, 1)
+	raw = strings.Replace(raw, `"Content":"wrong shadow"`, `"Content":"Redis original"`, 1)
+	revision, err = s.Put(ctx, records.PutRequest{Upsert: []records.Upsert{{RecordJSON: raw, SearchText: "Redis", VectorText: "Redis"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := evidence(ctx, s, revision, records.Scope{}, []string{written.Records[0].ID}); err == nil {
+		t.Fatal("shadow content bypassed the original-document proof")
 	}
 }
 
