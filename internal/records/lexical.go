@@ -1,7 +1,10 @@
 package records
 
 import (
+	"cmp"
+	"math"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"unicode"
@@ -161,12 +164,25 @@ func (index *lexicalIndex) searchPostings(terms []string, n, average float64) []
 }
 
 func rank(hits []scored, limit int) []string {
-	sort.SliceStable(hits, func(i, j int) bool {
-		if hits[i].score == hits[j].score {
-			return hits[i].id < hits[j].id
+	// NaN is not a total order: preserve the original stable-sort behavior for
+	// malformed/incompatible vector dimensions rather than changing its ties.
+	finiteOrder := true
+	for _, hit := range hits {
+		if math.IsNaN(hit.score) {
+			finiteOrder = false
+			break
 		}
-		return hits[i].score > hits[j].score
-	})
+	}
+	if finiteOrder {
+		if limit > 0 && len(hits) > limit {
+			hits = topScores(hits, limit)
+		}
+		slices.SortFunc(hits, compareScore)
+	} else {
+		sort.SliceStable(hits, func(i, j int) bool {
+			return hits[i].score == hits[j].score && hits[i].id < hits[j].id || hits[i].score > hits[j].score
+		})
+	}
 	if len(hits) > limit {
 		hits = hits[:limit]
 	}
@@ -175,6 +191,49 @@ func rank(hits []scored, limit int) []string {
 		out[i] = h.id
 	}
 	return out
+}
+
+func compareScore(a, b scored) int {
+	if a.score == b.score {
+		return cmp.Compare(a.id, b.id)
+	}
+	if a.score > b.score {
+		return -1
+	}
+	return 1
+}
+
+// An exact worst-first heap retains only k scores, with the identical score/id
+// total order used by the final sort. No approximate vector search or rounding.
+func topScores(hits []scored, k int) []scored {
+	keep := hits[:k]
+	for i := k/2 - 1; i >= 0; i-- {
+		scoreDown(keep, i)
+	}
+	for _, hit := range hits[k:] {
+		if compareScore(hit, keep[0]) < 0 {
+			keep[0] = hit
+			scoreDown(keep, 0)
+		}
+	}
+	return keep
+}
+
+func scoreDown(hits []scored, root int) {
+	for {
+		child := 2*root + 1
+		if child >= len(hits) {
+			return
+		}
+		if child+1 < len(hits) && compareScore(hits[child+1], hits[child]) > 0 {
+			child++
+		}
+		if compareScore(hits[root], hits[child]) >= 0 {
+			return
+		}
+		hits[root], hits[child] = hits[child], hits[root]
+		root = child
+	}
 }
 
 func (index *lexicalIndex) feedback(ids []string, query string) []string {

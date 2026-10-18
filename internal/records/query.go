@@ -171,7 +171,7 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 		}
 		result.IDs = index.search(term)
 		if match == "hybrid" && req.Embedding != nil {
-			semantic, err := s.vectorRank(ctx, query, records, *req.Embedding)
+			semantic, err := s.selectionVectorRank(ctx, query, selection, *req.Embedding)
 			if err != nil {
 				return QueryResult{}, err
 			}

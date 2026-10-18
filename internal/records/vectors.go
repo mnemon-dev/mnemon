@@ -127,8 +127,10 @@ func (s *Store) vectors(ctx context.Context, texts []string, cfg EmbeddingConfig
 	missing := []string{}
 	seen := map[string]bool{}
 	keys, uncached := []string{}, []string{}
-	for _, text := range texts {
+	hashes := make([]string, len(texts))
+	for i, text := range texts {
 		key := textHash(text)
+		hashes[i] = key
 		if seen[key] {
 			continue
 		}
@@ -172,8 +174,8 @@ func (s *Store) vectors(ctx context.Context, texts []string, cfg EmbeddingConfig
 			s.keepVector(textHash(text), cfg, prefix, values[i])
 		}
 	}
-	for i, text := range texts {
-		out[i] = known[textHash(text)]
+	for i, key := range hashes {
+		out[i] = known[key]
 	}
 	return out, nil
 }
@@ -193,14 +195,74 @@ func (s *Store) saveVectors(ctx context.Context, texts []string, values [][]floa
 }
 
 func (s *Store) vectorRank(ctx context.Context, query string, records []record, cfg EmbeddingConfig) ([]string, error) {
+	return s.selectionVectorRank(ctx, query, newSelection(records), cfg)
+}
+
+func (s *Store) selectionVectorRank(ctx context.Context, query string, v *querySelection, cfg EmbeddingConfig) ([]string, error) {
 	target, err := s.queryVector(ctx, query, cfg)
 	if err != nil {
 		return nil, err
 	}
-	hits := make([]scored, 0, len(records))
+	values, err := s.selectionVectors(ctx, v, cfg)
+	if err != nil {
+		return nil, err
+	}
+	hits := make([]scored, len(v.docs))
+	for i, r := range v.docs {
+		if i%2048 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		hits[i] = scored{r.ID, dot(target, values[i])}
+	}
+	return rank(hits, 200), nil
+}
+
+func (s *Store) selectionVectors(ctx context.Context, v *querySelection, cfg EmbeddingConfig) ([][]float32, error) {
+	key := vectorKey("", cfg, cfg.DocumentPrefix)
+	for {
+		v.mu.Lock()
+		if values := v.vectors[key]; values != nil {
+			v.mu.Unlock()
+			return values, nil
+		}
+		if pending := v.vectorLoading[key]; pending != nil {
+			v.mu.Unlock()
+			select {
+			case <-pending:
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		if v.vectorLoading == nil {
+			v.vectorLoading = map[string]chan struct{}{}
+		}
+		v.vectorLoading[key] = make(chan struct{})
+		v.mu.Unlock()
+		values, err := s.loadSelectionVectors(ctx, v.docs, cfg)
+		v.mu.Lock()
+		if err == nil && s.cache != nil && len(v.docs) <= 200000 {
+			if v.vectors == nil {
+				v.vectors = map[string][][]float32{}
+			}
+			if len(v.vectorOrder) == 2 {
+				delete(v.vectors, v.vectorOrder[0])
+				v.vectorOrder = v.vectorOrder[1:]
+			}
+			v.vectors[key] = values
+			v.vectorOrder = append(v.vectorOrder, key)
+		}
+		close(v.vectorLoading[key])
+		delete(v.vectorLoading, key)
+		v.mu.Unlock()
+		return values, err
+	}
+}
+
+func (s *Store) loadSelectionVectors(ctx context.Context, records []record, cfg EmbeddingConfig) ([][]float32, error) {
+	out := make([][]float32, 0, len(records))
 	for start := 0; start < len(records); start += 2048 {
-		end := min(start+2048, len(records))
-		part := records[start:end]
+		part := records[start:min(start+2048, len(records))]
 		texts := make([]string, len(part))
 		for i, r := range part {
 			texts[i] = r.VectorText
@@ -209,12 +271,9 @@ func (s *Store) vectorRank(ctx context.Context, query string, records []record, 
 		if err != nil {
 			return nil, err
 		}
-		for i, r := range part {
-			hits = append(hits, scored{r.ID, dot(target, values[i])})
-		}
+		out = append(out, values...)
 	}
-
-	return rank(hits, 200), nil
+	return out, nil
 }
 
 func (s *Store) Embed(ctx context.Context, req EmbedRequest, statusOnly bool) (EmbedStatus, error) {

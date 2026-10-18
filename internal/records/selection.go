@@ -9,14 +9,17 @@ import (
 // A selection borrows immutable snapshot records. It retains membership and
 // aggregate df, not a second full document/term index beyond the 150k budget.
 type querySelection struct {
-	docs        []record
-	wanted      map[int64]int
-	total       int
-	ready       bool
-	first, last int64
-	mu          sync.Mutex
-	df          map[string]int
-	loading     chan struct{}
+	docs          []record
+	wanted        map[int64]int
+	total         int
+	ready         bool
+	first, last   int64
+	mu            sync.Mutex
+	df            map[string]int
+	loading       chan struct{}
+	vectors       map[string][][]float32
+	vectorOrder   []string
+	vectorLoading map[string]chan struct{}
 }
 
 func newSelection(docs []record) *querySelection {
