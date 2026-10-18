@@ -39,9 +39,7 @@ func (s *Store) Serve(ctx context.Context, path string) error {
 	defer func() { s.cache = nil }()
 	// Readers may run concurrently in WAL mode; CAS, vector writes and lexical
 	// batches keep the original single writer connection and immediate tx lock.
-	// A modest per-reader page cache keeps hot disk pages without duplicating
-	// an unbounded document index. SQLite allocates these pages on demand.
-	readers, err := sql.Open("sqlite", sqliteDSN(s.path, true)+"&_pragma=cache_size(-8192)")
+	readers, err := sql.Open("sqlite", sqliteDSN(s.path, true))
 	if err != nil {
 		return err
 	}
