@@ -95,6 +95,16 @@ func TestServeCASRevisionAndCancellation(t *testing.T) {
 	if stringValue(call(map[string]any{"operation": "unknown"})["error"]) == "" {
 		t.Fatal("missing protocol error")
 	}
+	if _, err := conn.Write([]byte("{\n")); err != nil {
+		t.Fatal(err)
+	}
+	var malformed map[string]json.RawMessage
+	if err := dec.Decode(&malformed); err != nil || stringValue(malformed["error"]) != "Invalid records request JSON" {
+		t.Fatalf("malformed frame: %s %v", malformed, err)
+	}
+	if stringValue(call(map[string]any{"operation": "get", "ids": []string{}})["revision"]) != second {
+		t.Fatal("malformed frame changed the collection")
+	}
 	// Fill idle connections, then cancellation must close them and join workers.
 	idle := []net.Conn{}
 	for i := 0; i < 15; i++ {
