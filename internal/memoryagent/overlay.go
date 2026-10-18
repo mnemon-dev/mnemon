@@ -126,6 +126,10 @@ func (o *Overlay) save(ctx context.Context, scope records.Scope, previous string
 }
 
 func (r *readRun) indexCandidates(ctx context.Context) ([]string, error) {
+	if r.agent.indexError != nil {
+		r.indexStale = true
+		return nil, nil
+	}
 	state, _, err := r.agent.overlay.load(ctx, r.request.Scope)
 	if err != nil {
 		r.indexStale = true

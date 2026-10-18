@@ -33,6 +33,9 @@ type ConsolidateResult struct {
 // Call it from another client while serve handles reads, or as a separate CLI.
 // Network work happens before the overlay's fenced atomic publication.
 func (a *Agent) Consolidate(ctx context.Context, req ConsolidateRequest) (ConsolidateResult, error) {
+	if a.indexError != nil {
+		return ConsolidateResult{}, fmt.Errorf("derived index is unavailable: %w", a.indexError)
+	}
 	if a.overlay == nil || a.models.Planner == nil {
 		return ConsolidateResult{}, errors.New("consolidation requires an overlay store and a completion model")
 	}

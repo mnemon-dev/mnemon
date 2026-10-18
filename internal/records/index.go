@@ -286,6 +286,15 @@ func (s *Store) indexedSelection(ctx context.Context, req QueryRequest) (string,
 	if err != nil {
 		return "", nil, nil, err
 	}
-	selection := s.keepSelection(searchKey(hash, req), hash, newSelection(index.docs), false)
+	key := searchKey(hash, req)
+	if c := s.cache; c != nil {
+		c.mu.Lock()
+		selection := c.selections[key]
+		c.mu.Unlock()
+		if selection != nil {
+			return hash, index, selection, nil
+		}
+	}
+	selection := s.keepSelection(key, hash, newSelection(index.docs), false)
 	return hash, index, selection, nil
 }

@@ -41,7 +41,7 @@ policy identity, pinned revision, route counts, indexed count and a truncation
 flag. Literal enumeration and explicit ID reads remain complete. Unknown policy
 fields/versions and invalid temporal bounds fail explicitly.
 
-The cache retains at most four enhanced selections and 150,000 additional
+The cache retains at most four enhanced selections and 200,000 additional
 document references. This is separate from the unchanged baseline cache budget;
 enhanced queries can therefore use more memory. A canceled build does not poison
 later requests. Cold build time and warm lookup time must be measured separately.

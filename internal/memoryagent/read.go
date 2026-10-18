@@ -76,11 +76,12 @@ type View struct {
 }
 
 type Agent struct {
-	store   *records.Store
-	config  Config
-	models  Models
-	overlay *Overlay
-	budget  *Budget
+	store      *records.Store
+	config     Config
+	models     Models
+	overlay    *Overlay
+	indexError error
+	budget     *Budget
 }
 
 func New(store *records.Store, config Config, models Models, overlay *Overlay) (*Agent, error) {

@@ -7,7 +7,7 @@ import (
 	"github.com/mnemon-dev/mnemon/internal/retrieval"
 )
 
-// One builder and at most 150k additional indexed document references across
+// One builder and at most 200k additional indexed document references across
 // four profiles. Cold I/O does not hold the cache mutex. Historical and scoped
 // indexes have different keys and never mutate the baseline snapshot.
 func (s *Store) derived(ctx context.Context, rev int64, hash string, all []record, req QueryRequest) (*derivedIndex, error) {
@@ -43,7 +43,7 @@ func (s *Store) derived(ctx context.Context, rev int64, hash string, all []recor
 		break
 	}
 	index, err := s.buildDerived(ctx, rev, all, req)
-	if err != nil || len(index.docs) > 150000 {
+	if err != nil || len(index.docs) > 200000 {
 		return index, err
 	}
 	c.mu.Lock()
@@ -51,7 +51,7 @@ func (s *Store) derived(ctx context.Context, rev int64, hash string, all []recor
 	if c.derived == nil {
 		c.derived = map[string]*derivedIndex{}
 	}
-	for len(c.derivedOrder) >= 4 || c.derivedDocs+len(index.docs) > 150000 {
+	for len(c.derivedOrder) >= 4 || c.derivedDocs+len(index.docs) > 200000 {
 		old := c.derivedOrder[0]
 		c.derivedOrder = c.derivedOrder[1:]
 		c.derivedDocs -= len(c.derived[old].docs)

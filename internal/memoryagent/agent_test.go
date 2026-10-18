@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -25,6 +26,29 @@ func agentStore(t *testing.T) (*records.Store, string) {
 	}
 	t.Cleanup(func() { s.Close() })
 	return s, dir
+}
+
+func TestCorruptDerivedDatabaseKeepsOriginalsReadable(t *testing.T) {
+	s, dir := agentStore(t)
+	if _, err := Write(context.Background(), s, WriteRequest{Text: "Redis raw evidence"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "memory-index.db"), []byte("corrupt derived data"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	config := Config{Version: 1, Policy: &ReadPolicy{Consolidation: true}, Judge: &ModelConfig{Kind: "local", Model: "not-called", BaseURL: "http://127.0.0.1:1/v1"}}
+	a, err := Open(s, dir, config, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	view, err := a.Read(context.Background(), ReadRequest{Question: "Redis"})
+	if err != nil || !view.IndexStale || len(view.Records) != 1 || view.Stats.DecisionCalls != 0 {
+		t.Fatal("corrupt optional index blocked original evidence", view, err)
+	}
+	if _, err := a.Consolidate(context.Background(), ConsolidateRequest{Reset: true}); err == nil {
+		t.Fatal("unavailable derived database reached consolidation")
+	}
 }
 
 func TestOriginalWriteChunkProofAndCAS(t *testing.T) {

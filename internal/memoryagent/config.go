@@ -12,6 +12,7 @@ import (
 func Open(store *records.Store, directory string, config Config, readonly bool) (*Agent, error) {
 	var budget *Budget
 	var overlay *Overlay
+	var indexError error
 	var err error
 	if config.BudgetFile != "" {
 		budget, err = OpenBudget(config.BudgetFile)
@@ -49,7 +50,8 @@ func Open(store *records.Store, directory string, config Config, readonly bool) 
 		if !readonly || statErr == nil {
 			overlay, err = OpenOverlay(path, readonly)
 			if err != nil {
-				return nil, err
+				// A rebuildable index cannot make original evidence unavailable.
+				indexError = err
 			}
 		}
 	}
@@ -58,6 +60,7 @@ func Open(store *records.Store, directory string, config Config, readonly bool) 
 		return nil, err
 	}
 	agent.budget = budget
+	agent.indexError = indexError
 	ok = true
 	return agent, nil
 }
