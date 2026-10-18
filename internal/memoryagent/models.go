@@ -19,6 +19,10 @@ type Completer interface {
 	Complete(context.Context, string, string) (string, Usage, error)
 }
 
+type JSONCompleter interface {
+	CompleteJSON(context.Context, string, string) (string, Usage, error)
+}
+
 type Decider interface {
 	Decide(context.Context, any, map[string]Question) (map[string]float64, Usage, error)
 }

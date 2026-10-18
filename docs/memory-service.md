@@ -131,6 +131,10 @@ index. No scheduler/plugin framework or DSH process is needed.
 Local models use a loopback OpenAI-compatible HTTP endpoint. A local completer can
 also answer the finite decision questions. Paid JEV versions and DeepSeek Flash
 use pinned official endpoints, with redirects and implicit retries disabled.
+Structured completions explicitly request JSON mode. Free-text planning is
+limited to 1,024 output tokens, structured output to 2,048; a token-length finish
+rejects the response. Calls time out after 90 seconds and a memory CLI/RPC request
+has a five-minute deadline. An invalid consolidation batch is never published.
 Credentials come from environment variables and never enter request arguments,
 configuration files, logs or the metering database.
 

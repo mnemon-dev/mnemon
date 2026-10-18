@@ -63,7 +63,7 @@ func (b *Budget) reserve(ctx context.Context, kind, hash string) (string, error)
 	}
 	cap, reservation := 10.0, 0.01 // USD; body <=48k bytes, JEV output is free.
 	if kind == "deepseek" {
-		cap, reservation = 50, 0.25 // CNY; <=48k body bytes and 1024 output tokens.
+		cap, reservation = 50, 0.25 // CNY; <=48k body bytes and 2048 output tokens.
 	}
 	tx, err := b.db.BeginTx(ctx, nil)
 	if err != nil {

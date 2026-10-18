@@ -170,7 +170,9 @@ func runMemoryAgent(cmd *cobra.Command, operation string) error {
 		}
 		defer agent.Close()
 	}
-	result, err := dispatchMemory(cmd.Context(), raw, agent, "memory."+operation, request)
+	ctx, cancel := context.WithTimeout(cmd.Context(), 5*time.Minute)
+	defer cancel()
+	result, err := dispatchMemory(ctx, raw, agent, "memory."+operation, request)
 	if err != nil {
 		return err
 	}

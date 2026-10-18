@@ -129,3 +129,35 @@ func TestLocalDecisionNullAndEndpointGuards(t *testing.T) {
 		}
 	}
 }
+
+func TestJSONModeIsExplicitForStructuredWork(t *testing.T) {
+	p, _ := NewProvider(ModelConfig{Kind: "local", Model: "local-test", BaseURL: "http://127.0.0.1:1/v1"}, nil)
+	var format any
+	p.client.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		var body map[string]any
+		json.NewDecoder(req.Body).Decode(&body)
+		format = body["response_format"]
+		if format != nil && body["max_tokens"] != float64(2048) || format == nil && body["max_tokens"] != float64(1024) {
+			t.Fatal("unexpected output budget", body["max_tokens"])
+		}
+		return mockResponse(`{"choices":[{"message":{"content":"{}"}}]}`), nil
+	})
+	if _, _, err := p.CompleteJSON(context.Background(), "Return JSON", "data"); err != nil || format.(map[string]any)["type"] != "json_object" {
+		t.Fatal(format, err)
+	}
+	if _, _, err := p.Complete(context.Background(), "Return search lines", "data"); err != nil || format != nil {
+		t.Fatal("structured output changed free-text planning", format, err)
+	}
+}
+
+func TestTruncatedCompletionFailsWithoutRetry(t *testing.T) {
+	p, _ := NewProvider(ModelConfig{Kind: "local", Model: "local-test", BaseURL: "http://127.0.0.1:1/v1"}, nil)
+	calls := 0
+	p.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+		calls++
+		return mockResponse(`{"choices":[{"message":{"content":"{}"},"finish_reason":"length"}],"usage":{"prompt_tokens":10,"completion_tokens":2048}}`), nil
+	})
+	if _, usage, err := p.CompleteJSON(context.Background(), "JSON only", "data"); err == nil || usage.OutputTokens != 2048 || calls != 1 {
+		t.Fatal("truncated completion was accepted or retried", usage, err, calls)
+	}
+}
