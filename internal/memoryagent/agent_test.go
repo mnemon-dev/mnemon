@@ -336,6 +336,23 @@ func TestNeededHistoricalEvidenceIsMarkedInsteadOfDiscarded(t *testing.T) {
 	}
 }
 
+func TestConsolidationRejectsMissingArrayAndExplainsInvalidFields(t *testing.T) {
+	for _, text := range []string{`{}`, `{"items":null}`} {
+		if _, err := readConsolidation(text, nil); err == nil {
+			t.Fatal("missing items became an empty successful batch", text)
+		}
+	}
+	if values, err := readConsolidation(`{"items":[]}`, nil); err != nil || len(values) != 0 {
+		t.Fatal("explicit empty result was rejected", values, err)
+	}
+	if err := validateIndexItem("preference", "x", "y", []string{"r0"}); err == nil || !strings.Contains(err.Error(), "kind") {
+		t.Fatal("invalid kind lacked a useful diagnostic", err)
+	}
+	if err := validateIndexItem("topic", "x", "y", nil); err == nil || !strings.Contains(err.Error(), "records") {
+		t.Fatal("missing reference aliases were accepted", err)
+	}
+}
+
 func TestConsolidationResumesVectorsWithoutRepeatingModelWork(t *testing.T) {
 	s, dir := agentStore(t)
 	seedNote(t, s, "answer", "codename ORBIT")
