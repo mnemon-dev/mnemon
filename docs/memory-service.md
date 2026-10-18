@@ -97,8 +97,11 @@ page a search, request one rewrite or stop. Empty initial retrieval can rewrite.
 
 The View contains at most sixteen original blocks and 12,000 content code points,
 including at most 3,000 index-title/text code points. It retains witnesses for
-covered needs before filling with other ranked evidence. Records judged no longer
-current are excluded. `hasEvidence` means the View has an untrimmed judged witness;
+covered needs before filling with other ranked evidence. A no-longer-current
+record is retained when it is still needed, with `changedLater: true`; its literal
+text is unchanged. This supports historical questions without presenting an old
+value as current. Unneeded superseded records are excluded. `hasEvidence` means
+the View has an untrimmed judged witness for the requested information and time;
 `covered` is only asserted for a single need. An ALL/collection need does not
 claim exhaustive coverage. `stopReason` and `truncated` disclose budget and search
 limits. Query timing includes embedding requests; planner/decision timing and

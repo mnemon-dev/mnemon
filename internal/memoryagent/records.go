@@ -60,13 +60,14 @@ type recordValue struct {
 
 type Evidence struct {
 	Reference
-	Text      string     `json:"text"`
-	Source    string     `json:"source,omitempty"`
-	Date      string     `json:"date,omitempty"`
-	Parent    *Reference `json:"parent,omitempty"`
-	Truncated bool       `json:"truncated,omitempty"`
-	Start     int        `json:"start"`
-	End       int        `json:"end"`
+	Text         string     `json:"text"`
+	Source       string     `json:"source,omitempty"`
+	Date         string     `json:"date,omitempty"`
+	Parent       *Reference `json:"parent,omitempty"`
+	ChangedLater bool       `json:"changedLater,omitempty"`
+	Truncated    bool       `json:"truncated,omitempty"`
+	Start        int        `json:"start"`
+	End          int        `json:"end"`
 }
 
 var documentID = regexp.MustCompile(`^[A-Za-z0-9-]{1,75}$`)

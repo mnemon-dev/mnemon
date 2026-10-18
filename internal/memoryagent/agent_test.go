@@ -307,6 +307,35 @@ func TestIndexHintsRequireSelectedCurrentOriginals(t *testing.T) {
 	}
 }
 
+func TestNeededHistoricalEvidenceIsMarkedInsteadOfDiscarded(t *testing.T) {
+	s, _ := agentStore(t)
+	ref := seedNote(t, s, "old", "The old codename was ORBIT")
+	needed := true
+	judge := decisionFunc(func(_ context.Context, _ any, questions map[string]Question) (map[string]float64, Usage, error) {
+		answers := map[string]float64{}
+		for key := range questions {
+			answers[key] = 0
+			if key == "s0" || needed {
+				answers[key] = 1
+			}
+		}
+		return answers, Usage{}, nil
+	})
+	a, err := New(s, Config{Version: 1, Policy: &ReadPolicy{Judging: true, Coverage: true}}, Models{Judge: judge}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := a.Read(context.Background(), ReadRequest{Question: "What was the old codename?"})
+	if err != nil || len(view.Records) != 1 || view.Records[0].Reference != ref || !view.Records[0].ChangedLater || !view.Needs[0].HasEvidence || view.Records[0].Text != "The old codename was ORBIT" {
+		t.Fatal("needed history was lost or its original text changed", view, err)
+	}
+	needed = false
+	view, err = a.Read(context.Background(), ReadRequest{Question: "What is the current codename?"})
+	if err != nil || len(view.Records) != 0 || view.Needs[0].HasEvidence {
+		t.Fatal("unneeded old value became a current witness", view, err)
+	}
+}
+
 func TestConsolidationResumesVectorsWithoutRepeatingModelWork(t *testing.T) {
 	s, dir := agentStore(t)
 	seedNote(t, s, "answer", "codename ORBIT")
