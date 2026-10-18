@@ -3,6 +3,7 @@ package records
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -60,6 +61,19 @@ func TestPersistentLexicalCandidateStatsAndHistory(t *testing.T) {
 			got, err := store.Query(ctx, q)
 			if err != nil || !reflect.DeepEqual(got, want[i]) {
 				t.Fatalf("query %d: got %+v want %+v: %v", i, got, want[i], err)
+			}
+			// Feedback is opt-in; omitting it and explicitly disabling it keep
+			// the same ranking, including filtered and historical snapshots.
+			q.Input = maps.Clone(q.Input)
+			for _, expand := range []json.RawMessage{nil, json.RawMessage("false")} {
+				delete(q.Input, "expand")
+				if expand != nil {
+					q.Input["expand"] = expand
+				}
+				plain, err := store.Query(ctx, q)
+				if err != nil || plain.Expansion != nil || !reflect.DeepEqual(plain.IDs, want[i].IDs) {
+					t.Fatalf("query %d expand=%s: got %+v want IDs %v: %v", i, expand, plain, want[i].IDs, err)
+				}
 			}
 		}
 	}

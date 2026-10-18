@@ -60,6 +60,10 @@ func init() {
 			}
 			return json.NewEncoder(cmd.OutOrStdout()).Encode(result)
 		}}
+		if operation == "query" {
+			command.Short = "Rank raw records; feedback expansion is optional"
+			command.Long = "Read a JSON query from stdin. input.expand defaults to false; set it to true on the first words/hybrid page to return feedback terms for a later search. Ranked IDs are unchanged by this switch."
+		}
 		if operation == "embed" {
 			command.Flags().Bool("status", false, "Report vector coverage without embedding")
 		}
