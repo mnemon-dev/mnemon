@@ -3,7 +3,6 @@ package records
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -127,34 +126,31 @@ func (s *Store) vectors(ctx context.Context, texts []string, cfg EmbeddingConfig
 	known := map[string][]float32{}
 	missing := []string{}
 	seen := map[string]bool{}
+	keys, uncached := []string{}, []string{}
 	for _, text := range texts {
 		key := textHash(text)
 		if seen[key] {
 			continue
 		}
 		seen[key] = true
-		if v := s.cachedVector(key, cfg, prefix); v != nil {
-			known[key] = v
+		if value := s.cachedVector(key, cfg, prefix); value != nil {
+			known[key] = value
 			continue
 		}
-		var blob []byte
-		err := s.db.QueryRowContext(ctx, "SELECT vector FROM embeddings WHERE text_hash=? AND model=? AND prefix=?", key, cfg.Model, prefix).Scan(&blob)
-		if errors.Is(err, sql.ErrNoRows) {
-			if fill {
-				missing = append(missing, text)
-			}
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		v, err := decodeVector(blob)
-		if err != nil {
-			return nil, err
-		}
-		known[key] = v
-		s.keepVector(key, cfg, prefix, v)
+		keys = append(keys, key)
+		uncached = append(uncached, text)
 	}
+	if err := s.loadVectors(ctx, keys, cfg, prefix, known); err != nil {
+		return nil, err
+	}
+	if fill {
+		for i, key := range keys {
+			if known[key] == nil {
+				missing = append(missing, uncached[i])
+			}
+		}
+	}
+
 	if len(missing) > 0 && s.readonly {
 		return nil, errors.New("Missing record embeddings; run records embed before --readonly query")
 	}
@@ -197,52 +193,99 @@ func (s *Store) saveVectors(ctx context.Context, texts []string, values [][]floa
 }
 
 func (s *Store) vectorRank(ctx context.Context, query string, records []record, cfg EmbeddingConfig) ([]string, error) {
-	texts := make([]string, len(records))
-	for i, r := range records {
-		texts[i] = r.VectorText
-	}
-	values, err := s.vectors(ctx, texts, cfg, cfg.DocumentPrefix, true)
-	if err != nil {
-		return nil, err
-	}
-	// Query vectors need not be written by a readonly query.
 	target, err := s.queryVector(ctx, query, cfg)
 	if err != nil {
 		return nil, err
 	}
-	hits := make([]scored, len(records))
-	for i, r := range records {
-		hits[i] = scored{r.ID, dot(target, values[i])}
+	hits := make([]scored, 0, len(records))
+	for start := 0; start < len(records); start += 2048 {
+		end := min(start+2048, len(records))
+		part := records[start:end]
+		texts := make([]string, len(part))
+		for i, r := range part {
+			texts[i] = r.VectorText
+		}
+		values, err := s.vectors(ctx, texts, cfg, cfg.DocumentPrefix, true)
+		if err != nil {
+			return nil, err
+		}
+		for i, r := range part {
+			hits = append(hits, scored{r.ID, dot(target, values[i])})
+		}
 	}
+
 	return rank(hits, 200), nil
 }
 
 func (s *Store) Embed(ctx context.Context, req EmbedRequest, statusOnly bool) (EmbedStatus, error) {
-	rev, _, err := revision(ctx, s.db, req.Revision)
+	rev, hash, err := revision(ctx, s.db, req.Revision)
 	if err != nil {
 		return EmbedStatus{}, err
 	}
-	records, err := load(ctx, s.db, rev)
+	records, err := s.queryRecords(ctx, rev, hash)
 	if err != nil {
 		return EmbedStatus{}, err
 	}
-	texts := make([]string, len(records))
-	for i, r := range records {
-		texts[i] = r.VectorText
-	}
-	values, err := s.vectors(ctx, texts, req.Embedding, req.Embedding.DocumentPrefix, !statusOnly)
-	if err != nil {
-		return EmbedStatus{}, err
-	}
-	status := EmbedStatus{Total: len(texts)}
-	for _, v := range values {
-		if v != nil {
-			status.Embedded++
+	status := EmbedStatus{Total: len(records)}
+	for start := 0; start < len(records); start += 2048 {
+		end := min(start+2048, len(records))
+		texts := make([]string, end-start)
+		for i, r := range records[start:end] {
+			texts[i] = r.VectorText
+		}
+		values, err := s.vectors(ctx, texts, req.Embedding, req.Embedding.DocumentPrefix, !statusOnly)
+		if err != nil {
+			return EmbedStatus{}, err
+		}
+		for _, v := range values {
+			if v != nil {
+				status.Embedded++
+			}
 		}
 	}
+
 	status.Coverage = 1
 	if status.Total > 0 {
 		status.Coverage = float64(status.Embedded) / float64(status.Total)
 	}
 	return status, nil
+}
+
+// Bound both SQL parameters and temporary BLOB/float copies. Serve publishes
+// immutable vectors in its resident map; stateless CLI queries discard chunks.
+func (s *Store) loadVectors(ctx context.Context, keys []string, cfg EmbeddingConfig, prefix string, known map[string][]float32) error {
+	for start := 0; start < len(keys); start += 512 {
+		end := min(start+512, len(keys))
+		part := keys[start:end]
+		args := []any{cfg.Model, prefix}
+		for _, key := range part {
+			args = append(args, key)
+		}
+		query := "SELECT text_hash,vector FROM embeddings WHERE model=? AND prefix=? AND text_hash IN (" + strings.TrimSuffix(strings.Repeat("?,", len(part)), ",") + ")"
+		rows, err := s.db.QueryContext(ctx, query, args...)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var key string
+			var blob []byte
+			if err = rows.Scan(&key, &blob); err != nil {
+				rows.Close()
+				return err
+			}
+			value, e := decodeVector(blob)
+			if e != nil {
+				rows.Close()
+				return e
+			}
+			known[key] = value
+			s.keepVector(key, cfg, prefix, value)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
