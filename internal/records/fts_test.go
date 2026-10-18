@@ -118,6 +118,24 @@ func TestPersistentLexicalCandidateStatsAndHistory(t *testing.T) {
 
 func strconvJSON(text string) string { raw, _ := json.Marshal(text); return string(raw) }
 
+func TestReadTokensPreservesIntegerVersionIDs(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	want := map[int64]string{1: "first", (1 << 53) + 1: "beyond_float64", (1 << 63) - 1: "last"}
+	ids := []int64{-1}
+	for version, text := range want {
+		if _, err := s.db.ExecContext(ctx, "INSERT INTO lexical_documents VALUES(?,?,1)", version, text); err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, version)
+	}
+	got := map[int64]string{}
+	err := s.readTokenVersions(ctx, ids, func(version int64, text string) { got[version] = text })
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatalf("integer membership changed: got=%v want=%v %v", got, want, err)
+	}
+}
+
 func TestLongTokenKeepsExactLexicalFallback(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)

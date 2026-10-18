@@ -3,6 +3,7 @@ package records
 import (
 	"cmp"
 	"context"
+	"encoding/json"
 	"slices"
 	"strings"
 	"sync"
@@ -272,13 +273,15 @@ WHERE lexical_fts MATCH ? AND rowid>=? AND rowid<=?`, match, v.first, v.last)
 }
 
 func (s *Store) readTokenVersions(ctx context.Context, versions []int64, visit func(int64, string)) error {
-	for start := 0; start < len(versions); start += 512 {
-		part := versions[start:min(start+512, len(versions))]
-		args := make([]any, len(part))
-		for i, version := range part {
-			args[i] = version
+	for start := 0; start < len(versions); start += 2048 {
+		part, err := json.Marshal(versions[start:min(start+2048, len(versions))])
+		if err != nil {
+			return err
 		}
-		rows, err := s.readDB().QueryContext(ctx, "SELECT version_id,tokens FROM lexical_documents WHERE version_id IN ("+strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")+")", args...)
+		// Stream unique version IDs into primary-key lookups. One bound value
+		// avoids per-ID binding and constructing an ephemeral IN-list index.
+		rows, err := s.readDB().QueryContext(ctx, `SELECT d.version_id,d.tokens FROM json_each(?) AS wanted
+JOIN lexical_documents AS d ON d.version_id=wanted.value`, string(part))
 		if err != nil {
 			return err
 		}
