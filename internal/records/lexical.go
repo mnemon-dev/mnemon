@@ -119,12 +119,17 @@ func (index *lexicalIndex) searchN(query string, limit int) []string {
 	if n > 0 {
 		average = float64(index.total) / n
 	}
+	parts := index.parts
 	if index.postings != nil {
-		return rank(index.appendPostingScores(nil, terms, n, average, index.df), limit)
+		parts = []*lexicalIndex{index}
 	}
-	if index.parts != nil {
-		hits := []scored{}
-		for _, part := range index.parts {
+	if parts != nil {
+		capacity := 0
+		for _, part := range parts {
+			capacity += part.potentialHits(terms)
+		}
+		hits := make([]scored, 0, capacity)
+		for _, part := range parts {
 			hits = part.appendPostingScores(hits, terms, n, average, index.df)
 		}
 		return rank(hits, limit)
@@ -153,11 +158,19 @@ func (index *lexicalIndex) searchN(query string, limit int) []string {
 	return rank(hits, limit)
 }
 
-func (index *lexicalIndex) appendPostingScores(hits []scored, terms []string, n, average float64, dfCounts map[string]int) []scored {
+func (index *lexicalIndex) potentialHits(terms []string) int {
 	potential := 0
 	for _, token := range terms {
-		potential += len(index.postings[token])
+		potential += min(len(index.postings[token]), len(index.docs)-potential)
+		if potential == len(index.docs) {
+			break
+		}
 	}
+	return potential
+}
+
+func (index *lexicalIndex) appendPostingScores(hits []scored, terms []string, n, average float64, dfCounts map[string]int) []scored {
+	potential := index.potentialHits(terms)
 	if potential == 0 {
 		return hits
 	}

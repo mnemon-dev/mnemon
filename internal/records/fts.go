@@ -156,6 +156,7 @@ func (s *Store) selectionLexical(ctx context.Context, v *querySelection, query s
 		for token := range wanted {
 			frequency += reference.index.df[token]
 		}
+		index.docs = make([]lexicalDoc, 0, min(len(v.docs), frequency))
 		// Broad queries read the short remainder directly. Sparse MATCH uses
 		// only row IDs; cap its historical range relative to current documents.
 		if frequency > len(v.docs)/4 || reference.owner.last > 2*int64(len(reference.owner.docs)) {
