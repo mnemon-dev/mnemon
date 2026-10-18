@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -228,16 +229,26 @@ func vectorScores(ctx context.Context, target []float32, docs []record, values [
 	}
 	// Independent documents can run concurrently without changing a dot
 	// product's float64 addition order. Small sets avoid goroutine overhead;
-	// each query owns, cancels and joins at most GOMAXPROCS bounded partitions.
+	// each query owns, cancels and joins at most GOMAXPROCS workers. Disjoint
+	// small batches balance progress without changing a document's additions.
 	workers := min(runtime.GOMAXPROCS(0), max(1, len(docs)/4096))
 	if workers == 1 {
 		score(0, len(docs))
 	} else {
 		var wg sync.WaitGroup
+		var next atomic.Int64
 		for worker := 0; worker < workers; worker++ {
-			start, end := worker*len(docs)/workers, (worker+1)*len(docs)/workers
 			wg.Add(1)
-			go func() { defer wg.Done(); score(start, end) }()
+			go func() {
+				defer wg.Done()
+				for ctx.Err() == nil {
+					start := int(next.Add(512)) - 512
+					if start >= len(docs) {
+						return
+					}
+					score(start, min(start+512, len(docs)))
+				}
+			}()
 		}
 		wg.Wait()
 	}
