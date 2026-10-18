@@ -59,11 +59,13 @@ type lexicalDoc struct {
 	length int
 }
 type lexicalIndex struct {
-	docs  []lexicalDoc
-	df    map[string]int
-	total int
-	n     int
+	docs     []lexicalDoc
+	df       map[string]int
+	total    int
+	n        int
+	postings map[string][]posting
 }
+type posting struct{ doc, count int }
 type scored struct {
 	id    string
 	score float64
@@ -106,21 +108,53 @@ func (index *lexicalIndex) search(query string) []string {
 	if n > 0 {
 		average = float64(index.total) / n
 	}
+	if index.postings != nil {
+		return index.searchPostings(terms, n, average)
+	}
+	idfs := make([]float64, len(terms))
+	for i, token := range terms {
+		df := float64(index.df[token])
+		idfs[i] = jsLog(1 + (n-df+0.5)/(df+0.5))
+	}
 	hits := []scored{}
 	for _, doc := range index.docs {
 		score := 0.0
-		for _, token := range terms {
+		for i, token := range terms {
 			tf := float64(doc.tf[token])
 			if tf == 0 {
 				continue
 			}
-			df := float64(index.df[token])
-			idf := jsLog(1 + (n-df+0.5)/(df+0.5))
+			idf := idfs[i]
 			scaled := float64(1.2 * (0.25 + 0.75*float64(doc.length)/average))
 			score += 1 * idf * (tf * 2.2) / (tf + scaled)
 		}
 		if score > 0 {
 			hits = append(hits, scored{doc.id, score})
+		}
+	}
+	return rank(hits, len(hits))
+}
+
+func (index *lexicalIndex) searchPostings(terms []string, n, average float64) []string {
+	scores := make([]float64, len(index.docs))
+	scaled := make([]float64, len(index.docs))
+	for i, doc := range index.docs {
+		scaled[i] = float64(1.2 * (0.25 + 0.75*float64(doc.length)/average))
+	}
+	// Query order is the original TS Map insertion order. Only documents with
+	// a nonzero tf are visited; each document's additions retain that order.
+	for _, token := range terms {
+		df := float64(index.df[token])
+		idf := jsLog(1 + (n-df+0.5)/(df+0.5))
+		for _, p := range index.postings[token] {
+			tf := float64(p.count)
+			scores[p.doc] += 1 * idf * (tf * 2.2) / (tf + scaled[p.doc])
+		}
+	}
+	hits := make([]scored, 0, len(index.docs))
+	for i, score := range scores {
+		if score > 0 {
+			hits = append(hits, scored{index.docs[i].id, score})
 		}
 	}
 	return rank(hits, len(hits))

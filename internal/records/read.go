@@ -62,6 +62,7 @@ func (s *Store) queryRecords(ctx context.Context, rev int64, hash string) ([]rec
 			c.documents = 0
 			c.snapshotHash = ""
 			c.snapshot = nil
+			c.clearSelections()
 		}
 		if c.snapshotHash == hash {
 			snapshot := c.snapshot
@@ -101,6 +102,9 @@ FROM record_versions r`+join+` WHERE r.rev_from<=? AND (r.rev_to IS NULL OR r.re
 	if c := s.cache; c != nil && len(out) <= 200000 {
 		c.mu.Lock()
 		if c.current == current && c.lexicalBuild == lexicalBuild {
+			if c.snapshotHash != hash {
+				c.clearSelections()
+			}
 			c.snapshotHash = hash
 			c.snapshot = out
 		}

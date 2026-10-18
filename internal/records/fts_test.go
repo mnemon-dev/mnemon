@@ -3,6 +3,7 @@ package records
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"maps"
 	"path/filepath"
 	"reflect"
@@ -77,6 +78,7 @@ func TestPersistentLexicalCandidateStatsAndHistory(t *testing.T) {
 			}
 		}
 	}
+	s.cache = newQueryCache()
 	check(s)
 	if _, err := s.Put(ctx, PutRequest{ExpectedRevision: &first, Upsert: []Upsert{sample("a", "lake new")}, Delete: []string{"b"}}); err != nil {
 		t.Fatal(err)
@@ -85,6 +87,15 @@ func TestPersistentLexicalCandidateStatsAndHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	check(s) // Historical postings/stats remain exact after replacement/deletion.
+	// Alternate historical and current reads without another write/build between
+	// them: no prepared membership, aggregate df or borrowed view may cross revisions.
+	current, err := s.Query(ctx, QueryRequest{Input: map[string]json.RawMessage{
+		"query": json.RawMessage(`"lake"`), "match": json.RawMessage(`"words"`), "expand": json.RawMessage(`true`),
+	}})
+	if err != nil || !reflect.DeepEqual(current.IDs, []string{"a", "c"}) {
+		t.Fatal(current, err)
+	}
+	check(s)
 	ro, err := Open(filepath.Dir(sPath(t, s)), true)
 	if err != nil {
 		t.Fatal(err)
@@ -123,4 +134,52 @@ func TestLongTokenKeepsExactLexicalFallback(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(got.IDs, []string{"a"}) {
 		t.Fatal(got, err)
 	}
+}
+
+func TestPreparedStatisticsCancellationAndConcurrentQueries(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	hash, err := s.Put(ctx, PutRequest{Upsert: []Upsert{
+		sample("a", "dog dog lake local_cache"), sample("b", "dog cat lake"), sample("c", "cat cat"),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := QueryRequest{Revision: hash, Input: map[string]json.RawMessage{
+		"query": json.RawMessage(`"dog cat"`), "match": json.RawMessage(`"words"`), "expand": json.RawMessage(`true`),
+	}}
+	want, err := s.Query(ctx, q) // Independent original tokenizer/statistics path.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.buildLexical(ctx); err != nil {
+		t.Fatal(err)
+	}
+	docs, err := s.queryRecords(ctx, 1, hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := newSelection(docs)
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err = s.selectionDF(canceled, v); !errors.Is(err, context.Canceled) {
+		t.Fatalf("canceled preparation: %v", err)
+	}
+	df, err := s.selectionDF(ctx, v)
+	if err != nil || df["dog"] != 2 || df["cat"] != 2 {
+		t.Fatal(df, err)
+	}
+	s.cache = newQueryCache()
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			got, err := s.Query(ctx, q)
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Errorf("concurrent query: %+v %v", got, err)
+			}
+		}()
+	}
+	wg.Wait()
 }

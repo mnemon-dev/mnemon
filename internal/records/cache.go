@@ -11,22 +11,26 @@ import (
 // The BM25 budget is a hard 150k documents, so an oversized single index is not
 // retained. Historical reads remain valid but never substitute a newer revision.
 type queryCache struct {
-	mu           sync.Mutex
-	current      string
-	indexes      map[string]*lexicalIndex
-	order        []string
-	documents    int
-	vectors      map[string][]float32
-	queries      map[string][]float32
-	queryOrder   []string
-	snapshotHash string
-	snapshot     []record
-	lexicalWake  chan struct{}
-	lexicalBuild uint64
+	mu             sync.Mutex
+	current        string
+	indexes        map[string]*lexicalIndex
+	order          []string
+	documents      int
+	vectors        map[string][]float32
+	queries        map[string][]float32
+	queryOrder     []string
+	snapshotHash   string
+	snapshot       []record
+	lexicalWake    chan struct{}
+	lexicalBuild   uint64
+	selections     map[string]*querySelection
+	selectionOrder []string
+	selectionDocs  int
+	allSelection   *querySelection
 }
 
 func newQueryCache() *queryCache {
-	return &queryCache{indexes: map[string]*lexicalIndex{}, vectors: map[string][]float32{}, queries: map[string][]float32{}, lexicalWake: make(chan struct{}, 1)}
+	return &queryCache{indexes: map[string]*lexicalIndex{}, selections: map[string]*querySelection{}, vectors: map[string][]float32{}, queries: map[string][]float32{}, lexicalWake: make(chan struct{}, 1)}
 }
 
 func (s *Store) wakeLexical() {
@@ -38,14 +42,7 @@ func (s *Store) wakeLexical() {
 	}
 }
 
-func (s *Store) lexical(ctx context.Context, hash string, req QueryRequest, docs []record) (*lexicalIndex, error) {
-	if s.cache == nil {
-		return newLexical(docs), nil
-	}
-	_, current, err := revision(ctx, s.db, "")
-	if err != nil {
-		return nil, err
-	}
+func searchKey(hash string, req QueryRequest) string {
 	var ids []string
 	var values []json.RawMessage
 	if json.Unmarshal(req.Input["ids"], &values) == nil && string(req.Input["ids"]) != "null" {
@@ -61,10 +58,27 @@ func (s *Store) lexical(ctx context.Context, hash string, req QueryRequest, docs
 		sort.Strings(ids)
 	}
 	in := req.Input
+	present := []bool{}
+	for _, field := range []string{"id", "kind", "date", "status", "since", "until"} {
+		present = append(present, in[field] != nil)
+	}
 	// Same filter tuple as Source.searchCache, with the visible snapshot's scope
 	// explicit because the engine receives the full, rather than scoped, journal.
-	raw, _ := json.Marshal([]any{hash, trueValue(in["archived"]), in["id"], ids, in["kind"], in["date"], in["status"], in["since"], in["until"], req.Scope})
-	key := string(raw)
+	// JSON null and an absent filter are different candidate sets, even though
+	// JSON.stringify maps undefined tuple elements to null in TS's cache key.
+	raw, _ := json.Marshal([]any{hash, trueValue(in["archived"]), in["id"], ids, in["kind"], in["date"], in["status"], in["since"], in["until"], req.Scope, present})
+	return string(raw)
+}
+
+func (s *Store) lexical(ctx context.Context, hash string, req QueryRequest, docs []record) (*lexicalIndex, error) {
+	if s.cache == nil {
+		return newLexical(docs), nil
+	}
+	_, current, err := revision(ctx, s.db, "")
+	if err != nil {
+		return nil, err
+	}
+	key := searchKey(hash, req)
 	c := s.cache
 	c.mu.Lock()
 	if c.current != current {
@@ -74,6 +88,7 @@ func (s *Store) lexical(ctx context.Context, hash string, req QueryRequest, docs
 		c.documents = 0
 		c.snapshotHash = ""
 		c.snapshot = nil
+		c.clearSelections()
 	}
 	index := c.indexes[key]
 	c.mu.Unlock()

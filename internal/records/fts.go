@@ -83,6 +83,7 @@ func (s *Store) buildLexical(ctx context.Context) error {
 		c.lexicalBuild++ // Do not publish a metadata read started before this build.
 		c.snapshotHash, c.snapshot = "", nil
 		c.indexes, c.order, c.documents = map[string]*lexicalIndex{}, nil, 0
+		c.clearSelections()
 		c.mu.Unlock()
 	}
 	return nil
@@ -127,117 +128,104 @@ func (s *Store) saveLexical(ctx context.Context, batch []record) error {
 }
 
 func (s *Store) precomputedLexical(ctx context.Context, docs []record, query string) (*lexicalIndex, bool, error) {
-	if !s.fts {
+	return s.selectionLexical(ctx, newSelection(docs), query)
+}
+
+func (s *Store) selectionLexical(ctx context.Context, v *querySelection, query string) (*lexicalIndex, bool, error) {
+	if !s.fts || !v.ready {
+		s.wakeLexical()
 		return nil, false, nil
 	}
-	wanted := make(map[int64]int, len(docs))
-	index := &lexicalIndex{docs: make([]lexicalDoc, len(docs)), df: map[string]int{}, n: len(docs)}
-	for i, r := range docs {
-		if r.VersionID == 0 || r.TokenCount < 0 {
-			if r.TokenCount == -1 {
-				s.wakeLexical()
-			}
-			return nil, false, nil
-		}
-		wanted[r.VersionID] = i
-		index.docs[i] = lexicalDoc{id: r.ID, length: r.TokenCount}
-		index.total += r.TokenCount
-	}
+	wanted := map[string]bool{}
 	terms := []string{}
-	seen := map[string]bool{}
 	for _, token := range Tokens(query) {
 		if len(token) > 32768 {
 			return nil, false, nil
 		}
-		if !seen[token] {
-			terms = append(terms, token)
-			seen[token] = true
+		if !wanted[token] {
+			wanted[token] = true
+			terms = append(terms, `"`+token+`"`)
 		}
 	}
-	counts, err := s.ftsCounts(ctx, terms, wanted)
-	if err != nil {
-		return nil, false, err
+	index := &lexicalIndex{df: map[string]int{}, n: len(v.docs), total: v.total, postings: map[string][]posting{}}
+	if len(terms) == 0 {
+		return index, true, nil
 	}
-	for token, posting := range counts {
-		index.df[token] = len(posting)
-		for pos, count := range posting {
-			if index.docs[pos].tf == nil {
-				index.docs[pos].tf = map[string]int{}
+	err := s.selectionTokens(ctx, v, strings.Join(terms, " OR "), func(version int64, text string) {
+		tf := map[string]int{}
+		for token := range strings.SplitSeq(text, " ") {
+			if wanted[token] {
+				tf[token]++
 			}
-			index.docs[pos].tf[token] = count
 		}
-	}
-	return index, true, nil
+		if len(tf) == 0 {
+			return
+		}
+		r := v.docs[v.wanted[version]]
+		pos := len(index.docs)
+		index.docs = append(index.docs, lexicalDoc{id: r.ID, length: r.TokenCount})
+		for token, count := range tf {
+			index.df[token]++
+			index.postings[token] = append(index.postings[token], posting{pos, count})
+		}
+	})
+	return index, true, err
 }
 
-func (s *Store) ftsCounts(ctx context.Context, terms []string, wanted map[int64]int) (map[string]map[int]int, error) {
-	out := map[string]map[int]int{}
-	for start := 0; start < len(terms); start += 512 {
-		part := terms[start:min(start+512, len(terms))]
-		args := make([]any, len(part))
-		for i, term := range part {
-			args[i] = term
-		}
-		query := "SELECT term,doc,count(*) FROM lexical_terms WHERE term IN (" + strings.TrimSuffix(strings.Repeat("?,", len(part)), ",") + ") GROUP BY term,doc"
-		rows, err := s.db.QueryContext(ctx, query, args...)
-		if err != nil {
-			return nil, err
-		}
-		for rows.Next() {
-			var token string
-			var row int64
-			var count int
-			if err = rows.Scan(&token, &row, &count); err != nil {
-				rows.Close()
-				return nil, err
-			}
-			if pos, ok := wanted[row]; ok {
-				if out[token] == nil {
-					out[token] = map[int]int{}
-				}
-				out[token][pos] = count
-			}
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return nil, err
+func (s *Store) queryLexical(ctx context.Context, hash string, req QueryRequest, v *querySelection, query string) (*lexicalIndex, bool, error) {
+	key := searchKey(hash, req) + "\npostings:" + query
+	if c := s.cache; c != nil {
+		c.mu.Lock()
+		index := c.indexes[key]
+		c.mu.Unlock()
+		if index != nil {
+			return index, true, nil
 		}
 	}
-	return out, nil
+	index, ready, err := s.selectionLexical(ctx, v, query)
+	if err == nil && ready && s.cache != nil && len(index.docs) <= 150000 {
+		c := s.cache
+		c.mu.Lock()
+		if c.snapshotHash == hash && c.indexes[key] == nil {
+			for len(c.order) >= 256 || c.documents+len(index.docs) > 150000 {
+				oldest := c.order[0]
+				c.order = c.order[1:]
+				c.documents -= len(c.indexes[oldest].docs)
+				delete(c.indexes, oldest)
+			}
+			c.indexes[key] = index
+			c.order = append(c.order, key)
+			c.documents += len(index.docs)
+		}
+		c.mu.Unlock()
+	}
+	return index, ready, err
 }
 
 func (s *Store) precomputedFeedback(ctx context.Context, docs []record, ids []string, query string) (*lexicalIndex, error) {
+	return s.selectionFeedback(ctx, newSelection(docs), ids)
+}
+
+func (s *Store) selectionFeedback(ctx context.Context, v *querySelection, ids []string) (*lexicalIndex, error) {
 	selected := map[string]bool{}
 	for _, id := range ids {
 		selected[id] = true
 	}
-	wanted := make(map[int64]int, len(docs))
 	top := []record{}
-	for i, r := range docs {
-		wanted[r.VersionID] = i
+	for _, r := range v.docs {
 		if selected[r.ID] {
 			top = append(top, r)
 		}
 	}
 	index := newLexical(top)
-	index.n = len(docs)
-	exclude := map[string]bool{}
-	for _, token := range Tokens(query) {
-		exclude[token] = true
+	index.n = len(v.docs)
+	if len(top) == 0 {
+		return index, nil
 	}
-	terms := []string{}
-	for token := range index.df {
-		if feedbackToken(token, exclude) {
-			terms = append(terms, token)
-		}
-	}
-	counts, err := s.ftsCounts(ctx, terms, wanted)
+	df, err := s.selectionDF(ctx, v)
 	if err != nil {
 		return nil, err
 	}
-	for _, token := range terms {
-		index.df[token] = len(counts[token])
-	}
+	index.df = df
 	return index, nil
 }

@@ -150,4 +150,24 @@ func TestTSMultiTermRoundingGolden(t *testing.T) {
 	if got := newLexical(docs).search(lower(fixture.Query)); !reflect.DeepEqual(got, fixture.Expected) {
 		t.Fatalf("long-query tie differs from original TS: %v", got)
 	}
+	s := testStore(t)
+	upserts := make([]Upsert, len(docs))
+	for i, d := range docs {
+		upserts[i] = sample(d.ID, "")
+		upserts[i].SearchText = d.SearchText
+	}
+	ctx := context.Background()
+	hash, err := s.Put(ctx, PutRequest{Upsert: upserts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.buildLexical(ctx); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Query(ctx, QueryRequest{Revision: hash, Input: map[string]json.RawMessage{
+		"query": json.RawMessage(strconvJSON(fixture.Query)), "match": json.RawMessage(`"words"`),
+	}})
+	if err != nil || !reflect.DeepEqual(got.IDs, fixture.Expected) {
+		t.Fatalf("sparse long-query tie differs from original TS: %v %v", got, err)
+	}
 }

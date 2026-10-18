@@ -78,18 +78,18 @@ func candidates(all []record, req QueryRequest, term string, words bool) []recor
 			}
 		}
 	}
-	for _, r := range all {
+	accept := func(r record) bool {
 		if !visible(r, req.Scope) || !(r.State == "active" || trueValue(in["archived"]) && r.State == "archived") {
-			continue
+			return false
 		}
 		if !equalString(in["id"], r.ID) || idsEnabled && !ids[r.ID] || !equalString(in["kind"], r.Kind) {
-			continue
+			return false
 		}
 		if in["date"] != nil && (r.Date == nil || !equalString(in["date"], *r.Date)) {
-			continue
+			return false
 		}
 		if in["status"] != nil && !scalarEqual(r.Data["status"], in["status"]) {
-			continue
+			return false
 		}
 		day := r.CreatedAt
 		if len(day) > 10 {
@@ -105,7 +105,7 @@ func candidates(all []record, req QueryRequest, term string, words bool) []recor
 				actual = r.CreatedAt
 			}
 			if actual < bound {
-				continue
+				return false
 			}
 		}
 		if v := in["until"]; v != nil {
@@ -115,13 +115,29 @@ func candidates(all []record, req QueryRequest, term string, words bool) []recor
 				actual = r.CreatedAt
 			}
 			if actual > bound {
-				continue
+				return false
 			}
 		}
 		if term != "" && !words && !strings.Contains(lower(r.SearchText), term) {
+			return false
+		}
+		return true
+	}
+	var filtered bool
+	for i, r := range all {
+		if !accept(r) {
+			if !filtered {
+				out = append(out, all[:i]...)
+				filtered = true
+			}
 			continue
 		}
-		out = append(out, r)
+		if filtered {
+			out = append(out, r)
+		}
+	}
+	if !filtered {
+		return all // Immutable borrowed view; callers must not sort this slice.
 	}
 	return out
 }
@@ -139,10 +155,14 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 	term := lower(query)
 	match := stringValue(req.Input["match"])
 	words := (match == "words" || match == "hybrid") && term != ""
-	records := candidates(all, req, term, words)
+	selection := s.selectRecords(all, hash, req)
+	records := selection.docs
+	if !words && term != "" {
+		records = candidates(records, req, term, false)
+	}
 	result := QueryResult{IDs: []string{}}
 	if words {
-		index, precomputed, err := s.precomputedLexical(ctx, records, term)
+		index, precomputed, err := s.queryLexical(ctx, hash, req, selection, term)
 		if err == nil && !precomputed {
 			index, err = s.lexical(ctx, hash, req, records)
 		}
@@ -163,7 +183,7 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 				ids = ids[:10]
 			}
 			if precomputed {
-				index, err = s.precomputedFeedback(ctx, records, ids, term)
+				index, err = s.selectionFeedback(ctx, selection, ids)
 				if err != nil {
 					return QueryResult{}, err
 				}
@@ -173,6 +193,7 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 		}
 	} else {
 		if string(req.Input["recent"]) != "false" {
+			records = append([]record(nil), records...)
 			sort.SliceStable(records, func(i, j int) bool {
 				if records[i].CreatedAt == records[j].CreatedAt {
 					return records[i].ID < records[j].ID
