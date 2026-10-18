@@ -99,6 +99,10 @@ func newLexical(records []record) *lexicalIndex {
 }
 
 func (index *lexicalIndex) search(query string) []string {
+	return index.searchN(query, index.n)
+}
+
+func (index *lexicalIndex) searchN(query string, limit int) []string {
 	terms := []string{}
 	seen := map[string]bool{}
 	for _, t := range Tokens(query) {
@@ -116,14 +120,14 @@ func (index *lexicalIndex) search(query string) []string {
 		average = float64(index.total) / n
 	}
 	if index.postings != nil {
-		return rank(index.appendPostingScores(nil, terms, n, average, index.df), len(index.docs))
+		return rank(index.appendPostingScores(nil, terms, n, average, index.df), limit)
 	}
 	if index.parts != nil {
 		hits := []scored{}
 		for _, part := range index.parts {
 			hits = part.appendPostingScores(hits, terms, n, average, index.df)
 		}
-		return rank(hits, len(hits))
+		return rank(hits, limit)
 	}
 	idfs := make([]float64, len(terms))
 	for i, token := range terms {
@@ -146,7 +150,7 @@ func (index *lexicalIndex) search(query string) []string {
 			hits = append(hits, scored{doc.id, score})
 		}
 	}
-	return rank(hits, len(hits))
+	return rank(hits, limit)
 }
 
 func (index *lexicalIndex) appendPostingScores(hits []scored, terms []string, n, average float64, dfCounts map[string]int) []scored {
