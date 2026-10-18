@@ -107,6 +107,47 @@ func TestBudgetAtomicCapAcrossOwners(t *testing.T) {
 	}
 }
 
+func TestBudgetConcurrentOwnersReserveAndSettle(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "budget.db")
+	owners := []*Budget{}
+	for range 4 {
+		owner, err := OpenBudget(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { owner.Close() })
+		owners = append(owners, owner)
+	}
+	errors := make(chan error, len(owners))
+	var work sync.WaitGroup
+	for _, owner := range owners {
+		work.Add(1)
+		go func() {
+			defer work.Done()
+			for range 30 {
+				id, err := owner.reserve(context.Background(), "jev", "request-hash")
+				if err == nil {
+					err = owner.settle(context.Background(), id, Usage{InputTokens: 1000, OutputTokens: 1, USD: 0.000042})
+				}
+				if err != nil {
+					errors <- err
+					return
+				}
+			}
+		}()
+	}
+	work.Wait()
+	close(errors)
+	for err := range errors {
+		t.Fatal("concurrent settlement failed", err)
+	}
+	var spent, held float64
+	owners[0].db.QueryRow("SELECT spent,held FROM accounts WHERE kind='jev'").Scan(&spent, &held)
+	if spent < 0.005039 || spent > 0.005041 || held < -1e-8 || held > 1e-8 {
+		t.Fatal("settlement lost metering or left reservations", spent, held)
+	}
+}
+
 func TestLocalDecisionNullAndEndpointGuards(t *testing.T) {
 	p, err := NewProvider(ModelConfig{Kind: "local", Model: "local-test", BaseURL: "http://127.0.0.1:1/v1"}, nil)
 	if err != nil {

@@ -37,6 +37,9 @@ func OpenBudget(path string) (*Budget, error) {
 	u := url.URL{Scheme: "file", Path: path}
 	q := u.Query()
 	q.Set("_pragma", "busy_timeout(10000)")
+	// Reserve the writer before reading an attempt. Deferred transactions can
+	// deadlock when two processes both upgrade settlement reads to writes.
+	q.Set("_txlock", "immediate")
 	u.RawQuery = q.Encode()
 	db, err := sql.Open("sqlite", u.String())
 	if err != nil {
