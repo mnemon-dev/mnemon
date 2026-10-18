@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"runtime"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -207,14 +209,42 @@ func (s *Store) selectionVectorRank(ctx context.Context, query string, v *queryS
 	if err != nil {
 		return nil, err
 	}
-	hits := make([]scored, len(v.docs))
-	for i, r := range v.docs {
-		if i%2048 == 0 && ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		hits[i] = scored{r.ID, dot(target, values[i])}
+	hits, err := vectorScores(ctx, target, v.docs, values)
+	if err != nil {
+		return nil, err
 	}
 	return rank(hits, 200), nil
+}
+
+func vectorScores(ctx context.Context, target []float32, docs []record, values [][]float32) ([]scored, error) {
+	hits := make([]scored, len(docs))
+	score := func(start, end int) {
+		for i := start; i < end; i++ {
+			if (i-start)%2048 == 0 && ctx.Err() != nil {
+				return
+			}
+			hits[i] = scored{docs[i].ID, dot(target, values[i])}
+		}
+	}
+	// Independent documents can run concurrently without changing a dot
+	// product's float64 addition order. Small sets avoid goroutine overhead;
+	// each query owns, cancels and joins at most GOMAXPROCS bounded partitions.
+	workers := min(runtime.GOMAXPROCS(0), max(1, len(docs)/4096))
+	if workers == 1 {
+		score(0, len(docs))
+	} else {
+		var wg sync.WaitGroup
+		for worker := 0; worker < workers; worker++ {
+			start, end := worker*len(docs)/workers, (worker+1)*len(docs)/workers
+			wg.Add(1)
+			go func() { defer wg.Done(); score(start, end) }()
+		}
+		wg.Wait()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return hits, nil
 }
 
 func (s *Store) selectionVectors(ctx context.Context, v *querySelection, cfg EmbeddingConfig) ([][]float32, error) {

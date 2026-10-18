@@ -3,6 +3,7 @@ package records
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
@@ -54,12 +55,12 @@ func TestVectorChunksPersistDuplicatesAndKeepRanks(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 	cfg := EmbeddingConfig{URL: server.URL, Model: "chunks", QueryPrefix: "q: ", DocumentPrefix: "d: "}
-	rows := make([]record, 2501)
+	rows := make([]record, 8193)
 	for i := range rows {
 		rows[i] = record{ID: fmt.Sprintf("%08x-0000-0000-0000-000000000000", i), VectorText: strconv.Itoa(i)}
 	}
-	rows[2500].VectorText = rows[0].VectorText
-	want := []string{rows[0].ID, rows[2500].ID}
+	rows[8192].VectorText = rows[0].VectorText
+	want := []string{rows[0].ID, rows[8192].ID}
 	for i := 1; i < 199; i++ {
 		want = append(want, rows[i].ID)
 	}
@@ -73,12 +74,17 @@ func TestVectorChunksPersistDuplicatesAndKeepRanks(t *testing.T) {
 			t.Fatalf("run %d ranks differ: %v %v", run, got, err)
 		}
 	}
-	if documents.Load() != 2500 || queries.Load() != 2 {
+	if documents.Load() != 8192 || queries.Load() != 2 {
 		t.Fatalf("unexpected repeated embeddings: docs=%d queries=%d", documents.Load(), queries.Load())
 	}
 	var stored int
-	if err := s.db.QueryRow("SELECT count(*) FROM embeddings").Scan(&stored); err != nil || stored != 2500 {
+	if err := s.db.QueryRow("SELECT count(*) FROM embeddings").Scan(&stored); err != nil || stored != 8192 {
 		t.Fatalf("durable unique vectors %d %v", stored, err)
+	}
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err := vectorScores(canceled, []float32{1, 0}, rows, make([][]float32, len(rows))); !errors.Is(err, context.Canceled) {
+		t.Fatalf("parallel scoring cancellation: %v", err)
 	}
 }
 
