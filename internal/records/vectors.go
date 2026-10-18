@@ -282,7 +282,7 @@ func (s *Store) Embed(ctx context.Context, req EmbedRequest, statusOnly bool) (E
 			return EmbedStatus{}, err
 		}
 	}
-	rev, hash, err := revision(ctx, s.db, req.Revision)
+	rev, hash, err := revision(ctx, s.readDB(), req.Revision)
 	if err != nil {
 		return EmbedStatus{}, err
 	}
@@ -326,7 +326,7 @@ func (s *Store) loadVectors(ctx context.Context, keys []string, cfg EmbeddingCon
 			args = append(args, key)
 		}
 		query := "SELECT text_hash,vector FROM embeddings WHERE model=? AND prefix=? AND text_hash IN (" + strings.TrimSuffix(strings.Repeat("?,", len(part)), ",") + ")"
-		rows, err := s.db.QueryContext(ctx, query, args...)
+		rows, err := s.readDB().QueryContext(ctx, query, args...)
 		if err != nil {
 			return err
 		}

@@ -11,22 +11,23 @@ import (
 // The BM25 budget is a hard 150k documents, so an oversized single index is not
 // retained. Historical reads remain valid but never substitute a newer revision.
 type queryCache struct {
-	mu             sync.Mutex
-	current        string
-	indexes        map[string]*lexicalIndex
-	order          []string
-	documents      int
-	vectors        map[string][]float32
-	queries        map[string][]float32
-	queryOrder     []string
-	snapshotHash   string
-	snapshot       []record
-	lexicalWake    chan struct{}
-	lexicalBuild   uint64
-	selections     map[string]*querySelection
-	selectionOrder []string
-	selectionDocs  int
-	allSelection   *querySelection
+	mu              sync.Mutex
+	current         string
+	indexes         map[string]*lexicalIndex
+	order           []string
+	documents       int
+	vectors         map[string][]float32
+	queries         map[string][]float32
+	queryOrder      []string
+	snapshotHash    string
+	snapshot        []record
+	snapshotLoading chan struct{}
+	lexicalWake     chan struct{}
+	lexicalBuild    uint64
+	selections      map[string]*querySelection
+	selectionOrder  []string
+	selectionDocs   int
+	allSelection    *querySelection
 }
 
 func newQueryCache() *queryCache {
@@ -34,7 +35,7 @@ func newQueryCache() *queryCache {
 }
 
 func (s *Store) wakeLexical() {
-	if s.cache != nil && !s.readonly {
+	if s.cache != nil {
 		select {
 		case s.cache.lexicalWake <- struct{}{}:
 		default: // One queued build also covers every intervening committed write.
@@ -74,7 +75,7 @@ func (s *Store) lexical(ctx context.Context, hash string, req QueryRequest, docs
 	if s.cache == nil {
 		return newLexical(docs), nil
 	}
-	_, current, err := revision(ctx, s.db, "")
+	_, current, err := revision(ctx, s.readDB(), "")
 	if err != nil {
 		return nil, err
 	}

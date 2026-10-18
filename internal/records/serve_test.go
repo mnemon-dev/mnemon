@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 )
@@ -119,6 +121,19 @@ func TestServeCASRevisionAndCancellation(t *testing.T) {
 	if stringValue(call(map[string]any{"operation": "get", "ids": []string{}})["revision"]) != second {
 		t.Fatal("malformed frame changed the collection")
 	}
+	// A reserved writer must not monopolize the read path. The read-only pool
+	// observes committed state while the single writer owns its immediate tx.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = call(q(second))
+	tx.Rollback()
+	json.Unmarshal(got["ids"], &ids)
+	if !reflect.DeepEqual(ids, []string{"b"}) {
+		t.Fatal("reader blocked or changed under reserved writer", got)
+	}
+	checkConcurrentServeCAS(t, path, second)
 	// Fill idle connections, then cancellation must close them and join workers.
 	idle := []net.Conn{}
 	for i := 0; i < 15; i++ {
@@ -144,6 +159,67 @@ func TestServeCASRevisionAndCancellation(t *testing.T) {
 	}
 	if _, err = os.Stat(path); !os.IsNotExist(err) {
 		t.Fatal("owned socket not removed", err)
+	}
+}
+
+func checkConcurrentServeCAS(t *testing.T, path, hash string) {
+	t.Helper()
+	frame := func(request any) (map[string]json.RawMessage, error) {
+		conn, err := net.Dial("unix", path)
+		if err != nil {
+			return nil, err
+		}
+		defer conn.Close()
+		conn.SetDeadline(time.Now().Add(5 * time.Second))
+		if err = json.NewEncoder(conn).Encode(request); err != nil {
+			return nil, err
+		}
+		var result map[string]json.RawMessage
+		err = json.NewDecoder(conn).Decode(&result)
+		return result, err
+	}
+	var wg sync.WaitGroup
+	results := make(chan map[string]json.RawMessage, 8)
+	for i := 0; i < 8; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 10; j++ {
+				r, err := frame(map[string]any{"operation": "query", "revision": hash, "input": map[string]any{"query": "dog", "match": "words", "expand": true}})
+				var ids []string
+				json.Unmarshal(r["ids"], &ids)
+				if err != nil || !reflect.DeepEqual(ids, []string{"b"}) {
+					t.Errorf("concurrent pinned read: %s %v", r, err)
+					return
+				}
+			}
+		}()
+		go func(i int) {
+			defer wg.Done()
+			r, err := frame(map[string]any{"operation": "put", "expectedRevision": hash, "upsert": []Upsert{sample(fmt.Sprintf("writer-%d", i), "dog pine")}})
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			results <- r
+		}(i)
+	}
+	wg.Wait()
+	close(results)
+	winners, conflicts := 0, 0
+	for r := range results {
+		if stringValue(r["revision"]) != "" {
+			winners++
+			continue
+		}
+		if stringValue(r["error"]) == ErrConflict.Error() {
+			conflicts++
+			continue
+		}
+		t.Errorf("concurrent CAS: %s", r)
+	}
+	if winners != 1 || conflicts != 7 {
+		t.Fatalf("CAS winners=%d conflicts=%d", winners, conflicts)
 	}
 }
 

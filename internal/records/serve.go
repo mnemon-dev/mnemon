@@ -3,6 +3,7 @@ package records
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,20 +37,32 @@ func (s *Store) Serve(ctx context.Context, path string) error {
 	}
 	s.cache = newQueryCache()
 	defer func() { s.cache = nil }()
+	// Readers may run concurrently in WAL mode; CAS, vector writes and lexical
+	// batches keep the original single writer connection and immediate tx lock.
+	readers, err := sql.Open("sqlite", sqliteDSN(s.path, true))
+	if err != nil {
+		return err
+	}
+	readers.SetMaxOpenConns(4)
+	readers.SetMaxIdleConns(4)
+	if err := readers.PingContext(ctx); err != nil {
+		readers.Close()
+		return err
+	}
+	s.readers = readers
+	defer func() { readers.Close(); s.readers = nil }()
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var workers, watcher sync.WaitGroup
 	var mu sync.Mutex
 	connections := map[net.Conn]bool{}
 	slots := make(chan struct{}, 16)
-	if !s.readonly {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			s.runLexicalWorker(ctx)
-		}()
-		s.wakeLexical()
-	}
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		s.runLexicalWorker(ctx)
+	}()
+	s.wakeLexical()
 	watcher.Add(1)
 	go func() {
 		defer watcher.Done()

@@ -36,21 +36,7 @@ func searchLower(r record) string {
 
 func (v *querySelection) queryIDs(ctx context.Context, term string, recent bool) ([]string, error) {
 	if recent {
-		// Pure, bounded CPU work on this immutable view. Never sort borrowed
-		// records: lexical/vector positions and historical readers share them.
-		v.recentOnce.Do(func() {
-			v.recent = make([]int, len(v.docs))
-			for i := range v.recent {
-				v.recent[i] = i
-			}
-			slices.SortFunc(v.recent, func(i, j int) int {
-				a, b := &v.docs[i], &v.docs[j]
-				if a.CreatedAt == b.CreatedAt {
-					return cmp.Compare(a.ID, b.ID)
-				}
-				return cmp.Compare(b.CreatedAt, a.CreatedAt)
-			})
-		})
+		v.prepareRecent()
 	}
 	capacity := len(v.docs)
 	if term != "" {
@@ -71,6 +57,52 @@ func (v *querySelection) queryIDs(ctx context.Context, term string, recent bool)
 		}
 	}
 	return ids, nil
+}
+
+func (v *querySelection) prepareRecent() {
+	// Pure, bounded CPU work on this immutable view. Never sort borrowed
+	// records: lexical/vector positions and historical readers share them.
+	v.recentOnce.Do(func() {
+		v.recent = make([]int, len(v.docs))
+		for i := range v.recent {
+			v.recent[i] = i
+		}
+		slices.SortFunc(v.recent, func(i, j int) int {
+			a, b := &v.docs[i], &v.docs[j]
+			if a.CreatedAt == b.CreatedAt {
+				return cmp.Compare(a.ID, b.ID)
+			}
+			return cmp.Compare(b.CreatedAt, a.CreatedAt)
+		})
+	})
+}
+
+func (s *Store) prepareSnapshot(ctx context.Context) error {
+	rev, hash, err := revision(ctx, s.readDB(), "")
+	if err != nil {
+		return err
+	}
+	all, err := s.queryRecords(ctx, rev, hash)
+	if err != nil || len(all) > 200000 {
+		return err
+	}
+	c := s.cache
+	c.mu.Lock()
+	if c.snapshotHash != hash {
+		c.mu.Unlock()
+		return nil
+	}
+	v := c.allSelection
+	c.mu.Unlock()
+	if v == nil {
+		v = s.keepSelection(hash+"\nall", hash, newSelection(all), true)
+	}
+	if !v.ready {
+		return nil
+	}
+	v.prepareRecent()
+	_, err = s.selectionDF(ctx, v)
+	return err
 }
 
 func newSelection(docs []record) *querySelection {
@@ -216,7 +248,7 @@ func (s *Store) selectionDF(ctx context.Context, v *querySelection) (map[string]
 // There is no instance expansion or GROUP BY over all historical occurrences.
 func (s *Store) selectionTokens(ctx context.Context, v *querySelection, match string, visit func(int64, string)) error {
 	if match != "" && len(v.docs) > 2048 {
-		rows, err := s.db.QueryContext(ctx, `SELECT l.version_id,l.tokens FROM lexical_fts
+		rows, err := s.readDB().QueryContext(ctx, `SELECT l.version_id,l.tokens FROM lexical_fts
 JOIN lexical_documents l ON l.version_id=lexical_fts.rowid
 WHERE lexical_fts MATCH ? AND lexical_fts.rowid>=? AND lexical_fts.rowid<=?`, match, v.first, v.last)
 		if err != nil {
@@ -241,7 +273,7 @@ WHERE lexical_fts MATCH ? AND lexical_fts.rowid>=? AND lexical_fts.rowid<=?`, ma
 		for i, r := range part {
 			args[i] = r.VersionID
 		}
-		rows, err := s.db.QueryContext(ctx, "SELECT version_id,tokens FROM lexical_documents WHERE version_id IN ("+strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")+")", args...)
+		rows, err := s.readDB().QueryContext(ctx, "SELECT version_id,tokens FROM lexical_documents WHERE version_id IN ("+strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")+")", args...)
 		if err != nil {
 			return err
 		}

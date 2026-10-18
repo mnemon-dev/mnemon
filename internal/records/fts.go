@@ -17,9 +17,12 @@ func (s *Store) runLexicalWorker(ctx context.Context) {
 		case <-s.cache.lexicalWake:
 			buildCtx, stop := context.WithTimeout(ctx, 5*time.Minute)
 			err := s.buildLexical(buildCtx)
+			if err == nil {
+				err = s.prepareSnapshot(buildCtx)
+			}
 			stop()
 			if err != nil && ctx.Err() == nil {
-				fmt.Fprintf(os.Stderr, "records lexical build: %v\n", err)
+				fmt.Fprintf(os.Stderr, "records query preparation: %v\n", err)
 			}
 		}
 	}
@@ -36,10 +39,10 @@ func (s *Store) buildLexical(ctx context.Context) error {
 	changed := false
 	for {
 		var last int64
-		if err := s.db.QueryRowContext(ctx, "SELECT COALESCE(MAX(version_id),0) FROM lexical_documents").Scan(&last); err != nil {
+		if err := s.readDB().QueryRowContext(ctx, "SELECT COALESCE(MAX(version_id),0) FROM lexical_documents").Scan(&last); err != nil {
 			return err
 		}
-		rows, err := s.db.QueryContext(ctx, "SELECT rowid,search_text FROM record_versions WHERE rowid>? ORDER BY rowid LIMIT 512", last)
+		rows, err := s.readDB().QueryContext(ctx, "SELECT rowid,search_text FROM record_versions WHERE rowid>? ORDER BY rowid LIMIT 512", last)
 		if err != nil {
 			return err
 		}

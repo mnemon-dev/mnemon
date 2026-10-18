@@ -142,7 +142,7 @@ func candidates(all []record, req QueryRequest, term string, words bool) []recor
 }
 
 func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error) {
-	rev, hash, err := revision(ctx, s.db, req.Revision)
+	rev, hash, err := revision(ctx, s.readDB(), req.Revision)
 	if err != nil {
 		return QueryResult{}, err
 	}

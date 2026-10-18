@@ -88,6 +88,8 @@ func (r *record) decode(raw string) error {
 
 type Store struct {
 	db       *sql.DB
+	readers  *sql.DB // Serve-owned read-only pool; writes retain db's single connection
+	path     string
 	readonly bool
 	cache    *queryCache // enabled only for the lifetime of Serve
 	fts      bool
@@ -103,20 +105,12 @@ func Open(directory string, readonly bool) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	u := url.URL{Scheme: "file", Path: path}
-	q := u.Query()
-	q.Set("_pragma", "busy_timeout(10000)")
-	q.Set("_txlock", "immediate")
-	if readonly {
-		q.Set("mode", "ro")
-	}
-	u.RawQuery = q.Encode()
-	db, err := sql.Open("sqlite", u.String())
+	db, err := sql.Open("sqlite", sqliteDSN(path, readonly))
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	s := &Store{db: db, readonly: readonly}
+	s := &Store{db: db, path: path, readonly: readonly}
 	if err = db.Ping(); err == nil && !readonly {
 		err = s.initialize()
 	}
@@ -131,6 +125,25 @@ func Open(directory string, readonly bool) (*Store, error) {
 	}
 	s.fts = tables == 2
 	return s, nil
+}
+
+func sqliteDSN(path string, readonly bool) string {
+	u := url.URL{Scheme: "file", Path: path}
+	q := u.Query()
+	q.Set("_pragma", "busy_timeout(10000)")
+	q.Set("_txlock", "immediate")
+	if readonly {
+		q.Set("mode", "ro")
+	}
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+func (s *Store) readDB() *sql.DB {
+	if s.readers != nil {
+		return s.readers
+	}
+	return s.db
 }
 
 func (s *Store) initialize() error {
@@ -202,7 +215,7 @@ WHERE rev_from<=? AND (rev_to IS NULL OR rev_to>?) ORDER BY seq`, rev, rev)
 }
 
 func (s *Store) Get(ctx context.Context, req GetRequest) (Snapshot, error) {
-	rev, hash, err := revision(ctx, s.db, req.Revision)
+	rev, hash, err := revision(ctx, s.readDB(), req.Revision)
 	if err != nil {
 		return Snapshot{}, err
 	}

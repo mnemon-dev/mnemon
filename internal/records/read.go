@@ -27,7 +27,7 @@ func (s *Store) readRecords(ctx context.Context, rev int64, hash string, ids []s
 		}
 	}
 	query += " ORDER BY seq"
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.readDB().QueryContext(ctx, query, args...)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -47,8 +47,8 @@ func (s *Store) readRecords(ctx context.Context, rev int64, hash string, ids []s
 func (s *Store) queryRecords(ctx context.Context, rev int64, hash string) ([]record, error) {
 	current := ""
 	var lexicalBuild uint64
-	if c := s.cache; c != nil {
-		_, value, err := revision(ctx, s.db, "")
+	for c := s.cache; c != nil; {
+		_, value, err := revision(ctx, s.readDB(), "")
 		if err != nil {
 			return nil, err
 		}
@@ -57,11 +57,8 @@ func (s *Store) queryRecords(ctx context.Context, rev int64, hash string) ([]rec
 		lexicalBuild = c.lexicalBuild
 		if c.current != current {
 			c.current = current
-			c.indexes = map[string]*lexicalIndex{}
-			c.order = nil
-			c.documents = 0
-			c.snapshotHash = ""
-			c.snapshot = nil
+			c.indexes, c.order, c.documents = map[string]*lexicalIndex{}, nil, 0
+			c.snapshotHash, c.snapshot = "", nil
 			c.clearSelections()
 		}
 		if c.snapshotHash == hash {
@@ -69,14 +66,34 @@ func (s *Store) queryRecords(ctx context.Context, rev int64, hash string) ([]rec
 			c.mu.Unlock()
 			return snapshot, nil
 		}
+		if pending := c.snapshotLoading; pending != nil {
+			c.mu.Unlock()
+			select {
+			case <-pending:
+				continue
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		// One bounded metadata build, including concurrent cold readers and the
+		// background preparer. Invalidation keeps the pending owner until exit.
+		pending := make(chan struct{})
+		c.snapshotLoading = pending
 		c.mu.Unlock()
+		defer func() {
+			c.mu.Lock()
+			c.snapshotLoading = nil
+			close(pending)
+			c.mu.Unlock()
+		}()
+		break
 	}
 	columns, join := "-1", ""
 	if s.fts {
 		columns = "COALESCE(l.token_count,-1)"
 		join = " LEFT JOIN lexical_documents l ON l.version_id=r.rowid"
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT r.id,r.kind,r.scope,r.workspace_id,r.session_id,r.date,r.state,r.status_json,r.created_at,r.search_text,r.vector_text,r.seq,r.rowid,`+columns+`
+	rows, err := s.readDB().QueryContext(ctx, `SELECT r.id,r.kind,r.scope,r.workspace_id,r.session_id,r.date,r.state,r.status_json,r.created_at,r.search_text,r.vector_text,r.seq,r.rowid,`+columns+`
 FROM record_versions r`+join+` WHERE r.rev_from<=? AND (r.rev_to IS NULL OR r.rev_to>?) ORDER BY r.seq`, rev, rev)
 	if err != nil {
 		return nil, err
@@ -103,6 +120,7 @@ FROM record_versions r`+join+` WHERE r.rev_from<=? AND (r.rev_to IS NULL OR r.re
 		return nil, err
 	}
 	if c := s.cache; c != nil && len(out) <= 200000 {
+		prepared := newSelection(out)
 		c.mu.Lock()
 		if c.current == current && c.lexicalBuild == lexicalBuild {
 			if c.snapshotHash != hash {
@@ -110,6 +128,7 @@ FROM record_versions r`+join+` WHERE r.rev_from<=? AND (r.rev_to IS NULL OR r.re
 			}
 			c.snapshotHash = hash
 			c.snapshot = out
+			c.allSelection = prepared
 		}
 		c.mu.Unlock()
 	}
