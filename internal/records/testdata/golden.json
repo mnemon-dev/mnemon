@@ -144,6 +144,17 @@
         "i",
         "ascii"
       ]
+    },
+    {
+      "text": "İstanbul İskender WİTH",
+      "expected": [
+        "i",
+        "stanbul",
+        "i",
+        "skender",
+        "wi",
+        "th"
+      ]
     }
   ],
   "upsert": [

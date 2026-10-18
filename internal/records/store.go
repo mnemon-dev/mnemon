@@ -314,4 +314,6 @@ func scalarEqual(a, b json.RawMessage) bool {
 	return av == bv
 }
 
-func lower(text string) string { return strings.ToLower(text) }
+// JS lowercasing expands U+0130 to i + combining dot; Go's simple mapping does
+// not. Keep the separator so ASCII word boundaries match the frozen TS source.
+func lower(text string) string { return strings.ToLower(strings.ReplaceAll(text, "İ", "i\u0307")) }
