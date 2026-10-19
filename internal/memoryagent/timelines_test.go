@@ -582,9 +582,89 @@ func TestConsolidationConfig(t *testing.T) {
 	if strings.Contains(string(raw), "consolidat") {
 		t.Fatal("v1 config gained consolidation fields", string(raw))
 	}
-	// Without the timelines mode, consolidation stays the v1 fold.
-	if _, err := a.Consolidate(context.Background(), ConsolidateRequest{}); err == nil || !strings.Contains(err.Error(), "overlay") {
-		t.Fatal("timelines consolidation without an overlay store", err)
+	// Timelines consolidation needs the overlay store.
+	if _, err := a.Consolidate(context.Background(), ConsolidateRequest{}); err == nil || !strings.Contains(err.Error(), "timelines consolidation requires an overlay store") {
+		t.Fatal("timelines consolidation ran without an overlay store", err)
+	}
+}
+
+func TestConsolidationConfigEmptyModeStaysV1(t *testing.T) {
+	s, dir := agentStore(t)
+	seedNote(t, s, "answer", "codename ORBIT")
+	overlay, err := OpenOverlay(filepath.Join(dir, "memory-index.db"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer overlay.Close()
+	var config Config
+	if err := json.Unmarshal([]byte(`{"version":1,"policy":{"consolidation":true},"consolidation":{}}`), &config); err != nil {
+		t.Fatal(err)
+	}
+	planner := completeFunc(func(context.Context, string, string) (string, Usage, error) {
+		return `{"items":[{"kind":"value","title":"codename","text":"ORBIT","records":["r0"]}]}`, Usage{}, nil
+	})
+	a, err := New(s, config, Models{Planner: planner}, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if *a.config.Consolidation != (ConsolidationConfig{}) {
+		t.Fatal("mode \"\" took timelines defaults", *a.config.Consolidation)
+	}
+	result, err := a.Consolidate(context.Background(), ConsolidateRequest{})
+	if err != nil || result.Visited != 1 || result.Added != 1 {
+		t.Fatal(result, err)
+	}
+	if v1, _, err := overlay.load(context.Background(), records.Scope{}); err != nil || len(v1.Items) != 1 {
+		t.Fatal("mode \"\" did not run the v1 fold", v1.Items, err)
+	}
+	if state := loadState(t, overlay); state.Watermark != 0 || len(state.Pending) != 0 {
+		t.Fatal("mode \"\" wrote timelines state", state)
+	}
+}
+
+func TestConsolidateTimelinesResetEmptyScope(t *testing.T) {
+	s, dir := agentStore(t)
+	for i := 0; i < 4; i++ {
+		seedNote(t, s, fmt.Sprintf("n%d", i), fmt.Sprintf("note %d has thirty characters.", i))
+	}
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return eventsReply(prompt), nil }}
+	a, overlay := timelinesAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, Models{Planner: model})
+	if result, err := a.Consolidate(context.Background(), ConsolidateRequest{}); err != nil || result.Added != 4 {
+		t.Fatal(result, err)
+	}
+	if _, err := s.Put(context.Background(), records.PutRequest{Delete: []string{"n0", "n1", "n2", "n3"}}); err != nil {
+		t.Fatal(err)
+	}
+	// With no record left, a reset still replaces the stored state.
+	result, err := a.Consolidate(context.Background(), ConsolidateRequest{Reset: true})
+	if err != nil || result.Visited != 0 || result.Added != 0 || result.Remaining != 0 {
+		t.Fatal(result, err)
+	}
+	state := loadState(t, overlay)
+	if raw, _ := json.Marshal(state); string(raw) != func() string { raw, _ := json.Marshal(emptyTimelineState()); return string(raw) }() {
+		t.Fatal("reset kept the old state", string(raw))
+	}
+}
+
+func TestConsolidateTimelinesSavesAfterCanceledModel(t *testing.T) {
+	s, dir := agentStore(t)
+	for i := 0; i < 4; i++ {
+		seedNote(t, s, fmt.Sprintf("n%d", i), fmt.Sprintf("note %d has thirty characters.", i))
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	model := &limitPlanner{reply: func(string, string) (string, error) {
+		cancel()
+		return "", context.Canceled
+	}}
+	a, overlay := timelinesAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, Models{Planner: model})
+	result, err := a.Consolidate(ctx, ConsolidateRequest{})
+	if !errors.Is(err, context.Canceled) || result.Visited != 4 || result.Remaining != 4 {
+		t.Fatal(result, err)
+	}
+	// The records read stay read: the next job does not read them again.
+	if state := loadState(t, overlay); state.Watermark == 0 || len(state.Pending) != 4 || state.Usage.InputTokens != 10 {
+		t.Fatalf("state after a canceled fold %+v", state)
 	}
 }
 

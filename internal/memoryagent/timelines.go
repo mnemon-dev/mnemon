@@ -695,7 +695,8 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	// Every record was read, so the author's caughtUp holds: a job that
 	// finds nothing new folds the short rest too (N:1108).
 	flush := read == 0
-	dirty := read > 0
+	// A reset replaces the stored state even when no record is left.
+	dirty := read > 0 || req.Reset
 	var foldErr error
 	for n := 0; n < req.MaxBatches; n++ {
 		batch := nextBatch(state.Pending, settings.BatchCharacters, flush)
@@ -715,7 +716,13 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 		dirty = false
 	}
 	if dirty {
-		if _, err = a.overlay.saveTimelines(ctx, req.Scope, token, state); err != nil {
+		// After a model error, a canceled job still keeps what it read and
+		// spent; the fold error is what it returns.
+		saveCtx := ctx
+		if foldErr != nil {
+			saveCtx = context.WithoutCancel(ctx)
+		}
+		if _, err = a.overlay.saveTimelines(saveCtx, req.Scope, token, state); err != nil {
 			return result, err
 		}
 	}
