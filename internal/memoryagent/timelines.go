@@ -29,6 +29,12 @@ const (
 	timelineFormat = "mnemon-consolidation/v1"
 	// timelineMaxTokens is the output limit of every fold (N:1098).
 	timelineMaxTokens = 8192
+	// After dropErrors model errors over at least dropAfter, the head batch
+	// is folded in drop mode (foldDropping): a provider that keeps refusing
+	// one batch must not stop every later job, while a passing outage drops
+	// nothing.
+	dropErrors = 3
+	dropAfter  = 10 * time.Minute
 )
 
 // pendingRecord is a record read but not yet folded: what the model reads of
@@ -77,16 +83,21 @@ type timelineMemory struct {
 
 // timelineState is one scope's consolidation (C:32-39). Watermark is the
 // records rowid (records.Head.Version) of the newest record read: the next
-// job reads the records after it, so none is read twice.
+// job reads the records after it, so none is read twice. ModelErrors counts
+// the jobs whose fold of the head batch ended in a model error since a batch
+// last left the pending records, and FirstModelError is when the first of
+// them was (Unix milliseconds; 0 for none).
 type timelineState struct {
-	Format    string          `json:"format"`
-	Watermark int64           `json:"watermark"`
-	Pending   []pendingRecord `json:"pending"`
-	Memory    timelineMemory  `json:"memory"`
-	Usage     Usage           `json:"usage"`
-	Calls     int             `json:"calls"`
-	Batches   int             `json:"batches"`
-	Failed    int             `json:"failed"`
+	Format          string          `json:"format"`
+	Watermark       int64           `json:"watermark"`
+	Pending         []pendingRecord `json:"pending"`
+	Memory          timelineMemory  `json:"memory"`
+	Usage           Usage           `json:"usage"`
+	Calls           int             `json:"calls"`
+	Batches         int             `json:"batches"`
+	Failed          int             `json:"failed"`
+	ModelErrors     int             `json:"modelErrors,omitempty"`
+	FirstModelError int64           `json:"firstModelError,omitempty"`
 }
 
 func emptyTimelineState() timelineState {
@@ -652,10 +663,17 @@ func jsString(raw json.RawMessage) string {
 
 // consolidateTimelines is the author's background job (N:1071-1127): read the
 // records written after the watermark, oldest first, fold full batches, and
-// the short rest once a job finds nothing new. The state is saved after every
+// the short rest once a job finds nothing new and nothing left unread (unless
+// req.Hold). The pending records are bounded (readNewRecords): records past
+// the bound stay unread, and when the bound leaves no full batch the pending
+// records fold as one, since more follow. The state is saved after every
 // batch. A batch whose reply will not parse is asked twice, then each half
-// twice; a half that still fails is dropped. A model error withdraws the
-// batch's items, keeps its records pending and ends the job with the error.
+// twice; a half that still fails is dropped. A request too large to send
+// splits until it fits; a single record still too large is dropped. A model
+// error withdraws the batch's items, keeps its records pending, ends the job
+// with the error and, unless it is the caller's cancellation or a spent
+// budget, counts against the head batch: after dropErrors such jobs over
+// dropAfter, the head batch is folded in drop mode (foldDropping).
 func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest) (ConsolidateResult, error) {
 	settings := a.config.Consolidation
 	model := a.models.Consolidator
@@ -686,15 +704,18 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	if err != nil {
 		return ConsolidateResult{}, err
 	}
-	revision, read, err := a.readNewRecords(ctx, req.Scope, &state, settings.AssistantCharacters)
+	revision, read, unread, err := a.readNewRecords(ctx, req.Scope, &state, settings.AssistantCharacters, settings.MaxBatches*settings.BatchCharacters)
 	if err != nil {
 		return ConsolidateResult{}, err
 	}
 	result := ConsolidateResult{Revision: revision, Visited: read}
 	before := memorySize(state.Memory)
-	// Every record was read, so the author's caughtUp holds: a job that
-	// finds nothing new folds the short rest too (N:1108).
-	flush := read == 0
+	// When every record was read and nothing new found, the author's
+	// caughtUp holds: fold the short rest too (N:1108). When the bound
+	// stopped reading and left no full batch, the pending records are not
+	// the conversation's tail: fold them as one batch, or no job goes on.
+	flush := !req.Hold && read == 0 && unread == 0 ||
+		unread > 0 && nextBatch(state.Pending, settings.BatchCharacters, false) == nil
 	// A reset replaces the stored state even when no record is left.
 	dirty := read > 0 || req.Reset
 	var foldErr error
@@ -703,13 +724,27 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 		if batch == nil {
 			break
 		}
-		memory, batches, failed := cloneMemory(state.Memory), state.Batches, state.Failed
+		memory, batches, failed, drops := cloneMemory(state.Memory), state.Batches, state.Failed, len(result.Drops)
 		dirty = true
-		if foldErr = a.foldTimelines(ctx, model, &state, batch, true, &result); foldErr != nil {
+		if n == 0 && a.dropDue(state) {
+			foldErr = a.foldDropping(ctx, model, &state, batch, &result)
+		} else {
+			foldErr = a.foldTimelines(ctx, model, &state, batch, true, &result)
+		}
+		if foldErr != nil {
 			state.Memory, state.Batches, state.Failed = memory, batches, failed
+			result.keepDrops(drops)
+			if countedError(ctx, foldErr) {
+				if state.ModelErrors == 0 {
+					state.FirstModelError = a.now().UnixMilli()
+				}
+				state.ModelErrors++
+			}
 			break
 		}
 		state.Pending = state.Pending[len(batch):]
+		state.ModelErrors, state.FirstModelError = 0, 0
+		result.Folded++
 		if token, err = a.overlay.saveTimelines(ctx, req.Scope, token, state); err != nil {
 			return result, err
 		}
@@ -727,8 +762,49 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 		}
 	}
 	result.Added = memorySize(state.Memory) - before
-	result.Remaining = len(state.Pending)
+	result.Remaining = len(state.Pending) + unread
 	return result, foldErr
+}
+
+// countedError reports whether a fold's error counts toward drop mode: a
+// model error, not the caller's cancellation or deadline nor a spent budget,
+// which say nothing about the batch.
+func countedError(ctx context.Context, err error) bool {
+	return ctx.Err() == nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, ErrBudgetCap)
+}
+
+// dropDue reports whether the head batch is folded in drop mode: dropErrors
+// counted model errors, the first of them at least dropAfter ago.
+func (a *Agent) dropDue(state timelineState) bool {
+	return state.ModelErrors >= dropErrors && a.now().Sub(time.UnixMilli(state.FirstModelError)) >= dropAfter
+}
+
+// foldDropping folds the head batch after repeated model errors: split once,
+// each half folded on its own (foldTimelines without a further split). A half
+// whose fold fails with a counted model error is dropped whole (Failed, and a
+// Drop naming the error); a half that folds is kept. Any other error ends the
+// job as in foldTimelines, dropping nothing.
+func (a *Agent) foldDropping(ctx context.Context, model Completer, state *timelineState, batch []pendingRecord, result *ConsolidateResult) error {
+	cause := fmt.Sprintf("%d failed jobs over %s", state.ModelErrors, a.now().Sub(time.UnixMilli(state.FirstModelError)).Round(time.Second))
+	parts := [][]pendingRecord{batch}
+	if len(batch) > 1 {
+		half := (len(batch) + 1) / 2
+		parts = [][]pendingRecord{batch[:half], batch[half:]}
+	}
+	for _, part := range parts {
+		memory, batches, failed, drops := cloneMemory(state.Memory), state.Batches, state.Failed, len(result.Drops)
+		err := a.foldTimelines(ctx, model, state, part, false, result)
+		if err == nil {
+			continue
+		}
+		if !countedError(ctx, err) {
+			return err
+		}
+		state.Memory, state.Batches, state.Failed = memory, batches, failed+1
+		result.keepDrops(drops)
+		result.drop(len(part), fmt.Sprintf("model error after %s: %v", cause, err))
+	}
+	return nil
 }
 
 // lockTimelines waits until no other job of this agent consolidates scope.
@@ -743,13 +819,17 @@ func (a *Agent) lockTimelines(ctx context.Context, scope records.Scope) (func(),
 	}
 }
 
-// readNewRecords appends what the model reads of every record after the
+// readNewRecords appends what the model reads of the records after the
 // watermark, in rowid order, to the pending records and moves the watermark
-// past them. It returns the revision read and the number of records read.
-func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *timelineState, assistantChars int) (string, int, error) {
+// past them, until the pending text (headers and texts, UTF-16 units) would
+// pass bound: the records from there on stay unread, below the watermark, for
+// a job after the pending records drain. A record longer than bound is read
+// when nothing is pending, so none can block. It returns the revision read,
+// the number of records read and the number left unread.
+func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *timelineState, assistantChars, bound int) (string, int, int, error) {
 	revision, heads, err := a.store.Heads(ctx, "", scope)
 	if err != nil {
-		return "", 0, err
+		return "", 0, 0, err
 	}
 	fresh := []records.Head{}
 	for _, head := range heads {
@@ -758,6 +838,11 @@ func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *
 		}
 	}
 	slices.SortFunc(fresh, func(x, y records.Head) int { return cmp.Compare(x.Version, y.Version) })
+	size := 0
+	for _, record := range state.Pending {
+		size += jsLen(record.Header) + jsLen(record.Text)
+	}
+	read := 0
 	for start := 0; start < len(fresh); start += 500 {
 		part := fresh[start:min(start+500, len(fresh))]
 		ids := make([]string, len(part))
@@ -766,7 +851,7 @@ func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *
 		}
 		snapshot, err := a.store.Get(ctx, records.GetRequest{Revision: revision, IDs: ids})
 		if err != nil {
-			return "", 0, err
+			return "", 0, 0, err
 		}
 		values := map[string]recordValue{}
 		for _, raw := range snapshot.Records {
@@ -776,28 +861,43 @@ func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *
 			}
 		}
 		for _, head := range part {
+			if value, ok := values[head.ID]; ok {
+				if header, body, ok := readable(value.Title, value.Content, assistantChars); ok {
+					units := jsLen(header) + jsLen(body)
+					if len(state.Pending) > 0 && size+units > bound {
+						return revision, read, len(fresh) - read, nil
+					}
+					state.Pending = append(state.Pending, pendingRecord{ID: head.ID, Header: header, Text: body})
+					size += units
+				}
+			}
 			state.Watermark = head.Version
-			value, ok := values[head.ID]
-			if !ok {
-				continue
-			}
-			if header, body, ok := readable(value.Title, value.Content, assistantChars); ok {
-				state.Pending = append(state.Pending, pendingRecord{ID: head.ID, Header: header, Text: body})
-			}
+			read++
 		}
 	}
-	return revision, len(fresh), nil
+	return revision, read, 0, nil
 }
 
 // foldTimelines folds one batch (N:1095-1105): two attempts, then, when split
-// is allowed, each half with two attempts of its own. A request the provider
-// refuses as too large counts as a reply that did not parse, so a long batch
-// splits instead of stopping every later job.
+// is allowed, each half with two attempts of its own; a part that still does
+// not parse is dropped. A request the provider refuses as too large before
+// sending it splits in halves at once, each folded like the batch, down to
+// single records; a single record still too large is dropped. So a long
+// batch never stops every later job.
 func (a *Agent) foldTimelines(ctx context.Context, model Completer, state *timelineState, batch []pendingRecord, split bool, result *ConsolidateResult) error {
 	for attempt := 0; attempt < 2; attempt++ {
 		reply, err := a.completeFold(ctx, model, timelinePrompt(state.Memory, batch), state, result)
 		if errors.Is(err, ErrRequestTooLarge) {
-			continue
+			if len(batch) == 1 {
+				state.Failed++
+				result.drop(1, "the fold request is too large to send")
+				return nil
+			}
+			half := (len(batch) + 1) / 2
+			if err := a.foldTimelines(ctx, model, state, batch[:half], split, result); err != nil {
+				return err
+			}
+			return a.foldTimelines(ctx, model, state, batch[half:], split, result)
 		}
 		if err != nil {
 			return err
@@ -816,6 +916,7 @@ func (a *Agent) foldTimelines(ctx context.Context, model Completer, state *timel
 		return a.foldTimelines(ctx, model, state, batch[half:], false, result)
 	}
 	state.Failed++
+	result.drop(len(batch), "the model's reply did not parse twice")
 	return nil
 }
 

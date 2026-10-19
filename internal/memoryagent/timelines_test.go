@@ -341,7 +341,7 @@ func TestConsolidateTimelinesRetrySplit(t *testing.T) {
 		}}
 		a, overlay := timelinesAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, Models{Consolidator: model})
 		result, err := a.Consolidate(context.Background(), ConsolidateRequest{})
-		if err != nil || result.Added != 2 || result.Remaining != 0 {
+		if err != nil || result.Added != 2 || result.Remaining != 0 || result.Dropped != 2 || len(result.Drops) != 1 || !strings.Contains(result.Drops[0].Reason, "did not parse") {
 			t.Fatalf("result %+v %v", result, err)
 		}
 		state := loadState(t, overlay)
@@ -369,7 +369,7 @@ func TestConsolidateTimelinesRetrySplit(t *testing.T) {
 		}}
 		a, overlay := timelinesAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, Models{Consolidator: model})
 		result, err := a.Consolidate(context.Background(), ConsolidateRequest{})
-		if !errors.Is(err, down) || result.Visited != 4 || result.Added != 0 || result.Remaining != 4 {
+		if !errors.Is(err, down) || result.Visited != 4 || result.Added != 0 || result.Remaining != 4 || result.Dropped != 0 || result.Folded != 0 {
 			t.Fatalf("result %+v %v", result, err)
 		}
 		state := loadState(t, overlay)
@@ -455,12 +455,14 @@ func TestConsolidateTimelinesBatchLimitAndConversations(t *testing.T) {
 		t.Fatal(err)
 	}
 	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return eventsReply(prompt), nil }}
-	a, overlay := timelinesAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 1000, MaxBatches: 2}, Models{Planner: model})
+	// Pending holds at most 4 × 1000 units: three full batches, and the
+	// job's limit of two binds.
+	a, overlay := timelinesAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 1000, MaxBatches: 4}, Models{Planner: model})
 	if _, err := a.Consolidate(context.Background(), ConsolidateRequest{MaxBatches: 65}); err == nil {
 		t.Fatal("maxBatches 65 accepted")
 	}
-	result, err := a.Consolidate(context.Background(), ConsolidateRequest{})
-	if err != nil || result.Visited != len(written.Records) || len(model.calls) != 2 || result.Remaining == 0 {
+	result, err := a.Consolidate(context.Background(), ConsolidateRequest{MaxBatches: 2})
+	if err != nil || result.Visited == 0 || result.Visited >= len(written.Records) || len(model.calls) != 2 || result.Folded != 2 || result.Remaining == 0 {
 		t.Fatalf("result %+v %v calls %d", result, err, len(model.calls))
 	}
 	state := loadState(t, overlay)
@@ -772,24 +774,280 @@ func TestConsolidateTimelinesTooLargeSplits(t *testing.T) {
 	for i, text := range notes {
 		seedNote(t, s, fmt.Sprintf("n%d", i), text)
 	}
-	// The provider refuses the whole batch and the half holding delta before
-	// the network: like replies that do not parse, they split, then drop.
+	// The provider refuses every request of more than one record, and any
+	// holding delta, before the network: a refused request splits at once,
+	// down to single records, and a single record still refused is dropped.
 	model := &limitPlanner{reply: func(_, prompt string) (string, error) {
-		if strings.Contains(prompt, "[r3]") || strings.Contains(prompt, "delta") {
-			return "", fmt.Errorf("%w: model request exceeds 48000 bytes", ErrRequestTooLarge)
+		if strings.Contains(prompt, "[r1]") || strings.Contains(prompt, "delta") {
+			return "", fmt.Errorf("%w: model request exceeds 160000 bytes", ErrRequestTooLarge)
 		}
 		return eventsReply(prompt), nil
 	}}
 	a, overlay := timelinesAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, Models{Consolidator: model})
 	result, err := a.Consolidate(context.Background(), ConsolidateRequest{})
-	if err != nil || result.Visited != 4 || result.Added != 2 || result.Remaining != 0 {
+	if err != nil || result.Visited != 4 || result.Added != 3 || result.Remaining != 0 || result.Folded != 1 {
 		t.Fatalf("result %+v %v", result, err)
 	}
+	if result.Dropped != 1 || len(result.Drops) != 1 || result.Drops[0].Records != 1 || !strings.Contains(result.Drops[0].Reason, "too large") {
+		t.Fatalf("drops %+v", result)
+	}
 	state := loadState(t, overlay)
-	if state.Batches != 1 || state.Failed != 1 || state.Calls != 1 || len(state.Pending) != 0 || len(model.calls) != 5 {
+	// [0-3] [0,1] [0] [1] [2,3] [2] [3]: refused requests are not calls.
+	if state.Batches != 3 || state.Failed != 1 || state.Calls != 3 || len(state.Pending) != 0 || len(model.calls) != 7 {
 		t.Fatalf("state batches %d failed %d calls %d pending %d attempts %d", state.Batches, state.Failed, state.Calls, len(state.Pending), len(model.calls))
 	}
-	if got := eventTexts(state); !reflect.DeepEqual(got, []string{notes[0] + "@n0", notes[1] + "@n1"}) {
+	if got := eventTexts(state); !reflect.DeepEqual(got, []string{notes[0] + "@n0", notes[1] + "@n1", notes[2] + "@n2"}) {
 		t.Fatal("events", got)
 	}
+}
+
+// timelineClock is a settable clock for an agent.
+type timelineClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func (c *timelineClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *timelineClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
+func TestConsolidateTimelinesDropsHeadBatchAfterRepeatedErrors(t *testing.T) {
+	notes := []string{"alpha note number one here...", "bravo note number two here....", "charlie note number three.....", "delta note number four here..."}
+	seed := func(t *testing.T, reply func(string, string) (string, error)) (*Agent, *Overlay, *timelineClock, *limitPlanner) {
+		s, dir := agentStore(t)
+		for i, text := range notes {
+			seedNote(t, s, fmt.Sprintf("n%d", i), text)
+		}
+		model := &limitPlanner{reply: reply}
+		a, overlay := timelinesAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, Models{Consolidator: model})
+		clock := &timelineClock{now: time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC)}
+		a.now = clock.Now
+		return a, overlay, clock, model
+	}
+	broken := errors.New("model HTTP 500; reservation released")
+	failDelta := func(_, prompt string) (string, error) {
+		if strings.Contains(prompt, "delta") {
+			return "", broken
+		}
+		return eventsReply(prompt), nil
+	}
+	t.Run("three errors over ten minutes drop the failing half", func(t *testing.T) {
+		a, overlay, clock, _ := seed(t, failDelta)
+		ctx := context.Background()
+		for i, wait := range []time.Duration{0, time.Minute, time.Minute, 7 * time.Minute} {
+			clock.advance(wait)
+			result, err := a.Consolidate(ctx, ConsolidateRequest{})
+			if !errors.Is(err, broken) || result.Remaining != 4 || result.Dropped != 0 {
+				t.Fatal(i, result, err)
+			}
+			state := loadState(t, overlay)
+			if state.ModelErrors != i+1 || state.FirstModelError != time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC).UnixMilli() || len(state.Pending) != 4 || state.Failed != 0 {
+				t.Fatalf("job %d state %+v", i, state)
+			}
+		}
+		// Ten minutes after the first error: the batch splits once; the
+		// half that folds is kept, the half that fails again is dropped.
+		clock.advance(time.Minute)
+		result, err := a.Consolidate(ctx, ConsolidateRequest{})
+		if err != nil || result.Added != 2 || result.Remaining != 0 || result.Folded != 1 || result.Dropped != 2 || len(result.Drops) != 1 || result.Drops[0].Records != 2 ||
+			!strings.Contains(result.Drops[0].Reason, "model HTTP 500") || !strings.Contains(result.Drops[0].Reason, "4 failed jobs") {
+			t.Fatalf("result %+v %v", result, err)
+		}
+		state := loadState(t, overlay)
+		if state.ModelErrors != 0 || state.FirstModelError != 0 || state.Failed != 1 || len(state.Pending) != 0 {
+			t.Fatalf("state %+v", state)
+		}
+		if got := eventTexts(state); !reflect.DeepEqual(got, []string{notes[0] + "@n0", notes[1] + "@n1"}) {
+			t.Fatal("events", got)
+		}
+	})
+	t.Run("errors do not count in ten minutes alone", func(t *testing.T) {
+		a, overlay, clock, _ := seed(t, failDelta)
+		for range 2 {
+			a.Consolidate(context.Background(), ConsolidateRequest{})
+			clock.advance(time.Hour)
+		}
+		if result, err := a.Consolidate(context.Background(), ConsolidateRequest{}); !errors.Is(err, broken) || result.Dropped != 0 {
+			t.Fatal(result, err)
+		}
+		if state := loadState(t, overlay); state.ModelErrors != 3 || len(state.Pending) != 4 {
+			t.Fatalf("state %+v", state)
+		}
+	})
+	t.Run("a fold resets the count", func(t *testing.T) {
+		healthy := false
+		a, overlay, _, _ := seed(t, func(system, prompt string) (string, error) {
+			if healthy {
+				return eventsReply(prompt), nil
+			}
+			return failDelta(system, prompt)
+		})
+		a.Consolidate(context.Background(), ConsolidateRequest{})
+		if state := loadState(t, overlay); state.ModelErrors != 1 {
+			t.Fatalf("state %+v", state)
+		}
+		healthy = true
+		if result, err := a.Consolidate(context.Background(), ConsolidateRequest{}); err != nil || result.Added != 4 || result.Dropped != 0 {
+			t.Fatal(result, err)
+		}
+		if state := loadState(t, overlay); state.ModelErrors != 0 || state.FirstModelError != 0 {
+			t.Fatalf("state %+v", state)
+		}
+	})
+	t.Run("a spent budget and cancellation never count or drop", func(t *testing.T) {
+		capped := fmt.Errorf("deepseek: %w", ErrBudgetCap)
+		var cancel context.CancelFunc
+		a, overlay, clock, _ := seed(t, func(_, prompt string) (string, error) {
+			if cancel != nil {
+				cancel()
+				return "", context.Canceled
+			}
+			return "", capped
+		})
+		for range 5 {
+			if _, err := a.Consolidate(context.Background(), ConsolidateRequest{}); !errors.Is(err, ErrBudgetCap) {
+				t.Fatal(err)
+			}
+			clock.advance(time.Hour)
+		}
+		var ctx context.Context
+		ctx, cancel = context.WithCancel(context.Background())
+		if _, err := a.Consolidate(ctx, ConsolidateRequest{}); !errors.Is(err, context.Canceled) {
+			t.Fatal(err)
+		}
+		if state := loadState(t, overlay); state.ModelErrors != 0 || len(state.Pending) != 4 || state.Failed != 0 {
+			t.Fatalf("state %+v", state)
+		}
+		// In drop mode a spent budget still ends the job without dropping.
+		cancel = nil
+		raw := loadState(t, overlay)
+		raw.ModelErrors, raw.FirstModelError = 3, clock.Now().Add(-time.Hour).UnixMilli()
+		_, token, _ := overlay.loadTimelines(context.Background(), records.Scope{})
+		if _, err := overlay.saveTimelines(context.Background(), records.Scope{}, token, raw); err != nil {
+			t.Fatal(err)
+		}
+		if result, err := a.Consolidate(context.Background(), ConsolidateRequest{}); !errors.Is(err, ErrBudgetCap) || result.Dropped != 0 {
+			t.Fatal(result, err)
+		}
+		if state := loadState(t, overlay); state.ModelErrors != 3 || len(state.Pending) != 4 || state.Failed != 0 {
+			t.Fatalf("state %+v", state)
+		}
+	})
+}
+
+func TestConsolidateTimelinesHoldFoldsOnlyFullBatches(t *testing.T) {
+	s, dir := agentStore(t)
+	for i := 0; i < 5; i++ {
+		seedNote(t, s, fmt.Sprintf("n%d", i), fmt.Sprintf("note %d has thirty characters.", i))
+	}
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return eventsReply(prompt), nil }}
+	a, overlay := timelinesAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, Models{Planner: model})
+	ctx := context.Background()
+	result, err := a.Consolidate(ctx, ConsolidateRequest{Hold: true})
+	if err != nil || result.Visited != 5 || result.Folded != 1 || result.Remaining != 1 {
+		t.Fatalf("first %+v %v", result, err)
+	}
+	// Nothing new, but a held job leaves the short rest alone, and saves nothing.
+	_, token, _ := overlay.loadTimelines(ctx, records.Scope{})
+	result, err = a.Consolidate(ctx, ConsolidateRequest{Hold: true})
+	if err != nil || result.Visited != 0 || result.Folded != 0 || result.Remaining != 1 || len(model.calls) != 1 {
+		t.Fatalf("held %+v %v", result, err)
+	}
+	if _, again, _ := overlay.loadTimelines(ctx, records.Scope{}); again != token {
+		t.Fatal("an idle held job saved the state")
+	}
+	result, err = a.Consolidate(ctx, ConsolidateRequest{})
+	if err != nil || result.Folded != 1 || result.Remaining != 0 || len(model.calls) != 2 {
+		t.Fatalf("flush %+v %v", result, err)
+	}
+	if state := loadState(t, overlay); len(state.Memory.Events) != 5 {
+		t.Fatal(eventTexts(state))
+	}
+}
+
+func TestConsolidateTimelinesPendingIsBounded(t *testing.T) {
+	// Each note is read as 34 units: the header "Note" and 30 of text.
+	seed := func(t *testing.T, settings ConsolidationConfig, notes int) (*Agent, *Overlay, *limitPlanner, []string) {
+		s, dir := agentStore(t)
+		want := []string{}
+		for i := 0; i < notes; i++ {
+			seedNote(t, s, fmt.Sprintf("n%02d", i), fmt.Sprintf("note %02d has thirty characters.", i))
+			want = append(want, fmt.Sprintf("note %02d has thirty characters.@n%02d", i, i))
+		}
+		model := &limitPlanner{reply: func(_, prompt string) (string, error) { return eventsReply(prompt), nil }}
+		a, overlay := timelinesAgent(t, s, dir, settings, Models{Planner: model})
+		return a, overlay, model, want
+	}
+	units := func(pending []pendingRecord) int {
+		n := 0
+		for _, record := range pending {
+			n += jsLen(record.Header) + jsLen(record.Text)
+		}
+		return n
+	}
+	for _, hold := range []bool{false, true} {
+		t.Run(fmt.Sprint("hold ", hold), func(t *testing.T) {
+			// Two batches of 100 units: pending holds at most 200 units.
+			const notes = 21
+			a, overlay, _, want := seed(t, ConsolidationConfig{BatchCharacters: 100, MaxBatches: 2}, notes)
+			result, err := a.Consolidate(context.Background(), ConsolidateRequest{Hold: hold})
+			// Five notes (170 units) are read, a sixth would pass 200; four fold.
+			if err != nil || result.Visited != 5 || result.Folded != 1 || result.Remaining != notes-4 {
+				t.Fatalf("first %+v %v", result, err)
+			}
+			for jobs := 0; result.Remaining > 0 && jobs < 20; jobs++ {
+				if result, err = a.Consolidate(context.Background(), ConsolidateRequest{Hold: hold}); err != nil {
+					t.Fatal(err)
+				}
+				if n := units(loadState(t, overlay).Pending); n > 200 {
+					t.Fatal("pending grew past its bound", n)
+				}
+				if hold && result.Folded == 0 {
+					break
+				}
+			}
+			if hold {
+				// A held job leaves the tail; the next job flushes it.
+				if result.Remaining != 1 {
+					t.Fatal("a held job flushed the tail", result)
+				}
+				if result, err = a.Consolidate(context.Background(), ConsolidateRequest{}); err != nil || result.Remaining != 0 {
+					t.Fatal(result, err)
+				}
+			}
+			if got := eventTexts(loadState(t, overlay)); !reflect.DeepEqual(got, want) {
+				t.Fatal("records lost or repeated", got)
+			}
+		})
+	}
+	t.Run("a bound without a full batch folds what is pending", func(t *testing.T) {
+		// One batch of 100 units: two notes are pending (68 units) and hold
+		// no full batch, yet more follow: they fold as one, held or not.
+		const notes = 20
+		a, overlay, model, want := seed(t, ConsolidationConfig{BatchCharacters: 100, MaxBatches: 1}, notes)
+		for job := 0; job < notes/2-1; job++ {
+			result, err := a.Consolidate(context.Background(), ConsolidateRequest{Hold: job%2 == 0})
+			if err != nil || result.Folded != 1 || result.Remaining != notes-2*(job+1) {
+				t.Fatalf("job %d %+v %v", job, result, err)
+			}
+		}
+		// The last two are the tail: read, then flushed by a job that finds
+		// nothing new.
+		for _, folded := range []int{0, 1} {
+			if result, err := a.Consolidate(context.Background(), ConsolidateRequest{}); err != nil || result.Folded != folded {
+				t.Fatal(result, err)
+			}
+		}
+		if got := eventTexts(loadState(t, overlay)); !reflect.DeepEqual(got, want) || len(model.calls) != notes/2 {
+			t.Fatal("records lost or repeated", got, len(model.calls))
+		}
+	})
 }

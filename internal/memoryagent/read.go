@@ -127,6 +127,8 @@ type Agent struct {
 	// timelineLocks holds one lock per scope key (a chan struct{} of
 	// capacity 1): a timelines job reads, folds and writes its state alone.
 	timelineLocks sync.Map
+	// now is the clock timelines jobs date model errors by.
+	now func() time.Time
 }
 
 func New(store *records.Store, config Config, models Models, overlay *Overlay) (*Agent, error) {
@@ -181,7 +183,7 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 			return nil, err
 		}
 	}
-	return &Agent{store: store, config: own, models: models, overlay: overlay}, nil
+	return &Agent{store: store, config: own, models: models, overlay: overlay, now: time.Now}, nil
 }
 
 // normalize fills the View defaults and checks the bounds.

@@ -16,6 +16,10 @@ type ConsolidateRequest struct {
 	Scope      records.Scope `json:"scope,omitempty"`
 	MaxBatches int           `json:"maxBatches,omitempty"`
 	Reset      bool          `json:"reset,omitempty"`
+	// Hold folds only full batches (timelines): the short rest stays pending
+	// even when nothing new was read, for a later job without Hold to fold
+	// once the conversation pauses.
+	Hold bool `json:"hold,omitempty"`
 }
 
 type ConsolidateResult struct {
@@ -27,6 +31,35 @@ type ConsolidateResult struct {
 	EmbeddingReady bool    `json:"embeddingReady"`
 	ModelMS        float64 `json:"modelMs"`
 	Usage          Usage   `json:"usage"`
+	// Folded counts the batches a timelines job took off the pending
+	// records: folded, or given up on (Drops).
+	Folded int `json:"folded,omitempty"`
+	// Dropped counts the records a timelines job gave up on, for any
+	// reason; Drops says how many each time, and why.
+	Dropped int               `json:"dropped,omitempty"`
+	Drops   []ConsolidateDrop `json:"drops,omitempty"`
+}
+
+// ConsolidateDrop is records a timelines job gave up on: they stay
+// searchable as records, but the consolidated index does not cover them.
+type ConsolidateDrop struct {
+	Records int    `json:"records"`
+	Reason  string `json:"reason"`
+}
+
+// drop records that n records were given up on.
+func (r *ConsolidateResult) drop(n int, reason string) {
+	r.Drops = append(r.Drops, ConsolidateDrop{Records: n, Reason: reason})
+	r.Dropped += n
+}
+
+// keepDrops withdraws the drops after the first n, which a failed batch
+// takes back with its items.
+func (r *ConsolidateResult) keepDrops(n int) {
+	for _, d := range r.Drops[n:] {
+		r.Dropped -= d.Records
+	}
+	r.Drops = r.Drops[:n]
 }
 
 // Consolidate is an explicit, bounded background job, independent of reads.
