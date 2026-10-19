@@ -94,3 +94,34 @@ func TestSimpleBudgetStopsAreDegraded(t *testing.T) {
 		t.Fatal(r.stats.Degraded)
 	}
 }
+
+func TestModelPanicsFailTheRead(t *testing.T) {
+	s, _ := agentStore(t)
+	seedNotes(t, s, "codename", 5)
+	ctx := context.Background()
+	planner := completeFunc(func(context.Context, string, string) (string, Usage, error) { panic("planner bug") })
+	judge := decisionFunc(func(context.Context, any, map[string]Question) (map[string]float64, Usage, error) { panic("judge bug") })
+	// The planner's calls run in goroutines in both strategies; the
+	// judge's screen and judgement too.
+	for name, a := range map[string]*Agent{
+		"simple planner": judgedAgent(t, s, planner, layerJudge()),
+		"simple judge":   judgedAgent(t, s, codenamePlanner("NEED: the codename"), judge),
+		"v1 planner": func() *Agent {
+			a, err := New(s, Config{Version: 1, Policy: &ReadPolicy{Planning: true, Screening: true, Judging: true}}, Models{Planner: planner, Judge: decisionFunc(fixtureJudge)}, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return a
+		}(),
+	} {
+		if _, err := a.Read(ctx, ReadRequest{Question: "What is the codename?"}); err == nil || !strings.Contains(err.Error(), "panic: ") || !strings.Contains(err.Error(), " bug") {
+			t.Fatal(name, err)
+		}
+	}
+	// A judgement batch that panics fails its batch only.
+	r := testRun(judgedAgent(t, s, replies("", "", ""), judge), user("q"))
+	items := textItems(3, 50)
+	if err := r.judgeAll(ctx, items); err == nil || !strings.Contains(err.Error(), "panic: judge bug") {
+		t.Fatal(err)
+	}
+}

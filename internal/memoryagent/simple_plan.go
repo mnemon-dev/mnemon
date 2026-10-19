@@ -94,13 +94,13 @@ func (r *simpleRun) plan(ctx context.Context) ([]cue, error) {
 	work.Add(2)
 	go func() {
 		defer work.Done()
-		if cues, cueErr = r.planCues(ctx); cueErr != nil {
+		if cueErr = recovered(func() (err error) { cues, err = r.planCues(ctx); return err }); cueErr != nil {
 			cancel()
 		}
 	}()
 	go func() {
 		defer work.Done()
-		if needs, needless, needErr = r.planNeeds(ctx); needErr != nil {
+		if needErr = recovered(func() (err error) { needs, needless, err = r.planNeeds(ctx); return err }); needErr != nil {
 			cancel()
 		}
 	}()

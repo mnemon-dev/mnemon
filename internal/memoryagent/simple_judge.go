@@ -184,18 +184,20 @@ func (r *simpleRun) scan(ctx context.Context, items []*simpleItem) error {
 		work.Add(1)
 		go func() {
 			defer work.Done()
-			questions := map[string]Question{}
-			for i := range chunk {
-				questions[fmt.Sprintf("n%d", i)] = Question{Type: "noul", Instructions: scanInstruction(i)}
-			}
-			answers, err := r.decide(ctx, scanState{Dialogue: dialogue, Candidates: judgeCandidates(chunk), Rubric: rubric}, questions)
-			if err != nil {
-				errs[c] = err
-				return
-			}
-			for i, item := range chunk {
-				item.Screen, item.HasScreen = answers[fmt.Sprintf("n%d", i)], true
-			}
+			errs[c] = recovered(func() error {
+				questions := map[string]Question{}
+				for i := range chunk {
+					questions[fmt.Sprintf("n%d", i)] = Question{Type: "noul", Instructions: scanInstruction(i)}
+				}
+				answers, err := r.decide(ctx, scanState{Dialogue: dialogue, Candidates: judgeCandidates(chunk), Rubric: rubric}, questions)
+				if err != nil {
+					return err
+				}
+				for i, item := range chunk {
+					item.Screen, item.HasScreen = answers[fmt.Sprintf("n%d", i)], true
+				}
+				return nil
+			})
 		}()
 	}
 	work.Wait()

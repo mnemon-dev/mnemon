@@ -105,19 +105,21 @@ func (r *simpleRun) judgeAll(ctx context.Context, list []*simpleItem) error {
 		work.Add(1)
 		go func() {
 			defer work.Done()
-			texts := []judgeCandidate{}
-			for _, item := range batch {
-				texts = append(texts, judgeCandidate{Source: judgeSource, Text: item.Evidence.Text})
-			}
-			state, questions := batchRequest(r.dialogue, texts)
-			answers, err := r.decide(ctx, state, questions)
-			if err != nil {
-				errs[b] = err
-				return
-			}
-			for i, item := range batch {
-				item.Needed, item.Superseded, item.Judged = answers[fmt.Sprintf("n%d", i)], answers[fmt.Sprintf("s%d", i)], true
-			}
+			errs[b] = recovered(func() error {
+				texts := []judgeCandidate{}
+				for _, item := range batch {
+					texts = append(texts, judgeCandidate{Source: judgeSource, Text: item.Evidence.Text})
+				}
+				state, questions := batchRequest(r.dialogue, texts)
+				answers, err := r.decide(ctx, state, questions)
+				if err != nil {
+					return err
+				}
+				for i, item := range batch {
+					item.Needed, item.Superseded, item.Judged = answers[fmt.Sprintf("n%d", i)], answers[fmt.Sprintf("s%d", i)], true
+				}
+				return nil
+			})
 		}()
 	}
 	work.Wait()
