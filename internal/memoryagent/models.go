@@ -19,6 +19,13 @@ type Completer interface {
 	Complete(context.Context, string, string) (string, Usage, error)
 }
 
+// CompleterWithMax is a Completer whose calls set their own output limit, as
+// the reference system's recall completer takes one per call. The simple
+// strategy uses it when the planner has it.
+type CompleterWithMax interface {
+	CompleteWith(ctx context.Context, system, prompt string, maxTokens int) (string, Usage, error)
+}
+
 type JSONCompleter interface {
 	CompleteJSON(context.Context, string, string) (string, Usage, error)
 }

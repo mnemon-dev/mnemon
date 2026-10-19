@@ -488,6 +488,51 @@ func TestDeepSeekThinkingAndMaxTokens(t *testing.T) {
 	}
 }
 
+func TestCompleteWithSetsCallLimitAndKeepsCutReplies(t *testing.T) {
+	var _ CompleterWithMax = (*Provider)(nil)
+	p, err := NewProvider(ModelConfig{Kind: "local", Model: "local-test", BaseURL: "http://127.0.0.1:1/v1", MaxTokens: 777}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	p.client.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		body = nil
+		json.NewDecoder(req.Body).Decode(&body)
+		return mockResponse(`{"choices":[{"message":{"content":"partial line"},"finish_reason":"length"}],"usage":{"prompt_tokens":10,"completion_tokens":400}}`), nil
+	})
+	// The reference system's recall completer returns a reply its limit cut
+	// short (natural.ts llmComplete), so the per-call limit does not fail a plan.
+	text, usage, err := p.CompleteWith(context.Background(), "plan", "data", 400)
+	if err != nil || text != "partial line" || usage.OutputTokens != 400 || body["max_tokens"] != float64(400) || body["response_format"] != nil || body["temperature"] != float64(0) {
+		t.Fatal(text, usage, body, err)
+	}
+	if _, _, err = p.Complete(context.Background(), "plan", "data"); err == nil || body["max_tokens"] != float64(777) {
+		t.Fatal("Complete lost its configured limit or accepted a cut reply", body, err)
+	}
+	if _, _, err = p.CompleteWith(context.Background(), "plan", "data", 0); err == nil {
+		t.Fatal("nonpositive call limit accepted")
+	}
+
+	budget, err := OpenBudget(filepath.Join(t.TempDir(), "budget.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer budget.Close()
+	t.Setenv("UNIT_DEEPSEEK_CREDENTIAL", "test-only-placeholder")
+	deepseek, err := NewProvider(ModelConfig{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "UNIT_DEEPSEEK_CREDENTIAL"}, budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	deepseek.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return nil, fmt.Errorf("unexpected request")
+	})
+	if _, _, err = deepseek.CompleteWith(context.Background(), "plan", "data", maxDeepSeekTokens+1); err == nil || calls.Load() != 0 {
+		t.Fatal("DeepSeek call limit beyond its reservation reached the network", err, calls.Load())
+	}
+}
+
 func TestMaxTokensAppliesAndIsBounded(t *testing.T) {
 	p, err := NewProvider(ModelConfig{Kind: "local", Model: "local-test", BaseURL: "http://127.0.0.1:1/v1", MaxTokens: 777}, nil)
 	if err != nil {

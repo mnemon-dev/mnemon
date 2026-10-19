@@ -34,7 +34,25 @@ type Config struct {
 	// Budgets sets per-account spending caps by provider kind: jev USD,
 	// deepseek CNY, openai USD. Missing kinds keep their defaults.
 	Budgets map[string]float64 `json:"budgets,omitempty"`
+	// Strategy selects the read path: "" is memory-agent/v1, "simple" the
+	// reference system's final read path (simple.go). Unset, it and View stay
+	// out of the policy hash, so existing configs keep their View.policy.
+	Strategy string `json:"strategy,omitempty"`
+	// View bounds the simple strategy's View; New fills its defaults.
+	View *ViewConfig `json:"view,omitempty"`
 }
+
+// ViewConfig bounds what a simple read returns. Zero fields take the
+// defaults: 16 records, 12000 characters, no fusion.
+type ViewConfig struct {
+	MaxItems      int `json:"maxItems,omitempty"`
+	MaxCharacters int `json:"maxCharacters,omitempty"`
+	// Fusion "rrf" orders the View by reciprocal-rank fusion of the judged
+	// order and the message search; "" keeps the judged order.
+	Fusion string `json:"fusion,omitempty"`
+}
+
+const strategySimple = "simple"
 
 type Message struct {
 	Role string `json:"role"`
@@ -46,6 +64,9 @@ type ReadRequest struct {
 	Recent   []Message     `json:"recent,omitempty"`
 	Scope    records.Scope `json:"scope,omitempty"`
 	Revision string        `json:"revision,omitempty"`
+	// MaxItems caps the simple strategy's records; 0 takes the configured
+	// View.MaxItems, and more than it is an error.
+	MaxItems int `json:"maxItems,omitempty"`
 }
 
 type Need struct {
@@ -100,8 +121,22 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	if config.Policy == nil {
 		config.Policy = &ReadPolicy{Planning: true, Screening: true, Judging: true, Coverage: true, Loop: true, Consolidation: true}
 	}
-	if config.Policy.Planning && models.Planner == nil || (config.Policy.Screening || config.Policy.Judging || config.Policy.Coverage) && models.Judge == nil {
-		return nil, errors.New("selected memory policy requires planner and decision models")
+	switch config.Strategy {
+	case "":
+		if config.View != nil {
+			return nil, errors.New("memory view settings require the simple strategy")
+		}
+		if config.Policy.Planning && models.Planner == nil || (config.Policy.Screening || config.Policy.Judging || config.Policy.Coverage) && models.Judge == nil {
+			return nil, errors.New("selected memory policy requires planner and decision models")
+		}
+	case strategySimple:
+		// The simple strategy is the author's fixed algorithm: of the policy
+		// flags only consolidation applies, and both models are always used.
+		if models.Planner == nil || models.Judge == nil {
+			return nil, errors.New("simple memory strategy requires planner and decision models")
+		}
+	default:
+		return nil, fmt.Errorf("unknown memory strategy %q", config.Strategy)
 	}
 	// Config and its nested pointers belong to this service, never its caller.
 	raw, _ := json.Marshal(config)
@@ -109,7 +144,29 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	if err := json.Unmarshal(raw, &own); err != nil {
 		return nil, err
 	}
+	if own.Strategy == strategySimple {
+		if own.View == nil {
+			own.View = &ViewConfig{}
+		}
+		if err := own.View.normalize(); err != nil {
+			return nil, err
+		}
+	}
 	return &Agent{store: store, config: own, models: models, overlay: overlay}, nil
+}
+
+// normalize fills the View defaults and checks the bounds.
+func (v *ViewConfig) normalize() error {
+	if v.MaxItems == 0 {
+		v.MaxItems = 16
+	}
+	if v.MaxCharacters == 0 {
+		v.MaxCharacters = 12000
+	}
+	if v.MaxItems < 1 || v.MaxItems > 200 || v.MaxCharacters < 1 || v.MaxCharacters > 1000000 || v.Fusion != "" && v.Fusion != "rrf" {
+		return errors.New("memory view requires maxItems 1–200, maxCharacters 1–1000000 and fusion \"\" or \"rrf\"")
+	}
+	return nil
 }
 
 func (a *Agent) Close() error {
@@ -169,9 +226,18 @@ func (a *Agent) Read(ctx context.Context, req ReadRequest) (View, error) {
 	if req.Scope.WorkspaceID != nil && !filepath.IsAbs(*req.Scope.WorkspaceID) || req.Scope.SessionID != nil && len(*req.Scope.SessionID) > 256 {
 		return View{}, errors.New("invalid read scope")
 	}
+	if a.config.View == nil && req.MaxItems != 0 {
+		return View{}, errors.New("read maxItems requires the simple strategy")
+	}
+	if a.config.View != nil && (req.MaxItems < 0 || req.MaxItems > a.config.View.MaxItems) {
+		return View{}, fmt.Errorf("read maxItems must be 0–%d", a.config.View.MaxItems)
+	}
 	snapshot, err := a.store.Get(ctx, records.GetRequest{Revision: req.Revision, IDs: []string{}})
 	if err != nil {
 		return View{}, err
+	}
+	if a.config.Strategy == strategySimple {
+		return a.readSimple(ctx, req, snapshot.Revision)
 	}
 	r := &readRun{agent: a, request: req, revision: snapshot.Revision, items: map[string]*candidate{}}
 	for _, message := range req.Recent[max(0, len(req.Recent)-5):] {

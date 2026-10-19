@@ -153,14 +153,27 @@ func (p *Provider) post(ctx context.Context, body any) ([]byte, string, error) {
 }
 
 func (p *Provider) Complete(ctx context.Context, system, prompt string) (string, Usage, error) {
-	return p.complete(ctx, system, prompt, false)
+	return p.complete(ctx, system, prompt, false, 0)
 }
 
 func (p *Provider) CompleteJSON(ctx context.Context, system, prompt string) (string, Usage, error) {
-	return p.complete(ctx, system, prompt, true)
+	return p.complete(ctx, system, prompt, true, 0)
 }
 
-func (p *Provider) complete(ctx context.Context, system, prompt string, jsonOnly bool) (string, Usage, error) {
+// CompleteWith is Complete with this call's own output limit in place of the
+// configured one. Like the reference system's recall completer (natural.ts
+// llmComplete), it returns a reply the limit cut short instead of failing.
+func (p *Provider) CompleteWith(ctx context.Context, system, prompt string, maxTokens int) (string, Usage, error) {
+	if maxTokens < 1 {
+		return "", Usage{}, errors.New("completion call limit must be positive")
+	}
+	return p.complete(ctx, system, prompt, false, maxTokens)
+}
+
+// complete sends one chat completion. callLimit, when positive, replaces the
+// output limit and accepts a reply cut at it; zero keeps the configured limit
+// and fails on a cut reply.
+func (p *Provider) complete(ctx context.Context, system, prompt string, jsonOnly bool, callLimit int) (string, Usage, error) {
 	if p.config.Kind == "jev" {
 		return "", Usage{}, errors.New("JEV is a decision model, not a completer")
 	}
@@ -170,6 +183,12 @@ func (p *Provider) complete(ctx context.Context, system, prompt string, jsonOnly
 	}
 	if p.config.MaxTokens > 0 {
 		maxTokens = p.config.MaxTokens
+	}
+	if callLimit > 0 {
+		maxTokens = callLimit
+	}
+	if p.config.Kind == "deepseek" && maxTokens > maxDeepSeekTokens {
+		return "", Usage{}, fmt.Errorf("DeepSeek maxTokens must not exceed %d", maxDeepSeekTokens)
 	}
 	body := map[string]any{"model": p.config.Model, "messages": []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": prompt}}, "max_tokens": maxTokens}
 	if jsonOnly {
@@ -219,7 +238,7 @@ func (p *Provider) complete(ctx context.Context, system, prompt string, jsonOnly
 	if err := p.budget.settle(ctx, id, usage); err != nil {
 		return "", usage, err
 	}
-	if result.Choices[0].FinishReason == "length" {
+	if result.Choices[0].FinishReason == "length" && callLimit == 0 {
 		return "", usage, errors.New("completion output token budget reached")
 	}
 	return result.Choices[0].Message.Content, usage, nil

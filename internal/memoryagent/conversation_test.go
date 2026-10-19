@@ -215,7 +215,7 @@ func fetchValue(t *testing.T, s *records.Store, revision, id string) recordValue
 	return value
 }
 
-func conversationText(n int) string {
+func foxText(n int) string {
 	return strings.TrimSpace(strings.Repeat("The quick brown fox jumps over the lazy dog. ", n))
 }
 
@@ -229,8 +229,8 @@ func TestWriteConversationRecords(t *testing.T) {
 		SessionID: "s1",
 		Source:    "aml",
 		Messages: []ConversationMessage{
-			{Role: "user", Content: conversationText(8), At: &first},
-			{Role: "assistant", Content: conversationText(8), At: &second},
+			{Role: "user", Content: foxText(8), At: &first},
+			{Role: "assistant", Content: foxText(8), At: &second},
 		},
 	}
 	result, err := WriteConversation(ctx, s, req)
