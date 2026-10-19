@@ -171,7 +171,7 @@ func (p *Provider) post(ctx context.Context, raw []byte, amount float64) ([]byte
 	response, err := p.client.Do(request)
 	if err != nil {
 		if unsent(err) {
-			return nil, "", p.release(ctx, id, errors.New("model endpoint unreachable"))
+			return nil, "", p.release(ctx, id, fmt.Errorf("%w: endpoint unreachable", ErrModelUnavailable))
 		}
 		if ctx.Err() != nil {
 			return nil, id, fmt.Errorf("model request failed; any reservation remains held: %w", ctx.Err())
@@ -180,6 +180,9 @@ func (p *Provider) post(ctx context.Context, raw []byte, amount float64) ([]byte
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode > 299 {
+		if unavailableStatus(response.StatusCode) {
+			return nil, "", p.release(ctx, id, fmt.Errorf("%w: model HTTP %d", ErrModelUnavailable, response.StatusCode))
+		}
 		return nil, "", p.release(ctx, id, fmt.Errorf("model HTTP %d", response.StatusCode))
 	}
 	if response.StatusCode != http.StatusOK {
@@ -200,6 +203,16 @@ func (p *Provider) release(ctx context.Context, id string, cause error) error {
 		return fmt.Errorf("%w; any reservation remains held (release failed: %v)", cause, err)
 	}
 	return fmt.Errorf("%w; reservation released", cause)
+}
+
+// ErrModelUnavailable wraps the error of a call the provider refused for
+// reasons that hold for every request alike: unreachable, credentials or
+// balance refused (401, 402, 403), rate limited (429) or failing (5xx). It
+// says nothing about the request's own content.
+var ErrModelUnavailable = errors.New("model unavailable")
+
+func unavailableStatus(code int) bool {
+	return code == http.StatusUnauthorized || code == http.StatusPaymentRequired || code == http.StatusForbidden || code == http.StatusTooManyRequests || code >= 500
 }
 
 // unsent reports whether a request failed while connecting, before any of it

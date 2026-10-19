@@ -42,7 +42,8 @@ func TestAMLServeRefusesBeforeListening(t *testing.T) {
 		// The configuration is checked by making an agent: no models.
 		{[]string{"--data-root", dir, "--memory-config", config, "--auth-key-env", "AML_TEST_SET"}, "requires planner and decision models"},
 		{[]string{"--data-root", dir, "--memory-config", config, "--auth-key-env", "AML_TEST_SET", "--max-open-stores", "0"}, "--max-open-stores"},
-		{[]string{"--data-root", dir, "--memory-config", config, "--auth-key-env", "AML_TEST_SET", "--search-timeout", "59s"}, "--search-timeout must be at least 1m"},
+		{[]string{"--data-root", dir, "--memory-config", config, "--auth-key-env", "AML_TEST_SET", "--search-timeout", "59s"}, "--search-timeout must be between 1m and 18m"},
+		{[]string{"--data-root", dir, "--memory-config", config, "--auth-key-env", "AML_TEST_SET", "--search-timeout", "19m"}, "--search-timeout must be between 1m and 18m"},
 	} {
 		command := newAMLServeCommand()
 		command.SetArgs(c.args)

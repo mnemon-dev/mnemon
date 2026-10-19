@@ -180,7 +180,8 @@ each number. None is reported in this draft.>`
 - The paper's authors, venue and year, and the licence terms of the reference repository for a
   derived port.
 - Whether the track rules treat the consolidation blocks (model-written topic, timeline and value
-  summaries built from the stored records when conversations are added, not from the question) as
+  summaries built from the stored records as conversations are added and before the next Search,
+  never from the question) as
   retrieved evidence. Search can be run without them by starting `aml-serve` without
   `--consolidate-on-add`, at the cost of the layer.
 - That external model APIs are allowed in the industrial track, and the retention terms of

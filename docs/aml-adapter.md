@@ -212,7 +212,7 @@ caps.
   the index (`consolidation dropped …` in the log; the records stay searchable). Without the
   flag the adapter never consolidates (there is no other trigger), and Search returns
   evidence records only.
-- **`--search-timeout`** (default `10m`, at least `1m`) bounds a Search's memory read. When it
+- **`--search-timeout`** (default `10m`, `1m` to `18m`) bounds a Search's memory read. When it
   expires the Search answers the raw ranking (HTTP 200, counted as degraded). With the tail
   fold's own 10 minutes before it, a Search answers within the platform's 30 minutes.
 - **Restarts and retries.** On SIGTERM the server lets requests finish for 30 seconds. A longer
@@ -294,7 +294,7 @@ logged; a user appears as the first eight hex digits of its store hash.
 | `hybrid search failed, searching words (user …)` | The embedder was down during a degraded search. |
 | `consolidation failed (user …): <error>` | Consolidation stopped during an Add; the Add still succeeded and the next request of the user retries. |
 | `flush failed (user …): <error>` | Folding the tail before a Search failed or ran past 10 minutes; the Search read what was consolidated. |
-| `consolidation dropped N records (user …): <reason>` | The index leaves out N records the provider failed on repeatedly, whose fold request was too large, or whose reply never parsed. The records stay searchable. |
+| `consolidation dropped N records (user …): <reason>` | The index leaves out N records whose fold the provider refused or timed out on for at least 10 minutes, whose fold request was too large, or whose reply never parsed. Outages, rate limits (429), 5xx and credential or balance refusals (401/402/403) never drop records. The records stay searchable. |
 | `consolidation left to a queued Add (user …)` | Another Add of the user was waiting; it consolidates instead. |
 | `consolidation skipped: the Add's window has passed (user …)` | The Add waited 25 minutes for its user; the next request consolidates. |
 | `consolidation stopped with N records pending (user …)`, `flush stopped …` | The 50-job cap of one request was reached; the next request continues. |

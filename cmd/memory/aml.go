@@ -32,7 +32,7 @@ func newAMLServeCommand() *cobra.Command {
 	flags.String("auth-key-env", "AML_API_KEY", "Environment variable holding the API key clients must send")
 	flags.Bool("consolidate-on-add", false, "Consolidate during requests: full batches before an Add returns, the rest before the user's next Search")
 	flags.Int("max-open-stores", 64, "Most user stores kept open at once")
-	flags.Duration("search-timeout", 10*time.Minute, "Longest memory read of a Search before it answers the raw ranking (at least 1m)")
+	flags.Duration("search-timeout", 10*time.Minute, "Longest memory read of a Search before it answers the raw ranking (1m to 18m)")
 	return command
 }
 
@@ -54,8 +54,10 @@ func runAMLServe(cmd *cobra.Command, _ []string) error {
 	if maxOpen < 1 {
 		return errors.New("--max-open-stores must be at least 1")
 	}
-	if searchTimeout < time.Minute {
-		return errors.New("--search-timeout must be at least 1m")
+	if searchTimeout < time.Minute || searchTimeout > 18*time.Minute {
+		// A Search may first flush for up to 10 minutes; both must end within
+		// the platform's 30-minute request timeout.
+		return errors.New("--search-timeout must be between 1m and 18m")
 	}
 	if keyEnv == "" {
 		return errors.New("--auth-key-env must name an environment variable")

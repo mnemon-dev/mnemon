@@ -31,8 +31,9 @@ const (
 	timelineMaxTokens = 8192
 	// After dropErrors model errors over at least dropAfter, the head batch
 	// is folded in drop mode (foldDropping): a provider that keeps refusing
-	// one batch must not stop every later job, while a passing outage drops
-	// nothing.
+	// one batch must not stop every later job. Errors that hit every request
+	// alike (ErrModelUnavailable: outage, credentials, balance, rate limit)
+	// never count, so an outage of any length drops nothing.
 	dropErrors = 3
 	dropAfter  = 10 * time.Minute
 )
@@ -767,10 +768,11 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 }
 
 // countedError reports whether a fold's error counts toward drop mode: a
-// model error, not the caller's cancellation or deadline nor a spent budget,
-// which say nothing about the batch.
+// model error about this request (a refusal of its content, a timeout after
+// sending, a malformed reply), not the caller's cancellation or deadline, a
+// spent budget or an unavailable provider, which say nothing about the batch.
 func countedError(ctx context.Context, err error) bool {
-	return ctx.Err() == nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, ErrBudgetCap)
+	return ctx.Err() == nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, ErrBudgetCap) && !errors.Is(err, ErrModelUnavailable)
 }
 
 // dropDue reports whether the head batch is folded in drop mode: dropErrors

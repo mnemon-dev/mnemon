@@ -832,7 +832,7 @@ func TestConsolidateTimelinesDropsHeadBatchAfterRepeatedErrors(t *testing.T) {
 		a.now = clock.Now
 		return a, overlay, clock, model
 	}
-	broken := errors.New("model HTTP 500; reservation released")
+	broken := errors.New("model HTTP 400; reservation released")
 	failDelta := func(_, prompt string) (string, error) {
 		if strings.Contains(prompt, "delta") {
 			return "", broken
@@ -858,7 +858,7 @@ func TestConsolidateTimelinesDropsHeadBatchAfterRepeatedErrors(t *testing.T) {
 		clock.advance(time.Minute)
 		result, err := a.Consolidate(ctx, ConsolidateRequest{})
 		if err != nil || result.Added != 2 || result.Remaining != 0 || result.Folded != 1 || result.Dropped != 2 || len(result.Drops) != 1 || result.Drops[0].Records != 2 ||
-			!strings.Contains(result.Drops[0].Reason, "model HTTP 500") || !strings.Contains(result.Drops[0].Reason, "4 failed jobs") {
+			!strings.Contains(result.Drops[0].Reason, "model HTTP 400") || !strings.Contains(result.Drops[0].Reason, "4 failed jobs") {
 			t.Fatalf("result %+v %v", result, err)
 		}
 		state := loadState(t, overlay)
@@ -1050,4 +1050,27 @@ func TestConsolidateTimelinesPendingIsBounded(t *testing.T) {
 			t.Fatal("records lost or repeated", got, len(model.calls))
 		}
 	})
+}
+
+func TestCountedErrorIgnoresProviderWideFailures(t *testing.T) {
+	ctx := context.Background()
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	for _, c := range []struct {
+		ctx  context.Context
+		err  error
+		want bool
+	}{
+		{ctx, errors.New("model HTTP 400; reservation released"), true},
+		{ctx, errors.New("model request failed; any reservation remains held"), true},
+		{ctx, fmt.Errorf("%w: model HTTP 402; reservation released", ErrModelUnavailable), false},
+		{ctx, fmt.Errorf("%w: endpoint unreachable", ErrModelUnavailable), false},
+		{ctx, ErrBudgetCap, false},
+		{ctx, context.DeadlineExceeded, false},
+		{canceled, errors.New("model HTTP 400"), false},
+	} {
+		if got := countedError(c.ctx, c.err); got != c.want {
+			t.Fatal(c.err, got)
+		}
+	}
 }

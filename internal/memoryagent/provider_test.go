@@ -923,6 +923,10 @@ func TestFailedModelRequestReleasesOnlyUnsentOrRefused(t *testing.T) {
 		if _, _, err = p.Complete(ctx, "s", "p"); err == nil || !strings.Contains(err.Error(), fmt.Sprint(code)) {
 			t.Fatal(code, err)
 		}
+		// Outages and rate limits hit every request alike; a 400 is about this one.
+		if errors.Is(err, ErrModelUnavailable) != (code != http.StatusBadRequest) {
+			t.Fatal("unavailable classification", code, err)
+		}
 	}
 	if held, spent := accountHeld(t, budget, "openai"); !near(held, 0) || spent != 0 {
 		t.Fatal("a refused call kept its reservation", held, spent)
@@ -943,8 +947,8 @@ func TestFailedModelRequestReleasesOnlyUnsentOrRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err = unreachable.Complete(ctx, "s", "p"); err == nil {
-		t.Fatal("a refused connection succeeded")
+	if _, _, err = unreachable.Complete(ctx, "s", "p"); err == nil || !errors.Is(err, ErrModelUnavailable) {
+		t.Fatal("a refused connection is not an unavailable model", err)
 	}
 	if held, _ := accountHeld(t, budget, "openai"); !near(held, 0) {
 		t.Fatal("an unsent call kept its reservation", held)
