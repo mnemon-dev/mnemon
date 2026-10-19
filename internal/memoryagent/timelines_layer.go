@@ -566,19 +566,11 @@ func (r *simpleRun) layerVectors(ctx context.Context, message string, threadText
 		return nil, nil, nil, false
 	}
 	documents := func(texts []string) [][]float32 {
-		out := [][]float32{}
-		for start := 0; start < len(texts); start += layerEmbedBatch {
-			part := []string{}
-			for _, text := range texts[start:min(start+layerEmbedBatch, len(texts))] {
-				part = append(part, jsSlice(text, 0, layerEmbedText))
-			}
-			vectors, err := r.agent.store.DerivedVectors(ctx, part, *config, true)
-			if err != nil || slices.ContainsFunc(vectors, func(v []float32) bool { return len(v) != len(query) }) {
-				return nil
-			}
-			out = append(out, vectors...)
+		vectors, err := r.agent.layerDocuments(ctx, texts)
+		if err != nil || slices.ContainsFunc(vectors, func(v []float32) bool { return len(v) != len(query) }) {
+			return nil
 		}
-		return out
+		return vectors
 	}
 	if threads = documents(threadTexts); threads == nil {
 		return nil, nil, nil, false
@@ -587,6 +579,53 @@ func (r *simpleRun) layerVectors(ctx context.Context, message string, threadText
 		return nil, nil, nil, false
 	}
 	return query, threads, values, true
+}
+
+// layerDocuments is the document vectors of the layer texts, each cut to
+// layerEmbedText units, in batches of layerEmbedBatch; missing vectors are
+// embedded and stored, so a later read or warm-up finds them.
+func (a *Agent) layerDocuments(ctx context.Context, texts []string) ([][]float32, error) {
+	out := [][]float32{}
+	for start := 0; start < len(texts); start += layerEmbedBatch {
+		part := []string{}
+		for _, text := range texts[start:min(start+layerEmbedBatch, len(texts))] {
+			part = append(part, jsSlice(text, 0, layerEmbedText))
+		}
+		vectors, err := a.store.DerivedVectors(ctx, part, *a.config.Embedding, true)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, vectors...)
+	}
+	return out, nil
+}
+
+// WarmLayer embeds and stores the scope's timelines layer texts, its topics
+// and value histories, which the first read after a consolidation would
+// otherwise embed while it answers (the reference system embeds them when
+// its consolidation catches up). It does nothing without an embedder, the
+// timelines layer or a consolidated state; an embedding error is returned
+// for the caller to log, and the read then embeds or falls back as before.
+func (a *Agent) WarmLayer(ctx context.Context, scope records.Scope) error {
+	if !a.layerOn() || a.config.Embedding == nil {
+		return nil
+	}
+	state, _, err := a.overlay.loadTimelines(ctx, scope)
+	if err != nil {
+		return err
+	}
+	m := state.Memory
+	ids, _ := eventThreads(m)
+	threadTexts, valueTexts := layerTexts(m)
+	texts := []string{}
+	for _, id := range ids {
+		texts = append(texts, threadTexts[id])
+	}
+	for _, key := range m.FactOrder {
+		texts = append(texts, valueTexts[key])
+	}
+	_, err = a.layerDocuments(ctx, texts)
+	return err
 }
 
 // byDot is the indexes of the best limit vectors by dot product with query,

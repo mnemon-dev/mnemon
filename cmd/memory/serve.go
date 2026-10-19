@@ -33,6 +33,7 @@ func init() {
 		child.Flags().String("config", "", "Memory-strategy JSON configuration (required for read/consolidate)")
 		group.AddCommand(child)
 	}
+	group.AddCommand(newAMLServeCommand())
 	rootCmd.AddCommand(group)
 }
 

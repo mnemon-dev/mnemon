@@ -1,0 +1,502 @@
+package aml
+
+import (
+	"context"
+	"crypto/subtle"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/mnemon-dev/mnemon/internal/memoryagent"
+	"github.com/mnemon-dev/mnemon/internal/records"
+)
+
+const (
+	// maxBody bounds a request body.
+	maxBody = 30 << 20
+	// defaultOpenStores is how many user stores stay open by default.
+	defaultOpenStores = 64
+	// An Add folds consolidation until it is caught up, within these bounds,
+	// so it returns well inside the platform's 1,800 s I/O timeout.
+	maxConsolidateCalls = 50
+	consolidateWindow   = 20 * time.Minute
+)
+
+// ServerConfig configures a Server.
+type ServerConfig struct {
+	// DataRoot is the absolute directory holding the per-user stores.
+	DataRoot string
+	// MemoryConfig is the memory strategy every user's agent runs.
+	MemoryConfig memoryagent.Config
+	// AuthKey is the API key every Add and Search must carry.
+	AuthKey string
+	// ConsolidateOnAdd folds consolidation until caught up before an Add
+	// returns; its failures are logged, not returned.
+	ConsolidateOnAdd bool
+	// MaxOpenStores bounds the cached open user stores (default 64).
+	MaxOpenStores int
+	// Models builds the models from MemoryConfig; nil builds its configured
+	// providers. Tests inject scripted models here.
+	Models func(memoryagent.Config) (memoryagent.Models, error)
+	// Logger receives operational lines, never request bodies; nil logs to
+	// standard error.
+	Logger *log.Logger
+}
+
+// Server serves the AML contract. Every user's agent shares the models.
+type Server struct {
+	config   ServerConfig
+	key      []byte
+	models   memoryagent.Models
+	budget   *memoryagent.Budget
+	maxItems int // the View's record bound; 0 for memory-agent/v1
+	users    *registry
+	log      *log.Logger
+	degraded atomic.Int64
+	handler  http.Handler
+	once     sync.Once
+}
+
+// NewServer checks the configuration, builds the shared models and checks
+// that an agent can be made from them before it serves anything.
+func NewServer(config ServerConfig) (*Server, error) {
+	if config.AuthKey == "" {
+		return nil, errors.New("the AML server requires a nonempty API key")
+	}
+	if config.DataRoot == "" || !filepath.IsAbs(config.DataRoot) {
+		return nil, errors.New("the AML server requires an absolute data root")
+	}
+	if config.MaxOpenStores == 0 {
+		config.MaxOpenStores = defaultOpenStores
+	}
+	if config.MaxOpenStores < 1 {
+		return nil, errors.New("max open stores must be at least 1")
+	}
+	if err := os.MkdirAll(config.DataRoot, 0o700); err != nil {
+		return nil, err
+	}
+	s := &Server{config: config, key: []byte(config.AuthKey), log: config.Logger}
+	if s.log == nil {
+		s.log = log.New(os.Stderr, "aml: ", log.LstdFlags|log.LUTC)
+	}
+	var err error
+	if config.Models != nil {
+		s.models, err = config.Models(config.MemoryConfig)
+	} else {
+		s.models, s.budget, err = memoryagent.OpenModels(config.MemoryConfig)
+	}
+	if err != nil {
+		return nil, err
+	}
+	if s.maxItems, err = s.probe(); err != nil {
+		if s.budget != nil {
+			s.budget.Close()
+		}
+		return nil, err
+	}
+	s.users = newRegistry(config.DataRoot, config.MaxOpenStores, s.openUser)
+	s.handler = s.routes()
+	return s, nil
+}
+
+// probe makes an agent over an empty scratch store, so a configuration the
+// agents refuse fails at startup rather than on every request, and reads
+// the View's record bound.
+func (s *Server) probe() (int, error) {
+	dir, err := os.MkdirTemp("", "aml-probe-")
+	if err != nil {
+		return 0, err
+	}
+	defer os.RemoveAll(dir)
+	store, err := records.Open(dir, false)
+	if err != nil {
+		return 0, err
+	}
+	defer store.Close()
+	agent, err := memoryagent.New(store, s.config.MemoryConfig, s.models, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer agent.Close()
+	return agent.MaxItems(), nil
+}
+
+func (s *Server) openUser(dir string) (*records.Store, *memoryagent.Agent, error) {
+	store, err := records.Open(dir, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	agent, err := memoryagent.OpenWithModels(store, dir, s.config.MemoryConfig, false, s.models)
+	if err != nil {
+		store.Close()
+		return nil, nil, err
+	}
+	return store, agent, nil
+}
+
+// Close closes the user stores (held ones when their request ends) and the
+// models' budget. Stop the HTTP server first.
+func (s *Server) Close() error {
+	s.once.Do(func() {
+		s.users.close()
+		if s.budget != nil {
+			s.budget.Close()
+		}
+	})
+	return nil
+}
+
+// DegradedSearches counts the Searches answered by raw search because the
+// memory read failed.
+func (s *Server) DegradedSearches() int64 { return s.degraded.Load() }
+
+// Handler routes POST /add and POST /search (authenticated) and GET /health
+// and GET / (not); anything else is 404.
+func (s *Server) Handler() http.Handler { return s.handler }
+
+// HTTPServer is the HTTP server for addr with the service's timeouts: an Add
+// may consolidate for up to the platform's 30-minute I/O timeout.
+func (s *Server) HTTPServer(addr string) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           s.handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       5 * time.Minute,
+		WriteTimeout:      31 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+		ErrorLog:          s.log,
+	}
+}
+
+func (s *Server) routes() http.Handler {
+	mux := http.NewServeMux()
+	health := func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	}
+	mux.HandleFunc("GET /{$}", health)
+	mux.HandleFunc("GET /health", health)
+	mux.Handle("POST /add", s.authorized(s.add))
+	mux.Handle("POST /search", s.authorized(s.search))
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusNotFound, "not found")
+	})
+	return s.logged(mux)
+}
+
+// authorized accepts `Authorization: Bearer <key>`, `Authorization: Token
+// <key>` or `X-Api-Key: <key>`, compared in constant time.
+func (s *Server) authorized(next http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.validKey(r) {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="aml"`)
+			writeError(w, http.StatusUnauthorized, "missing or invalid API key")
+			return
+		}
+		next(w, r)
+	})
+}
+
+func (s *Server) validKey(r *http.Request) bool {
+	keys := []string{}
+	if scheme, key, ok := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " "); ok && (strings.EqualFold(scheme, "Bearer") || strings.EqualFold(scheme, "Token")) {
+		keys = append(keys, strings.TrimSpace(key))
+	}
+	if key := r.Header.Get("X-Api-Key"); key != "" {
+		keys = append(keys, strings.TrimSpace(key))
+	}
+	valid := false
+	for _, key := range keys {
+		if subtle.ConstantTimeCompare([]byte(key), s.key) == 1 {
+			valid = true
+		}
+	}
+	return valid
+}
+
+// add stores one chunk of a conversation and returns once it is persisted and
+// searchable: written, embedded when the configuration embeds, and, with
+// ConsolidateOnAdd, consolidated. A retry of a stored request succeeds and
+// finishes what the earlier attempt may not have.
+func (s *Server) add(w http.ResponseWriter, r *http.Request) {
+	var req AddRequest
+	if !s.decode(w, r, &req) {
+		return
+	}
+	if err := req.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	conversation := req.conversation()
+	parent, _, err := memoryagent.PackConversation(conversation)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx := r.Context()
+	user, err := s.users.acquire(ctx, req.UserID, true)
+	if err != nil {
+		s.fail(w, "open store", "", err)
+		return
+	}
+	defer s.users.release(user)
+	user.writes.Lock()
+	defer user.writes.Unlock()
+	revision, err := s.write(ctx, user, conversation, parent)
+	if errors.Is(err, errRequestReused) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err != nil {
+		s.fail(w, "write", user.key, err)
+		return
+	}
+	if embedding := s.config.MemoryConfig.Embedding; embedding != nil {
+		if _, err := user.store.Embed(ctx, records.EmbedRequest{Revision: revision, Embedding: *embedding}, false); err != nil {
+			s.log.Printf("embedding failed (user %s): %v", user.key[:8], err)
+			writeError(w, http.StatusServiceUnavailable, "embedding is unavailable; retry the same request")
+			return
+		}
+	}
+	if s.config.ConsolidateOnAdd {
+		s.consolidate(ctx, user)
+	}
+	writeJSON(w, http.StatusOK, AddResponse{Success: true, RequestID: req.RequestID, UserID: req.UserID, SessionID: req.SessionID})
+}
+
+var errRequestReused = errors.New("request_id was already used for a different payload")
+
+// write stores the conversation and returns its revision. A document stored
+// under the same id with the same packed content is this request's earlier
+// attempt: success, at the current revision (""). A changed revision is
+// retried once.
+func (s *Server) write(ctx context.Context, user *userEntry, conversation memoryagent.ConversationRequest, parent string) (string, error) {
+	for attempt := 0; ; attempt++ {
+		result, err := memoryagent.WriteConversation(ctx, user.store, conversation)
+		switch {
+		case err == nil:
+			return result.Revision, nil
+		case errors.Is(err, memoryagent.ErrDocumentExists):
+			same, err := sameDocument(ctx, user.store, conversation.ID, parent)
+			if err != nil {
+				return "", err
+			}
+			if !same {
+				return "", errRequestReused
+			}
+			return "", nil
+		case attempt == 0 && errors.Is(err, records.ErrConflict):
+			continue
+		default:
+			return "", err
+		}
+	}
+}
+
+// sameDocument reports whether the stored document id holds content.
+func sameDocument(ctx context.Context, store *records.Store, id, content string) (bool, error) {
+	snapshot, err := store.Get(ctx, records.GetRequest{IDs: []string{id}})
+	if err != nil || len(snapshot.Records) != 1 {
+		return false, err
+	}
+	var stored struct {
+		Kind    string `json:"kind"`
+		Content string `json:"content"`
+	}
+	if err := json.Unmarshal([]byte(snapshot.Records[0]), &stored); err != nil {
+		return false, err
+	}
+	return stored.Kind == "memory-document" && stored.Content == content, nil
+}
+
+// consolidate folds until the user's consolidation has read everything (a
+// call folds full batches; the short rest is folded by a call that finds
+// nothing new), then stores the layer's embeddings for the next read.
+// Failures are logged: the records are searchable already, and the next Add
+// carries on where this one stopped.
+func (s *Server) consolidate(ctx context.Context, user *userEntry) {
+	ctx, cancel := context.WithTimeout(ctx, consolidateWindow)
+	defer cancel()
+	for call := 1; call <= maxConsolidateCalls; call++ {
+		result, err := user.agent.Consolidate(ctx, memoryagent.ConsolidateRequest{})
+		if err != nil {
+			s.log.Printf("consolidation failed (user %s): %v", user.key[:8], err)
+			break
+		}
+		if result.Remaining == 0 {
+			break
+		}
+		if call == maxConsolidateCalls {
+			s.log.Printf("consolidation stopped with %d records pending (user %s)", result.Remaining, user.key[:8])
+		}
+	}
+	if err := user.agent.WarmLayer(ctx, records.Scope{}); err != nil {
+		s.log.Printf("layer embedding failed (user %s): %v", user.key[:8], err)
+	}
+}
+
+// search reads the user's memory for the question. When the read fails for
+// any reason but the client leaving (a model, a budget, the embedder), the
+// raw search ranking answers instead, and the degradation is counted.
+func (s *Server) search(w http.ResponseWriter, r *http.Request) {
+	var req SearchRequest
+	if !s.decode(w, r, &req) {
+		return
+	}
+	if err := req.validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	ctx := r.Context()
+	user, err := s.users.acquire(ctx, req.UserID, false)
+	if err != nil {
+		s.fail(w, "open store", "", err)
+		return
+	}
+	if user == nil {
+		writeJSON(w, http.StatusOK, SearchResponse{Data: []SearchItem{}})
+		return
+	}
+	defer s.users.release(user)
+	// The platform asks a fixed top_k; a View bound below it gives fewer
+	// records rather than an error.
+	maxItems := 0
+	if s.maxItems > 0 {
+		maxItems = min(req.TopK, s.maxItems)
+	}
+	view, err := user.agent.Read(ctx, memoryagent.ReadRequest{Question: req.question(), MaxItems: maxItems})
+	if err == nil {
+		writeJSON(w, http.StatusOK, SearchResponse{Data: searchItems(view, req.TopK)})
+		return
+	}
+	if ctx.Err() != nil {
+		writeError(w, http.StatusServiceUnavailable, "request canceled")
+		return
+	}
+	n := s.degraded.Add(1)
+	s.log.Printf("degraded search %d (user %s): %v", n, user.key[:8], err)
+	items, err := s.rawSearch(ctx, user, req.Query, req.TopK)
+	if err != nil {
+		s.fail(w, "degraded search", user.key, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, SearchResponse{Data: items})
+}
+
+// rawSearch is the store's own ranking of the query, hybrid when the
+// configuration embeds (words when the embedder fails), hydrated as reads
+// hydrate evidence. It uses no model.
+func (s *Server) rawSearch(ctx context.Context, user *userEntry, query string, topK int) ([]SearchItem, error) {
+	snapshot, err := user.store.Get(ctx, records.GetRequest{IDs: []string{}})
+	if err != nil {
+		return nil, err
+	}
+	config := s.config.MemoryConfig
+	ids, err := rawQuery(ctx, user.store, snapshot.Revision, query, config.Embedding, config.Index)
+	if err != nil && config.Embedding != nil {
+		s.log.Printf("hybrid search failed, searching words (user %s): %v", user.key[:8], err)
+		ids, err = rawQuery(ctx, user.store, snapshot.Revision, query, nil, config.Index)
+	}
+	if err != nil {
+		return nil, err
+	}
+	evidence, err := user.agent.Hydrate(ctx, snapshot.Revision, records.Scope{}, ids[:min(len(ids), topK, 200)])
+	if err != nil {
+		return nil, err
+	}
+	items := []SearchItem{}
+	for _, item := range evidence {
+		items = append(items, SearchItem{ID: item.ID, Content: item.Text, CreatedAt: item.Date})
+	}
+	return items, nil
+}
+
+func rawQuery(ctx context.Context, store *records.Store, revision, query string, embedding *records.EmbeddingConfig, index *records.IndexPolicy) ([]string, error) {
+	text, _ := json.Marshal(query)
+	input := map[string]json.RawMessage{"query": text, "match": json.RawMessage(`"words"`)}
+	if embedding != nil {
+		input["match"] = json.RawMessage(`"hybrid"`)
+	}
+	result, err := store.Query(ctx, records.QueryRequest{Revision: revision, Input: input, Embedding: embedding, Index: index, CandidateLimit: 200})
+	return result.IDs, err
+}
+
+// decode reads a JSON body of at most maxBody bytes; on failure it has
+// answered 413 or 400.
+func (s *Server) decode(w http.ResponseWriter, r *http.Request, into any) bool {
+	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody)).Decode(into)
+	if err == nil {
+		return true
+	}
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		writeError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("request body exceeds %d bytes", maxBody))
+		return false
+	}
+	writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+	return false
+}
+
+// fail logs an internal error and answers 503 when retrying can help (a busy
+// or changed store, shutdown), else 500.
+func (s *Server) fail(w http.ResponseWriter, operation, user string, err error) {
+	if len(user) > 8 {
+		user = user[:8]
+	}
+	s.log.Printf("%s failed (user %s): %v", operation, user, err)
+	if retryable(err) {
+		writeError(w, http.StatusServiceUnavailable, operation+" is temporarily unavailable; retry")
+		return
+	}
+	writeError(w, http.StatusInternalServerError, operation+" failed")
+}
+
+func retryable(err error) bool {
+	message := err.Error()
+	return errors.Is(err, records.ErrConflict) || errors.Is(err, errClosing) || errors.Is(err, context.DeadlineExceeded) ||
+		strings.Contains(message, "database is locked") || strings.Contains(message, "SQLITE_BUSY") || strings.Contains(message, "too many open files")
+}
+
+// logged writes one line per request but health checks: method, path, status
+// and duration, never bodies.
+func (s *Server) logged(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" || r.URL.Path == "/" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		start := time.Now()
+		recorder := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		s.log.Printf("%s %s %d %dms", r.Method, r.URL.Path, recorder.status, time.Since(start).Milliseconds())
+	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(status int) {
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	encoder.Encode(value)
+}
+
+func writeError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, errorResponse{Error: message})
+}

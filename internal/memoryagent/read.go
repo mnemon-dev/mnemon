@@ -226,6 +226,15 @@ func (c *ConsolidationConfig) normalize() error {
 	return nil
 }
 
+// MaxItems is the largest ReadRequest.MaxItems a read accepts, the View's
+// configured record bound; 0 when the strategy (memory-agent/v1) has none.
+func (a *Agent) MaxItems() int {
+	if a.config.View == nil {
+		return 0
+	}
+	return a.config.View.MaxItems
+}
+
 func (a *Agent) Close() error {
 	if a.overlay != nil {
 		a.overlay.Close()

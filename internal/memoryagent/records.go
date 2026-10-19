@@ -288,6 +288,39 @@ func runeEnd(text string, start, count int) int {
 	return end
 }
 
+// Hydrate returns the evidence of ids at revision ("" is the current one) in
+// scope, in the order of ids, as reads build it: chunks are proved against
+// their original documents (a mismatch is an error), while unknown or invisible
+// ids, documents and index items are left out. At most 200 ids.
+func (a *Agent) Hydrate(ctx context.Context, revision string, scope records.Scope, ids []string) ([]Evidence, error) {
+	if len(ids) > 200 {
+		return nil, errors.New("evidence batch exceeds 200")
+	}
+	if revision == "" {
+		snapshot, err := a.store.Get(ctx, records.GetRequest{IDs: []string{}})
+		if err != nil {
+			return nil, err
+		}
+		revision = snapshot.Revision
+	}
+	items, err := evidence(ctx, a.store, revision, scope, ids)
+	if err != nil {
+		return nil, err
+	}
+	byID := map[string]Evidence{}
+	for _, item := range items {
+		byID[item.ID] = item
+	}
+	out := []Evidence{}
+	for _, id := range ids {
+		if item, ok := byID[id]; ok {
+			out = append(out, item)
+			delete(byID, id)
+		}
+	}
+	return out, nil
+}
+
 func evidence(ctx context.Context, store *records.Store, revision string, scope records.Scope, ids []string) ([]Evidence, error) {
 	if len(ids) > 200 {
 		return nil, errors.New("evidence batch exceeds 200")

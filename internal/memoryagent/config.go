@@ -10,63 +10,83 @@ import (
 // Open constructs only the explicitly configured models. All stores and HTTP
 // clients remain owned by the returned Agent until Close, after its calls exit.
 func Open(store *records.Store, directory string, config Config, readonly bool) (*Agent, error) {
+	models, budget, err := OpenModels(config)
+	if err != nil {
+		return nil, err
+	}
+	agent, err := OpenWithModels(store, directory, config, readonly, models)
+	if err != nil {
+		if budget != nil {
+			budget.Close()
+		}
+		return nil, err
+	}
+	agent.budget = budget
+	return agent, nil
+}
+
+// OpenModels constructs the configured models and the budget file they share
+// (nil without one). The caller owns both: it closes the budget after the
+// models' last call. Agents opened with OpenWithModels can share them.
+func OpenModels(config Config) (Models, *Budget, error) {
 	var budget *Budget
-	var overlay *Overlay
-	var indexError error
 	var err error
 	if config.BudgetFile != "" {
 		budget, err = OpenBudgetWithCaps(config.BudgetFile, config.Budgets)
 		if err != nil {
-			return nil, err
+			return Models{}, nil, err
 		}
 	}
-	ok := false
-	defer func() {
-		if !ok {
+	models := Models{}
+	for _, model := range []struct {
+		config *ModelConfig
+		set    func(*Provider)
+	}{
+		{config.Planner, func(p *Provider) { models.Planner = p }},
+		{config.Judge, func(p *Provider) { models.Judge = p }},
+		{config.Consolidator, func(p *Provider) { models.Consolidator = p }},
+	} {
+		if model.config == nil {
+			continue
+		}
+		provider, err := NewProvider(*model.config, budget)
+		if err != nil {
 			if budget != nil {
 				budget.Close()
 			}
-			if overlay != nil {
-				overlay.Close()
-			}
+			return Models{}, nil, err
 		}
-	}()
-	models := Models{}
-	if config.Planner != nil {
-		models.Planner, err = NewProvider(*config.Planner, budget)
-		if err != nil {
-			return nil, err
-		}
+		model.set(provider)
 	}
-	if config.Judge != nil {
-		models.Judge, err = NewProvider(*config.Judge, budget)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if config.Consolidator != nil {
-		models.Consolidator, err = NewProvider(*config.Consolidator, budget)
-		if err != nil {
-			return nil, err
-		}
-	}
+	return models, budget, nil
+}
+
+// OpenWithModels is Open with models the caller owns, for example models
+// shared by the agents of many stores; the agent's Close leaves them alone.
+// It opens the derived index in directory like Open: a broken index leaves
+// reads of the original evidence working and fails consolidation.
+func OpenWithModels(store *records.Store, directory string, config Config, readonly bool, models Models) (*Agent, error) {
+	var overlay *Overlay
+	var indexError error
 	if config.Policy == nil || config.Policy.Consolidation {
 		path := filepath.Join(directory, "memory-index.db")
 		_, statErr := os.Stat(path)
 		if !readonly || statErr == nil {
+			var err error
 			overlay, err = OpenOverlay(path, readonly)
 			if err != nil {
 				// A rebuildable index cannot make original evidence unavailable.
-				indexError = err
+				overlay, indexError = nil, err
 			}
 		}
 	}
 	agent, err := New(store, config, models, overlay)
 	if err != nil {
+		if overlay != nil {
+			overlay.Close()
+		}
 		return nil, err
 	}
-	agent.budget = budget
 	agent.indexError = indexError
-	ok = true
 	return agent, nil
 }

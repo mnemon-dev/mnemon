@@ -76,6 +76,7 @@ func assertMnemondPackageGraph(t *testing.T, root string) {
 		"internal/memory/model":         {},
 		"internal/memory/service":       {"internal/memory/graph", "internal/memory/search", "internal/memory/store"},
 		"internal/memoryagent":          {"internal/records", "internal/retrieval"},
+		"internal/aml":                  {"internal/memoryagent", "internal/records"},
 		"internal/memory/importdraft":   {"internal/memory/model"},
 		"internal/memory/store":         {"internal/memory/embed", "internal/memory/model"},
 		"internal/memory/search": {
@@ -101,7 +102,7 @@ func assertMnemondPackageGraph(t *testing.T, root string) {
 		"cmd/memory": {
 			"internal/memory/embed", "internal/memory/graph", "internal/memory/importdraft",
 			"internal/memory/model", "internal/memory/search", "internal/memory/setup",
-			"internal/memory/setup/assets", "internal/memory/store", "internal/memory/web", "internal/records", "internal/memory/service", "internal/memoryagent", "internal/localrpc", "web",
+			"internal/memory/setup/assets", "internal/memory/store", "internal/memory/web", "internal/records", "internal/memory/service", "internal/memoryagent", "internal/aml", "internal/localrpc", "web",
 		},
 		"web": {},
 	}

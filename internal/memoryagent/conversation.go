@@ -53,7 +53,8 @@ type ConversationRequest struct {
 // every chunk's data.session. It becomes the record's own sessionId only for the
 // "session" scope, like Write; other scopes cannot carry a session.
 func WriteConversation(ctx context.Context, store *records.Store, req ConversationRequest) (WriteResult, error) {
-	if err := validateConversation(req); err != nil {
+	parent, chunks, err := PackConversation(req)
+	if err != nil {
 		return WriteResult{}, err
 	}
 	write := WriteRequest{ID: req.ID, Source: req.Source, Scope: req.Scope}
@@ -66,23 +67,46 @@ func WriteConversation(ctx context.Context, store *records.Store, req Conversati
 	if err := prepareWrite(&write); err != nil {
 		return WriteResult{}, err
 	}
-	at, heading := time.Now().UTC(), "Conversation "+req.SessionID
-	for _, message := range req.Messages {
-		if message.At != nil && !message.At.IsZero() {
-			at = message.At.UTC()
-			heading += " on " + at.Format("2006/01/02 (Mon) 15:04")
-			break
-		}
+	at, dated := conversationStart(req)
+	if !dated {
+		at = time.Now().UTC()
 	}
-	chunks := NoteChunks(heading, DialogueLines(req.Messages, dialogueLineLimit), noteChunkLimit)
 	spans := make([][2]int, len(chunks))
 	offset := 0
 	for i, chunk := range chunks {
 		spans[i] = [2]int{offset, offset + len(chunk)}
 		offset += len(chunk) + len("\n\n")
 	}
-	upserts, result := buildDocument(write, at, strings.Join(chunks, "\n\n"), spans, map[string]any{"session": req.SessionID})
+	upserts, result := buildDocument(write, at, parent, spans, map[string]any{"session": req.SessionID})
 	return putDocument(ctx, store, upserts, result)
+}
+
+// PackConversation validates req as WriteConversation does and returns what
+// it stores: the parent document's content and the chunks, one searchable
+// record each; parent is the chunks joined by a blank line. A retried write
+// can be compared with a stored document by its parent content. Only the
+// messages and the session id are packed; id, source and scope are not.
+func PackConversation(req ConversationRequest) (parent string, chunks []string, err error) {
+	if err := validateConversation(req); err != nil {
+		return "", nil, err
+	}
+	heading := "Conversation " + req.SessionID
+	if at, dated := conversationStart(req); dated {
+		heading += " on " + at.Format("2006/01/02 (Mon) 15:04")
+	}
+	chunks = NoteChunks(heading, DialogueLines(req.Messages, dialogueLineLimit), noteChunkLimit)
+	return strings.Join(chunks, "\n\n"), chunks, nil
+}
+
+// conversationStart is the UTC time of the first message that has a
+// timestamp; dated is false when none has one.
+func conversationStart(req ConversationRequest) (at time.Time, dated bool) {
+	for _, message := range req.Messages {
+		if message.At != nil && !message.At.IsZero() {
+			return message.At.UTC(), true
+		}
+	}
+	return time.Time{}, false
 }
 
 func validateConversation(req ConversationRequest) error {
