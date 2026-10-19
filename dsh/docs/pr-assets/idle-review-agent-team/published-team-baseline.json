@@ -1,0 +1,1236 @@
+{
+  "versions": {
+    "dsh": "0.1.5-rc.2",
+    "dsh-agent": "0.1.5-rc.2",
+    "dsh-agent-loop": "0.1.5-rc.2",
+    "dsh-subagent": "0.1.5-rc.2",
+    "dsh-subagent-in-process-driver": "0.1.5-rc.2",
+    "dsh-subagent-fork-in-process": "0.1.5-rc.2",
+    "dsh-subagent-spawn-in-process": "0.1.5-rc.2",
+    "dsh-experimental-agent-team": "0.1.5-alpha.2",
+    "dsh-experimental-tool-agent-team": "0.1.5-alpha.2"
+  },
+  "results": [
+    {
+      "provider": "fork",
+      "teams": "off",
+      "guarded": false,
+      "parentModelCalls": 1,
+      "childModelCalls": 2,
+      "probeExecutions": [
+        "051a0364-1530-4b4e-a0de-a5f26cfd1e37"
+      ],
+      "events": [
+        {
+          "ordinal": 1,
+          "stage": "created",
+          "subject": "parent",
+          "descriptor": null,
+          "teamRole": null,
+          "tools": [
+            "lifecycle_probe"
+          ]
+        },
+        {
+          "ordinal": 2,
+          "stage": "created",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": null,
+          "teamRole": null,
+          "tools": [
+            "lifecycle_probe"
+          ]
+        },
+        {
+          "ordinal": 3,
+          "stage": "start-returned",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": null,
+          "teamRole": null
+        },
+        {
+          "ordinal": 4,
+          "stage": "descriptor-appended",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        },
+        {
+          "ordinal": 5,
+          "stage": "model-request",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null,
+          "tools": [
+            "lifecycle_probe"
+          ],
+          "promptCallsChildLead": false
+        },
+        {
+          "ordinal": 6,
+          "stage": "model-request",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null,
+          "tools": [
+            "lifecycle_probe"
+          ],
+          "promptCallsChildLead": false
+        },
+        {
+          "ordinal": 7,
+          "stage": "result-settled",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        },
+        {
+          "ordinal": 8,
+          "stage": "disposed",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        }
+      ],
+      "preflight": {
+        "hasTeamService": false,
+        "hasScopedTeamSpawnTool": false,
+        "hasGlobalTeamSpawnTool": false
+      },
+      "childModelToolNames": [
+        "lifecycle_probe"
+      ],
+      "result": {
+        "output": [
+          {
+            "type": "text",
+            "text": "Synthetic child completed."
+          }
+        ],
+        "stopReason": "completed"
+      },
+      "residentBeforeDispose": true,
+      "catalogBeforeDispose": {
+        "entries": [
+          {
+            "kind": "child",
+            "id": "051a0364-1530-4b4e-a0de-a5f26cfd1e37",
+            "mode": "one-shot",
+            "label": "Mnemon idle checkpoint review",
+            "activity": "inactive",
+            "hasChildren": false
+          }
+        ],
+        "parentAvailable": true
+      },
+      "childEventTypes": [
+        "agent/inbox/spliced",
+        "turn/start",
+        "agent/inbox/spliced",
+        "step/start",
+        "system/message",
+        "user/message",
+        "request/header",
+        "request/context",
+        "assistant/message",
+        "step/end",
+        "turn/end",
+        "session/end-seed",
+        "agent/inbox/spliced",
+        "turn/start",
+        "agent/inbox/spliced",
+        "subagent/descriptor",
+        "step/start",
+        "system/message",
+        "user/message",
+        "user/message",
+        "request/header",
+        "assistant/message",
+        "tool/call",
+        "tool/result",
+        "step/end",
+        "step/start",
+        "assistant/message",
+        "step/end",
+        "turn/end"
+      ],
+      "residentAfterDispose": false,
+      "catalogAfterDispose": {
+        "entries": [
+          {
+            "kind": "child",
+            "id": "051a0364-1530-4b4e-a0de-a5f26cfd1e37",
+            "mode": "one-shot",
+            "label": "Mnemon idle checkpoint review",
+            "activity": "inactive",
+            "hasChildren": false
+          }
+        ],
+        "parentAvailable": true
+      }
+    },
+    {
+      "provider": "spawn",
+      "teams": "off",
+      "guarded": false,
+      "parentModelCalls": 1,
+      "childModelCalls": 2,
+      "probeExecutions": [
+        "bef33933-3870-433c-b172-7ae62d743f61"
+      ],
+      "events": [
+        {
+          "ordinal": 1,
+          "stage": "created",
+          "subject": "parent",
+          "descriptor": null,
+          "teamRole": null,
+          "tools": [
+            "lifecycle_probe"
+          ]
+        },
+        {
+          "ordinal": 2,
+          "stage": "created",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": null,
+          "teamRole": null,
+          "tools": [
+            "lifecycle_probe"
+          ]
+        },
+        {
+          "ordinal": 3,
+          "stage": "start-returned",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": null,
+          "teamRole": null
+        },
+        {
+          "ordinal": 4,
+          "stage": "descriptor-appended",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        },
+        {
+          "ordinal": 5,
+          "stage": "model-request",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null,
+          "tools": [
+            "lifecycle_probe"
+          ],
+          "promptCallsChildLead": false
+        },
+        {
+          "ordinal": 6,
+          "stage": "model-request",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null,
+          "tools": [
+            "lifecycle_probe"
+          ],
+          "promptCallsChildLead": false
+        },
+        {
+          "ordinal": 7,
+          "stage": "result-settled",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        },
+        {
+          "ordinal": 8,
+          "stage": "disposed",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        }
+      ],
+      "preflight": {
+        "hasTeamService": false,
+        "hasScopedTeamSpawnTool": false,
+        "hasGlobalTeamSpawnTool": false
+      },
+      "childModelToolNames": [
+        "lifecycle_probe"
+      ],
+      "result": {
+        "output": [
+          {
+            "type": "text",
+            "text": "Synthetic child completed."
+          }
+        ],
+        "stopReason": "completed"
+      },
+      "residentBeforeDispose": true,
+      "catalogBeforeDispose": {
+        "entries": [
+          {
+            "kind": "child",
+            "id": "bef33933-3870-433c-b172-7ae62d743f61",
+            "mode": "one-shot",
+            "label": "Mnemon idle checkpoint review",
+            "activity": "inactive",
+            "hasChildren": false
+          }
+        ],
+        "parentAvailable": true
+      },
+      "childEventTypes": [
+        "agent/inbox/spliced",
+        "turn/start",
+        "agent/inbox/spliced",
+        "subagent/descriptor",
+        "step/start",
+        "system/message",
+        "user/message",
+        "user/message",
+        "request/header",
+        "request/context",
+        "assistant/message",
+        "tool/call",
+        "tool/result",
+        "step/end",
+        "step/start",
+        "assistant/message",
+        "step/end",
+        "turn/end"
+      ],
+      "residentAfterDispose": false,
+      "catalogAfterDispose": {
+        "entries": [
+          {
+            "kind": "child",
+            "id": "bef33933-3870-433c-b172-7ae62d743f61",
+            "mode": "one-shot",
+            "label": "Mnemon idle checkpoint review",
+            "activity": "inactive",
+            "hasChildren": false
+          }
+        ],
+        "parentAvailable": true
+      }
+    },
+    {
+      "provider": "fork",
+      "teams": "service",
+      "guarded": false,
+      "parentModelCalls": 1,
+      "childModelCalls": 2,
+      "probeExecutions": [
+        "4e05b0c5-cade-40c2-8785-899cbf10c559"
+      ],
+      "events": [
+        {
+          "ordinal": 1,
+          "stage": "created",
+          "subject": "parent",
+          "descriptor": null,
+          "teamRole": "lead",
+          "tools": [
+            "lifecycle_probe"
+          ]
+        },
+        {
+          "ordinal": 2,
+          "stage": "created",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": null,
+          "teamRole": "lead",
+          "tools": [
+            "lifecycle_probe"
+          ]
+        },
+        {
+          "ordinal": 3,
+          "stage": "start-returned",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": null,
+          "teamRole": "lead"
+        },
+        {
+          "ordinal": 4,
+          "stage": "descriptor-appended",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        },
+        {
+          "ordinal": 5,
+          "stage": "model-request",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null,
+          "tools": [
+            "lifecycle_probe"
+          ],
+          "promptCallsChildLead": false
+        },
+        {
+          "ordinal": 6,
+          "stage": "model-request",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null,
+          "tools": [
+            "lifecycle_probe"
+          ],
+          "promptCallsChildLead": false
+        },
+        {
+          "ordinal": 7,
+          "stage": "result-settled",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        },
+        {
+          "ordinal": 8,
+          "stage": "disposed",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        }
+      ],
+      "preflight": {
+        "hasTeamService": true,
+        "hasScopedTeamSpawnTool": false,
+        "hasGlobalTeamSpawnTool": false
+      },
+      "childModelToolNames": [
+        "lifecycle_probe"
+      ],
+      "result": {
+        "output": [
+          {
+            "type": "text",
+            "text": "Synthetic child completed."
+          }
+        ],
+        "stopReason": "completed"
+      },
+      "residentBeforeDispose": true,
+      "catalogBeforeDispose": {
+        "entries": [
+          {
+            "kind": "child",
+            "id": "4e05b0c5-cade-40c2-8785-899cbf10c559",
+            "mode": "one-shot",
+            "label": "Mnemon idle checkpoint review",
+            "activity": "inactive",
+            "hasChildren": false
+          }
+        ],
+        "parentAvailable": true
+      },
+      "childEventTypes": [
+        "agent/inbox/spliced",
+        "turn/start",
+        "agent/inbox/spliced",
+        "step/start",
+        "system/message",
+        "user/message",
+        "request/header",
+        "request/context",
+        "assistant/message",
+        "step/end",
+        "turn/end",
+        "session/end-seed",
+        "agent/inbox/spliced",
+        "turn/start",
+        "agent/inbox/spliced",
+        "subagent/descriptor",
+        "step/start",
+        "system/message",
+        "user/message",
+        "user/message",
+        "request/header",
+        "assistant/message",
+        "tool/call",
+        "tool/result",
+        "step/end",
+        "step/start",
+        "assistant/message",
+        "step/end",
+        "turn/end"
+      ],
+      "residentAfterDispose": false,
+      "catalogAfterDispose": {
+        "entries": [
+          {
+            "kind": "child",
+            "id": "4e05b0c5-cade-40c2-8785-899cbf10c559",
+            "mode": "one-shot",
+            "label": "Mnemon idle checkpoint review",
+            "activity": "inactive",
+            "hasChildren": false
+          }
+        ],
+        "parentAvailable": true
+      }
+    },
+    {
+      "provider": "spawn",
+      "teams": "service",
+      "guarded": false,
+      "parentModelCalls": 1,
+      "childModelCalls": 2,
+      "probeExecutions": [
+        "38da4168-8b07-4fa5-9451-4ee7a505cc69"
+      ],
+      "events": [
+        {
+          "ordinal": 1,
+          "stage": "created",
+          "subject": "parent",
+          "descriptor": null,
+          "teamRole": "lead",
+          "tools": [
+            "lifecycle_probe"
+          ]
+        },
+        {
+          "ordinal": 2,
+          "stage": "created",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": null,
+          "teamRole": "lead",
+          "tools": [
+            "lifecycle_probe"
+          ]
+        },
+        {
+          "ordinal": 3,
+          "stage": "start-returned",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": null,
+          "teamRole": "lead"
+        },
+        {
+          "ordinal": 4,
+          "stage": "descriptor-appended",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        },
+        {
+          "ordinal": 5,
+          "stage": "model-request",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null,
+          "tools": [
+            "lifecycle_probe"
+          ],
+          "promptCallsChildLead": false
+        },
+        {
+          "ordinal": 6,
+          "stage": "model-request",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null,
+          "tools": [
+            "lifecycle_probe"
+          ],
+          "promptCallsChildLead": false
+        },
+        {
+          "ordinal": 7,
+          "stage": "result-settled",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        },
+        {
+          "ordinal": 8,
+          "stage": "disposed",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        }
+      ],
+      "preflight": {
+        "hasTeamService": true,
+        "hasScopedTeamSpawnTool": false,
+        "hasGlobalTeamSpawnTool": false
+      },
+      "childModelToolNames": [
+        "lifecycle_probe"
+      ],
+      "result": {
+        "output": [
+          {
+            "type": "text",
+            "text": "Synthetic child completed."
+          }
+        ],
+        "stopReason": "completed"
+      },
+      "residentBeforeDispose": true,
+      "catalogBeforeDispose": {
+        "entries": [
+          {
+            "kind": "child",
+            "id": "38da4168-8b07-4fa5-9451-4ee7a505cc69",
+            "mode": "one-shot",
+            "label": "Mnemon idle checkpoint review",
+            "activity": "inactive",
+            "hasChildren": false
+          }
+        ],
+        "parentAvailable": true
+      },
+      "childEventTypes": [
+        "agent/inbox/spliced",
+        "turn/start",
+        "agent/inbox/spliced",
+        "subagent/descriptor",
+        "step/start",
+        "system/message",
+        "user/message",
+        "user/message",
+        "request/header",
+        "request/context",
+        "assistant/message",
+        "tool/call",
+        "tool/result",
+        "step/end",
+        "step/start",
+        "assistant/message",
+        "step/end",
+        "turn/end"
+      ],
+      "residentAfterDispose": false,
+      "catalogAfterDispose": {
+        "entries": [
+          {
+            "kind": "child",
+            "id": "38da4168-8b07-4fa5-9451-4ee7a505cc69",
+            "mode": "one-shot",
+            "label": "Mnemon idle checkpoint review",
+            "activity": "inactive",
+            "hasChildren": false
+          }
+        ],
+        "parentAvailable": true
+      }
+    },
+    {
+      "provider": "fork",
+      "teams": "tools",
+      "guarded": false,
+      "parentModelCalls": 1,
+      "childModelCalls": 1,
+      "probeExecutions": [
+        "1b20a07c-a3ab-41bc-8e94-7ae0f6de69b6"
+      ],
+      "events": [
+        {
+          "ordinal": 1,
+          "stage": "created",
+          "subject": "parent",
+          "descriptor": null,
+          "teamRole": "lead",
+          "tools": [
+            "lifecycle_probe",
+            "spawn_teammate",
+            "send_message",
+            "list_agents",
+            "wait_agent",
+            "interrupt_agent",
+            "team_task_create",
+            "team_task_list",
+            "team_task_get",
+            "team_task_update"
+          ]
+        },
+        {
+          "ordinal": 2,
+          "stage": "created",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": null,
+          "teamRole": "lead",
+          "tools": [
+            "lifecycle_probe",
+            "spawn_teammate",
+            "send_message",
+            "list_agents",
+            "wait_agent",
+            "interrupt_agent",
+            "team_task_create",
+            "team_task_list",
+            "team_task_get",
+            "team_task_update"
+          ]
+        },
+        {
+          "ordinal": 3,
+          "stage": "start-returned",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": null,
+          "teamRole": "lead"
+        },
+        {
+          "ordinal": 4,
+          "stage": "descriptor-appended",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        },
+        {
+          "ordinal": 5,
+          "stage": "model-request",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null,
+          "tools": [
+            "interrupt_agent",
+            "lifecycle_probe",
+            "list_agents",
+            "send_message",
+            "spawn_teammate",
+            "team_task_create",
+            "team_task_get",
+            "team_task_list",
+            "team_task_update",
+            "wait_agent"
+          ],
+          "promptCallsChildLead": true
+        },
+        {
+          "ordinal": 6,
+          "stage": "error",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null,
+          "error": {
+            "name": "TeamError",
+            "code": "TEAM_NOT_MEMBER",
+            "message": "agent \"1b20a07c-a3ab-41bc-8e94-7ae0f6de69b6\" is not a member of an active Agent Team"
+          }
+        },
+        {
+          "ordinal": 7,
+          "stage": "result-settled",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        },
+        {
+          "ordinal": 8,
+          "stage": "disposed",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "fork",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        }
+      ],
+      "preflight": {
+        "hasTeamService": true,
+        "hasScopedTeamSpawnTool": true,
+        "hasGlobalTeamSpawnTool": false
+      },
+      "childModelToolNames": [
+        "interrupt_agent",
+        "lifecycle_probe",
+        "list_agents",
+        "send_message",
+        "spawn_teammate",
+        "team_task_create",
+        "team_task_get",
+        "team_task_list",
+        "team_task_update",
+        "wait_agent"
+      ],
+      "result": {
+        "output": [
+          {
+            "type": "tool-call",
+            "id": "lifecycle-probe-2",
+            "name": "lifecycle_probe",
+            "arguments": "{}"
+          }
+        ],
+        "stopReason": "error"
+      },
+      "residentBeforeDispose": true,
+      "catalogBeforeDispose": {
+        "entries": [
+          {
+            "kind": "child",
+            "id": "1b20a07c-a3ab-41bc-8e94-7ae0f6de69b6",
+            "mode": "one-shot",
+            "label": "Mnemon idle checkpoint review",
+            "activity": "inactive",
+            "hasChildren": false
+          }
+        ],
+        "parentAvailable": true
+      },
+      "childEventTypes": [
+        "agent/inbox/spliced",
+        "turn/start",
+        "agent/inbox/spliced",
+        "step/start",
+        "system/message",
+        "user/message",
+        "request/header",
+        "request/context",
+        "assistant/message",
+        "step/end",
+        "turn/end",
+        "session/end-seed",
+        "agent/inbox/spliced",
+        "turn/start",
+        "agent/inbox/spliced",
+        "subagent/descriptor",
+        "step/start",
+        "system/message",
+        "user/message",
+        "user/message",
+        "request/header",
+        "assistant/message",
+        "tool/call",
+        "tool/result",
+        "step/end",
+        "turn/end"
+      ],
+      "residentAfterDispose": false,
+      "catalogAfterDispose": {
+        "entries": [
+          {
+            "kind": "child",
+            "id": "1b20a07c-a3ab-41bc-8e94-7ae0f6de69b6",
+            "mode": "one-shot",
+            "label": "Mnemon idle checkpoint review",
+            "activity": "inactive",
+            "hasChildren": false
+          }
+        ],
+        "parentAvailable": true
+      }
+    },
+    {
+      "provider": "spawn",
+      "teams": "tools",
+      "guarded": false,
+      "parentModelCalls": 1,
+      "childModelCalls": 1,
+      "probeExecutions": [
+        "db940301-602e-4956-b89b-2da38103cbf3"
+      ],
+      "events": [
+        {
+          "ordinal": 1,
+          "stage": "created",
+          "subject": "parent",
+          "descriptor": null,
+          "teamRole": "lead",
+          "tools": [
+            "lifecycle_probe",
+            "spawn_teammate",
+            "send_message",
+            "list_agents",
+            "wait_agent",
+            "interrupt_agent",
+            "team_task_create",
+            "team_task_list",
+            "team_task_get",
+            "team_task_update"
+          ]
+        },
+        {
+          "ordinal": 2,
+          "stage": "created",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": null,
+          "teamRole": "lead",
+          "tools": [
+            "lifecycle_probe",
+            "spawn_teammate",
+            "send_message",
+            "list_agents",
+            "wait_agent",
+            "interrupt_agent",
+            "team_task_create",
+            "team_task_list",
+            "team_task_get",
+            "team_task_update"
+          ]
+        },
+        {
+          "ordinal": 3,
+          "stage": "start-returned",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": null,
+          "teamRole": "lead"
+        },
+        {
+          "ordinal": 4,
+          "stage": "descriptor-appended",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        },
+        {
+          "ordinal": 5,
+          "stage": "model-request",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null,
+          "tools": [
+            "interrupt_agent",
+            "lifecycle_probe",
+            "list_agents",
+            "send_message",
+            "spawn_teammate",
+            "team_task_create",
+            "team_task_get",
+            "team_task_list",
+            "team_task_update",
+            "wait_agent"
+          ],
+          "promptCallsChildLead": true
+        },
+        {
+          "ordinal": 6,
+          "stage": "error",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null,
+          "error": {
+            "name": "TeamError",
+            "code": "TEAM_NOT_MEMBER",
+            "message": "agent \"db940301-602e-4956-b89b-2da38103cbf3\" is not a member of an active Agent Team"
+          }
+        },
+        {
+          "ordinal": 7,
+          "stage": "result-settled",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        },
+        {
+          "ordinal": 8,
+          "stage": "disposed",
+          "subject": "child",
+          "origin": "subagent",
+          "parentSession": "parent",
+          "descriptor": {
+            "version": 3,
+            "mode": "one-shot",
+            "provider": "spawn",
+            "label": "Mnemon idle checkpoint review"
+          },
+          "teamRole": null
+        }
+      ],
+      "preflight": {
+        "hasTeamService": true,
+        "hasScopedTeamSpawnTool": true,
+        "hasGlobalTeamSpawnTool": false
+      },
+      "childModelToolNames": [
+        "interrupt_agent",
+        "lifecycle_probe",
+        "list_agents",
+        "send_message",
+        "spawn_teammate",
+        "team_task_create",
+        "team_task_get",
+        "team_task_list",
+        "team_task_update",
+        "wait_agent"
+      ],
+      "result": {
+        "output": [
+          {
+            "type": "tool-call",
+            "id": "lifecycle-probe-2",
+            "name": "lifecycle_probe",
+            "arguments": "{}"
+          }
+        ],
+        "stopReason": "error"
+      },
+      "residentBeforeDispose": true,
+      "catalogBeforeDispose": {
+        "entries": [
+          {
+            "kind": "child",
+            "id": "db940301-602e-4956-b89b-2da38103cbf3",
+            "mode": "one-shot",
+            "label": "Mnemon idle checkpoint review",
+            "activity": "inactive",
+            "hasChildren": false
+          }
+        ],
+        "parentAvailable": true
+      },
+      "childEventTypes": [
+        "agent/inbox/spliced",
+        "turn/start",
+        "agent/inbox/spliced",
+        "subagent/descriptor",
+        "step/start",
+        "system/message",
+        "user/message",
+        "user/message",
+        "request/header",
+        "request/context",
+        "assistant/message",
+        "tool/call",
+        "tool/result",
+        "step/end",
+        "turn/end"
+      ],
+      "residentAfterDispose": false,
+      "catalogAfterDispose": {
+        "entries": [
+          {
+            "kind": "child",
+            "id": "db940301-602e-4956-b89b-2da38103cbf3",
+            "mode": "one-shot",
+            "label": "Mnemon idle checkpoint review",
+            "activity": "inactive",
+            "hasChildren": false
+          }
+        ],
+        "parentAvailable": true
+      }
+    }
+  ]
+}

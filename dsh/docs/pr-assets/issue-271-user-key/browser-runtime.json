@@ -1,0 +1,122 @@
+{
+  "dshVersion": "0.1.7-alpha.1",
+  "mnemonCliVersion": "0.2.9",
+  "unchangedOfficialDsh": true,
+  "frameworkSourceCheckoutUsed": false,
+  "runs": [
+    {
+      "phase": "before",
+      "dshPackageCount": 267,
+      "mnemonPackages": [
+        "dsh-mnemon",
+        "dsh-mnemon-provider-byterover",
+        "dsh-mnemon-provider-hindsight",
+        "dsh-mnemon-provider-holographic",
+        "dsh-mnemon-provider-honcho",
+        "dsh-mnemon-provider-mem0",
+        "dsh-mnemon-provider-mnemon-native",
+        "dsh-mnemon-provider-openviking",
+        "dsh-mnemon-provider-retaindb",
+        "dsh-mnemon-provider-supermemory",
+        "dsh-mnemon-source-documents",
+        "dsh-mnemon-source-memory-spaces",
+        "dsh-mnemon-source-runtime",
+        "dsh-mnemon-strategy-auto-capture",
+        "dsh-mnemon-strategy-default-three-tier",
+        "dsh-mnemon-strategy-light-context",
+        "dsh-mnemon-strategy-scoped"
+      ],
+      "legacyPeerResolution": false,
+      "reusedExistingInstall": false,
+      "artifactManifest": "artifacts-before.json"
+    },
+    {
+      "phase": "after",
+      "dshPackageCount": 267,
+      "mnemonPackages": [
+        "dsh-mnemon",
+        "dsh-mnemon-provider-byterover",
+        "dsh-mnemon-provider-hindsight",
+        "dsh-mnemon-provider-holographic",
+        "dsh-mnemon-provider-honcho",
+        "dsh-mnemon-provider-mem0",
+        "dsh-mnemon-provider-mnemon-native",
+        "dsh-mnemon-provider-openviking",
+        "dsh-mnemon-provider-retaindb",
+        "dsh-mnemon-provider-supermemory",
+        "dsh-mnemon-source-documents",
+        "dsh-mnemon-source-memory-spaces",
+        "dsh-mnemon-source-runtime",
+        "dsh-mnemon-strategy-auto-capture",
+        "dsh-mnemon-strategy-default-three-tier",
+        "dsh-mnemon-strategy-light-context",
+        "dsh-mnemon-strategy-scoped"
+      ],
+      "legacyPeerResolution": false,
+      "reusedExistingInstall": false,
+      "artifactManifest": "artifacts-after.json"
+    }
+  ],
+  "publicBytesChecked": [
+    {
+      "package": "@deepseek-ai/dsh-settings",
+      "file": "lib/index.js",
+      "tarballIntegrity": "sha512-I7xEso742PC9lmpu9F+011mVRsvvemVxrFrf3+MgQpSOl2PM1iNjD6I4/+tMYQsV+i/N6yDVC5RB8U/anM/MFA==",
+      "sha256": "9432b872597b7a31473072eb38a55979ab23375c76bd1d86d751388a692a0136"
+    },
+    {
+      "package": "@deepseek-ai/dsh-client-ui-slots",
+      "file": "lib/index.js",
+      "tarballIntegrity": "sha512-lN4WVTzDb/t01KGmwjtZxjoqCIMKvi5kyY9/XPVkFjI+6q5RmorbCIyZiq84YJ2I36Cj2nYUQLB8KSRXjGMQbw==",
+      "sha256": "57e1314e31a2015f30231e1e7596da658f1bb5cb64c103c4cf13381647412c99"
+    },
+    {
+      "package": "@deepseek-ai/dsh-client-ui-chat",
+      "file": "lib/client.js",
+      "tarballIntegrity": "sha512-bBiPngl5Mvrio8sdWZJmjeZeRZFaDEKIWa5aNi9kkukPGrZaaxABdwH+52URsJWadj8V0HEyahffSAACvit0AQ==",
+      "sha256": "f89f5ae18fe09bb7a38b2ab0bc2de514c84794138e28c77fdd77498ccd9c6569"
+    },
+    {
+      "package": "@deepseek-ai/dsh-client-ui-renderer",
+      "file": "lib/client.js",
+      "tarballIntegrity": "sha512-hxcW9WeEW9mnT7pH5jN4i3S+vj7beh6I//zBhuRk9tvBeoWEgDzo4Z6Q1A1FD7Q6+fAkZ/l5QV2p4FIPhYDwwg==",
+      "sha256": "d92aaa305d56631110f46d7b9cd3b21547eaf2cb0c5ed34055391e0a46d9e2ce"
+    },
+    {
+      "package": "@deepseek-ai/dsh-client-ui-conversation",
+      "file": "lib/client.js",
+      "tarballIntegrity": "sha512-PeZKCFJIi65sMWk7tCxkRRXmh2+LqNyct8LjcydWY54ZDJuDNysK6YxED01qck+WVTCh/NsE9wOgmzfHtfGQzA==",
+      "sha256": "e886ad7023f5f6f5bd52f4481c5f53709764f20a3791899fb3b67f19d094c837"
+    },
+    {
+      "package": "@deepseek-ai/dsh-client-ui-settings",
+      "file": "lib/client.js",
+      "tarballIntegrity": "sha512-bFUKeO5KsxNteVwMhB8LOayPKXXkATUqPZMH2c9LJKnxCw9MliC3hmiMfHw3QjL7cFaoNA7/T9f49zmtIwvlFQ==",
+      "sha256": "2ac7f186165c5a8ec2cd90045cf74693e5d3518ec90cd429951360d79754aa94"
+    },
+    {
+      "package": "@deepseek-ai/dsh-base",
+      "file": "cordis.patch.yml",
+      "tarballIntegrity": "sha512-FNJ4eyOV7PdZ36DyOT9hTvSQpMxBgfOdkTKAOxn0ney0kjklXQiGEDRmnLT8PkQU3q/CYKrGkXDOw0ILbOq//w==",
+      "sha256": "d10c6baa177d94d69f259d487552199c807761a029d95a64102e8f0523a23b74"
+    },
+    {
+      "package": "@deepseek-ai/dsh-web-app",
+      "file": "cordis.patch.yml",
+      "tarballIntegrity": "sha512-e3CppXixd+lnqUbAT2k87U2pXkeUm8f+iVLwhy+lm8Mp1mrhaHcJ9RUEHqQY6bP+WYLdNZHjHw34IW25a0/Q5A==",
+      "sha256": "e6acb583f603d60ea971b54cc3f30777e03f059542b81a81e129e8b34eb8869a"
+    },
+    {
+      "package": "@deepseek-ai/dsh-config-editor",
+      "file": "lib/index.js",
+      "tarballIntegrity": "sha512-smttBp9Mc+DIQbZmYNb6ypvWbLB1dtJ0HC+4IO+NshtqPD4YwuA7tbRm14nEFlvZe+fxa8bcZuSs9h3ObuzjRA==",
+      "sha256": "bb85243d9f5729a7186cace56c4ce31d4918bd026482797ef5b7c01bf612fab5"
+    },
+    {
+      "package": "@deepseek-ai/dsh-agent-preset-registry",
+      "file": "lib/index.js",
+      "tarballIntegrity": "sha512-omTfcTtfuWPVOsTh5aHskuKDBB8KuhxeoSF28Nox3QMzaYRXo1P7vZc38yN9GwnVva3gP5EVZxXpKMEzI5aybA==",
+      "sha256": "01e3b0d0509f5f8ffad1f6ec8b3acbfe1b6007918f9ea61be1116addd076b3fa"
+    }
+  ]
+}

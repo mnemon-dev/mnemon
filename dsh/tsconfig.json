@@ -1,0 +1,131 @@
+{
+  "compilerOptions": {
+    "target": "ES2024",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true,
+    "types": [
+      "node"
+    ],
+    "paths": {
+      "dsh-mnemon/contracts": [
+        "./src/core/contracts/index.ts"
+      ],
+      "dsh-mnemon/extension-sdk": [
+        "./src/sdk/index.ts"
+      ],
+      "dsh-mnemon/testing": [
+        "./src/sdk/testing.ts"
+      ],
+      "dsh-mnemon-source-memory-spaces/provider-sdk": [
+        "./plugins/dsh-mnemon-source-memory-spaces/src/provider-sdk.ts"
+      ],
+      "dsh-mnemon-source-memory-spaces/testing": [
+        "./plugins/dsh-mnemon-source-memory-spaces/src/testing.ts"
+      ],
+      "dsh-mnemon/client": [
+        "./src/client/extension-sdk.ts"
+      ],
+      "dsh-mnemon-source-runtime/client": [
+        "./plugins/dsh-mnemon-source-runtime/src/client.ts"
+      ],
+      "dsh-mnemon-source-documents/client": [
+        "./plugins/dsh-mnemon-source-documents/src/client.ts"
+      ],
+      "dsh-mnemon-source-memory-spaces/client": [
+        "./plugins/dsh-mnemon-source-memory-spaces/src/client.ts"
+      ],
+      "dsh-mnemon-source-runtime/contracts": [
+        "./plugins/dsh-mnemon-source-runtime/src/contracts.ts"
+      ],
+      "dsh-mnemon-source-documents/contracts": [
+        "./plugins/dsh-mnemon-source-documents/src/contracts.ts"
+      ],
+      "dsh-mnemon-source-memory-spaces/contracts": [
+        "./plugins/dsh-mnemon-source-memory-spaces/src/contracts.ts"
+      ],
+      "dsh-mnemon-source-runtime": [
+        "./plugins/dsh-mnemon-source-runtime/src/index.ts"
+      ],
+      "dsh-mnemon-source-documents": [
+        "./plugins/dsh-mnemon-source-documents/src/index.ts"
+      ],
+      "dsh-mnemon-source-memory-spaces": [
+        "./plugins/dsh-mnemon-source-memory-spaces/src/index.ts"
+      ],
+      "dsh-mnemon-strategy-default-three-tier/extension-sdk": [
+        "./plugins/dsh-mnemon-strategy-default-three-tier/src/extension-sdk.ts"
+      ],
+      "dsh-mnemon-strategy-scoped": [
+        "./plugins/dsh-mnemon-strategy-scoped/src/index.ts"
+      ],
+      "dsh-mnemon-strategy-light-context": [
+        "./plugins/dsh-mnemon-strategy-light-context/src/index.ts"
+      ],
+      "dsh-mnemon-strategy-auto-capture": [
+        "./plugins/dsh-mnemon-strategy-auto-capture/src/index.ts"
+      ],
+      "dsh-mnemon-strategy-default-three-tier": [
+        "./plugins/dsh-mnemon-strategy-default-three-tier/src/index.ts"
+      ],
+      "dsh-mnemon-strategy-general": [
+        "./plugins/dsh-mnemon-strategy-general/src/index.ts"
+      ],
+      "dsh-mnemon-provider-mnemon-native": [
+        "./plugins/dsh-mnemon-provider-mnemon-native/src/index.ts"
+      ],
+      "dsh-mnemon-provider-openviking": [
+        "./plugins/dsh-mnemon-provider-openviking/src/index.ts"
+      ],
+      "dsh-mnemon-provider-honcho": [
+        "./plugins/dsh-mnemon-provider-honcho/src/index.ts"
+      ],
+      "dsh-mnemon-provider-mem0": [
+        "./plugins/dsh-mnemon-provider-mem0/src/index.ts"
+      ],
+      "dsh-mnemon-provider-hindsight": [
+        "./plugins/dsh-mnemon-provider-hindsight/src/index.ts"
+      ],
+      "dsh-mnemon-provider-holographic": [
+        "./plugins/dsh-mnemon-provider-holographic/src/index.ts"
+      ],
+      "dsh-mnemon-provider-retaindb": [
+        "./plugins/dsh-mnemon-provider-retaindb/src/index.ts"
+      ],
+      "dsh-mnemon-provider-byterover": [
+        "./plugins/dsh-mnemon-provider-byterover/src/index.ts"
+      ],
+      "dsh-mnemon-provider-supermemory": [
+        "./plugins/dsh-mnemon-provider-supermemory/src/index.ts"
+      ],
+      "dsh-mnemon-source-memory-spaces/native-cli": [
+        "./plugins/dsh-mnemon-source-memory-spaces/src/native-cli.ts"
+      ]
+    },
+    "resolveJsonModule": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "plugins/*/src/**/*.ts",
+    "plugins/*/tests/**/*.ts",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "vitest.config.ts",
+    "tsdown.config.ts",
+    "plugins/*/src/**/*.tsx",
+    "plugins/*/tests/**/*.tsx"
+  ]
+}

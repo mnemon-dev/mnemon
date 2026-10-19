@@ -1,0 +1,57 @@
+{
+  "name": "dsh-mnemon-strategy-default-three-tier",
+  "version": "0.5.7",
+  "description": "Explicit three-tier View Strategy for Composable View Memory.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./extension-sdk": {
+      "types": "./lib/extension-sdk.d.ts",
+      "default": "./lib/extension-sdk.js"
+    },
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib",
+    "locale",
+    "README.md"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsdown",
+    "test": "vitest run",
+    "verify": "pnpm typecheck && pnpm test && pnpm build"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "dsh-mnemon": "^0.5.17"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "dsh-mnemon": "^0.5.17",
+    "tsdown": "^0.22.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mnemon-dev/mnemon.git",
+    "directory": "dsh/plugins/dsh-mnemon-strategy-default-three-tier"
+  },
+  "homepage": "https://github.com/mnemon-dev/mnemon/tree/master/dsh/plugins/dsh-mnemon-strategy-default-three-tier#readme",
+  "bugs": {
+    "url": "https://github.com/mnemon-dev/mnemon/issues"
+  }
+}

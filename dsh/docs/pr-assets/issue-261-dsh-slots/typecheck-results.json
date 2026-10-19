@@ -1,0 +1,38 @@
+{
+  "recordedOn": "2026-09-18",
+  "scope": "Root and all 16 plugins production sources; published declaration files only",
+  "cases": [
+    {
+      "case": "baseline-rc",
+      "cohort": "0.1.5-rc.2",
+      "productionFileCount": 196,
+      "diagnosticCount": 0,
+      "diagnostics": "",
+      "foreignDshDeclarations": 0
+    },
+    {
+      "case": "baseline-alpha",
+      "cohort": "0.1.6-alpha.2",
+      "productionFileCount": 196,
+      "diagnosticCount": 4,
+      "diagnostics": "src/client/index.ts(50,24): error TS2769: No overload matches this call.\n  Overload 1 of 2, '(options: { name: \"conversation.chat.turnTail\"; children?: Record<never, never>; store?: undefined; locale?: \"mnemon\"; registrant?: string; } & { id: string; order?: number; label?: SlotLabel; priority?: number; } & { ...; }, component: NamedExoticComponent<...> & SlotComponent<...>): () => void', gave the following error.\n    Type '(sessionId: unknown) => { sessionId?: string; connection: ClientConnectionHandle; localeRuntime: MnemonClientContext[\"locale\"]; t: (key: MnemonKey, params?: Record<string, unknown>) => string; }' is not assignable to type 'undefined'.\n  Overload 2 of 2, '(options: { name: \"conversation.chat.turnTail\"; children?: Record<never, never>; store?: undefined; locale?: \"mnemon\"; registrant?: string; } & { id: string; order?: number; label?: SlotLabel; priority?: number; } & { ...; }, component: NamedExoticComponent<...> & SlotComponent<...>): () => void', gave the following error.\n    Object literal may only specify known properties, and 'select' does not exist in type '{ name: \"conversation.chat.turnTail\"; children?: Record<never, never>; store?: undefined; locale?: \"mnemon\"; registrant?: string; } & { id: string; order?: number; label?: SlotLabel; priority?: number; } & { ...; }'.\nsrc/client/index.ts(177,82): error TS2339: Property 'current' does not exist on type 'SessionListState'.\nsrc/client/index.ts(235,34): error TS2339: Property 'current' does not exist on type 'SessionListState'.\nsrc/client/workspace-mount.tsx(120,49): error TS2339: Property 'current' does not exist on type 'SessionListState'.\n",
+      "foreignDshDeclarations": 0
+    },
+    {
+      "case": "fixed-rc",
+      "cohort": "0.1.5-rc.2",
+      "productionFileCount": 198,
+      "diagnosticCount": 0,
+      "diagnostics": "",
+      "foreignDshDeclarations": 0
+    },
+    {
+      "case": "fixed-alpha",
+      "cohort": "0.1.6-alpha.2",
+      "productionFileCount": 198,
+      "diagnosticCount": 0,
+      "diagnostics": "",
+      "foreignDshDeclarations": 0
+    }
+  ]
+}

@@ -1,0 +1,902 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "0.5.4",
+  "sourceRevision": "6902155e0f3877dca5c5d70468f2a2a1784c7b29",
+  "captureDate": "2026-09-07",
+  "captureTimezone": "Asia/Shanghai",
+  "theme": "light",
+  "hostVersion": "0.1.2-rc.1",
+  "mnemonCliVersion": "0.2.7",
+  "browser": "Codex in-app browser",
+  "backup": {
+    "formatVersion": 1,
+    "mode": "full",
+    "sha256": "acc854f386931f928c2feeee41e8df98f8fcc44b5616aabbd3a1a79efc87c31f",
+    "zipEntries": 23,
+    "payloadFiles": 21,
+    "verifiedPayloadHashes": 21,
+    "importedThrough": "Native backup UI safe import into a disposable root",
+    "historicalManifestPluginVersion": "0.1.0",
+    "includedInRepository": false
+  },
+  "data": {
+    "runtimeEntries": 20,
+    "userProfileEntries": 2,
+    "workingMemoryEntries": 18,
+    "documents": 12,
+    "activeDocuments": 11,
+    "archivedDocuments": 1,
+    "memorySpaces": 4,
+    "activeMemorySpaces": 2,
+    "storedMemories": 27,
+    "activeSpaceMemories": 21
+  },
+  "validation": {
+    "screenshots": 60,
+    "recordings": 2,
+    "sourceVideoFrames": 333,
+    "ocrLegacyLabelMatches": 0,
+    "ocrErrors": 0,
+    "browserWarnings": 0,
+    "browserErrors": 0,
+    "modelRequests": 0,
+    "manualVisualInspection": true,
+    "bothRecordingsDecode": true
+  },
+  "files": [
+    {
+      "file": "en/backup-preview.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:24:44.375Z",
+      "bytes": 62209,
+      "sha256": "6bb6f7fffbe06078c232d969920b52b3bc54bf6ed4cbae2fc53f2afa872718aa",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/backup.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:24:35.077Z",
+      "bytes": 60969,
+      "sha256": "e899d619255bfb4a984e5599e81056a006c962725e7e57a9c47cd06c1b3f99de",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/content.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:26:34.594Z",
+      "bytes": 83638,
+      "sha256": "790703bf1a436d32d7f278ae24a43b195daed5e8f743a5156349ac2add18a4bd",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/document-create.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:25:49.179Z",
+      "bytes": 83378,
+      "sha256": "d21d77d8fe195fcb508170e696a0824e19adfa6bc989176e2b6279f5a4c5a870",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/document-reader.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:25:48.675Z",
+      "bytes": 102149,
+      "sha256": "16c651463c63d39ee6d83445150eed91a2581d2ef248cd4ee31a7c4e3cac63f3",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/documents-disabled.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:24:46.216Z",
+      "bytes": 38395,
+      "sha256": "0b4c70c4ed814989cdce325f0c2a8f70827ce788701e915a7ea985d2ed30c3ab",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/documents.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:25:38.055Z",
+      "bytes": 81500,
+      "sha256": "79b15e98e22192155a9e556c4d5e89e1caa3b69c58955dbe3bd33fcdb7df3c7f",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/enhancements.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:24:11.118Z",
+      "bytes": 58216,
+      "sha256": "d704ed74a9cc70d15804252c1e9daf69ab82e03edc8cd2fb4bcae9fada1edef0",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/entities.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:26:47.160Z",
+      "bytes": 84468,
+      "sha256": "17b55d2d2f8a3c25dc0576766ada6e50923215837101e20c5a02b30c7de3f3c6",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/graph.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:27:03.017Z",
+      "bytes": 68423,
+      "sha256": "ae378009fed1ac452f0adf14f617825170bfae540714c72487d10ac926896aed",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/metadata.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:26:14.131Z",
+      "bytes": 100817,
+      "sha256": "0c119500432e3da7397df106f4ac9597edeeba66a6248d34f132ddb53a5bdacd",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/native-settings.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:24:28.396Z",
+      "bytes": 68453,
+      "sha256": "67cb30370d928f7717a5ebd6fe76efa32722b036e4e88c291175807dd82d23e1",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/recall.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:26:56.843Z",
+      "bytes": 75974,
+      "sha256": "cf63cbd84fc720b08520419d3f0b6dabec76ec0369c9b3df792ce0bb56f10029",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/remember.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:26:15.541Z",
+      "bytes": 73762,
+      "sha256": "61234dbb8a22f8e64e113080df4c89f210e8de9e058d8229eae8f8ce07111d08",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/runtime-configured.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:33:01.759Z",
+      "bytes": 80393,
+      "sha256": "cba9981d444001f90abd0276f41eae00507aa792a60eb2f6d31bb07b31bbbc41",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/runtime-create.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:25:22.606Z",
+      "bytes": 73497,
+      "sha256": "a52ad487c793164749009d8f951235c31c933297463449ecf535c083607c85eb",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/runtime.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:25:22.103Z",
+      "bytes": 80641,
+      "sha256": "dd4f436170a6996604bd7321c257c2f47e4b24096c203cdf46f195f5461cc2c4",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/settings-layers.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:24:05.151Z",
+      "bytes": 63275,
+      "sha256": "8f1e813c0c4f35a76b78a4b6f160969568ae035ab6170efde6bce67d6c74ef21",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/settings.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:23:53.167Z",
+      "bytes": 61586,
+      "sha256": "3ae476145dd7662681ac454711c23c9370d9707464d07101360828399ececbaa",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/space-create-mobile.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "capturedAt": "2026-09-06T19:27:12.690Z",
+      "bytes": 39681,
+      "sha256": "638a0267575cb08e52289d4f924b14c821e468e074c37c714fdb9a60dfe6c52a",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/space-create.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:26:01.006Z",
+      "bytes": 77386,
+      "sha256": "807bb543b253be6a7dd2cbce19d68882fbeeebe40535e69ca2dfe4b9759ac5ec",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/space-directory-mobile.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "capturedAt": "2026-09-06T19:27:19.114Z",
+      "bytes": 43720,
+      "sha256": "836f15ee69d91b6f7e6c55c6820871487288c08dedb7b4b34b743c5c848c6a21",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/space-edit.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:26:01.732Z",
+      "bytes": 91401,
+      "sha256": "1e5cbb12ddd0bcbc86a117901158d1f97dec262b0403fd6c924420492084ed0a",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/spaces-mobile.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "capturedAt": "2026-09-06T19:27:12.294Z",
+      "bytes": 47160,
+      "sha256": "b37d00ce795600dbe37d6775bc3f392836734a059a68b84d2f7ec785c0fe3186",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/spaces.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:26:00.599Z",
+      "bytes": 103533,
+      "sha256": "4a4c83a7f60f7685d63dc2362631ec8faa647609d620c9b5c7634f59529bba51",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/status.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:24:59.773Z",
+      "bytes": 66501,
+      "sha256": "8e6820ef727ab5ec3aae998b0a12bf1a7c64a9774db4f0bf563506f6ed33b562",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/strategy.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:26:14.776Z",
+      "bytes": 74974,
+      "sha256": "deeb82090120bbea72366dfa6b514ea93a7368338a318972eff6fe4bb88e8a33",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/versions-expanded.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:25:20.887Z",
+      "bytes": 71295,
+      "sha256": "e4a50e953d02b355a9261b180410a86c3ba61532a1cdd6a744c90ec2ec36a030",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/versions-mobile.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "capturedAt": "2026-09-06T19:27:32.838Z",
+      "bytes": 42485,
+      "sha256": "187d347639f3c9b8f6f2bc63e39774b80733c92e0e09a65c087fc89bcf7e921c",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/versions.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:25:08.478Z",
+      "bytes": 69327,
+      "sha256": "e71cc7f3ad5151aeaeadd51cc161a98d8ea90238cd0fc45ffd49934d670d64d8",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/backup-preview.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:32:08.862Z",
+      "bytes": 57199,
+      "sha256": "ee6193a8db7b88823a78920a3d64e00c0ac90ab89f34d2f751b8a356b8c83807",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/backup.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:31:52.682Z",
+      "bytes": 57008,
+      "sha256": "0a9f904a5f797a0e6eee4a2cc149f59e86b02e2def6503b530a5f17ae650dc15",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/content.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:29:38.772Z",
+      "bytes": 77164,
+      "sha256": "a383343bca3d19391e8b874a4e6f6245b933eea5894374890eb4f9289c7e1fca",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/document-create.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:28:58.128Z",
+      "bytes": 73894,
+      "sha256": "a66f86402c6755755fb6d378c7d0bd59f36d0cf393c02c4c873f5c3bf4670bee",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/document-reader.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:28:57.730Z",
+      "bytes": 98098,
+      "sha256": "bad5d1eb1823340b5780186b4adca37f911a5d02cee2dce29ad1fa0b8a2ef63e",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/documents-disabled.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:32:10.513Z",
+      "bytes": 34361,
+      "sha256": "7485de801f4a258371e393d126de0b79256f35077168afcb37729742e9dac0d3",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/documents.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:28:45.992Z",
+      "bytes": 77782,
+      "sha256": "d7f07f064e73682ef3ed9cd80b91251005cdd4b1cabbd028c78156b8de24cfdc",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/enhancements.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:31:37.205Z",
+      "bytes": 52185,
+      "sha256": "115d59ca8e1c1f8440a2f17ac216b3598a6d7be9ff81e2a5b98aecac6e1c19e0",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/entities.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:32:22.210Z",
+      "bytes": 76889,
+      "sha256": "622d6787254e3a2296ca7b891ead7cdd656657d3dd557c3c4b8da807d558bc5b",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/graph.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:32:50.610Z",
+      "bytes": 65922,
+      "sha256": "8216626041baecccc1fa8a6343350f735b70bcee92db6db6ca57c13e70b4244b",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/metadata.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:29:26.979Z",
+      "bytes": 91266,
+      "sha256": "1bc63a9eee0cb932d9af7895768759a7a04ea62958e4284a5a8f1a7cbf880709",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/native-settings.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:31:43.465Z",
+      "bytes": 61252,
+      "sha256": "1d20893a34729bf8c9cdbf7e3b543334c08464de2e00188e53a13b532783efd2",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/recall.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:32:30.596Z",
+      "bytes": 71831,
+      "sha256": "53a48cd6fe952ea3703e5fd49a88febddd36347af920c58f0d104564d8225525",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/remember.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:29:28.378Z",
+      "bytes": 69674,
+      "sha256": "81748e27e77d0554b4f9fa2f0e584d736188d18c8c5f7366c1585f6618c58f07",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/runtime-configured.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:33:00.012Z",
+      "bytes": 68779,
+      "sha256": "c436ebbbb4ac0ddbec102a0dee16aa4532273ee822d1f3f2f870dfb37f5a07cf",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/runtime-create.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:28:29.759Z",
+      "bytes": 64400,
+      "sha256": "df7d46440b750c4b49c66260decf651fe0a2ce60f57c064f810652d6b5957d36",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/runtime.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:28:29.320Z",
+      "bytes": 68991,
+      "sha256": "2298d5178fe91097baa39c3c6ae47ba86058e2a2c5a9834abbc91926a30115dd",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/settings-layers.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:31:31.537Z",
+      "bytes": 50828,
+      "sha256": "d42d0663d1d8e3c8fad62116be60a8032b87e9571d05a5a0d9a3b36c5c53d2e2",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/settings.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:31:22.602Z",
+      "bytes": 57085,
+      "sha256": "8cc5edcf2a51afafcd9a340c55b40b41dee5e303cf5f44573fad65b14585d9c4",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/space-create-mobile.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "capturedAt": "2026-09-06T19:27:48.071Z",
+      "bytes": 37359,
+      "sha256": "c26f49c3d1f87e7ed13e2b02edca9689a13c2da69b8c5655f8482c9857f3bb89",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/space-create.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:29:10.464Z",
+      "bytes": 70285,
+      "sha256": "7ef737353a6deb140e13d5c7e537a2613a3573a121d28ebaad7417eb92fdc4c7",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/space-directory-mobile.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "capturedAt": "2026-09-06T19:27:54.394Z",
+      "bytes": 44406,
+      "sha256": "a365a94fb348e54d129a06e8307b2302fe22e080e4dc71edc9839925f7151295",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/space-edit.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:29:11.176Z",
+      "bytes": 88583,
+      "sha256": "cbea5657d782286f19d4e091853fe220f4acc1c7a1bb3887067615d779fa4c42",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/spaces-mobile.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "capturedAt": "2026-09-06T19:27:47.701Z",
+      "bytes": 43481,
+      "sha256": "a22bc5560bfcc450283279904c691254d288d00d57714b5a8c9825d598e66131",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/spaces.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:29:10.058Z",
+      "bytes": 97400,
+      "sha256": "670992a3682c89aee5e4e06a01c3b8b77e1d99043d6f59e949a8e0014a7eecac",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/status.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:28:08.541Z",
+      "bytes": 60411,
+      "sha256": "a59369ae4b1863dca22e6b4c2c7395322c441ee62c8f6d1255ce7bfcfd07b35f",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/strategy.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:29:27.682Z",
+      "bytes": 73910,
+      "sha256": "11bfcb8bc41af5eef3ef3c8706e9ec2decae65cecaf5c123d5aa7d5221cc51e8",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/versions-expanded.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:28:28.239Z",
+      "bytes": 68253,
+      "sha256": "ae3efaecd655635c36d70c0b7a4baf41940e7185ba4bc614930c87a62be45025",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/versions-mobile.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 390,
+      "height": 844,
+      "capturedAt": "2026-09-06T19:28:00.763Z",
+      "bytes": 36734,
+      "sha256": "470ad1065051a91c4ccd887a1a4ed174c6cd012eadb5585c1671175efcda38b7",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "zh-CN/versions.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:28:15.563Z",
+      "bytes": 63193,
+      "sha256": "6e4c738ecf7062e9cfadaedb64e797c71313becf34970a383ea450194e5c0942",
+      "legacyLabelsDetected": false
+    },
+    {
+      "file": "en/demo.mp4",
+      "kind": "recording",
+      "locale": "en",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:37:14.709Z",
+      "captureDurationMs": 41669,
+      "durationSeconds": 41.875,
+      "sourceFrames": 166,
+      "targetCaptureFps": 4,
+      "captureMethod": "Continuous actual browser screenshots during uninterrupted UI actions; playback follows source timestamps.",
+      "orderedSourceFrameIndexSha256": "75769fbb4a2f3a184d0980ba1b27013657e60d69b5a8d4014cb13aa066de8ebd",
+      "codec": "h264",
+      "pixelFormat": "yuvj420p",
+      "outputFps": 24,
+      "encodedFrames": 1005,
+      "audio": false,
+      "fastStart": true,
+      "chapters": [
+        {
+          "label": "Memory Space directory",
+          "startMs": 0
+        },
+        {
+          "label": "Create Memory Space draft",
+          "startMs": 4292
+        },
+        {
+          "label": "Distill Memory draft",
+          "startMs": 8867
+        },
+        {
+          "label": "Keyword recall from imported memory",
+          "startMs": 12777
+        },
+        {
+          "label": "Imported entity connections",
+          "startMs": 17376
+        },
+        {
+          "label": "Live relation graph",
+          "startMs": 21962
+        },
+        {
+          "label": "Imported system totals",
+          "startMs": 26245
+        },
+        {
+          "label": "npm installation and maintenance",
+          "startMs": 29511
+        },
+        {
+          "label": "Subpackage maintenance",
+          "startMs": 33793
+        },
+        {
+          "label": "Runtime memory imported from backup",
+          "startMs": 38643
+        }
+      ],
+      "bytes": 1409802,
+      "sha256": "2b774a3de3af666158430d81c7ef2ddb5b78fd60f30e95b46bdce6094c0093c5",
+      "legacyLabelsDetectedInSourceFrames": false,
+      "decodeErrors": 0
+    },
+    {
+      "file": "zh-CN/demo.mp4",
+      "kind": "recording",
+      "locale": "zh-CN",
+      "theme": "light",
+      "width": 1280,
+      "height": 720,
+      "capturedAt": "2026-09-06T19:38:24.155Z",
+      "captureDurationMs": 41925,
+      "durationSeconds": 42.125,
+      "sourceFrames": 167,
+      "targetCaptureFps": 4,
+      "captureMethod": "Continuous actual browser screenshots during uninterrupted UI actions; playback follows source timestamps.",
+      "orderedSourceFrameIndexSha256": "f8964d61cfdc046176bfa42de7eebd863454e083f2baa55d191f7e1a0d42852d",
+      "codec": "h264",
+      "pixelFormat": "yuvj420p",
+      "outputFps": 24,
+      "encodedFrames": 1011,
+      "audio": false,
+      "fastStart": true,
+      "chapters": [
+        {
+          "label": "Memory Space directory",
+          "startMs": 0
+        },
+        {
+          "label": "Create Memory Space draft",
+          "startMs": 4303
+        },
+        {
+          "label": "Distill Memory draft",
+          "startMs": 8870
+        },
+        {
+          "label": "Keyword recall from imported memory",
+          "startMs": 12781
+        },
+        {
+          "label": "Imported entity connections",
+          "startMs": 17413
+        },
+        {
+          "label": "Live relation graph",
+          "startMs": 21998
+        },
+        {
+          "label": "Imported system totals",
+          "startMs": 26265
+        },
+        {
+          "label": "npm installation and maintenance",
+          "startMs": 29533
+        },
+        {
+          "label": "Subpackage maintenance",
+          "startMs": 33818
+        },
+        {
+          "label": "Runtime memory imported from backup",
+          "startMs": 38681
+        }
+      ],
+      "bytes": 1290091,
+      "sha256": "ba52e708186388487e305a000708f4789115db7e12ceda8a79c414f9bc539591",
+      "legacyLabelsDetectedInSourceFrames": false,
+      "decodeErrors": 0
+    }
+  ]
+}

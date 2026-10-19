@@ -1,0 +1,135 @@
+{
+  "date": "2026-09-10",
+  "baseRevision": "1790251919ec731f9dd49b43da78f78b37890a00",
+  "testedRevision": "90eb1d21eaf3d251937dafe6232a72c2509cc60c",
+  "checks": {
+    "verify": {
+      "passed": 1199,
+      "rootPassed": 876,
+      "pluginPassed": 323,
+      "optInSkipped": 7
+    },
+    "independentPluginRepositories": 16,
+    "packedArtifacts": 17,
+    "nativeIntegrationPassed": 1,
+    "subagentTestsPassed": 85,
+    "liveReadOnlyRegressions": {
+      "failedBeforeGuard": 2,
+      "passedAfterGuard": 2
+    },
+    "screenshotsReviewed": 13
+  },
+  "browser": {
+    "viewport": "1440x1050",
+    "model": "loopback scripted decisions; no live model API",
+    "chromium": "153.0.8010.12",
+    "playwright": "1.63.0"
+  },
+  "events": {
+    "before": [
+      {
+        "event": "legacy-lineage-mismatch",
+        "destinationId": "91efb069-2418-4d61-9f72-ab77cd28e0e8",
+        "memoryBodyId": "default",
+        "indexed": true
+      }
+    ],
+    "after": [
+      {
+        "event": "archive-plan",
+        "title": "Issue 222 Release Design",
+        "dataPlaneTools": 0
+      },
+      {
+        "event": "archive-plan",
+        "title": "Issue 222 REJECT Proposal",
+        "dataPlaneTools": 0
+      },
+      {
+        "event": "archive-plan",
+        "title": "Issue 222 Retry Accepted",
+        "dataPlaneTools": 0
+      },
+      {
+        "event": "archive-plan",
+        "title": "Issue 222 Inactive Destination",
+        "dataPlaneTools": 0,
+        "testedRevision": "90eb1d21eaf3d251937dafe6232a72c2509cc60c"
+      }
+    ],
+    "tool": [
+      {
+        "event": "archive-plan",
+        "title": "Issue 222 Tool Roundtrip",
+        "dataPlaneTools": 0
+      },
+      {
+        "event": "tool-archive-completed",
+        "revision": 3,
+        "lineage": [
+          {
+            "source": {
+              "layerId": "documents",
+              "reference": "document:74a12f52-33de-460a-9745-82cde7e6e2ea:2",
+              "digest": "aab7cb2607dd7befbfa6f64859d2f3c328ec97daa565d4300822b423ec52d8d9"
+            },
+            "destination": {
+              "layerId": "memory-spaces",
+              "reference": "memory-space:default/item:6095c40f-d8db-4c7b-b38e-fd9b2ec0baf0",
+              "digest": "d1d784d522b427003f8e6c2ee0eb979121c87dbc50db8d14514601230d8d7618"
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "persistedDocuments": [
+    {
+      "id": "08cb440a-3b1b-4aff-a2d0-025b38f2b120",
+      "title": "Issue 222 Release Design",
+      "status": "archived",
+      "revision": 2,
+      "contentHash": "f3afa39a97e0ab992b6585cadfdcbafefab347f52dbac92d5559b6a9d5f6865a",
+      "exactBodyHash": true
+    },
+    {
+      "id": "9e63c709-34c9-40ac-972c-a173bcbcfd3b",
+      "title": "Issue 222 Retry Accepted",
+      "status": "archived",
+      "revision": 4,
+      "contentHash": "ee8adac042f49cece862f09119040a81c814c0ea713486faa25b219ac5abe26a",
+      "exactBodyHash": true
+    },
+    {
+      "id": "33ee0f61-eba1-4b74-80b0-48577665e95d",
+      "title": "Issue 222 Inactive Destination",
+      "status": "archived",
+      "revision": 2,
+      "contentHash": "754fe448c2659bfeafd3f1feb75bc68e1c37d86fbaaca2eac5fb2ef213e1a4f6",
+      "exactBodyHash": true
+    },
+    {
+      "id": "74a12f52-33de-460a-9745-82cde7e6e2ea",
+      "title": "Issue 222 Tool Roundtrip",
+      "status": "archived",
+      "revision": 3,
+      "contentHash": "aab7cb2607dd7befbfa6f64859d2f3c328ec97daa565d4300822b423ec52d8d9",
+      "exactBodyHash": true
+    }
+  ],
+  "environment": {
+    "node": "v25.1.0",
+    "pnpm": "11.19.0",
+    "os": "macOS 15.6",
+    "arch": "arm64",
+    "dsh": "0.1.2-rc.1",
+    "mnemon": "0.2.8"
+  },
+  "webuiInitialRevision": "179589d152b3220ce32f2401de9f757ae421fe06",
+  "webuiFinalSmokeRevision": "90eb1d21eaf3d251937dafe6232a72c2509cc60c",
+  "finalSmoke": {
+    "destinationReactivated": true,
+    "primaryProfileArchivedDocuments": 3,
+    "primaryProfileMemoryIndexes": 3
+  }
+}

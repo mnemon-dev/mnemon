@@ -1,0 +1,379 @@
+{
+  "date": "2026-09-14",
+  "baseline": "6ad99cc1890714355e1bb0e9230f3fce674bfb73",
+  "dsh": "0.1.5-rc.1",
+  "node": "25.1.0",
+  "pnpm": "11.19.0",
+  "platform": "macOS arm64",
+  "nativeCli": "0.2.8",
+  "webui": {
+    "fixture": "tests/fixtures/issue-251-legacy-v0.jsonl",
+    "beforeOldCliRepairs": 2,
+    "afterCliRepairs": 3,
+    "beforeError": "user/message 7 source summary requires notice form",
+    "historyRestored": true,
+    "resumedThroughActualWebUI": true,
+    "hostRestartedAndColdReopened": true,
+    "loopbackModelOnly": true,
+    "originalSha256": "415d0a9470f9eb7301bcd02333d8be428b29082fe7b0ae74e43da43336022d3e",
+    "repairedSha256": "2e69362ea5284683b933ef6b8f2e480486a723930a0fa262b657b80c63fa87e0"
+  },
+  "native": {
+    "realCliCreateWriteRecallForget": true,
+    "optionalStrategies": [
+      "scoped",
+      "light-context",
+      "auto-capture"
+    ]
+  },
+  "screenshots": [
+    {
+      "path": "251-before-runtime-summary.jpg",
+      "bytes": 44155,
+      "sha256": "3d1cde0ad35ae361ce3082d1b6a11378b110c2e94982fd2d7fd43b60d49d1ac1"
+    },
+    {
+      "path": "251-after-cold-reopen.jpg",
+      "bytes": 48254,
+      "sha256": "7f4bf72465a6f5ccfb436d45071af0bde3388bf093dfd1f60ef21f37395115e2"
+    },
+    {
+      "path": "baseline-native-status.jpg",
+      "bytes": 62005,
+      "sha256": "77c67c5bcf180d3ae483e2ab49f718f8870a582ef2f168958ded6332d1d7ae93"
+    },
+    {
+      "path": "251-combined-before.jpg",
+      "bytes": 46956,
+      "sha256": "c1e997bea6b1003e43e0fbd844474cc0fe5008e557d7230cffe8ef50410a5272"
+    },
+    {
+      "path": "251-combined-after.jpg",
+      "bytes": 40096,
+      "sha256": "ac9e2f58e51d87ede85a117502a0c6c512ac8a48ab6118bea71b583d6efb79f6"
+    },
+    {
+      "path": "251-combined-cold-reopen.jpg",
+      "bytes": 45923,
+      "sha256": "b56cd813c105fd634725b5f22085d93ebb3456a4e089041096b90a7e48b9f603"
+    },
+    {
+      "path": "251-combined-cold-new-turn.jpg",
+      "bytes": 50060,
+      "sha256": "ce4b4beb4552830e5ddfdcdba0e028c9cebcbbff30b32a58c9646d3e1502be2c"
+    },
+    {
+      "path": "251-null-raw-before.jpg",
+      "bytes": 44913,
+      "sha256": "b1b584b67c48dde589b5a06f77cb1a20fde637c93fb26a666456731c11a28bf7"
+    },
+    {
+      "path": "251-null-raw-after.jpg",
+      "bytes": 40096,
+      "sha256": "90b4f73b57a555c15a58d691e0245a7ad53cbdf9aab346850da61da25525f926"
+    },
+    {
+      "path": "251-null-packed-before.jpg",
+      "bytes": 45481,
+      "sha256": "9a975d864b35ec81814915e30a9019306c1656704b7e0904aec4d3935b6a9c88"
+    },
+    {
+      "path": "251-null-packed-after.jpg",
+      "bytes": 39174,
+      "sha256": "1c23ad8259c03cb9d2ed3b5f003c8dc6f509c6214c459e5bb1ea55903221c339"
+    },
+    {
+      "path": "251-null-raw-cold-reopen.jpg",
+      "bytes": 61308,
+      "sha256": "d23fdec11b157e46c4da66d9746523aa39adc4bc5778b12544152182a7442f15"
+    },
+    {
+      "path": "251-null-packed-cold-reopen.jpg",
+      "bytes": 62199,
+      "sha256": "3b9660279b1475980a28f7be03b0dabff0925769758d2eb35e1d1761bc2afed6"
+    },
+    {
+      "path": "251-existing-id-before.jpg",
+      "bytes": 57760,
+      "sha256": "d08399743517285597b8f0173d9e090b6d79ca38927a1024246c1dcc2c4397b9"
+    },
+    {
+      "path": "251-existing-id-after.jpg",
+      "bytes": 48602,
+      "sha256": "edef105224310ca7bbcbcb21e1392d9878a585c7abf6d802199ba9b38c6e8284"
+    },
+    {
+      "path": "251-existing-id-cold-reopen.jpg",
+      "bytes": 69786,
+      "sha256": "495d2843f4d3bdbafddc05a5741a7e536c3f315c2a082664d32baad62a45f3cb"
+    },
+    {
+      "path": "251-all-legacy-before.jpg",
+      "bytes": 56817,
+      "sha256": "4dcf9266aa5304b584c25d40b53674a15f50c593eacb2fa29e507932eccf3180"
+    },
+    {
+      "path": "251-all-legacy-after.jpg",
+      "bytes": 47571,
+      "sha256": "7e1fc7cf446bf4b3c403a40bf6a133386d9f23f597abc299c0e7d21cf9b18d57"
+    },
+    {
+      "path": "251-all-legacy-cold-reopen.jpg",
+      "bytes": 69694,
+      "sha256": "2d9f9120f0cdb8ec2c08b37b3e63e132bc6cc1fa7d00b365d58d12f5e43c36d8"
+    }
+  ],
+  "limits": [
+    "Real WebUI evidence covers all four reported legacy shape families, including combined repair, recorded-ID continuation wire validation and cold reopen. Exact timed delta preservation is additionally checked against the released loader and replay implementation.",
+    "Recovery requires a unique ID already recorded in the exact completed stream and proven call/result associations. Missing/conflicting identities, unsupported or unsafe shapes and unresolved related owner references refuse output.",
+    "Frozen v0 migration rc.1 and rc.2 artifacts are byte-identical; full execution used rc.1.",
+    "No production Sessions, external model APIs, Windows source build or live third-party Provider was tested."
+  ],
+  "validation": {
+    "fullVerifyPassed": true,
+    "rootPassed": 1104,
+    "rootSkipped": 5,
+    "pluginPassed": 323,
+    "pluginSkipped": 2,
+    "totalPassed": 1427,
+    "totalSkipped": 7,
+    "repairPassed": 132,
+    "headlessTotalTools": 39,
+    "headlessRepresentativeMnemonTools": 8,
+    "deterministicBuildFiles": 39,
+    "packageFiles": 47,
+    "packedBytes": 293317,
+    "unpackedBytes": 1313898,
+    "maximumUnpackedBytes": 1318000,
+    "publicNodeEntries": 12,
+    "publicTypeDependencies": 27,
+    "executableHelpEntries": 1,
+    "independentAudit": {
+      "descriptorCombinations": 144,
+      "packedBigIntBoundaryCases": 125,
+      "remainingFindings": 0,
+      "nullNameVariants": 5,
+      "nullNameComparedPrefixes": 36,
+      "oldAndCurrentStatsEquivalent": true,
+      "recordedIdentityCases": 28,
+      "recordedIdentityRealLoaderColdReopens": 8,
+      "recordedIdentityRemainingFindings": 0
+    },
+    "wireFixturePassed": 10
+  },
+  "combinedWebui": {
+    "fixture": "tests/fixtures/issue-251-repairable-v0.jsonl",
+    "beforeError": "user/message 7 source summary requires notice form",
+    "repair": {
+      "mode": "copy",
+      "format": 0,
+      "encoding": "zstd",
+      "repairedMessages": 3,
+      "repairedDescriptors": 1,
+      "expandedToolChunkRows": 1,
+      "expandedToolChunks": 3,
+      "inputSha256": "94f7da957d213c896c4794603580c9e982670bcd725ecffeee241eab3ad709e5",
+      "outputSha256": "07db52eaacf6d45fc2d4c0a2e8931604674ce332c3a0f823aeed4d4aacaeed3b",
+      "originalPreserved": true,
+      "migrationValidated": false,
+      "blockers": []
+    },
+    "originalHashVerified": true,
+    "repairedHashVerified": true,
+    "dshMigrationAndReplaySucceeded": true,
+    "historicalUserAndAssistantVisible": true,
+    "expandedToolCall": {
+      "name": "synthetic_lookup",
+      "arguments": "{}",
+      "result": "Synthetic tool response."
+    },
+    "configuredLoopbackRouteSelected": "DeepSeek-V4-Flash",
+    "finalValidation": {
+      "baseRevision": "6ad99cc1890714355e1bb0e9230f3fce674bfb73",
+      "repairRevision": "e82735158ed763d3dcfd8d9052b678f6c96963e8",
+      "originalSha256": "94f7da957d213c896c4794603580c9e982670bcd725ecffeee241eab3ad709e5",
+      "repairedSha256": "07db52eaacf6d45fc2d4c0a2e8931604674ce332c3a0f823aeed4d4aacaeed3b",
+      "originalPreserved": true,
+      "repairedV0PreservedAfterMigration": true,
+      "migratedFormat": 3,
+      "physicalV3Rows": 43,
+      "historicalUserAndPluginMessagesPreservedApartFromThreeSummaryFields": 5,
+      "historicalAssistantMessagesPreserved": 2,
+      "durableToolCallAndResultPreserved": true,
+      "expandedStreamPreserved": true,
+      "newTurnContinued": true,
+      "coldReopenVerifiedInWebUI": true,
+      "externalModelCalls": 0,
+      "hostRestartSignal": "SIGUSR2"
+    }
+  },
+  "nullNameWebui": {
+    "results": [
+      {
+        "variant": "raw",
+        "originalSha256": "04890736fdc5e8d3c0e8331df219c3d7d625647165b4b0fbe5ec23a8bde06ded",
+        "repairedSha256": "90cd9f4e18ebad3db883c5c9b35a2ce7bedfe9d4c0487d14ee340083d9d52b8c",
+        "physicalV3Rows": 42,
+        "normalizedToolChunkNames": 3,
+        "firstDeltaHasOwnEmptyName": true,
+        "firstArgumentFragment": "",
+        "timedReplayMatchesNormalizedCopy": true,
+        "durableIdentityAndMessagesPreserved": true,
+        "continuedThroughRealWebUI": true,
+        "originalPreserved": true,
+        "coldReopenedThroughRealWebUI": true,
+        "coldWebUiBrowser": "Chrome",
+        "coldV3Sha256": "1f0c14019e06afde01a89c5ce806890f54ea5bb5b633d8ff5543e8a599f8e592",
+        "coldScreenshot": "251-null-raw-cold-reopen.jpg"
+      },
+      {
+        "variant": "packed",
+        "originalSha256": "af9c1c6eee90336df0a27e079d2dce9ac028d53f3ee002b9d7e79bbd9a5d306e",
+        "repairedSha256": "ff79820f088acffdba3a42b5bce2cdf5af5312a2539f20761a06881252cda20f",
+        "physicalV3Rows": 42,
+        "normalizedToolChunkNames": 3,
+        "firstDeltaHasOwnEmptyName": true,
+        "firstArgumentFragment": "",
+        "timedReplayMatchesNormalizedCopy": true,
+        "durableIdentityAndMessagesPreserved": true,
+        "continuedThroughRealWebUI": true,
+        "originalPreserved": true,
+        "coldReopenedThroughRealWebUI": true,
+        "coldWebUiBrowser": "Chrome",
+        "coldV3Sha256": "84c21218ae381cbf43641b4409b76f01f82b4f23d5e44037cdc3965ddc03077f",
+        "coldScreenshot": "251-null-packed-cold-reopen.jpg"
+      }
+    ],
+    "environmentNote": "After a DSH Host restart preserving the disposable profile, the in-app browser reported a client bundle load error before session selection. The exact bundle returned HTTP 200 and passed syntax checking. A separate Chrome test tab loaded the same Host normally; both migrated histories, tool output and prior continuation canaries were reopened there. No Host or browser security configuration was changed.",
+    "beforeCliRevision": "83d0c40fe7d9e62d60e283a56d1a0a63e31018db"
+  },
+  "recordedIdentityWebui": {
+    "results": [
+      {
+        "variant": "existing-id",
+        "originalSha256": "5c2b140d9c60e8a71c5fde2ae2d150e1bdd77fae53c7641dc0efaf1717278983",
+        "repairedSha256": "85739141506083d559aec9a237c3f27b12295e3f55e3ddda9e28546eb8d0209a",
+        "v3Sha256": "4fa5ab121d5dbf534f688f4a9d5ac0e2eb8a250fd5afb895ce6ba887d83b95e1",
+        "physicalV3Rows": 42,
+        "existingProviderId": "provider-existing-id-251",
+        "originalPreserved": true,
+        "repairedV0Preserved": true,
+        "historicalUserAndPluginBodiesPreserved": true,
+        "historicalAssistantMessagesAndToolResultsPreserved": true,
+        "timedReplayMatchesRepairedCopy": true,
+        "continuedThroughRealWebUI": true,
+        "modelWireIdentityAndPayloadValidated": true,
+        "coldReopenedThroughRealWebUI": true,
+        "coldBrowser": "Chrome",
+        "coldHistoricalRowsUnchanged": true,
+        "coldAppendedBoundary": "session/end-seed",
+        "coldPhysicalV3Rows": 43,
+        "coldV3Sha256": "1a5d43a5d330098663972429670eb8ab71a8bb2311cf4c19110b81f76a1118ee",
+        "coldScreenshot": "251-existing-id-cold-reopen.jpg",
+        "repair": {
+          "mode": "copy",
+          "format": 0,
+          "encoding": "zstd",
+          "repairedMessages": 0,
+          "repairedDescriptors": 0,
+          "expandedToolChunkRows": 0,
+          "expandedToolChunks": 0,
+          "normalizedToolChunkNames": 0,
+          "recoveredToolIdentityChains": 1,
+          "recoveredToolIdentityFields": 7,
+          "toolIdentityRecoveryRefusals": {
+            "occurrences": 0,
+            "samples": []
+          },
+          "inputSha256": "5c2b140d9c60e8a71c5fde2ae2d150e1bdd77fae53c7641dc0efaf1717278983",
+          "outputSha256": "85739141506083d559aec9a237c3f27b12295e3f55e3ddda9e28546eb8d0209a",
+          "originalPreserved": true,
+          "migrationValidated": false,
+          "blockers": []
+        },
+        "beforeError": "assistant/message 27 message content[0] id must be a non-empty string"
+      },
+      {
+        "variant": "all-legacy",
+        "originalSha256": "02918e5bf3ddc83a1c7087fce7622ad46b91bd8c1987ffb423d2669ce276b281",
+        "repairedSha256": "1e30311e7422a4eb6c6b3f5c679901b8dfe902205e6b287f9a7a49ab885ad7f6",
+        "v3Sha256": "aff2908436f065c25289a69d34ebe08d6b18ce7b7b71941baaa78c34eaef05a9",
+        "physicalV3Rows": 42,
+        "existingProviderId": "provider-existing-id-251",
+        "originalPreserved": true,
+        "repairedV0Preserved": true,
+        "historicalUserAndPluginBodiesPreserved": true,
+        "historicalAssistantMessagesAndToolResultsPreserved": true,
+        "timedReplayMatchesRepairedCopy": true,
+        "continuedThroughRealWebUI": true,
+        "modelWireIdentityAndPayloadValidated": true,
+        "coldReopenedThroughRealWebUI": true,
+        "coldBrowser": "Chrome",
+        "coldHistoricalRowsUnchanged": true,
+        "coldAppendedBoundary": "session/end-seed",
+        "coldPhysicalV3Rows": 43,
+        "coldV3Sha256": "4d5fdf7a0f9d0be7f8bbe23570a96c804f6de26efb058bed7edc06da881c5fc1",
+        "coldScreenshot": "251-all-legacy-cold-reopen.jpg",
+        "repair": {
+          "mode": "copy",
+          "format": 0,
+          "encoding": "zstd",
+          "repairedMessages": 3,
+          "repairedDescriptors": 1,
+          "expandedToolChunkRows": 1,
+          "expandedToolChunks": 2,
+          "normalizedToolChunkNames": 2,
+          "recoveredToolIdentityChains": 1,
+          "recoveredToolIdentityFields": 7,
+          "toolIdentityRecoveryRefusals": {
+            "occurrences": 0,
+            "samples": []
+          },
+          "inputSha256": "02918e5bf3ddc83a1c7087fce7622ad46b91bd8c1987ffb423d2669ce276b281",
+          "outputSha256": "1e30311e7422a4eb6c6b3f5c679901b8dfe902205e6b287f9a7a49ab885ad7f6",
+          "originalPreserved": true,
+          "migrationValidated": false,
+          "blockers": []
+        },
+        "beforeError": "user/message 5 source summary requires notice form"
+      }
+    ],
+    "wireReports": [
+      {
+        "event": "legacy-replay-verified",
+        "callId": "provider-existing-id-251",
+        "toolCallCount": 1,
+        "toolResultCount": 1,
+        "argumentsSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "resultSha256": "8306ed2cf00d4ad1484f5f155e24086b2196f6775dc0ba3a5734edb3035a0ed6"
+      },
+      {
+        "event": "legacy-replay-verified",
+        "callId": "provider-existing-id-251",
+        "toolCallCount": 1,
+        "toolResultCount": 1,
+        "argumentsSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "resultSha256": "8306ed2cf00d4ad1484f5f155e24086b2196f6775dc0ba3a5734edb3035a0ed6"
+      }
+    ],
+    "beforeCliRevision": "2612856624bd78cebcf02991e5313742df148f12",
+    "fixtures": [
+      "tests/fixtures/issue-251-existing-id-v0.jsonl",
+      "tests/fixtures/issue-251-all-legacy-v0.jsonl"
+    ],
+    "existingIdPackedExpandedForIsolation": true,
+    "loopbackModelOnly": true,
+    "finalAuditedOutputsMatchTestedCopies": true,
+    "finalCliSha256": "98a0b2cd1b007f6f92db177793c5aee7d852b1bdeefa01f1846fef6e14d6086c",
+    "finalPreviewAndExclusiveCopiesMatchWebuiHashes": true,
+    "scaleSmoke": {
+      "chains": 300,
+      "inputBytes": 709334,
+      "recoveredFields": 2100,
+      "outputSha256": "2918324ec821ea9dbfe3a8ec4eccd60a1cd000ad9a0edc88186eda2bfd20f193",
+      "finalElapsedMs": 681,
+      "finalOutputHashMatchesEarlierPreview": true,
+      "previewOnly": true
+    }
+  }
+}

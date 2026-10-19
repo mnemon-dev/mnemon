@@ -1,0 +1,86 @@
+{
+  "base": "84d469ffa838a36fa579295d94029fcac8ac058e",
+  "versions": {
+    "dsh": "0.1.7-rc.1",
+    "dsh-agent": "0.1.7-rc.1",
+    "dsh-agent-loop": "0.1.7-rc.1",
+    "dsh-subagent": "0.1.7-rc.1",
+    "dsh-subagent-in-process-driver": "0.1.7-rc.1",
+    "dsh-subagent-fork-in-process": "0.1.7-rc.1",
+    "dsh-subagent-spawn-in-process": "0.1.7-rc.1",
+    "dsh-experimental-agent-team": "0.1.7-rc.1",
+    "dsh-experimental-tool-agent-team": "0.1.7-rc.1"
+  },
+  "cases": [
+    {
+      "provider": "fork",
+      "teams": "off",
+      "preflight": {
+        "hasTeamService": false,
+        "hasScopedTeamSpawnTool": false,
+        "hasGlobalTeamSpawnTool": false
+      },
+      "childModelCalls": 2,
+      "result": "completed"
+    },
+    {
+      "provider": "spawn",
+      "teams": "off",
+      "preflight": {
+        "hasTeamService": false,
+        "hasScopedTeamSpawnTool": false,
+        "hasGlobalTeamSpawnTool": false
+      },
+      "childModelCalls": 2,
+      "result": "completed"
+    },
+    {
+      "provider": "fork",
+      "teams": "service",
+      "preflight": {
+        "hasTeamService": true,
+        "hasScopedTeamSpawnTool": false,
+        "hasGlobalTeamSpawnTool": false
+      },
+      "childModelCalls": 2,
+      "result": "completed"
+    },
+    {
+      "provider": "spawn",
+      "teams": "service",
+      "preflight": {
+        "hasTeamService": true,
+        "hasScopedTeamSpawnTool": false,
+        "hasGlobalTeamSpawnTool": false
+      },
+      "childModelCalls": 2,
+      "result": "completed"
+    },
+    {
+      "provider": "fork",
+      "teams": "tools",
+      "preflight": {
+        "hasTeamService": true,
+        "hasScopedTeamSpawnTool": true,
+        "hasGlobalTeamSpawnTool": false,
+        "blockReason": "agent-team"
+      },
+      "guardOutcome": "skipped before child creation",
+      "childModelCalls": 0,
+      "parentTeamToolSucceeded": true
+    },
+    {
+      "provider": "spawn",
+      "teams": "tools",
+      "preflight": {
+        "hasTeamService": true,
+        "hasScopedTeamSpawnTool": true,
+        "hasGlobalTeamSpawnTool": false,
+        "blockReason": "agent-team"
+      },
+      "guardOutcome": "skipped before child creation",
+      "childModelCalls": 0,
+      "parentTeamToolSucceeded": true
+    }
+  ]
+}

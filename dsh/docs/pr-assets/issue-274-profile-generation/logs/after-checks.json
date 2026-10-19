@@ -1,0 +1,20 @@
+{
+  "fixed-desktop-headless-final": {
+    "exitCode": 0,
+    "verified": true,
+    "framework": "0.1.5-rc.2",
+    "nativeAddons": true
+  },
+  "fixed-desktop-headless-disabled": {
+    "exitCode": 0,
+    "verified": true,
+    "framework": "0.1.5-rc.2",
+    "nativeAddons": true
+  },
+  "guiColdRestart": {
+    "settingsSha256": "52520c59a903d233f06372aa84c662851b168d20c9e3dd58b15b3296691903bc",
+    "runtimeSha256": "b884da44b90bac3347cd1b9f104a4d97a50ee385eed829101419564d620b20a1",
+    "runtimeBytes": 314,
+    "savedMinIntervalMs": 310000
+  }
+}

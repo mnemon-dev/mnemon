@@ -1,0 +1,32 @@
+{
+  "backend": "OpenViking 0.4.20",
+  "scope": "isolated default/default",
+  "model": "scripted tool decisions, synthetic embeddings, no live LLM",
+  "receipt": {
+    "action": "stored",
+    "provider": "openviking",
+    "id": "viking://user/default/memories/experiences/20260916043728-issue-233-canary-release-approval-requires-a-com-0f28a6e3-d100-43df-ad23-bb99623cbb61.md",
+    "uri": "viking://user/default/memories/experiences/20260916043728-issue-233-canary-release-approval-requires-a-com-0f28a6e3-d100-43df-ad23-bb99623cbb61.md",
+    "externalUri": "viking://user/default/memories/experiences/20260916043728-issue-233-canary-release-approval-requires-a-com-0f28a6e3-d100-43df-ad23-bb99623cbb61.md",
+    "summary": "OpenViking stored the memory at viking://user/default/memories/experiences/20260916043728-issue-233-canary-release-approval-requires-a-com-0f28a6e3-d100-43df-ad23-bb99623cbb61.md (category decision).",
+    "writtenBytes": 117,
+    "vectorStatus": "complete",
+    "memoryBodyId": "openviking-265db573b8e128c231453ecc",
+    "memoryBodyName": "default",
+    "memoryProviderId": "openviking",
+    "memoryProviderLabel": "OpenViking",
+    "memoryReceipt": {
+      "status": "succeeded",
+      "completion": "committed",
+      "committedAt": "2026-09-16T04:37:29.197Z"
+    }
+  },
+  "readback": "Issue 233 canary: release approval requires a completed staged rollout.\n合成回归资料：保留原文与换行。",
+  "utf8Bytes": 117,
+  "byteExact": true,
+  "forget": {
+    "trigger": "real WebUI confirmation",
+    "readAfterDeleteHttpStatus": 404,
+    "backendCode": "NOT_FOUND"
+  }
+}

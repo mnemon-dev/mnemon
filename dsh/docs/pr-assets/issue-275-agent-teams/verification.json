@@ -1,0 +1,150 @@
+{
+  "base": "84d469ffa838a36fa579295d94029fcac8ac058e",
+  "platform": "macOS",
+  "versions": {
+    "node": "24.20.0",
+    "pnpm": "10.13.1",
+    "mnemonCli": "0.2.9"
+  },
+  "environment": {
+    "VITEST_MAX_THREADS": "1",
+    "VITEST_MIN_THREADS": "1",
+    "VITEST_MAX_FORKS": "1",
+    "VITEST_MIN_FORKS": "1"
+  },
+  "verify": {
+    "command": "npx --yes --package=node@24.20.0 --package=pnpm@10.13.1 pnpm run verify",
+    "exitCode": 0,
+    "root": {
+      "passedFiles": 97,
+      "skippedFiles": 3,
+      "passedTests": 1354,
+      "skippedTests": 8
+    },
+    "workspacePlugins": {
+      "packages": 16,
+      "passedTests": 381,
+      "skippedTests": 3
+    },
+    "defaultSkipped": [
+      {
+        "scope": "root",
+        "suite": "agent-team-review-host",
+        "tests": 1,
+        "reason": "MNEMON_TEAM_TEST_PROFILE unset; both published cohorts passed separately"
+      },
+      {
+        "scope": "root",
+        "suite": "runtime-capacity-workflow",
+        "tests": 1,
+        "reason": "MNEMON_NATIVE_TEST_CLI unset in full verify"
+      },
+      {
+        "scope": "root",
+        "suite": "lifecycle published V4 codec",
+        "tests": 1,
+        "reason": "MNEMON_DSH_V4_CONTRACT_ROOT unset"
+      },
+      {
+        "scope": "root",
+        "suite": "runtime-capacity-flash-stress",
+        "tests": 3,
+        "reason": "live Flash stress opt-in unset"
+      },
+      {
+        "scope": "root",
+        "suite": "runtime-memory-flash-quality",
+        "tests": 2,
+        "reason": "live Flash quality opt-in unset"
+      },
+      {
+        "scope": "plugins",
+        "suite": "source-memory-spaces native-integration",
+        "tests": 1,
+        "reason": "MNEMON_NATIVE_TEST_CLI unset; passed separately with official CLI 0.2.9"
+      },
+      {
+        "scope": "plugins",
+        "suite": "source-memory-spaces windows-smoke",
+        "tests": 1,
+        "reason": "macOS host"
+      },
+      {
+        "scope": "plugins",
+        "suite": "provider-openviking integration",
+        "tests": 1,
+        "reason": "external OpenViking endpoint unset"
+      }
+    ]
+  },
+  "publishedCohorts": {
+    "rc1": {
+      "exitCode": 0,
+      "passedTests": 1,
+      "combinations": 16,
+      "successfulScoped": 12,
+      "pausedBeforeChild": 4,
+      "additionalCancellationsBeforeMutation": 2,
+      "report": "after-published.json"
+    },
+    "legacy": {
+      "exitCode": 0,
+      "passedTests": 1,
+      "combinations": 16,
+      "successfulControls": 8,
+      "pausedBeforeChild": 4,
+      "failClosedBeforeRuntimeWrite": 4,
+      "report": "legacy-published.json"
+    }
+  },
+  "nativeIntegration": {
+    "command": "MNEMON_NATIVE_TEST_CLI=/absolute/verified/mnemon npx --yes --package=node@24.20.0 --package=pnpm@10.13.1 pnpm --filter dsh-mnemon-source-memory-spaces exec vitest run tests/native-integration.spec.ts --maxWorkers=1 --minWorkers=1",
+    "exitCode": 0,
+    "passedTests": 1,
+    "operations": [
+      "create Space",
+      "write through compiled View",
+      "recall",
+      "forget"
+    ]
+  },
+  "independentArtifacts": {
+    "command": "MNEMON_PLUGIN_VERIFY_CONCURRENCY=1 npx --yes --package=node@24.20.0 --package=pnpm@10.13.1 pnpm run verify:plugins --skip-build",
+    "exitCode": 0,
+    "workers": 1,
+    "independentRepositories": 16,
+    "packedArtifacts": 17,
+    "checks": [
+      "standalone install without workspace links",
+      "standalone types, Client tests and build",
+      "external SDK consumer",
+      "real DSH packed Starter activation",
+      "real DSH three optional Strategy plugins together"
+    ]
+  },
+  "package": {
+    "publishedFiles": 49,
+    "finalVerifyPackedBytes": 309087,
+    "unpackedBytes": 1373650,
+    "baselineUnpackedBytes": 1370778,
+    "unpackedDeltaBytes": 2872,
+    "unpackedLimitBytes": 1376000,
+    "remainingHeadroomBytes": 2350,
+    "finalWebUiArchiveSha256": "71c282c88af13a770e389ad85c7ec3bc8ea596c1679e08b926779b2bcd37b336",
+    "finalWebUiPublishedFilesMatchingFullVerify": 49
+  },
+  "browserAcceptance": "web-acceptance.json",
+  "privateLogsSha256": {
+    "verify-final.log": "79f358b4a6a192a278831fcd44943522199060a2bea6884e394c15a5ec0f40e8",
+    "verify-plugins-final.log": "d1bda73329e5666d93bbee4d8851cc25b94a08cf85065de4931dabfc7e812b12",
+    "native-integration-final.log": "4d14201fe513d310e401c3745823e0799444d6c78c829c2d002df104acab831c",
+    "rc1-team-matrix-final.log": "dc5b3a6c281fe647bcda25bc8091a3c0bca1b6410c7ba644423d732cc6ef79a1",
+    "legacy-team-matrix-final.log": "c4396e7ced7eb867198e8cb677995f8ea7e028d9a0d3debaea739993552f75f9"
+  },
+  "limits": [
+    "Deterministic model choices; framework child, tools, storage and CLI are real",
+    "No live-model memory-quality claim",
+    "No Windows execution",
+    "Legacy full-Team dynamic policy fails closed; no automatic replay"
+  ]
+}

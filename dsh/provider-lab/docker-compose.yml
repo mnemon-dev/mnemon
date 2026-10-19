@@ -1,0 +1,226 @@
+name: dsh-mnemon-provider-lab
+
+services:
+  openviking:
+    image: ghcr.io/volcengine/openviking:latest
+    restart: unless-stopped
+    command: ["--without-bot"]
+    ports:
+      - "127.0.0.1:1933:1933"
+    volumes:
+      - ./openviking/ov.conf:/app/.openviking/ov.conf:ro
+      - openviking-data:/app/.openviking/data
+    environment:
+      OPENVIKING_WITH_BOT: "0"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-H", "Authorization: Bearer ${OPENVIKING_ROOT_API_KEY:-dsh-provider-lab-local-only}", "-H", "X-OpenViking-Account: dsh-lab", "-H", "X-OpenViking-User: demo-user", "http://127.0.0.1:1933/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  honcho-api:
+    build:
+      context: ${PROVIDER_LAB_SOURCES:?Set PROVIDER_LAB_SOURCES}/honcho
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    entrypoint: ["sh", "/app/provider-lab-entrypoint.sh"]
+    ports:
+      - "127.0.0.1:18000:8000"
+    environment: &honcho-environment
+      DB_CONNECTION_URI: postgresql+psycopg://postgres:postgres@honcho-db:5432/postgres
+      CACHE_URL: redis://honcho-redis:6379/0?suppress=true
+      CACHE_ENABLED: "true"
+      AUTH_USE_AUTH: "false"
+      SENTRY_ENABLED: "false"
+      DERIVER_ENABLED: "false"
+      LLM_OPENAI_API_KEY: ollama
+      EMBEDDING_MODEL_CONFIG__TRANSPORT: openai
+      EMBEDDING_MODEL_CONFIG__MODEL: nomic-embed-text
+      EMBEDDING_MODEL_CONFIG__DIMENSIONS_MODE: never
+      EMBEDDING_MODEL_CONFIG__OVERRIDES__BASE_URL: http://host.docker.internal:11434/v1
+      EMBEDDING_VECTOR_DIMENSIONS: "768"
+      DERIVER_MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-qwen2.5:3b}
+      DERIVER_MODEL_CONFIG__OVERRIDES__BASE_URL: http://host.docker.internal:11434/v1
+      SUMMARY_MODEL_CONFIG__MODEL: ${HONCHO_LLM_MODEL:-qwen2.5:3b}
+      SUMMARY_MODEL_CONFIG__OVERRIDES__BASE_URL: http://host.docker.internal:11434/v1
+    depends_on:
+      honcho-db:
+        condition: service_healthy
+      honcho-redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ./honcho/entrypoint.sh:/app/provider-lab-entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD", "/app/.venv/bin/python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).read()"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+  honcho-db:
+    image: pgvector/pgvector:pg15
+    restart: unless-stopped
+    command: ["postgres", "-c", "max_connections=100"]
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - ${PROVIDER_LAB_SOURCES:?Set PROVIDER_LAB_SOURCES}/honcho/database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - honcho-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  honcho-redis:
+    image: redis:8.2
+    restart: unless-stopped
+    volumes:
+      - honcho-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mem0:
+    build:
+      context: ${PROVIDER_LAB_SOURCES:?Set PROVIDER_LAB_SOURCES}/mem0
+      dockerfile: server/dev.Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18888:8000"
+    command: ["sh", "-c", "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000"]
+    environment:
+      AUTH_DISABLED: "true"
+      MEM0_TELEMETRY: "false"
+      POSTGRES_HOST: mem0-db
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mem0
+      POSTGRES_COLLECTION_NAME: dsh_memory
+      OPENAI_API_KEY: ollama
+      OPENAI_BASE_URL: http://host.docker.internal:11434/v1
+      MEM0_DEFAULT_LLM_MODEL: ${MEM0_LLM_MODEL:-qwen2.5:3b}
+      MEM0_DEFAULT_EMBEDDER_MODEL: nomic-embed-text
+      HISTORY_DB_PATH: /app/history/history.db
+    volumes:
+      - mem0-history:/app/history
+    depends_on:
+      mem0-db:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/openapi.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+
+  mem0-db:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: mem0
+      POSTGRES_DB: postgres
+    volumes:
+      - mem0-pgdata:/var/lib/postgresql/data
+      - ${PROVIDER_LAB_SOURCES:?Set PROVIDER_LAB_SOURCES}/mem0/server/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -d postgres -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18889:8888"
+      - "127.0.0.1:19999:9999"
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: ollama
+      HINDSIGHT_API_LLM_BASE_URL: http://host.docker.internal:11434
+      HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_LLM_MODEL:-qwen2.5:3b}
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: local
+      HINDSIGHT_API_RERANKER_PROVIDER: local
+    volumes:
+      - hindsight-pgdata:/home/hindsight/.pg0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8888/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 40
+      start_period: 30s
+
+  retaindb:
+    build:
+      context: ${PROVIDER_LAB_SOURCES:?Set PROVIDER_LAB_SOURCES}/retaindb
+      dockerfile: packages/local/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18990:3111"
+      - "127.0.0.1:18991:3113"
+    environment:
+      RETAINDB_HOME: /opt/retaindb/data
+      RETAINDB_EMBEDDING_PROVIDER: hash
+    volumes:
+      - retaindb-data:/opt/retaindb/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:3111/health | grep -q '\"success\":true'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+  supermemory:
+    build:
+      context: .
+      dockerfile: Dockerfile.supermemory
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18787:6767"
+    environment:
+      PORT: "6767"
+      SUPERMEMORY_DATA_DIR: /var/lib/supermemory/data
+      SUPERMEMORY_DISABLE_TELEMETRY: "1"
+      SUPERMEMORY_SKIP_EMBEDDING_PREWARM: "1"
+      SUPERMEMORY_EMBEDDING_RAM_LIMIT: 512mb
+      SUPERMEMORY_INGEST_CONCURRENCY: "1"
+      OPENAI_API_KEY: ollama
+      OPENAI_BASE_URL: http://host.docker.internal:11434/v1
+      OPENAI_MODEL: ${SUPERMEMORY_LLM_MODEL:-qwen2.5:3b}
+      OPENAI_FAST_MODEL: ${SUPERMEMORY_LLM_MODEL:-qwen2.5:3b}
+      OPENAI_TEXT_MODEL: ${SUPERMEMORY_LLM_MODEL:-qwen2.5:3b}
+      SUPERMEMORY_EMBEDDING_PROVIDER: openai
+      SUPERMEMORY_EMBEDDING_BASE_URL: http://host.docker.internal:11434/v1
+      SUPERMEMORY_EMBEDDING_MODEL: nomic-embed-text
+      SUPERMEMORY_EMBEDDING_DIMENSIONS: "768"
+    volumes:
+      - supermemory-data:/var/lib/supermemory/data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  openviking-data:
+  honcho-pgdata:
+  honcho-redis-data:
+  mem0-history:
+  mem0-pgdata:
+  hindsight-pgdata:
+  retaindb-data:
+  supermemory-data:

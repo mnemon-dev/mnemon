@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Light context",
+    "description": "Reduce resident content while keeping on-demand reads available."
+  }
+}

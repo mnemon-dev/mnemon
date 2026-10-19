@@ -1,0 +1,76 @@
+/* Feedback shared by the configuration page and the memory workspace: notes
+   that slide rather than jump, a tint on what a change touched, callouts with
+   their resolving actions, and chips naming a component's state. */
+
+/* Opening grows from zero height; closing shrinks back. The starting style
+   animates the first frame after mount, the data state animates the exit. */
+.reveal {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition: grid-template-rows 220ms cubic-bezier(.2, 0, 0, 1), opacity 160ms ease-out;
+}
+.reveal[data-state='closing'] { grid-template-rows: 0fr; opacity: 0; pointer-events: none; }
+@starting-style {
+  .reveal[data-state='open'] { grid-template-rows: 0fr; opacity: 0; }
+}
+.revealBody { min-width: 0; min-height: 0; overflow: hidden; }
+
+/* A brief tint on the rows and chips a change touched. */
+[data-mnemon-flash] { animation: mnemon-flash 1300ms ease-out; }
+@keyframes mnemon-flash {
+  0%, 25% { background-color: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent); }
+  100% { background-color: transparent; }
+}
+
+.callout {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  border-radius: var(--dsw-radius-md);
+  padding: 10px 12px;
+  background: var(--dsw-alias-bg-module-platform);
+  font-size: 12px;
+  line-height: 18px;
+}
+.callout[data-tone='error'] { background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 7%, var(--dsw-alias-bg-module-platform)); }
+.callout[data-tone='warning'] { background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 8%, var(--dsw-alias-bg-module-platform)); }
+.calloutDot { flex: none; align-self: flex-start; margin-top: 4px; }
+.calloutCopy { display: flex; min-width: min(220px, 100%); flex: 1 1 0; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
+.calloutCopy strong { color: var(--dsw-alias-label-primary); font-size: 13px; font-weight: 500; line-height: 20px; }
+.calloutCopy span { color: var(--dsw-alias-label-secondary); }
+.calloutActions { display: flex; flex: none; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.actionButton { white-space: nowrap; }
+
+/* A component named with its state: DSH's state dot, then its name. */
+.chip {
+  display: inline-flex;
+  max-width: 100%;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: .5px solid var(--dsw-alias-border-l3);
+  border-radius: 999px;
+  padding: 0 10px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  text-align: left;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease;
+}
+button.chip { cursor: pointer; }
+button.chip:hover { background: var(--dsw-alias-interactive-bg-hover); }
+.chip[data-state='idle'] { border-style: dashed; color: var(--dsw-alias-label-tertiary); }
+.chip[data-state='warning'] { border-color: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 45%, transparent); }
+.chip[data-state='error'] { border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent); }
+.chipLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chipNote { color: var(--dsw-alias-label-tertiary); white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal, .chip { transition: none; }
+  [data-mnemon-flash] { animation: none; }
+}

@@ -32,6 +32,18 @@
 - Preserve independent replay, crash, authorization, and race oracles while
   compressing fixtures and shared setup.
 
+## DeepSeek Harness Workspace
+
+- `dsh/` is the DeepSeek Harness plugin workspace: TypeScript, pnpm, MIT. It is
+  not part of the Go module; `dsh/go.mod` keeps it out of the module zip, and
+  Go code does not belong there.
+- Work inside `dsh/` follows `dsh/CONTRIBUTING.md`: install with
+  `pnpm install --frozen-lockfile`, verify with `pnpm run verify`, and keep its
+  bilingual documentation and changeset rules.
+- `.github/workflows/dsh-ci.yml` runs the workspace's CI from `dsh/`. Files in
+  `dsh/.github/` are inactive until the workspace's release lane and repository
+  rules move to the root.
+
 ## Commit Discipline
 
 - Prefer small, logical commits. Split unrelated work instead of committing a

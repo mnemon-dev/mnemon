@@ -1,0 +1,126 @@
+name: 重复 Issue 检测 / Detect Duplicate Issues
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  dedup:
+    name: 关闭重复 Issue / Close duplicate issues
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检测重复 Issue / Detect duplicate issue
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const issue = context.payload.issue;
+            if (!issue || issue.pull_request) {
+              return;
+            }
+
+            const title = (issue.title || '').trim();
+            if (title.length < 4) {
+              return;
+            }
+
+            const STOPWORDS = new Set([
+              'the', 'a', 'an', 'is', 'are', 'of', 'to', 'in', 'on', 'for', 'and', 'or',
+              'bug', 'issue',
+            ]);
+            const tokens = (title.match(/[\p{L}\p{N}]+/gu) || [])
+              .filter((token) => !STOPWORDS.has(token.toLowerCase()));
+            const sanitize = (value) =>
+              value.replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+            const query = sanitize(tokens.length > 0 ? tokens.slice(0, 8).join(' ') : title);
+            if (!query) {
+              return;
+            }
+
+            const { data: search } = await github.rest.search.issuesAndPullRequests({
+              q: 'repo:' + context.repo.owner + '/' + context.repo.repo +
+                ' is:issue is:open in:title ' + query,
+              per_page: 30,
+            });
+            const candidates = (search.items || []).filter(
+              (item) => item.number !== issue.number && !item.pull_request,
+            );
+
+            const levenshtein = (left, right) => {
+              const rows = left.length;
+              const columns = right.length;
+              if (rows === 0) return columns;
+              if (columns === 0) return rows;
+              const distance = new Array(columns + 1);
+              for (let column = 0; column <= columns; column += 1) distance[column] = column;
+              for (let row = 1; row <= rows; row += 1) {
+                let previous = distance[0];
+                distance[0] = row;
+                for (let column = 1; column <= columns; column += 1) {
+                  const current = distance[column];
+                  distance[column] = Math.min(
+                    distance[column] + 1,
+                    distance[column - 1] + 1,
+                    previous + (left[row - 1] === right[column - 1] ? 0 : 1),
+                  );
+                  previous = current;
+                }
+              }
+              return distance[columns];
+            };
+            const normalize = (value) => value.replace(/\s+/g, ' ').trim().toLowerCase();
+            const similarity = (left, right) => {
+              const maxLength = Math.max(left.length, right.length);
+              return maxLength === 0 ? 1 : 1 - levenshtein(left, right) / maxLength;
+            };
+
+            const target = normalize(title);
+            const duplicate = candidates.find((candidate) => {
+              const candidateTitle = normalize(candidate.title);
+              const contained =
+                (target.includes(candidateTitle) || candidateTitle.includes(target)) &&
+                Math.abs(target.length - candidateTitle.length) <=
+                  Math.max(4, Math.min(target.length, candidateTitle.length) * 0.3);
+              return contained || similarity(target, candidateTitle) >= 0.7;
+            });
+            if (!duplicate) {
+              return;
+            }
+
+            const comment = [
+              '该 Issue 疑似与已有 Issue 重复，已自动关闭。',
+              'This issue appears to duplicate an existing issue and was closed automatically.',
+              '',
+              `- 原 Issue / Existing issue: #${duplicate.number}「${duplicate.title}」`,
+              `- 链接 / Link: ${duplicate.html_url}`,
+              '',
+              '如果现象、版本或根因不同，请回复说明差异并请求重开；也可以到原 Issue 下补充新证据。',
+              'If the behavior, version, or root cause differs, reply with those differences and request reopening, or add the new evidence to the existing issue.',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              body: comment,
+            });
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['duplicate'],
+              });
+            } catch (error) {
+              core.warning(`Could not add duplicate label: ${error.message}`);
+            }
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: issue.number,
+              state: 'closed',
+              state_reason: 'not_planned',
+            });

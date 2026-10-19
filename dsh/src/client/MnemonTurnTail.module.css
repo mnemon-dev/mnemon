@@ -1,0 +1,189 @@
+/* Turn-tail memory activity bar under the DSH turn actions row, as a DSH disclosure row. */
+
+.root {
+  min-width: 0;
+  margin: 2px 0;
+}
+
+.bar {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  padding: 0 6px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+}
+.bar:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+.bar:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 2px;
+}
+
+.mark {
+  display: inline-flex;
+  flex: none;
+}
+
+.label {
+  flex: none;
+  font-weight: 500;
+}
+
+.metrics {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+}
+.metrics span {
+  white-space: nowrap;
+}
+
+.failureMetric {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.chevron {
+  flex: none;
+  margin-left: auto;
+  transition: transform .12s;
+}
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* One row per tool: what it did, then what it read or wrote. */
+.details {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  margin: 2px 0 4px;
+  padding: 4px 6px;
+  list-style: none;
+  container-type: inline-size;
+}
+
+.toolRow {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+/* A neutral DSH Tag naming what the tool did; the tool itself shows on hover. */
+.toolChip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  border: none;
+  border-radius: 999px;
+  padding: 1px 8px;
+  cursor: pointer;
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 17px;
+  white-space: nowrap;
+}
+
+.toolCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.toolChip:hover {
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+.toolChip:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 1px;
+}
+
+.items {
+  display: grid;
+  min-width: 0;
+  flex: 1 1 auto;
+  justify-items: start;
+  gap: 2px;
+}
+
+/* A memory the tool read or wrote; it opens the page that shows it. */
+.item {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: baseline;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  padding: 0 4px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 19px;
+  text-align: left;
+}
+.item:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.item:focus-visible {
+  outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: 1px;
+}
+
+.itemText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemPlace {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemMore {
+  padding: 0 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 19px;
+}
+
+/* On a phone, each tool's items sit below it and keep the full width. */
+@container (max-width: 420px) {
+  .toolRow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
+  }
+  .toolChip { align-self: flex-start; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chevron { transition: none; }
+}

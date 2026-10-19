@@ -1,0 +1,19 @@
+node:internal/modules/run_main:122
+    triggerUncaughtException(
+    ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'dsh-mnemon' imported from <fixture>/desktop/extracted/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:780:81)
+    at moduleResolve (node:internal/modules/esm/resolve:871:18)
+    at defaultResolve (node:internal/modules/esm/resolve:1004:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:701:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:721:38)
+    at nextStep (node:internal/modules/customization_hooks:189:26)
+    at resolve (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/host-module-fallback.mjs:32:16)
+    at nextStep (node:internal/modules/customization_hooks:189:26)
+    at resolveWithHooks (node:internal/modules/customization_hooks:418:10) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.18.1

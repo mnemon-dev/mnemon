@@ -1,0 +1,185 @@
+{
+  "testedImplementation": "4a42eb33567461ed7f4b890cd014373956e2f0d6",
+  "base": "6200e087a37f8be6c252c951aeabea6c7efa0806",
+  "environment": {
+    "os": "macOS 15.6",
+    "node": "v25.1.0",
+    "pnpm": "11.19.0",
+    "dsh": "0.1.7-rc.2"
+  },
+  "generalStrategyConversation": {
+    "command": "pnpm e2e:serve --general-strategy",
+    "turns": [
+      "general-strategy-check remember",
+      "general-strategy-check recall"
+    ],
+    "events": [
+      {
+        "event": "composition",
+        "protocol": true,
+        "admitted": [
+          "source:include:mnemon-source-runtime",
+          "source:include:mnemon-source-documents",
+          "source:include:mnemon-source-memory-spaces"
+        ],
+        "namedRuntimeTool": true,
+        "routes": true
+      },
+      {
+        "event": "write",
+        "success": true,
+        "receipt": "succeeded"
+      },
+      {
+        "event": "recall",
+        "resident": true
+      }
+    ]
+  },
+  "screens": [
+    {
+      "file": "plugins-zh-default.png",
+      "state": {
+        "mainStrategy": "default-three-tier",
+        "enhancements": []
+      },
+      "text": [
+        "主策略",
+        "同一时间只由一个主策略组合记忆视图；切换后从下一轮对话生效。",
+        "默认三层",
+        "运行时常驻，档案与长期记忆按需读取",
+        "通用",
+        "全部来源可用，由模型决定如何使用",
+        "记忆增强",
+        "为当前主策略开启可选行为；切换后立即生效。",
+        "主动记录",
+        "在当前对话中识别并保存值得长期保留的事实",
+        "轻量上下文",
+        "减少常驻内容，同时保留按需读取能力",
+        "范围组合",
+        "按稳定顺序组合当前可用的记忆来源"
+      ]
+    },
+    {
+      "file": "plugins-zh-general.png",
+      "state": {
+        "mainStrategy": "general",
+        "enhancements": [
+          "light-context"
+        ]
+      },
+      "text": [
+        "主策略",
+        "同一时间只由一个主策略组合记忆视图；切换后从下一轮对话生效。",
+        "默认三层",
+        "运行时常驻，档案与长期记忆按需读取",
+        "通用",
+        "全部来源可用，由模型决定如何使用",
+        "记忆增强",
+        "为当前主策略开启可选行为；切换后立即生效。",
+        "主动记录",
+        "在当前对话中识别并保存值得长期保留的事实",
+        "轻量上下文",
+        "减少常驻内容，同时保留按需读取能力",
+        "范围组合",
+        "按稳定顺序组合当前可用的记忆来源"
+      ]
+    },
+    {
+      "file": "settings-zh-general.png",
+      "state": {
+        "mainStrategy": "general",
+        "enhancements": [
+          "light-context"
+        ]
+      },
+      "text": [
+        "主策略",
+        "同一时间只由一个主策略组合记忆视图；切换后从下一轮对话生效。",
+        "默认三层",
+        "运行时常驻，档案与长期记忆按需读取",
+        "通用",
+        "全部来源可用，由模型决定如何使用",
+        "记忆增强",
+        "为当前主策略开启可选行为；切换后立即生效。",
+        "主动记录",
+        "在当前对话中识别并保存值得长期保留的事实",
+        "轻量上下文",
+        "减少常驻内容，同时保留按需读取能力",
+        "范围组合",
+        "按稳定顺序组合当前可用的记忆来源"
+      ]
+    },
+    {
+      "file": "plugins-en-general.png",
+      "state": {
+        "mainStrategy": "general",
+        "enhancements": [
+          "light-context"
+        ]
+      },
+      "text": [
+        "Main strategy",
+        "One main strategy composes the memory view at a time; a switch applies from the next turn.",
+        "Default three-tier",
+        "Resident runtime memory, on-demand documents and durable memory",
+        "General",
+        "Every source available; the model decides how to use each",
+        "Memory enhancements",
+        "Enable optional behavior for the selected main strategy. Changes apply immediately.",
+        "Active capture",
+        "Identify and retain durable facts from the current conversation",
+        "Light context",
+        "Reduce resident content while keeping on-demand reads available",
+        "Scoped composition",
+        "Compose currently available memory sources in a stable order"
+      ]
+    },
+    {
+      "file": "settings-en-general.png",
+      "state": {
+        "mainStrategy": "general",
+        "enhancements": [
+          "light-context"
+        ]
+      },
+      "text": [
+        "Main strategy",
+        "One main strategy composes the memory view at a time; a switch applies from the next turn.",
+        "Default three-tier",
+        "Resident runtime memory, on-demand documents and durable memory",
+        "General",
+        "Every source available; the model decides how to use each",
+        "Memory enhancements",
+        "Enable optional behavior for the selected main strategy. Changes apply immediately.",
+        "Active capture",
+        "Identify and retain durable facts from the current conversation",
+        "Light context",
+        "Reduce resident content while keeping on-demand reads available",
+        "Scoped composition",
+        "Compose currently available memory sources in a stable order"
+      ]
+    }
+  ],
+  "consoleErrors": [],
+  "verification": {
+    "verify": {
+      "documentationLinks": 2104,
+      "anchors": 81,
+      "deterministicFiles": 42,
+      "workspacePackages": 17,
+      "rootTests": {
+        "passed": 1417,
+        "skipped": 6
+      },
+      "headlessTools": 37,
+      "packedFiles": 52
+    },
+    "verifyPlugins": {
+      "independentRepositories": 17,
+      "packedArtifacts": 18,
+      "upgradeFrom": "0.5.15"
+    },
+    "releaseIntentPackages": 9
+  }
+}

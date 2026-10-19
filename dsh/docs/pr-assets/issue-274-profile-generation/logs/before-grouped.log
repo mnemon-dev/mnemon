@@ -1,0 +1,114 @@
+file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:1603
+		throw new Error(`${binName}: ${stage}: ${detail}${stack}`, { cause });
+		      ^
+
+Error: issue274: plugin tree failed to load: failed to apply loader entry include (cordis:include): failed to apply loader entry mnemon-bundle (cordis:group): failed to import loader entry mnemon (dsh-mnemon): Cannot find package 'dsh-mnemon' imported from <fixture>/desktop/extracted/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'dsh-mnemon' imported from <fixture>/desktop/extracted/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:784:25)
+    at moduleResolve (node:internal/modules/esm/resolve:873:18)
+    at defaultResolve (node:internal/modules/esm/resolve:1006:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:705:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:725:38)
+    at nextStep (node:internal/modules/customization_hooks:189:26)
+    at resolve (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/host-module-fallback.mjs:32:16)
+    at nextStep (node:internal/modules/customization_hooks:189:26)
+    at resolveWithHooks (node:internal/modules/customization_hooks:417:10)
+    at boot (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:1603:9)
+    at async file://<checkout>/docs/pr-assets/issue-274-profile-generation/harness/desktop-import.mjs:54:15 {
+  [cause]: Error: failed to apply loader entry include (cordis:include): failed to apply loader entry mnemon-bundle (cordis:group): failed to import loader entry mnemon (dsh-mnemon): Cannot find package 'dsh-mnemon' imported from <fixture>/desktop/extracted/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
+      at updateError (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:406:16)
+      ... 3 lines matching cause stack trace ...
+      at async EntryGroup.create (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:65:4)
+      at async Proxy.create (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:309:14)
+      at async mountRootInclude (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:1394:20)
+      at async boot (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:1588:3)
+      at async file://<checkout>/docs/pr-assets/issue-274-profile-generation/harness/desktop-import.mjs:54:15 {
+    dshPluginFailure: {
+      stage: 'apply',
+      entryId: 'include',
+      packageName: 'cordis:include',
+      owner: undefined,
+      chain: [
+        {
+          entryId: 'include',
+          packageName: 'cordis:include',
+          baseUrl: 'file://<fixture>/baseline-desktop-web-native/dsh-home/profiles/web/'
+        }
+      ],
+      message: "failed to apply loader entry mnemon-bundle (cordis:group): failed to import loader entry mnemon (dsh-mnemon): Cannot find package 'dsh-mnemon' imported from <fixture>/desktop/extracted/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js"
+    },
+    [cause]: Error: failed to apply loader entry mnemon-bundle (cordis:group): failed to import loader entry mnemon (dsh-mnemon): Cannot find package 'dsh-mnemon' imported from <fixture>/desktop/extracted/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
+        at updateError (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:406:16)
+        at Entry._init (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:640:10)
+        at async Entry.init (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:613:4)
+        at async Entry.update (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:534:37)
+        at async EntryGroup.create (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:65:4)
+        at async Promise.allSettled (index 0)
+        at async EntryGroup.update (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:97:21)
+        at async Include._apply (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js:240:3) {
+      dshPluginFailure: {
+        stage: 'apply',
+        entryId: 'mnemon-bundle',
+        packageName: 'cordis:group',
+        owner: {
+          packageName: 'dsh-mnemon',
+          packageDir: '<fixture>/baseline-desktop-web-native/dsh-home/profiles/web/node_modules/dsh-mnemon',
+          version: '0.5.13'
+        },
+        chain: [
+          {
+            entryId: 'mnemon-bundle',
+            packageName: 'cordis:group',
+            baseUrl: 'file://<fixture>/baseline-desktop-web-native/dsh-home/profiles/web/'
+          },
+          {
+            entryId: 'include',
+            packageName: 'cordis:include',
+            baseUrl: 'file://<fixture>/baseline-desktop-web-native/dsh-home/profiles/web/'
+          }
+        ],
+        message: "failed to import loader entry mnemon (dsh-mnemon): Cannot find package 'dsh-mnemon' imported from <fixture>/desktop/extracted/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js"
+      },
+      [cause]: Error: failed to import loader entry mnemon (dsh-mnemon): Cannot find package 'dsh-mnemon' imported from <fixture>/desktop/extracted/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
+          at updateError (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:406:16)
+          at Entry._init (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:635:10)
+          at async Entry.init (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:613:4)
+          at async Entry.update (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:534:37)
+          at async Group.create (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:65:4)
+          at async Promise.allSettled (index 0)
+          at async Group.update (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:97:21)
+          at async [cordis.init] (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js:142:3)
+          at file://<fixture>/baseline-desktop-web-native/dsh-home/profiles/web/#mnemon-bundle
+          at file://<fixture>/baseline-desktop-web-native/dsh-home/profiles/web/#include {
+        dshPluginFailure: {
+          stage: 'import',
+          entryId: 'mnemon',
+          packageName: 'dsh-mnemon',
+          owner: {
+            packageName: 'dsh-mnemon',
+            packageDir: '<fixture>/baseline-desktop-web-native/dsh-home/profiles/web/node_modules/dsh-mnemon',
+            version: '0.5.13'
+          },
+          chain: [ [Object], [Object], [Object] ],
+          message: "Cannot find package 'dsh-mnemon' imported from <fixture>/desktop/extracted/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js"
+        },
+        [cause]: Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'dsh-mnemon' imported from <fixture>/desktop/extracted/DSH Desktop.app/Contents/Resources/app/node_modules/@deepseek-ai/cordis-plugin-loader/lib/index.js
+            at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+            at packageResolve (node:internal/modules/esm/resolve:784:25)
+            at moduleResolve (node:internal/modules/esm/resolve:873:18)
+            at defaultResolve (node:internal/modules/esm/resolve:1006:11)
+            at #cachedDefaultResolve (node:internal/modules/esm/loader:705:20)
+            at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:725:38)
+            at nextStep (node:internal/modules/customization_hooks:189:26)
+            at resolve (file://<fixture>/desktop/extracted/DSH%20Desktop.app/Contents/Resources/host-module-fallback.mjs:32:16)
+            at nextStep (node:internal/modules/customization_hooks:189:26)
+            at resolveWithHooks (node:internal/modules/customization_hooks:417:10) {
+          code: 'ERR_MODULE_NOT_FOUND'
+        }
+      }
+    }
+  }
+}
+
+Node.js v24.20.0

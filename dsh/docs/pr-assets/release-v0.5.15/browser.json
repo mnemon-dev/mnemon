@@ -1,0 +1,10 @@
+{
+  "background": "linear-gradient(rgb(21, 21, 23), rgb(21, 21, 23)) repeat scroll 0% 0% / auto padding-box border-box, rgb(21, 21, 23) linear-gradient(rgb(97, 102, 107), rgb(97, 102, 107)) repeat scroll 0% 0% / auto padding-box border-box",
+  "recordAfterReload": true,
+  "stableRoots": 1,
+  "surface": "sidebar",
+  "viewport": {
+    "height": 720,
+    "width": 1280
+  }
+}

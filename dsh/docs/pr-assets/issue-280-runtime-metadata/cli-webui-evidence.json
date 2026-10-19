@@ -1,0 +1,47 @@
+{
+  "cli": {
+    "version": "0.2.9",
+    "store": "default",
+    "query": "NATIVE280_CHECK",
+    "recall": {
+      "results": [
+        {
+          "id": "715864d5-641a-4724-a8e1-bf8ba30039f9",
+          "content": "NATIVE280_CHECK: The disposable project uses SQLite WAL for durable storage.",
+          "category": "fact",
+          "importance": 4,
+          "intent": "GENERAL",
+          "matched_via": "hybrid",
+          "confidence": "medium",
+          "score": 0.45
+        }
+      ],
+      "hint": "sparse_results"
+    }
+  },
+  "browser": {
+    "keywordModeVisible": true,
+    "providerVisible": true,
+    "recordIdPrefixVisible": true,
+    "exactContentVisible": true,
+    "oneResultVisible": true,
+    "searchMode": "keyword",
+    "screenshot": "native-cli-webui-recall.png"
+  },
+  "documents": {
+    "createdInWebUI": true,
+    "id": "7a9ce5f8-cce4-4a3d-8128-2cac38ded72d",
+    "title": "Metadata acceptance notes",
+    "relativePath": "documents/active/metadata-acceptance-notes-7a9ce5f8.md",
+    "revision": 1,
+    "searchQuery": "DOC280_CHECK",
+    "visibleMatches": 1
+  },
+  "runtime": {
+    "added": true,
+    "replaced": true,
+    "removed": true,
+    "originalSeedCount": 3,
+    "finalEntryCount": 3
+  }
+}

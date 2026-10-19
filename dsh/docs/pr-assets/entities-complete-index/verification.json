@@ -1,0 +1,314 @@
+{
+  "verifiedAt": "2026-10-04",
+  "revision": {
+    "baseline": "2729237a4871a01c66d3bc2fc8ce56a1eec0a602",
+    "fix": "a0ded7ec2e49ba2489bfc1ee960a85812151a05e"
+  },
+  "environment": {
+    "os": "macOS 15.6 arm64",
+    "node": "24.19.0",
+    "mnemonCli": "0.2.9",
+    "browser": "headless Google Chrome 154, 1280x800, zh-CN, light",
+    "hosts": [
+      "DSH 0.2.0-rc.2",
+      "DSH 0.1.7-rc.2"
+    ],
+    "fixture": "scripts/serve-e2e.mjs with synthetic Native spaces copied into its MNEMON_DATA_DIR",
+    "dshModified": false
+  },
+  "syntheticSpaces": {
+    "Atlas 架构决策": "14 memories, 12 carry Atlas, 29 entities",
+    "Atlas 发布与环境": "12 memories, 5 carry Atlas, 1 carries WebUI outside the space's top 20, 23 entities",
+    "Atlas 前端约定": "5 memories, all carry Atlas, 3 carry WebUI, 8 entities",
+    "平台实验室": "4 memories, 3 mention Atlas without carrying it, 7 entities"
+  },
+  "webui": {
+    "before": {
+      "020": {
+        "railEntities": 52,
+        "spaces": [
+          "Atlas 架构决策 Mnemon Native 事实、实体与类型关系 实体索引 20 条可观察",
+          "Atlas 发布与环境 Mnemon Native 事实、实体与类型关系 实体索引 20 条可观察",
+          "Atlas 前端约定 Mnemon Native 事实、实体与类型关系 实体索引 8 条可观察",
+          "平台实验室 Mnemon Native 事实、实体与类型关系 实体索引 7 条可观察"
+        ],
+        "rapidSwitchSettlesOn": "WebUI",
+        "consoleErrors": [],
+        "Atlas": {
+          "railCount": 22,
+          "listCount": 20,
+          "related": null,
+          "footers": [
+            "当前显示 6 / 20"
+          ],
+          "firstCardMs": 614
+        },
+        "WebUI": {
+          "railCount": 3,
+          "listCount": 8,
+          "related": null,
+          "footers": [
+            "当前显示 6 / 8"
+          ],
+          "firstCardMs": 400
+        }
+      },
+      "017": {
+        "railEntities": 52,
+        "spaces": [
+          "Atlas 架构决策 Mnemon Native 事实、实体与类型关系 实体索引 20 条可观察",
+          "Atlas 发布与环境 Mnemon Native 事实、实体与类型关系 实体索引 20 条可观察",
+          "Atlas 前端约定 Mnemon Native 事实、实体与类型关系 实体索引 8 条可观察",
+          "平台实验室 Mnemon Native 事实、实体与类型关系 实体索引 7 条可观察"
+        ],
+        "rapidSwitchSettlesOn": "WebUI",
+        "consoleErrors": [],
+        "Atlas": {
+          "railCount": 22,
+          "listCount": 20,
+          "related": null,
+          "footers": [
+            "当前显示 6 / 20"
+          ],
+          "firstCardMs": 1891
+        },
+        "WebUI": {
+          "railCount": 3,
+          "listCount": 8,
+          "related": null,
+          "footers": [
+            "当前显示 6 / 8"
+          ],
+          "firstCardMs": 783
+        }
+      }
+    },
+    "after": {
+      "020": {
+        "railEntities": 63,
+        "spaces": [
+          "Atlas 架构决策 Mnemon Native 事实、实体与类型关系 实体索引 29 个实体",
+          "Atlas 发布与环境 Mnemon Native 事实、实体与类型关系 实体索引 23 个实体",
+          "Atlas 前端约定 Mnemon Native 事实、实体与类型关系 实体索引 8 个实体",
+          "平台实验室 Mnemon Native 事实、实体与类型关系 实体索引 7 个实体"
+        ],
+        "rapidSwitchSettlesOn": "WebUI",
+        "consoleErrors": [],
+        "Atlas": {
+          "railCount": 22,
+          "listCount": 22,
+          "related": null,
+          "footers": [
+            "当前显示 6 / 22"
+          ],
+          "firstCardMs": 97,
+          "relatedSection": {
+            "button": "查找相关记忆",
+            "expanded": false
+          }
+        },
+        "WebUI": {
+          "railCount": 4,
+          "listCount": 4,
+          "related": null,
+          "footers": [
+            "当前显示 4 / 4"
+          ],
+          "firstCardMs": 91,
+          "relatedSection": {
+            "button": "查找相关记忆",
+            "expanded": false
+          },
+          "findRelated": {
+            "related": 4,
+            "relatedMs": 829,
+            "button": "收起"
+          }
+        },
+        "nextEntityAfterFindRelated": {
+          "entity": "Atlas",
+          "listCount": 22,
+          "related": 5,
+          "expanded": true
+        }
+      },
+      "017": {
+        "railEntities": 63,
+        "spaces": [
+          "Atlas 架构决策 Mnemon Native 事实、实体与类型关系 实体索引 29 个实体",
+          "Atlas 发布与环境 Mnemon Native 事实、实体与类型关系 实体索引 23 个实体",
+          "Atlas 前端约定 Mnemon Native 事实、实体与类型关系 实体索引 8 个实体",
+          "平台实验室 Mnemon Native 事实、实体与类型关系 实体索引 7 个实体"
+        ],
+        "rapidSwitchSettlesOn": "WebUI",
+        "consoleErrors": [],
+        "Atlas": {
+          "railCount": 22,
+          "listCount": 22,
+          "related": null,
+          "footers": [
+            "当前显示 6 / 22"
+          ],
+          "firstCardMs": 99,
+          "relatedSection": {
+            "button": "查找相关记忆",
+            "expanded": false
+          }
+        },
+        "WebUI": {
+          "railCount": 4,
+          "listCount": 4,
+          "related": null,
+          "footers": [
+            "当前显示 4 / 4"
+          ],
+          "firstCardMs": 95,
+          "relatedSection": {
+            "button": "查找相关记忆",
+            "expanded": false
+          },
+          "findRelated": {
+            "related": 4,
+            "relatedMs": 719,
+            "button": "收起"
+          }
+        },
+        "nextEntityAfterFindRelated": {
+          "entity": "Atlas",
+          "listCount": 22,
+          "related": 5,
+          "expanded": true
+        }
+      }
+    }
+  },
+  "scale": {
+    "data": "4 synthetic Native spaces x 500 memories, 139 entities; real Source and Mnemon Native Provider; medians of 3",
+    "before": {
+      "label": "before",
+      "rail": {
+        "coldMs": 94,
+        "warmMs": 79,
+        "entities": 24,
+        "listed": 24
+      },
+      "clicks": {
+        "Release": {
+          "railCount": 855,
+          "listed": 20,
+          "related": 0,
+          "firstContentMs": 1718,
+          "allMs": 1718
+        },
+        "Atlas": {
+          "railCount": 211,
+          "listed": 20,
+          "related": 0,
+          "firstContentMs": 1608,
+          "allMs": 1608
+        },
+        "Component010": {
+          "railCount": 86,
+          "listed": 20,
+          "related": 0,
+          "firstContentMs": 1547,
+          "allMs": 1547
+        }
+      },
+      "api": "entities(entity)"
+    },
+    "after": {
+      "label": "after",
+      "rail": {
+        "coldMs": 158,
+        "warmMs": 92,
+        "entities": 139,
+        "listed": 139
+      },
+      "clicks": {
+        "Release": {
+          "railCount": 855,
+          "listed": 855,
+          "related": 0,
+          "firstContentMs": 7,
+          "allMs": 1833
+        },
+        "Atlas": {
+          "railCount": 211,
+          "listed": 211,
+          "related": 2,
+          "firstContentMs": 7,
+          "allMs": 1495
+        },
+        "Component010": {
+          "railCount": 86,
+          "listed": 86,
+          "related": 4,
+          "firstContentMs": 10,
+          "allMs": 1674
+        }
+      },
+      "api": "entity-memories + entity-related",
+      "rapid": {
+        "from": "Atlas",
+        "to": "Component010",
+        "toMemoriesMs": 2,
+        "toRelatedMs": 1342,
+        "firstRelated": "superseded by a newer entity selection",
+        "totalMs": 1796
+      }
+    }
+  },
+  "reportedExport": {
+    "data": "a copy of the export behind the report: 4 active Native spaces, 31 memories; counts only, no content recorded",
+    "before": {
+      "railEntities": 62,
+      "distinctEntities": 129,
+      "dsh-mnemon": {
+        "railCount": 22,
+        "listed": 5
+      },
+      "UI": {
+        "railCount": 5,
+        "carrying": 6,
+        "listed": 10,
+        "listedWithEmbeddings": 9
+      }
+    },
+    "after": {
+      "railEntities": 126,
+      "railMatchesOverviewGraph": true,
+      "dsh-mnemon": {
+        "railCount": 22,
+        "listed": 22,
+        "foundRelated": 4
+      },
+      "UI": {
+        "railCount": 6,
+        "listed": 6,
+        "foundRelated": 4
+      },
+      "DSH": {
+        "railCount": 11,
+        "listed": 11
+      },
+      "WebUI": {
+        "railCount": 6,
+        "listed": 6
+      }
+    },
+    "note": "126 merges spellings that differ only in case; the 129 distinct entities count them separately"
+  },
+  "tests": {
+    "memorySpaces": "216 passed, 2 skipped; new: 10 entity-index and 9 Entities page tests",
+    "root": "1,611 passed, 6 skipped; presentation baseline updated",
+    "verify": "pnpm run verify passes; package 1,524,506 unpacked bytes"
+  },
+  "screenshots": {
+    "before-atlas.jpg": "5dd1497e1e37d8d468b71efbcc896dd8616c0f080f02a1bed20c915b4af6d630",
+    "before-webui.jpg": "ddd4f6f6d8fdc9b1c0e93a2478ecb3f7aef3b21880c05a09a4535df021a0010a",
+    "after-atlas.jpg": "3c6d33a79a9582fc18886205d0aebd796a54fda5766eeb62c54bd68dfd92118f",
+    "after-collapsed.jpg": "47d128b7b324e215be01405d325c6b3b1086860bf6018537c761f38fef02a92e",
+    "after-related.jpg": "0a3871de447ed296e408018d8a59c96695065efedd55ee80cb4a11e10bd98e7f"
+  }
+}

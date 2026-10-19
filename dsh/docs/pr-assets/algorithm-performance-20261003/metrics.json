@@ -1,0 +1,776 @@
+{
+  "baseline": {
+    "schemaVersion": 1,
+    "date": "2026-10-03",
+    "revision": "d13d9c1ab118e01926c0e60fbf273de8457872df",
+    "node": "v25.1.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4",
+    "sizes": [
+      1,
+      10,
+      100,
+      1000
+    ],
+    "samples": 9,
+    "warmups": 3
+  },
+  "optimized": {
+    "schemaVersion": 1,
+    "date": "2026-10-03",
+    "revision": "b6cf5ca7e7cbe58da9bc4158287818b8d94948d4",
+    "node": "v25.1.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M4",
+    "sizes": [
+      1,
+      10,
+      100,
+      1000
+    ],
+    "samples": 9,
+    "warmups": 3
+  },
+  "harnessSha256": {
+    "tests/algorithm-performance.measure.ts": "3e6ceb962c256743a1e5c2e16801c7f58a88acd4bc6e00280bf8ec61bab8f4d6",
+    "scripts/benchmark-algorithms.config.ts": "ce608482993d7be06ae605567d50a791cd16ea828b743f02af27a8f366020629"
+  },
+  "measurements": [
+    {
+      "name": "runtime.snapshot",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.02325,
+      "afterMedianMs": 0.019321,
+      "beforeP95SampleMeanMs": 0.034046,
+      "afterP95SampleMeanMs": 0.032563,
+      "medianRatioBeforeAfter": 1.203
+    },
+    {
+      "name": "runtime.projection",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.101875,
+      "afterMedianMs": 0.103267,
+      "beforeP95SampleMeanMs": 0.138346,
+      "afterP95SampleMeanMs": 0.125342,
+      "medianRatioBeforeAfter": 0.987
+    },
+    {
+      "name": "runtime.compact",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.496338,
+      "afterMedianMs": 0.513583,
+      "beforeP95SampleMeanMs": 0.608521,
+      "afterP95SampleMeanMs": 0.548137,
+      "medianRatioBeforeAfter": 0.966
+    },
+    {
+      "name": "runtime.write",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.6108,
+      "afterMedianMs": 0.461521,
+      "beforeP95SampleMeanMs": 0.858496,
+      "afterP95SampleMeanMs": 0.565096,
+      "medianRatioBeforeAfter": 1.323
+    },
+    {
+      "name": "documents.catalog",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.078096,
+      "afterMedianMs": 0.0811,
+      "beforeP95SampleMeanMs": 0.096609,
+      "afterP95SampleMeanMs": 0.09265,
+      "medianRatioBeforeAfter": 0.963
+    },
+    {
+      "name": "documents.search",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.268271,
+      "afterMedianMs": 0.269992,
+      "beforeP95SampleMeanMs": 0.539963,
+      "afterP95SampleMeanMs": 0.568708,
+      "medianRatioBeforeAfter": 0.994
+    },
+    {
+      "name": "documents.write",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.434196,
+      "afterMedianMs": 0.417771,
+      "beforeP95SampleMeanMs": 0.478329,
+      "afterP95SampleMeanMs": 0.516087,
+      "medianRatioBeforeAfter": 1.039
+    },
+    {
+      "name": "holographic.search",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.021063,
+      "afterMedianMs": 0.0188,
+      "beforeP95SampleMeanMs": 0.422179,
+      "afterP95SampleMeanMs": 0.031704,
+      "medianRatioBeforeAfter": 1.12
+    },
+    {
+      "name": "holographic.related",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.017,
+      "afterMedianMs": 0.016458,
+      "beforeP95SampleMeanMs": 0.033242,
+      "afterP95SampleMeanMs": 0.017487,
+      "medianRatioBeforeAfter": 1.033
+    },
+    {
+      "name": "holographic.write",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.176842,
+      "afterMedianMs": 0.164333,
+      "beforeP95SampleMeanMs": 0.623808,
+      "afterP95SampleMeanMs": 0.176538,
+      "medianRatioBeforeAfter": 1.076
+    },
+    {
+      "name": "registry.discovery",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.013396,
+      "afterMedianMs": 0.012546,
+      "beforeP95SampleMeanMs": 0.027346,
+      "afterP95SampleMeanMs": 0.026254,
+      "medianRatioBeforeAfter": 1.068
+    },
+    {
+      "name": "registry.native-catalog",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.029108,
+      "afterMedianMs": 0.0275,
+      "beforeP95SampleMeanMs": 0.039733,
+      "afterP95SampleMeanMs": 0.044867,
+      "medianRatioBeforeAfter": 1.058
+    },
+    {
+      "name": "recall.federated",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.018075,
+      "afterMedianMs": 0.016729,
+      "beforeP95SampleMeanMs": 0.038433,
+      "afterP95SampleMeanMs": 0.034667,
+      "medianRatioBeforeAfter": 1.08
+    },
+    {
+      "name": "recall.pinned",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.019279,
+      "afterMedianMs": 0.016008,
+      "beforeP95SampleMeanMs": 0.023183,
+      "afterP95SampleMeanMs": 0.018713,
+      "medianRatioBeforeAfter": 1.204
+    },
+    {
+      "name": "storage.batch-prepare",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.005846,
+      "afterMedianMs": 0.006862,
+      "beforeP95SampleMeanMs": 0.013284,
+      "afterP95SampleMeanMs": 0.013529,
+      "medianRatioBeforeAfter": 0.852
+    },
+    {
+      "name": "storage.batch-grouping",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.002158,
+      "afterMedianMs": 0.002433,
+      "beforeP95SampleMeanMs": 0.003975,
+      "afterP95SampleMeanMs": 0.004592,
+      "medianRatioBeforeAfter": 0.887
+    },
+    {
+      "name": "core.compose",
+      "n": 1,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 11.217712,
+      "afterMedianMs": 10.681637,
+      "beforeP95SampleMeanMs": 17.359588,
+      "afterP95SampleMeanMs": 12.23685,
+      "medianRatioBeforeAfter": 1.05
+    },
+    {
+      "name": "runtime.snapshot",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.033129,
+      "afterMedianMs": 0.033167,
+      "beforeP95SampleMeanMs": 0.034312,
+      "afterP95SampleMeanMs": 0.033954,
+      "medianRatioBeforeAfter": 0.999
+    },
+    {
+      "name": "runtime.projection",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.122541,
+      "afterMedianMs": 0.1192,
+      "beforeP95SampleMeanMs": 0.135208,
+      "afterP95SampleMeanMs": 0.136425,
+      "medianRatioBeforeAfter": 1.028
+    },
+    {
+      "name": "runtime.compact",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.510092,
+      "afterMedianMs": 0.505462,
+      "beforeP95SampleMeanMs": 0.570766,
+      "afterP95SampleMeanMs": 0.561163,
+      "medianRatioBeforeAfter": 1.009
+    },
+    {
+      "name": "runtime.write",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.478858,
+      "afterMedianMs": 0.484425,
+      "beforeP95SampleMeanMs": 0.510583,
+      "afterP95SampleMeanMs": 0.531783,
+      "medianRatioBeforeAfter": 0.989
+    },
+    {
+      "name": "documents.catalog",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.096475,
+      "afterMedianMs": 0.106854,
+      "beforeP95SampleMeanMs": 0.138417,
+      "afterP95SampleMeanMs": 0.126209,
+      "medianRatioBeforeAfter": 0.903
+    },
+    {
+      "name": "documents.search",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.573483,
+      "afterMedianMs": 0.5803,
+      "beforeP95SampleMeanMs": 0.590162,
+      "afterP95SampleMeanMs": 0.626842,
+      "medianRatioBeforeAfter": 0.988
+    },
+    {
+      "name": "documents.write",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.485371,
+      "afterMedianMs": 0.481271,
+      "beforeP95SampleMeanMs": 0.549267,
+      "afterP95SampleMeanMs": 0.713025,
+      "medianRatioBeforeAfter": 1.009
+    },
+    {
+      "name": "holographic.search",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.055133,
+      "afterMedianMs": 0.054446,
+      "beforeP95SampleMeanMs": 0.060308,
+      "afterP95SampleMeanMs": 0.065621,
+      "medianRatioBeforeAfter": 1.013
+    },
+    {
+      "name": "holographic.related",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.048321,
+      "afterMedianMs": 0.045596,
+      "beforeP95SampleMeanMs": 0.057225,
+      "afterP95SampleMeanMs": 0.048825,
+      "medianRatioBeforeAfter": 1.06
+    },
+    {
+      "name": "holographic.write",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.189875,
+      "afterMedianMs": 0.185329,
+      "beforeP95SampleMeanMs": 0.199279,
+      "afterP95SampleMeanMs": 0.203513,
+      "medianRatioBeforeAfter": 1.025
+    },
+    {
+      "name": "registry.discovery",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.031542,
+      "afterMedianMs": 0.032746,
+      "beforeP95SampleMeanMs": 0.037937,
+      "afterP95SampleMeanMs": 0.038221,
+      "medianRatioBeforeAfter": 0.963
+    },
+    {
+      "name": "registry.native-catalog",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.061767,
+      "afterMedianMs": 0.063812,
+      "beforeP95SampleMeanMs": 0.068371,
+      "afterP95SampleMeanMs": 0.074517,
+      "medianRatioBeforeAfter": 0.968
+    },
+    {
+      "name": "recall.federated",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.128196,
+      "afterMedianMs": 0.100379,
+      "beforeP95SampleMeanMs": 0.137933,
+      "afterP95SampleMeanMs": 0.123488,
+      "medianRatioBeforeAfter": 1.277
+    },
+    {
+      "name": "recall.pinned",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.383863,
+      "afterMedianMs": 0.092975,
+      "beforeP95SampleMeanMs": 0.400183,
+      "afterP95SampleMeanMs": 0.103258,
+      "medianRatioBeforeAfter": 4.129
+    },
+    {
+      "name": "storage.batch-prepare",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.262779,
+      "afterMedianMs": 0.034942,
+      "beforeP95SampleMeanMs": 0.403763,
+      "afterP95SampleMeanMs": 0.044113,
+      "medianRatioBeforeAfter": 7.521
+    },
+    {
+      "name": "storage.batch-grouping",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.008642,
+      "afterMedianMs": 0.005921,
+      "beforeP95SampleMeanMs": 0.010571,
+      "afterP95SampleMeanMs": 0.006054,
+      "medianRatioBeforeAfter": 1.46
+    },
+    {
+      "name": "core.compose",
+      "n": 10,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 11.03925,
+      "afterMedianMs": 11.239021,
+      "beforeP95SampleMeanMs": 13.298913,
+      "afterP95SampleMeanMs": 14.907904,
+      "medianRatioBeforeAfter": 0.982
+    },
+    {
+      "name": "runtime.snapshot",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.16725,
+      "afterMedianMs": 0.173717,
+      "beforeP95SampleMeanMs": 0.180966,
+      "afterP95SampleMeanMs": 0.222321,
+      "medianRatioBeforeAfter": 0.963
+    },
+    {
+      "name": "runtime.projection",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.305616,
+      "afterMedianMs": 0.310637,
+      "beforeP95SampleMeanMs": 0.334596,
+      "afterP95SampleMeanMs": 0.376588,
+      "medianRatioBeforeAfter": 0.984
+    },
+    {
+      "name": "runtime.compact",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 1.113696,
+      "afterMedianMs": 0.796342,
+      "beforeP95SampleMeanMs": 1.244088,
+      "afterP95SampleMeanMs": 0.819754,
+      "medianRatioBeforeAfter": 1.399
+    },
+    {
+      "name": "runtime.write",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.64195,
+      "afterMedianMs": 0.645392,
+      "beforeP95SampleMeanMs": 0.674613,
+      "afterP95SampleMeanMs": 0.731292,
+      "medianRatioBeforeAfter": 0.995
+    },
+    {
+      "name": "documents.catalog",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.395725,
+      "afterMedianMs": 0.392596,
+      "beforeP95SampleMeanMs": 0.491875,
+      "afterP95SampleMeanMs": 0.499113,
+      "medianRatioBeforeAfter": 1.008
+    },
+    {
+      "name": "documents.search",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 3.923283,
+      "afterMedianMs": 2.321829,
+      "beforeP95SampleMeanMs": 6.774962,
+      "afterP95SampleMeanMs": 2.440733,
+      "medianRatioBeforeAfter": 1.69
+    },
+    {
+      "name": "documents.write",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 1.159017,
+      "afterMedianMs": 1.074179,
+      "beforeP95SampleMeanMs": 1.355946,
+      "afterP95SampleMeanMs": 1.159229,
+      "medianRatioBeforeAfter": 1.079
+    },
+    {
+      "name": "holographic.search",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.404779,
+      "afterMedianMs": 0.375829,
+      "beforeP95SampleMeanMs": 0.42125,
+      "afterP95SampleMeanMs": 0.395617,
+      "medianRatioBeforeAfter": 1.077
+    },
+    {
+      "name": "holographic.related",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.343408,
+      "afterMedianMs": 0.305838,
+      "beforeP95SampleMeanMs": 0.3595,
+      "afterP95SampleMeanMs": 0.319425,
+      "medianRatioBeforeAfter": 1.123
+    },
+    {
+      "name": "holographic.write",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.334,
+      "afterMedianMs": 0.341117,
+      "beforeP95SampleMeanMs": 0.350604,
+      "afterP95SampleMeanMs": 0.358325,
+      "medianRatioBeforeAfter": 0.979
+    },
+    {
+      "name": "registry.discovery",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.226471,
+      "afterMedianMs": 0.194371,
+      "beforeP95SampleMeanMs": 0.241883,
+      "afterP95SampleMeanMs": 0.215375,
+      "medianRatioBeforeAfter": 1.165
+    },
+    {
+      "name": "registry.native-catalog",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.386475,
+      "afterMedianMs": 0.353583,
+      "beforeP95SampleMeanMs": 0.433563,
+      "afterP95SampleMeanMs": 0.3842,
+      "medianRatioBeforeAfter": 1.093
+    },
+    {
+      "name": "recall.federated",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 3.0452,
+      "afterMedianMs": 0.969575,
+      "beforeP95SampleMeanMs": 3.251771,
+      "afterP95SampleMeanMs": 2.391775,
+      "medianRatioBeforeAfter": 3.141
+    },
+    {
+      "name": "recall.pinned",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 21.859771,
+      "afterMedianMs": 0.902046,
+      "beforeP95SampleMeanMs": 24.080712,
+      "afterP95SampleMeanMs": 0.955971,
+      "medianRatioBeforeAfter": 24.234
+    },
+    {
+      "name": "storage.batch-prepare",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 18.044875,
+      "afterMedianMs": 0.222721,
+      "beforeP95SampleMeanMs": 18.259067,
+      "afterP95SampleMeanMs": 0.275996,
+      "medianRatioBeforeAfter": 81.02
+    },
+    {
+      "name": "storage.batch-grouping",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 0.073467,
+      "afterMedianMs": 0.040033,
+      "beforeP95SampleMeanMs": 0.087933,
+      "afterP95SampleMeanMs": 0.048254,
+      "medianRatioBeforeAfter": 1.835
+    },
+    {
+      "name": "core.compose",
+      "n": 100,
+      "iterationsPerSample": 10,
+      "beforeMedianMs": 12.311554,
+      "afterMedianMs": 11.634263,
+      "beforeP95SampleMeanMs": 15.16055,
+      "afterP95SampleMeanMs": 13.612917,
+      "medianRatioBeforeAfter": 1.058
+    },
+    {
+      "name": "runtime.snapshot",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 1.749361,
+      "afterMedianMs": 1.617958,
+      "beforeP95SampleMeanMs": 2.031972,
+      "afterP95SampleMeanMs": 1.755389,
+      "medianRatioBeforeAfter": 1.081
+    },
+    {
+      "name": "runtime.projection",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 2.734875,
+      "afterMedianMs": 2.455583,
+      "beforeP95SampleMeanMs": 3.706333,
+      "afterP95SampleMeanMs": 3.399389,
+      "medianRatioBeforeAfter": 1.114
+    },
+    {
+      "name": "runtime.compact",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 41.346917,
+      "afterMedianMs": 4.047291,
+      "beforeP95SampleMeanMs": 44.989917,
+      "afterP95SampleMeanMs": 4.553041,
+      "medianRatioBeforeAfter": 10.216
+    },
+    {
+      "name": "runtime.write",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 2.982167,
+      "afterMedianMs": 2.570069,
+      "beforeP95SampleMeanMs": 3.83343,
+      "afterP95SampleMeanMs": 2.831764,
+      "medianRatioBeforeAfter": 1.16
+    },
+    {
+      "name": "documents.catalog",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 4.125737,
+      "afterMedianMs": 3.358264,
+      "beforeP95SampleMeanMs": 4.546347,
+      "afterP95SampleMeanMs": 3.567472,
+      "medianRatioBeforeAfter": 1.229
+    },
+    {
+      "name": "documents.search",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 40.483805,
+      "afterMedianMs": 22.164944,
+      "beforeP95SampleMeanMs": 73.252889,
+      "afterP95SampleMeanMs": 24.943458,
+      "medianRatioBeforeAfter": 1.826
+    },
+    {
+      "name": "documents.write",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 9.252195,
+      "afterMedianMs": 7.709111,
+      "beforeP95SampleMeanMs": 9.767611,
+      "afterP95SampleMeanMs": 9.924903,
+      "medianRatioBeforeAfter": 1.2
+    },
+    {
+      "name": "holographic.search",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 4.157625,
+      "afterMedianMs": 3.576986,
+      "beforeP95SampleMeanMs": 4.242653,
+      "afterP95SampleMeanMs": 3.964292,
+      "medianRatioBeforeAfter": 1.162
+    },
+    {
+      "name": "holographic.related",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 3.74575,
+      "afterMedianMs": 3.044097,
+      "beforeP95SampleMeanMs": 3.932806,
+      "afterP95SampleMeanMs": 3.1725,
+      "medianRatioBeforeAfter": 1.23
+    },
+    {
+      "name": "holographic.write",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 2.902472,
+      "afterMedianMs": 2.062625,
+      "beforeP95SampleMeanMs": 3.653389,
+      "afterP95SampleMeanMs": 2.251319,
+      "medianRatioBeforeAfter": 1.407
+    },
+    {
+      "name": "registry.discovery",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 5.31125,
+      "afterMedianMs": 1.819972,
+      "beforeP95SampleMeanMs": 8.601916,
+      "afterP95SampleMeanMs": 2.033472,
+      "medianRatioBeforeAfter": 2.918
+    },
+    {
+      "name": "registry.native-catalog",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 7.038111,
+      "afterMedianMs": 2.92507,
+      "beforeP95SampleMeanMs": 7.308625,
+      "afterP95SampleMeanMs": 3.036222,
+      "medianRatioBeforeAfter": 2.406
+    },
+    {
+      "name": "recall.federated",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 254.007847,
+      "afterMedianMs": 9.833792,
+      "beforeP95SampleMeanMs": 280.917111,
+      "afterP95SampleMeanMs": 20.894611,
+      "medianRatioBeforeAfter": 25.83
+    },
+    {
+      "name": "recall.pinned",
+      "n": 1000,
+      "iterationsPerSample": 1,
+      "beforeMedianMs": 2154.051541,
+      "afterMedianMs": 9.399583,
+      "beforeP95SampleMeanMs": 2357.218708,
+      "afterP95SampleMeanMs": 11.345375,
+      "medianRatioBeforeAfter": 229.165
+    },
+    {
+      "name": "storage.batch-prepare",
+      "n": 1000,
+      "iterationsPerSample": 1,
+      "beforeMedianMs": 1825.664625,
+      "afterMedianMs": 2.209708,
+      "beforeP95SampleMeanMs": 2057.422375,
+      "afterP95SampleMeanMs": 3.245209,
+      "medianRatioBeforeAfter": 826.202
+    },
+    {
+      "name": "storage.batch-grouping",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 1.18893,
+      "afterMedianMs": 0.295403,
+      "beforeP95SampleMeanMs": 4.793375,
+      "afterP95SampleMeanMs": 0.347111,
+      "medianRatioBeforeAfter": 4.025
+    },
+    {
+      "name": "core.compose",
+      "n": 1000,
+      "iterationsPerSample": 3,
+      "beforeMedianMs": 11.439903,
+      "afterMedianMs": 12.355028,
+      "beforeP95SampleMeanMs": 12.055722,
+      "afterP95SampleMeanMs": 12.747417,
+      "medianRatioBeforeAfter": 0.926
+    }
+  ],
+  "workCounts": {
+    "before": [
+      {
+        "name": "runtime.compact",
+        "n": 1,
+        "byteLengthCalls": 5,
+        "byteLengthCharacters": 252
+      },
+      {
+        "name": "runtime.compact",
+        "n": 10,
+        "byteLengthCalls": 23,
+        "byteLengthCharacters": 5139
+      },
+      {
+        "name": "runtime.compact",
+        "n": 100,
+        "byteLengthCalls": 203,
+        "byteLengthCharacters": 330399
+      },
+      {
+        "name": "runtime.compact",
+        "n": 1000,
+        "byteLengthCalls": 2003,
+        "byteLengthCharacters": 31641849
+      }
+    ],
+    "after": [
+      {
+        "name": "runtime.compact",
+        "n": 1,
+        "byteLengthCalls": 6,
+        "byteLengthCharacters": 255
+      },
+      {
+        "name": "runtime.compact",
+        "n": 10,
+        "byteLengthCalls": 24,
+        "byteLengthCharacters": 2397
+      },
+      {
+        "name": "runtime.compact",
+        "n": 100,
+        "byteLengthCalls": 204,
+        "byteLengthCharacters": 24177
+      },
+      {
+        "name": "runtime.compact",
+        "n": 1000,
+        "byteLengthCalls": 2004,
+        "byteLengthCharacters": 245577
+      }
+    ]
+  }
+}

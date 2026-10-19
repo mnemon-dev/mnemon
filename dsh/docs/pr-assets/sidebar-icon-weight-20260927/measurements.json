@@ -1,0 +1,68 @@
+{
+  "dsh": "0.1.7-rc.2",
+  "baseline": "364fe650644fa80d99c02cfed3c3360c4cc47a34",
+  "implementation": "de6cb7fd",
+  "viewport": {
+    "width": 797,
+    "height": 983,
+    "deviceScaleFactor": 2
+  },
+  "beforeExpanded": [
+    {
+      "color": "rgb(249, 250, 251)",
+      "height": 16,
+      "label": "插件",
+      "strokeWidth": "1",
+      "viewBox": "0 0 16 16",
+      "width": 16
+    },
+    {
+      "color": "rgb(249, 250, 251)",
+      "height": 16,
+      "label": "记忆系统",
+      "strokeWidth": "1.5",
+      "viewBox": "0 0 16 16",
+      "width": 16
+    }
+  ],
+  "afterExpanded": [
+    {
+      "color": "rgb(249, 250, 251)",
+      "height": 16,
+      "label": "插件",
+      "strokeWidth": "1",
+      "viewBox": "0 0 16 16",
+      "width": 16
+    },
+    {
+      "color": "rgb(249, 250, 251)",
+      "height": 16,
+      "label": "记忆系统",
+      "strokeWidth": "1",
+      "viewBox": "0 0 16 16",
+      "width": 16
+    }
+  ],
+  "afterCollapsed": [
+    {
+      "height": 18,
+      "label": "插件",
+      "strokeWidth": "1",
+      "viewBox": "0 0 16 16",
+      "width": 18
+    },
+    {
+      "height": 18,
+      "label": "记忆系统",
+      "strokeWidth": "1",
+      "viewBox": "0 0 16 16",
+      "width": 18
+    }
+  ],
+  "interactions": {
+    "collapsedEntryOpensMemory": true,
+    "systemStatusHealthy": true,
+    "runtimeTabOpens": true,
+    "pluginsRoundTripRetainsRuntime": true
+  }
+}

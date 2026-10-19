@@ -1,0 +1,157 @@
+diff --git a/apps/web/tests/fixtures/plugins/fixture-bundle/cordis.patch.yml b/apps/web/tests/fixtures/plugins/fixture-bundle/cordis.patch.yml
+index 8038d9e..e3bf411 100644
+--- a/apps/web/tests/fixtures/plugins/fixture-bundle/cordis.patch.yml
++++ b/apps/web/tests/fixtures/plugins/fixture-bundle/cordis.patch.yml
+@@ -1,8 +1,12 @@
+ # Web e2e fixture bundle with independently localized plugin exports.
+ - insert:
+-    - id: fixture-row
+-      name: '@fixture/bundle'
+-    - id: fixture-search
+-      name: '@fixture/bundle/search'
+-    - id: fixture-review
+-      name: '@fixture/bundle/review'
++    - id: fixture-group
++      name: cordis:group
++      group: true
++      config:
++        - id: fixture-row
++          name: '@fixture/bundle'
++        - id: fixture-search
++          name: '@fixture/bundle/search'
++        - id: fixture-review
++          name: '@fixture/bundle/review'
+diff --git a/packages/boot/plugin-manager/README.i18n.yaml b/packages/boot/plugin-manager/README.i18n.yaml
+index 034b9ef..8689958 100644
+--- a/packages/boot/plugin-manager/README.i18n.yaml
++++ b/packages/boot/plugin-manager/README.i18n.yaml
+@@ -15,8 +15,8 @@
+   en: 87679c51aa3693f5
+   zh: 11684a48a5806afb
+ /deepseek-ai-dsh-plugin-manager/use-this-package:
+-  en: b8d7061ee289b2a0
+-  zh: 49aba7df4761fb23
++  en: df0c92f60dc1c945
++  zh: 68981ea3b89ea5a6
+ /deepseek-ai-dsh-plugin-manager/use-this-package/version-compatibility-and-exemptions:
+   en: 920c0acb3b9feaf3
+   zh: ba6e832a256880a7
+diff --git a/packages/boot/plugin-manager/README.md b/packages/boot/plugin-manager/README.md
+index ca470bc..6adb934 100644
+--- a/packages/boot/plugin-manager/README.md
++++ b/packages/boot/plugin-manager/README.md
+@@ -41,7 +41,7 @@ A plugin toggle updates only `disabled` in the last matching override in the pro
+ 
+ A selected bundle that cannot load remains in `listBundles` with an `error`; `enabled` records the saved selection, not successful loading. The plugin page shows the error and allows deselection. A broken bundle cannot be enabled. Management bundles remain protected if their files become unreadable.
+ 
+-`listBundles` includes optional display `meta` for each bundle and its declared plugin rows, including disabled bundles. The Client selects a language from these values. The separate `description` field is the bundle's raw `package.json.description`; a metadata diagnostic does not block management. The `plugin_manager` tool omits UI display metadata from list results.
++`listBundles` includes optional display `meta` for each bundle and its declared plugin rows, including disabled bundles. Native group containers are omitted; their plugin children remain listed, and patches to a bundle's own groups are not external overrides. The Client selects a language from these values. The separate `description` field is the bundle's raw `package.json.description`; a metadata diagnostic does not block management. The `plugin_manager` tool omits UI display metadata from list results.
+ 
+ `inspect(spec, options)` reads what a spec names before anything installs: a registry name is asked of the registry through `pnpm view`, run in the profile directory so the same proxy and authentication settings apply as to the install; an absolute path has its `package.json` read; a git address or tarball answers only its form and the `host` it is fetched from. The answer carries the name, version, description, whether the package declares a bundle, and the `registry` that answered, or a `problem`: `invalid-spec`, `already-installed`, `not-found`, `not-a-package`, `not-a-bundle`, `network`, or `unknown`, with the `registries` asked. A caller's `signal` or `inspectTimeoutMs` ends the lookup.
+ 
+diff --git a/packages/boot/plugin-manager/README.zh.md b/packages/boot/plugin-manager/README.zh.md
+index 24f9351..e734a1a 100644
+--- a/packages/boot/plugin-manager/README.zh.md
++++ b/packages/boot/plugin-manager/README.zh.md
+@@ -41,7 +41,7 @@ kind: "package-reference"
+ 
+ 已选择但无法加载的组合包仍会出现在 `listBundles` 中，并携带 `error`；`enabled` 表示保存的选择，不代表加载成功。插件页面显示错误并允许取消选择。损坏的组合包无法启用。管理组合包的文件变得不可读后仍受保护。
+ 
+-`listBundles` 为各组合包及其声明的插件行提供可选的展示 `meta`，包括已禁用的组合包。Client 从这些值中选择语言。单独的 `description` 字段是该组合包原始的 `package.json.description`；元信息诊断不会阻止管理操作。`plugin_manager` 工具的列表结果不包含 UI 展示元信息。
++`listBundles` 为各组合包及其声明的插件行提供可选的展示 `meta`，包括已禁用的组合包。原生 group 容器不会列出，其插件子项仍会列出；对组合包自身 group 的 patch 不属于外部覆盖。Client 从这些值中选择语言。单独的 `description` 字段是该组合包原始的 `package.json.description`；元信息诊断不会阻止管理操作。`plugin_manager` 工具的列表结果不包含 UI 展示元信息。
+ 
+ `inspect(spec, options)` 在任何东西安装之前读出 spec 指向什么：注册表包名通过 `pnpm view` 询问注册表，在 profile 目录中运行，因而与安装使用同样的代理与认证设置；绝对路径读取其 `package.json`；git 地址或 tarball 只答复自己的形式和它被拉取的 `host`。答复携带名称、版本、描述、该包是否声明组合包，以及作答的 `registry`，否则给出 `problem`：`invalid-spec`、`already-installed`、`not-found`、`not-a-package`、`not-a-bundle`、`network` 或 `unknown`，并附上问过的 `registries`。调用方的 `signal` 或 `inspectTimeoutMs` 会结束查询。
+ 
+diff --git a/packages/boot/plugin-manager/src/index.ts b/packages/boot/plugin-manager/src/index.ts
+index ea8a94f..b5b3ee2 100644
+--- a/packages/boot/plugin-manager/src/index.ts
++++ b/packages/boot/plugin-manager/src/index.ts
+@@ -625,7 +625,7 @@ export class PluginManager extends TypertRemoteService {
+     }, { stage: 'remove', target: name }, 'remove')
+   }
+ 
+-  /** The rows a bundle's patch inserts and the existing rows it changes; an unreadable patch throws. */
++  /** The non-group plugin rows a bundle inserts and external rows it changes; an unreadable patch throws. */
+   private declaredRows(name: string, info: ProfileManifest): Pick<BundleInfo, 'rows' | 'overrides'> {
+     const bundle = info.dsh?.bundle
+     /* v8 ignore next -- bundleManifest answers only manifests that declare a patch */
+@@ -641,9 +641,12 @@ export class PluginManager extends TypertRemoteService {
+       })
+     }
+     const rows: BundleRowInfo[] = []
++    const declared = new Set<string>()
+     const packages = this.ctx.get('pluginPackages')
+     for (const row of flatten(composeEntries([patches.filter(item => item.insert !== undefined)]))) {
+       if (typeof row.id !== 'string' || typeof row.name !== 'string') continue
++      declared.add(row.id)
++      if (row.group) continue
+       const active = live.get(row.id)
+       const entryId = active?.entryId
+       const base = active?.baseUrl ?? pathToFileURL(join(dir, 'package.json')).href
+@@ -651,7 +654,6 @@ export class PluginManager extends TypertRemoteService {
+       rows.push({ rowId: row.id, moduleName: row.name,
+         ...entryId === undefined ? {} : { entryId }, ...meta === undefined ? {} : { meta } })
+     }
+-    const declared = new Set(rows.map(row => row.rowId))
+     const overrides = [...new Set(patches.flatMap(item =>
+       item.insert === undefined && typeof item.id === 'string' && !declared.has(item.id) ? [item.id] : []))]
+     return { rows, overrides }
+diff --git a/packages/boot/plugin-manager/src/types.ts b/packages/boot/plugin-manager/src/types.ts
+index b87f231..3d53ca4 100644
+--- a/packages/boot/plugin-manager/src/types.ts
++++ b/packages/boot/plugin-manager/src/types.ts
+@@ -63,7 +63,7 @@ export interface BundleInfo {
+   removable: boolean
+   readOnlyReason?: ReadOnlyReason
+   error?: ManagementError
+-  /** The rows the bundle's patch inserts, in declaration order; empty when the patch cannot be read. */
++  /** The non-group plugin rows the bundle inserts, in declaration order; empty when the patch cannot be read. */
+   rows: BundleRowInfo[]
+   /** Ids of rows the bundle's patch changes without declaring them: the built-in rows it configures or disables. */
+   overrides: string[]
+diff --git a/packages/boot/plugin-manager/tests/manager.spec.ts b/packages/boot/plugin-manager/tests/manager.spec.ts
+index caaf31f..ef8a0e4 100644
+--- a/packages/boot/plugin-manager/tests/manager.spec.ts
++++ b/packages/boot/plugin-manager/tests/manager.spec.ts
+@@ -719,6 +719,41 @@ it('addresses children inside profile groups and marks ambiguous ids read-only',
+   expect((await manager.listPlugins()).find(row => row.entryId === 'include:managed')?.readOnlyReason).toBe('unaddressable')
+ })
+ 
++it('lists grouped bundle plugins without exposing native containers as components', async () => {
++  const { ctx, dir, manager, bundle } = await fixture('live', false, (ctx) => { ctx.loader.builtins.group = Group })
++  bundle('grouped', [{ id: 'group', name: 'cordis:group', group: true, config: [
++    { id: 'child', name: './plugin.mjs', config: { service: 'child' } },
++    { id: 'nested-group', name: 'cordis:group', group: true, config: [
++      { id: 'off-child', name: './plugin.mjs', disabled: true, config: { service: 'offChild' } },
++    ] },
++  ] }])
++  const patchPath = join(dir, 'node_modules', 'grouped', 'cordis.patch.yml')
++  const patches = JSON.parse(readFileSync(patchPath, 'utf8')) as PatchOptions[]
++  patches.push({ id: 'group', disabled: false }, { id: 'managed', config: { service: 'managedProbe' } })
++  writeFileSync(patchPath, JSON.stringify(patches))
++  const manifest = readProfileManifest('test', dir)
++  manifest.dependencies = { ...manifest.dependencies, grouped: '1.0.0' }
++  writeFileSync(join(dir, 'package.json'), JSON.stringify(manifest))
++  const moduleName = pathToFileURL(join(dir, 'node_modules', 'grouped', 'plugin.mjs')).href
++  const rows = [{ rowId: 'child', moduleName }, { rowId: 'off-child', moduleName }]
++  expect((await manager.listBundles()).find(row => row.name === 'grouped')).toMatchObject({ rows, overrides: ['managed'] })
++  expect(await manager.setBundleEnabled('grouped', true)).toMatchObject({ application: 'applied' })
++  expect((await manager.listBundles()).find(row => row.name === 'grouped')).toMatchObject({
++    rows: rows.map(row => ({ ...row, entryId: `include:${row.rowId}` })), overrides: ['managed'],
++  })
++  const plugins = await manager.listPlugins()
++  const child = plugins.find(row => row.patchId === 'child')!
++  expect(child.enabled).toBe(true)
++  expect(plugins.find(row => row.patchId === 'off-child')?.enabled).toBe(false)
++  expect(await manager.setPluginEnabled(child.entryId, false)).toMatchObject({ application: 'applied' })
++  expect(ctx.get('child')).toBeUndefined()
++  expect(await manager.setPluginEnabled(child.entryId, true)).toMatchObject({ application: 'applied' })
++  expect(ctx.get('child')).toBe(true)
++  expect(await manager.setBundleEnabled('grouped', false)).toMatchObject({ application: 'applied' })
++  expect(ctx.get('child')).toBeUndefined()
++  expect((await manager.listBundles()).find(row => row.name === 'grouped')).toMatchObject({ rows, overrides: ['managed'] })
++})
++
+ it.each(['', '-g'])('rejects an invalid installation spec before calling pnpm: %j', async (spec) => {
+   const { manager } = await fixture()
+   expect(await manager.installBundle(spec)).toMatchObject({ changed: false, application: 'failed', error: { code: 'invalid-spec' } })

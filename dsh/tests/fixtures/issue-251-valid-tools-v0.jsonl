@@ -1,0 +1,10 @@
+{"type":"session","version":0,"id":"issue-251-tools","createdAt":1789030660066,"cwd":"/tmp/mnemon-issue-251-tools","delegationDepth":0}
+{"type":"turn/start","data":{"turn":1},"seq":0,"time":1789030660068}
+{"type":"step/start","data":{"turn":1,"step":1},"seq":1,"time":1789030660069}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"tool-call-delta","index":0,"id":"call-251","name":"synthetic_lookup","argumentsDelta":"{}"}},"seq":2,"time":1789030660070}
+{"type":"assistant/chunk","data":{"turn":1,"step":1,"chunk":{"type":"block-end","index":0,"block":{"type":"tool-call","id":"call-251","name":"synthetic_lookup","arguments":"{}"}}},"seq":3,"time":1789030660071}
+{"type":"assistant/message","data":{"turn":1,"step":1,"message":{"role":"assistant","content":[{"type":"tool-call","id":"call-251","name":"synthetic_lookup","arguments":"{}"}],"source":{"kind":"model","provider":"fixture","model":"fixture"},"id":"issue-251-assistant"}},"sourceEventSeqs":[[2,3]],"surfaceOp":"append","seq":4,"time":1789030660072}
+{"type":"tool/call","data":{"turn":1,"step":1,"callId":"call-251","name":"synthetic_lookup","arguments":"{}"},"seq":5,"time":1789030660073}
+{"type":"tool/result","data":{"turn":1,"step":1,"message":{"role":"user","content":[{"type":"tool-result","toolCallId":"call-251","content":[{"type":"text","text":"Synthetic tool response."}]}],"source":{"kind":"tool","callId":"call-251"},"id":"issue-251-tool-result"}},"surfaceOp":"append","seq":6,"time":1789030660074}
+{"type":"step/end","data":{"turn":1,"step":1},"seq":7,"time":1789030660075}
+{"type":"turn/end","data":{"turn":1,"reason":{"kind":"completed"}},"seq":8,"time":1789030660076}

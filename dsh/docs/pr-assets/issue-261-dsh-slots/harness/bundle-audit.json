@@ -1,0 +1,142 @@
+{
+  "purpose": "Source-to-repository copy audit of the external portable Issue 261 harness bundle.",
+  "sourceIdentifier": "Exported portable-harness bundle used for the recorded external verification",
+  "recordedRuntimeNode": "v25.1.0",
+  "recordedPlatform": {
+    "platform": "darwin",
+    "arch": "arm64"
+  },
+  "validation": {
+    "javascriptSyntaxChecks": 9,
+    "relativeModuleImports": "all included",
+    "peerManifestFiles": "all included",
+    "jsonFiles": "all parse",
+    "personalPaths": "none",
+    "bootstrapOrAuthUrls": "none",
+    "personalOrApiCredentials": "none; only explicitly fake local-model keys",
+    "headless": [
+      {
+        "cohort": "alpha",
+        "version": "0.1.6-alpha.2",
+        "result": "pass",
+        "nativeVersion": "mnemon version 0.2.8",
+        "enabledMnemonToolCount": 17,
+        "disabledMnemonToolCount": 0,
+        "completedAt": "2026-09-18T03:41:00.148Z"
+      },
+      {
+        "cohort": "rc",
+        "version": "0.1.5-rc.2",
+        "result": "pass",
+        "nativeVersion": "mnemon version 0.2.8",
+        "enabledMnemonToolCount": 17,
+        "disabledMnemonToolCount": 0,
+        "completedAt": "2026-09-18T03:41:00.515Z"
+      }
+    ],
+    "peerRepackIntegrityMatchesRecordedRun": true
+  },
+  "sourceFiles": [
+    {
+      "file": "HARNESS.md",
+      "sourceSha256": "ba8fb1f2e08d01a45b22f8779fb19d6a0f81d2cebdfeb56710b57bfbb9f34011",
+      "copiedSha256": "316b6b47970825af906317c87c430388b9d2c649574825b3dcc334e0c3ae6d93",
+      "identical": false,
+      "reason": "Document host requirements, generated inputs, platform limits, environment inheritance, excluded local runtime files, copy audit, and language cross-links."
+    },
+    {
+      "file": "assemble-fixed-artifacts.mjs",
+      "sourceSha256": "a101bef2ba8d41d4eaeb8b298fca92a95cdcb8a578535efd089d89a47b32db3f",
+      "copiedSha256": "a101bef2ba8d41d4eaeb8b298fca92a95cdcb8a578535efd089d89a47b32db3f",
+      "identical": true
+    },
+    {
+      "file": "compatibility-model.mjs",
+      "sourceSha256": "844f685eb57190e2f414add7cf0bf3af66fb98ef397a82d03cb92a12683207bb",
+      "copiedSha256": "844f685eb57190e2f414add7cf0bf3af66fb98ef397a82d03cb92a12683207bb",
+      "identical": true
+    },
+    {
+      "file": "e2e/framework-peers-alpha.json",
+      "sourceSha256": "25d0bc36224cb75a8b1ba08bbab8f43f2e16966b96e59150c5c3f2395025ef80",
+      "copiedSha256": "25d0bc36224cb75a8b1ba08bbab8f43f2e16966b96e59150c5c3f2395025ef80",
+      "identical": true
+    },
+    {
+      "file": "e2e/framework-peers-rc.json",
+      "sourceSha256": "30bf5ba3e730a6383220b38bebc81d4cd738706559537e8fbd48cef70c11bcde",
+      "copiedSha256": "30bf5ba3e730a6383220b38bebc81d4cd738706559537e8fbd48cef70c11bcde",
+      "identical": true
+    },
+    {
+      "file": "e2e/peer-fixture/client.js",
+      "sourceSha256": "bc6da826562a49d28065859616632da2d21f8aa66fd528860f2aee07a27238aa",
+      "copiedSha256": "bc6da826562a49d28065859616632da2d21f8aa66fd528860f2aee07a27238aa",
+      "identical": true
+    },
+    {
+      "file": "e2e/peer-fixture/cordis.patch.yml",
+      "sourceSha256": "f59e407c0b76f5270386deeeeb3734560b0699b9933e14ea62e00b029a13b2b6",
+      "copiedSha256": "f59e407c0b76f5270386deeeeb3734560b0699b9933e14ea62e00b029a13b2b6",
+      "identical": true
+    },
+    {
+      "file": "e2e/peer-fixture/index.js",
+      "sourceSha256": "4af587d107a43bf9a985ae2769357fc25a481c2057e3374840d24e5d0502ca06",
+      "copiedSha256": "4af587d107a43bf9a985ae2769357fc25a481c2057e3374840d24e5d0502ca06",
+      "identical": true
+    },
+    {
+      "file": "e2e/peer-fixture/package.json",
+      "sourceSha256": "4cf063a361808a92df9bcd308f74b77bb4117615aca301730494ae82dd84fadd",
+      "copiedSha256": "4cf063a361808a92df9bcd308f74b77bb4117615aca301730494ae82dd84fadd",
+      "identical": true
+    },
+    {
+      "file": "evidence-summary.json",
+      "sourceSha256": "f7bb7cb40e4d9ee142e343dd9546e7b902975d6698fc8325b870ffe72cbb774a",
+      "copiedSha256": "fafb4f56dfcfd2724bbad28a8046299eb7f21b8e80215194457a13e7dc76ef7b",
+      "identical": false,
+      "reason": "Preserve results/artifact identities, clarify original source hashes, remove references to excluded raw local files, and add copied-harness validation."
+    },
+    {
+      "file": "framework-pins.mjs",
+      "sourceSha256": "9fc56d492618e9db1fcf637b2b9dac69a1acfdeb13b48dab73127e9807117db2",
+      "copiedSha256": "9fc56d492618e9db1fcf637b2b9dac69a1acfdeb13b48dab73127e9807117db2",
+      "identical": true
+    },
+    {
+      "file": "headless-check.mjs",
+      "sourceSha256": "5b1a38435d9cc781fc238dd66ab5437a10baeb0fbe73250d18e2bb4ce80bfd32",
+      "copiedSha256": "bbf4d9e13ba8a3ce3e01263708af912c5a7a4672f8095874da699b8da0bc46a1",
+      "identical": false,
+      "reason": "Add explicit supported telemetry mode."
+    },
+    {
+      "file": "pack-artifacts.mjs",
+      "sourceSha256": "e695a91b01fa17ef55b8954b24481aee3beea0eb9ad8476d429000c2d47677b0",
+      "copiedSha256": "e695a91b01fa17ef55b8954b24481aee3beea0eb9ad8476d429000c2d47677b0",
+      "identical": true
+    },
+    {
+      "file": "pack-peer-fixture.mjs",
+      "sourceSha256": "66f71ecf5086ec1611e1299d020d34cfde49547760ff027eb8a8a58d6b7c931e",
+      "copiedSha256": "66f71ecf5086ec1611e1299d020d34cfde49547760ff027eb8a8a58d6b7c931e",
+      "identical": true
+    },
+    {
+      "file": "packed-e2e.mjs",
+      "sourceSha256": "bb41816d293e369bea096d50b800c814d58c0de3def66fe4c4a65218868d3b80",
+      "copiedSha256": "288c79642f06a3874d6590d086b23370dd4bb29c277f118950764b76622a4e58",
+      "identical": false,
+      "reason": "Add explicit supported telemetry mode and reject implicit macOS ARM64 baseline pins on other platforms."
+    }
+  ],
+  "repositoryAdditions": [
+    {
+      "file": "HARNESS.zh-CN.md",
+      "sha256": "2f2d61df7efb9afe03d344e1dfd83e54221af559690e32a510e9ee4795282dd1",
+      "provenance": "Chinese translation authored in the repository from HARNESS.md; no source file exists in the original exported bundle."
+    }
+  ]
+}

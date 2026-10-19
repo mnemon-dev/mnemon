@@ -1,0 +1,89 @@
+# Mount the Mnemon bridge into a DSH profile. A profile's final patch may
+# replace this config row as a whole; use user settings or environment
+# variables for one-field overrides such as cliPath.
+- insert:
+    # Keep the v0.4 `mnemon` Entry as the public configuration target while
+    # making every v0.5 component inherit its enabled state. The expression
+    # reads the core row's own flag (rather than its effective state) to avoid
+    # recursing through this ancestor gate. The group itself prepares the
+    # Starter's dependency resolution before it imports its children.
+    - id: mnemon-bundle
+      name: dsh-mnemon/bundle
+      group: true
+      disabled: !!js >-
+        ((entry) => entry.options.disabled?.__jsExpr
+          ? Boolean(entry.evaluate(entry.options.disabled.__jsExpr))
+          : Boolean(entry.options.disabled))
+        ([...loader.entries()].find(entry => entry.options.id === 'mnemon'))
+      config:
+        - id: mnemon
+          # Core/Host and default settings. Sources own their independent Entries.
+          name: dsh-mnemon
+          config:
+            routingGuidance: true
+            lifecycleEnabled: true
+            recallMode: guided
+            writebackMode: guided
+            idleReviewMs: 30000
+            tabEnabled: true
+            writeEnabled: true
+            remoteAccess: read-only
+            timeoutMs: 10000
+            defaultRecallLimit: 10
+            embedding:
+              enabled: false
+              endpoint: http://localhost:11434
+              model: nomic-embed-text
+            recallQuality:
+              policy: strict-v1
+              lowScoreThreshold: 0.25
+              highScoreThreshold: 0.6
+              candidateMultiplier: 3
+              maxMediumResults: 4
+              maxUnknownResults: 2
+        - id: mnemon-source-runtime
+          name: dsh-mnemon-source-runtime
+        - id: mnemon-source-documents
+          name: dsh-mnemon-source-documents
+        - id: mnemon-source-memory-spaces
+          name: dsh-mnemon-source-memory-spaces
+          config:
+            # Every default Provider is an
+            # explicit child. A custom parent composition may choose a subset.
+            providers:
+              - use: dsh-mnemon-provider-mnemon-native
+                instanceId: mnemon-native
+              - use: dsh-mnemon-provider-openviking
+                instanceId: openviking
+              - use: dsh-mnemon-provider-honcho
+                instanceId: honcho
+              - use: dsh-mnemon-provider-mem0
+                instanceId: mem0
+              - use: dsh-mnemon-provider-hindsight
+                instanceId: hindsight
+              - use: dsh-mnemon-provider-holographic
+                instanceId: holographic
+              - use: dsh-mnemon-provider-retaindb
+                instanceId: retaindb
+              - use: dsh-mnemon-provider-byterover
+                instanceId: byterover
+              - use: dsh-mnemon-provider-supermemory
+                instanceId: supermemory
+        - id: mnemon-strategy-default-three-tier
+          name: dsh-mnemon-strategy-default-three-tier
+        # A second main Strategy; memoryView.strategyTypeId selects which one
+        # composes the View. It stays off until selected.
+        - id: mnemon-strategy-general
+          name: dsh-mnemon-strategy-general
+          disabled: true
+        # v0.5 ships these narrowly scoped enhancements with the Starter so the
+        # Settings switches are always available. They remain opt-in.
+        - id: mnemon-strategy-auto-capture
+          name: dsh-mnemon-strategy-auto-capture
+          disabled: true
+        - id: mnemon-strategy-light-context
+          name: dsh-mnemon-strategy-light-context
+          disabled: true
+        - id: mnemon-strategy-scoped
+          name: dsh-mnemon-strategy-scoped
+          disabled: true

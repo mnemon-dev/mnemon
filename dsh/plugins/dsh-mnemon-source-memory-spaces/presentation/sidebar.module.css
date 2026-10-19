@@ -1,0 +1,223 @@
+.shell .memoryWorkspace {
+  position: sticky;
+  z-index: 12;
+  top: 0;
+  flex: 0 0 auto;
+  margin: -20px -24px 16px;
+  padding: 20px 24px 0;
+  border-bottom: .5px solid var(--dsw-alias-border-l2);
+  background: var(--mn-surface);
+}
+.shell .memoryWorkspace > [class*='pageHeader'] { margin-bottom: 12px; }
+/* A page under the Memory Spaces tabs titles its section rather than the page: the DSH group heading scale. */
+.shell .memoryWorkspace ~ [class*='page'] > [class*='pageHeader'] { margin-bottom: 12px; }
+.shell .memoryWorkspace ~ [class*='page'] > [class*='pageHeader'] h2 { font-size: 14px; line-height: 22px; }
+.shell .memoryWorkspace ~ [class*='page'] > [class*='pageHeader'] p { color: var(--dsw-alias-label-tertiary); font-size: 12px; line-height: 18px; }
+/* Keep secondary controls in flow beneath the one pinned Source header. */
+.shell [class*='relatedPane'], .shell [class*='entityRail'] { position: static; }
+
+/* Secondary tabs, as the DSH settings tabs: monochrome underline. */
+.shell .memoryNavigation {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 0;
+}
+
+.shell .memoryTabs {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 22px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.shell .memoryTabs::-webkit-scrollbar { display: none; }
+.shell .memoryTabs button {
+  position: relative;
+  min-width: max-content;
+  min-height: 0;
+  margin-bottom: -.5px;
+  padding: 6px 1px 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  color: var(--dsw-alias-label-tertiary);
+  background: transparent;
+  font-size: 13px;
+  line-height: 20px;
+  cursor: pointer;
+}
+.shell .memoryTabs button:hover { color: var(--dsw-alias-label-primary); }
+.shell .memoryTabs button[data-active] {
+  border-bottom-color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-primary);
+}
+.shell .memoryWriteButton { flex: none; }
+.shell .modal section[class*='supervisedComposer'] { overflow: visible; border: 0; }
+.shell .modal form[class*='supervisedForm'] { padding: 0; }
+.shell .modal [class*='supervisedHeading'] { margin-bottom: 12px; }
+.shell .modal [class*='supervisedHeading'] h3 { display: none; }
+.shell .modal details[class*='advancedWrite'] {
+  margin-top: 16px;
+  overflow: hidden;
+  border: .5px solid var(--dsw-alias-settings-card-stroke);
+  border-radius: var(--dsw-radius-md);
+}
+
+.shell [class*='inspectorEye'],
+.shell [class*='inspectorHeading'] button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--dsw-radius-sm);
+  color: var(--dsw-alias-label-caption);
+  background: transparent;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.shell [class*='inspectorEye']:hover:not(:disabled),
+.shell [class*='inspectorHeading'] button:hover:not(:disabled) {
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.shell [class*='inspectorEye']:disabled {
+  cursor: default;
+  opacity: .4;
+}
+
+.shell [class*='bodyGrid'] {
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+}
+.shell article[class*='bodyCard'] {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+}
+.shell .bodyCardHeader {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.shell .bodyDirectoryActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+}
+.shell .bodyCardIdentity {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  align-items: flex-start;
+  gap: 8px;
+}
+.shell .bodyCardIdentity > [class*='bodySignal'] {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  margin-top: 7px;
+}
+.shell article[class*='bodyCard'][data-reconnecting] .bodyCardIdentity > [class*='bodySignal'] {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+}
+.shell .bodyCardIdentity > div { display: grid; min-width: 0; flex: 1; gap: 2px; }
+.shell .bodyCardIdentity strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell .bodyCardMeta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.shell .bodyCardMeta code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shell .bodyCardMeta [class*='bodyHealth'] { flex: 0 0 auto; }
+.shell .bodyCardHeader > [class*='bodySwitch'] { flex: 0 0 auto; }
+.shell article[class*='bodyCard'] > p {
+  display: -webkit-box;
+  min-height: 40px;
+  max-height: 40px;
+  margin: 10px 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.shell .bodyCardFooter {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 10px;
+  white-space: nowrap;
+}
+.shell .bodyCardStats {
+  display: flex;
+  min-width: 0;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+}
+.shell .bodyCardFooter [class*='bodyCardActions'] {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+.shell [class*='cardActions'] { gap: 8px; }
+
+.shell .inspectorGlyph {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 12px;
+  place-items: center;
+  border: .5px solid var(--dsw-alias-border-l3);
+  border-radius: var(--dsw-radius-lg);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 20px;
+  line-height: 1;
+}
+
+@media (max-width: 760px) {
+  .shell .memoryWorkspace { margin: -16px -16px 16px; padding: 16px 16px 0; }
+}
+
+@media (max-width: 520px) {
+  .shell .memoryTabs { gap: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell [class*='inspectorEye'],
+.shell [class*='inspectorHeading'] button {
+    transition: none;
+  }
+}

@@ -75,6 +75,12 @@ func assertOnlyRootGoModule(t *testing.T, root string) {
 		if entry.IsDir() && (strings.HasPrefix(entry.Name(), ".") || entry.Name() == "dist") {
 			return filepath.SkipDir
 		}
+		// dsh/ is the DeepSeek Harness TypeScript workspace. Its go.mod declares
+		// no Go code; it only keeps the workspace out of the root module zip,
+		// which the root repository layout test guards.
+		if entry.IsDir() && path == filepath.Join(root, "dsh") {
+			return filepath.SkipDir
+		}
 		if !entry.IsDir() && entry.Name() == "go.mod" {
 			relative, err := filepath.Rel(root, path)
 			if err != nil {

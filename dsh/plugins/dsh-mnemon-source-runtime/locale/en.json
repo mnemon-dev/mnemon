@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Runtime memory",
+    "description": "Bounded, deterministic hot memory injected directly into every eligible turn."
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "baselineRevision": "84d469ffa838a36fa579295d94029fcac8ac058e",
+  "dshVersion": "0.1.7-alpha.1",
+  "mnemonCliVersion": "0.2.9",
+  "fixture": "deterministic-openviking-user-key",
+  "actualCloudAccountVerified": false,
+  "attempts": [
+    {
+      "accountField": "",
+      "result": "rejected: API is currently unavailable due to access restrictions",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/admin/accounts",
+        "account": "fixture",
+        "user": "alice",
+        "identityHeaders": false,
+        "uri": null
+      },
+      "screenshot": "before-account-empty.png",
+      "sha256": "8d17f453ce2608bed81c13ac43399dc2a1a77cd7133f1f0007a0d9bb9312460d"
+    },
+    {
+      "accountField": "fixture",
+      "result": "rejected: API is currently unavailable due to access restrictions",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/admin/accounts/fixture/users",
+        "account": "fixture",
+        "user": "alice",
+        "identityHeaders": true,
+        "uri": null
+      },
+      "screenshot": "before-account-filled.png",
+      "sha256": "d7a69054481319327878b7cdd1de511750d2881622826f6c596cb150bfd88f10"
+    }
+  ]
+}

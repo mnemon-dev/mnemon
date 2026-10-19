@@ -1,0 +1,181 @@
+{
+  "format": "aggregate-summary",
+  "archiveManifest": "../runtime-flash-evidence-20260909.json",
+  "testedProductionCommit": "fce3873e9669c9a9eefb902b76ca8d0ddbf68700",
+  "model": "deepseek-v4-flash",
+  "acceptanceDecision": {
+    "status": "pass",
+    "reviewDate": "2026-09-09",
+    "authority": "Explicit user acceptance after review of measured accuracy and observed findings.",
+    "appliesToRuns": [
+      "short-single",
+      "short-four",
+      "long-four"
+    ],
+    "basis": {
+      "correctAnswers": 144,
+      "answerCells": 152,
+      "unknownAnswers": 8,
+      "unsupportedAnswers": 0,
+      "staleAnswers": 0,
+      "crossModuleAnswers": 0,
+      "allTestedCorrectionsCorrect": true,
+      "allDeveloperTurnsCompleted": true
+    },
+    "nonBlockingFindings": [
+      "lossy whole-entry replacements",
+      "missing module attribution",
+      "obsolete active documents",
+      "transient examples retained",
+      "missed recall",
+      "recovered invalid tool calls"
+    ],
+    "originalAutomatedVerdictsPreserved": true,
+    "scope": "Reviewed acceptance of this bounded simulation. Original frozen thresholds, observations and scores remain unchanged; follow-up defects are not represented as fixed."
+  },
+  "config": {
+    "memoryLimitBytes": 10240,
+    "idleReviewMs": 5000,
+    "productionIdleReviewMs": 30000,
+    "recallMode": "guided",
+    "writebackMode": "guided",
+    "acceptance": {
+      "currentFactCoverage": 0.9,
+      "freshRecallAccuracy": 0.9,
+      "forbiddenNoiseMatches": 0,
+      "staleCorrectionAnswers": 0,
+      "crossModuleAnswers": 0,
+      "unsupportedCurrentAnswers": 0,
+      "correctedFactRecall": 1,
+      "noWriteTurnMutations": 0,
+      "exactColdDuplicates": 0,
+      "memoryLimitBytes": 10240
+    }
+  },
+  "runs": [
+    {
+      "id": "short-single",
+      "developerTurns": 48,
+      "freshReaderSessions": 12,
+      "reviews": 40,
+      "modelCalls": 321,
+      "elapsedMs": 273767,
+      "inputTokens": 622608,
+      "outputTokens": 61074,
+      "maximumHotBytes": 7095,
+      "finalHotBytes": 7095,
+      "archiveCycles": 0,
+      "finalRowsByLocation": {
+        "runtime": 22,
+        "document": 6
+      },
+      "missingFacts": [
+        "operations/handoff_channel"
+      ],
+      "retainedNoiseMarkers": [],
+      "recordedAutomatedVerdict": "fail",
+      "recordedViolations": [
+        "execution-errors"
+      ],
+      "currentFactCoverage": 0.9722222222222222,
+      "freshRecallAccuracy": 0.9444444444444444,
+      "correctRecall": 34,
+      "recallCells": 36,
+      "correctedAnswers": 4,
+      "correctedQuestions": 4,
+      "toolErrorCount": 1,
+      "intermediateDevelopmentCheckFailures": 0,
+      "incompleteDevelopmentTurns": [],
+      "waves": 12
+    },
+    {
+      "id": "short-four",
+      "developerTurns": 48,
+      "freshReaderSessions": 12,
+      "reviews": 41,
+      "modelCalls": 299,
+      "elapsedMs": 248769,
+      "inputTokens": 620512,
+      "outputTokens": 62202,
+      "maximumHotBytes": 6684,
+      "finalHotBytes": 6684,
+      "archiveCycles": 0,
+      "finalRowsByLocation": {
+        "runtime": 29,
+        "document": 5
+      },
+      "missingFacts": [],
+      "retainedNoiseMarkers": [
+        "TEMP_USER_android"
+      ],
+      "recordedAutomatedVerdict": "fail",
+      "recordedViolations": [
+        "forbidden-noise-retained",
+        "execution-errors",
+        "development-workload-incomplete"
+      ],
+      "currentFactCoverage": 1,
+      "freshRecallAccuracy": 1,
+      "correctRecall": 36,
+      "recallCells": 36,
+      "correctedAnswers": 4,
+      "correctedQuestions": 4,
+      "toolErrorCount": 3,
+      "intermediateDevelopmentCheckFailures": 2,
+      "incompleteDevelopmentTurns": [],
+      "waves": 12
+    },
+    {
+      "id": "long-four",
+      "developerTurns": 96,
+      "freshReaderSessions": 28,
+      "reviews": 85,
+      "modelCalls": 654,
+      "elapsedMs": 724741,
+      "inputTokens": 3314331,
+      "outputTokens": 169498,
+      "maximumHotBytes": 10079,
+      "finalHotBytes": 5615,
+      "archiveCycles": 0,
+      "finalRowsByLocation": {
+        "runtime": 13,
+        "document": 23
+      },
+      "missingFacts": [],
+      "retainedNoiseMarkers": [
+        "TEMP_USER_frontend",
+        "NO_MEMORY_frontend",
+        "FAKE_CREDENTIAL_frontend"
+      ],
+      "recordedAutomatedVerdict": "fail",
+      "recordedViolations": [
+        "forbidden-noise-retained",
+        "execution-errors"
+      ],
+      "currentFactCoverage": 1,
+      "freshRecallAccuracy": 0.925,
+      "correctRecall": 74,
+      "recallCells": 80,
+      "correctedAnswers": 8,
+      "correctedQuestions": 8,
+      "toolErrorCount": 4,
+      "intermediateDevelopmentCheckFailures": 0,
+      "incompleteDevelopmentTurns": [],
+      "waves": 24,
+      "modelCallBudget": 900
+    }
+  ],
+  "allRunsChecks": {
+    "executionStatus": "completed",
+    "observedModels": [
+      "deepseek-v4-flash"
+    ],
+    "unsupportedAnswers": 0,
+    "staleAnswers": 0,
+    "crossModuleAnswers": 0,
+    "exactColdDuplicates": 0,
+    "noWriteTurnMutations": [],
+    "remainingRootAgents": 0
+  },
+  "manualAdjudication": "All developer turns finished with passing configuration checks. The short-four development-workload-incomplete flag counted two recovered intermediate failures; the original recorded flag remains unchanged."
+}

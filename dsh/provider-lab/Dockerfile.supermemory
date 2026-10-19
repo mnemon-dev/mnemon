@@ -1,0 +1,17 @@
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends ca-certificates curl jq \
+  && rm -rf /var/lib/apt/lists/*
+
+ENV SUPERMEMORY_INSTALL_DIR=/opt/supermemory \
+    SUPERMEMORY_BIN_DIR=/usr/local/bin \
+    SUPERMEMORY_NO_START=1 \
+    SUPERMEMORY_NO_PROMPT=1
+
+RUN curl -fsSL https://supermemory.ai/install | bash
+
+WORKDIR /var/lib/supermemory
+EXPOSE 6767
+ENTRYPOINT ["/opt/supermemory/bin/supermemory-server"]
+

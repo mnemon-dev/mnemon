@@ -1,0 +1,49 @@
+{
+  "verifiedAt": "2026-09-28T20:31:00Z",
+  "revision": {
+    "tested": "94d1e84fa7d82b1528e3c0ebce749a59f41f7392 with pnpm release:version",
+    "release": "4ea87e5b57571e71fb3cb90515bed24aa0e7b9e4 with pnpm release:version (the release pull request); #315 changed documentation only",
+    "packageIdentical": true
+  },
+  "package": {
+    "name": "dsh-mnemon",
+    "version": "0.5.20",
+    "sha256": "c446c553c00043d34c3f178e418499689121ec109090f20ac39ecd00276fb342",
+    "components": "the 17 pinned component packages from npm, unchanged since 0.5.19"
+  },
+  "registry": "a loopback registry with npm's real metadata, every dsh-mnemon publish time moved two days back, and 0.5.20 published 26 hours earlier; a pnpm wrapper sends the npm and npmmirror registries DSH asks to it",
+  "hosts": {
+    "0.2.0-rc.1": {
+      "home": "fresh HOME, DSH home and pnpm store",
+      "flow": "Plugins -> Add plugin -> dsh-mnemon -> Install -> Enable now",
+      "installSource": "chosen by DSH (mainland China mirror)",
+      "installSeconds": 21.8,
+      "enableSeconds": 0.8,
+      "status": { "starter": "0.5.20", "nominal": true, "nativeCli": "0.2.7" },
+      "runtimeWriteAndReadAfterReload": true,
+      "nativeSpaceActive": "1 / 1",
+      "cliRememberAndRecall": true,
+      "webDirectRecallFindsCliFact": true,
+      "hostLaunches": 1,
+      "hostWarnings": [],
+      "consoleErrors": []
+    },
+    "0.1.7-rc.2": {
+      "home": "fresh HOME, DSH home and pnpm store",
+      "flow": "Plugins -> Add plugin -> dsh-mnemon -> Install -> Enable now",
+      "installSource": "chosen by DSH (mainland China mirror)",
+      "installSeconds": 13.2,
+      "enableSeconds": 1.1,
+      "status": { "starter": "0.5.20", "nominal": true, "nativeCli": "0.2.7" },
+      "runtimeWriteAndReadAfterReload": true,
+      "nativeSpaceActive": "1 / 1",
+      "cliRememberAndRecall": true,
+      "webDirectRecallFindsCliFact": true,
+      "hostLaunches": 1,
+      "hostWarnings": [],
+      "consoleErrors": []
+    }
+  },
+  "moreEvidence": ["../starter-group-readiness/validation.json", "../starter-group-upgrade/validation.json"],
+  "environment": { "os": "macOS", "node": "24.19.0", "pnpm": "11.19.0", "mnemonCli": "0.2.7", "browser": "headless Google Chrome over the DevTools protocol", "dshModified": false }
+}

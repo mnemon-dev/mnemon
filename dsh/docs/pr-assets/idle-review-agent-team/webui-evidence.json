@@ -1,0 +1,284 @@
+{
+  "inspectedAt": "2026-09-16T04:35:27.869Z",
+  "model": "Deterministic loopback fixture; no external model API and no model-quality claim.",
+  "hostVersion": "0.1.5-rc.2",
+  "nativeCli": {
+    "version": "mnemon version 0.2.8",
+    "sha256": "f8f21151ce9777983b8d2dfb9cbea1a00b223de6063659af232d04aa57cedad0"
+  },
+  "workload": {
+    "messages": [
+      "review-team-255",
+      "Please continue inspecting the complete synthetic module overview already returned in five chunks. Check the module index carefully and explain the result using those existing chunks. Keep the discussion focused on this disposable test checkpoint."
+    ],
+    "overviewChunks": 5,
+    "overviewEntries": 335,
+    "eligibility": "Normal threshold 5 retained. First short turn scores 2; substantive second turn brings the accumulated activity score to 6."
+  },
+  "baseline": {
+    "packageVersions": {
+      "dsh-experimental-agent-team": "0.1.5-alpha.2",
+      "dsh-experimental-tool-agent-team": "0.1.5-alpha.2"
+    },
+    "mnemonBaseCommit": "1363ebffaf19c9ab4badf0137f6fe87acacaf989",
+    "mnemonRootBuildSha256": "8f177a306962439d6f16fe86d2ca1a7c9fdecdbc0825509e6e3d95f59df0dc4a",
+    "enabledStrategies": [
+      "scoped",
+      "light-context",
+      "auto-capture"
+    ],
+    "idleReviewMs": 5000,
+    "secondsSinceLastLogWriteAtInspection": 582,
+    "counts": {
+      "completedParentTurns": 2,
+      "parentOverviewToolCalls": 5,
+      "childOverviewToolCalls": 0,
+      "childCreated": 1,
+      "childDescriptors": 1,
+      "reviewModelStarts": 1,
+      "teamNotMemberErrors": 1,
+      "childDisposed": 1,
+      "modelHttpRequests": 9
+    },
+    "observations": [
+      {
+        "source": "team-lifecycle",
+        "event": "mounted",
+        "providers": [],
+        "teamService": true
+      },
+      {
+        "source": "team-lifecycle",
+        "event": "created",
+        "agentId": "parent",
+        "origin": "root",
+        "hasDescriptor": false,
+        "teamRole": "lead",
+        "hasTeamSpawnTool": false
+      },
+      {
+        "source": "overview-tool",
+        "actor": "parent",
+        "chunk": 0
+      },
+      {
+        "source": "overview-tool",
+        "actor": "parent",
+        "chunk": 1
+      },
+      {
+        "source": "overview-tool",
+        "actor": "parent",
+        "chunk": 2
+      },
+      {
+        "source": "overview-tool",
+        "actor": "parent",
+        "chunk": 3
+      },
+      {
+        "source": "overview-tool",
+        "actor": "parent",
+        "chunk": 4
+      },
+      {
+        "source": "review-model",
+        "event": "parent-complete",
+        "overviewReads": 5
+      },
+      {
+        "source": "review-model",
+        "event": "parent-complete",
+        "overviewReads": 5
+      },
+      {
+        "source": "team-lifecycle",
+        "event": "created",
+        "agentId": "child-1",
+        "parentId": "parent",
+        "origin": "subagent",
+        "hasDescriptor": false,
+        "teamRole": "lead",
+        "hasTeamSpawnTool": false
+      },
+      {
+        "source": "team-lifecycle",
+        "event": "descriptor-appended",
+        "agentId": "child-1",
+        "parentId": "parent",
+        "origin": "subagent",
+        "hasDescriptor": true,
+        "teamRole": null,
+        "hasTeamSpawnTool": true,
+        "descriptor": {
+          "version": 3,
+          "mode": "one-shot",
+          "provider": "fork",
+          "label": "Mnemon idle checkpoint review"
+        }
+      },
+      {
+        "source": "review-model",
+        "event": "review-start",
+        "inheritedChunks": 5,
+        "entries": 335,
+        "characters": 19112,
+        "foreignToolAdvertised": true
+      },
+      {
+        "source": "team-lifecycle",
+        "event": "error",
+        "agentId": "child-1",
+        "parentId": "parent",
+        "origin": "subagent",
+        "hasDescriptor": true,
+        "teamRole": null,
+        "hasTeamSpawnTool": true,
+        "error": {
+          "name": "TeamError",
+          "code": "TEAM_NOT_MEMBER",
+          "message": "agent \"child-1\" is not a member of an active Agent Team"
+        }
+      },
+      {
+        "source": "team-lifecycle",
+        "event": "subagent-end",
+        "id": "child-1",
+        "provider": "fork"
+      },
+      {
+        "source": "team-lifecycle",
+        "event": "disposed",
+        "agentId": "child-1",
+        "parentId": "parent",
+        "origin": "subagent",
+        "hasDescriptor": true,
+        "teamRole": null,
+        "hasTeamSpawnTool": false
+      },
+      {
+        "source": "team-lifecycle",
+        "event": "catalog-after-dispose",
+        "childId": "child-1",
+        "resident": false,
+        "entries": [
+          {
+            "id": "child-1",
+            "mode": "one-shot",
+            "activity": "inactive",
+            "label": "Mnemon idle checkpoint review"
+          }
+        ]
+      }
+    ]
+  },
+  "fixed": {
+    "packageVersions": {
+      "dsh-experimental-agent-team": "0.1.5-alpha.2",
+      "dsh-experimental-tool-agent-team": "0.1.5-alpha.2"
+    },
+    "mnemonBaseCommit": "1363ebffaf19c9ab4badf0137f6fe87acacaf989",
+    "mnemonRootBuildSha256": "4953e8a3d11673bcd8b933a18860d3e1c1362974427680b807ed7c5463fee46e",
+    "enabledStrategies": [
+      "scoped",
+      "light-context",
+      "auto-capture"
+    ],
+    "idleReviewMs": 5000,
+    "secondsSinceLastLogWriteAtInspection": 190,
+    "counts": {
+      "completedParentTurns": 2,
+      "parentOverviewToolCalls": 5,
+      "childOverviewToolCalls": 0,
+      "childCreated": 0,
+      "childDescriptors": 0,
+      "reviewModelStarts": 0,
+      "teamNotMemberErrors": 0,
+      "childDisposed": 0,
+      "modelHttpRequests": 8
+    },
+    "observations": [
+      {
+        "source": "team-lifecycle",
+        "event": "mounted",
+        "providers": [],
+        "teamService": true
+      },
+      {
+        "source": "team-lifecycle",
+        "event": "created",
+        "agentId": "parent",
+        "origin": "root",
+        "hasDescriptor": false,
+        "teamRole": "lead",
+        "hasTeamSpawnTool": false
+      },
+      {
+        "source": "team-lifecycle",
+        "event": "session-start",
+        "agentId": "parent",
+        "origin": "root",
+        "hasDescriptor": false,
+        "teamRole": "lead",
+        "hasTeamSpawnTool": true
+      },
+      {
+        "source": "overview-tool",
+        "actor": "parent",
+        "chunk": 0
+      },
+      {
+        "source": "overview-tool",
+        "actor": "parent",
+        "chunk": 1
+      },
+      {
+        "source": "overview-tool",
+        "actor": "parent",
+        "chunk": 2
+      },
+      {
+        "source": "overview-tool",
+        "actor": "parent",
+        "chunk": 3
+      },
+      {
+        "source": "overview-tool",
+        "actor": "parent",
+        "chunk": 4
+      },
+      {
+        "source": "review-model",
+        "event": "parent-complete",
+        "overviewReads": 5
+      },
+      {
+        "source": "team-lifecycle",
+        "event": "turn-stopping",
+        "agentId": "parent",
+        "origin": "root",
+        "hasDescriptor": false,
+        "teamRole": "lead",
+        "hasTeamSpawnTool": true,
+        "turn": 1
+      },
+      {
+        "source": "review-model",
+        "event": "parent-complete",
+        "overviewReads": 5
+      },
+      {
+        "source": "team-lifecycle",
+        "event": "turn-stopping",
+        "agentId": "parent",
+        "origin": "root",
+        "hasDescriptor": false,
+        "teamRole": "lead",
+        "hasTeamSpawnTool": true,
+        "turn": 2
+      }
+    ]
+  },
+  "limitation": "Agent Teams alpha.2 still fails for both official rc.2 providers without the Mnemon compatibility skip. The fix pauses automatic memory review for the affected composition before creating a child. It does not repair upstream Team policy or delete historical catalog rows.",
+  "recordingNote": "The baseline telemetry records created, descriptor, error, disposal and catalog events. Session-start and turn-stopping observations were added to the same read-only telemetry plugin for the fixed run. Its original baseline subagent-end observation did not record a stop reason; the separate published-package fixture asserts that result directly."
+}

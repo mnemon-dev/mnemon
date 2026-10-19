@@ -302,7 +302,7 @@ hooks.
 
 ### [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
-DeepSeek Harness (DSH) integrates through the [dsh-mnemon](https://github.com/omdsh-dev/dsh-mnemon) plugin, which layers DSH's runtime memory, managed project documents, and Mnemon's long-term memory spaces into one supervised three-tier memory system.
+DeepSeek Harness (DSH) integrates through the [dsh-mnemon](dsh/README.md) plugin, developed in [`dsh/`](dsh/) of this repository, which layers DSH's runtime memory, managed project documents, and Mnemon's long-term memory spaces into one supervised three-tier memory system.
 
 With `mnemon` installed on the host (see [Install](#install)), add the plugin and restart your DSH Web profile:
 
@@ -311,14 +311,12 @@ dsh plugin --profile web add dsh-mnemon
 dsh --profile web
 ```
 
-The Mnemon repository is also a direct GitHub installation source. Unreleased
-plugin builds can still be installed from the dedicated repository, and local
-development checkouts use an absolute path:
+The Mnemon repository is also a direct GitHub installation source, and a local
+checkout of the plugin workspace installs by its absolute path:
 
 ```bash
 dsh plugin --profile web add github:mnemon-dev/mnemon
-dsh plugin --profile web add "github:omdsh-dev/dsh-mnemon"
-dsh plugin --profile web add "link:/absolute/path/to/dsh-mnemon"
+dsh plugin --profile web add "link:/absolute/path/to/mnemon/dsh"
 ```
 
 New installations from the Mnemon repository resolve the `latest` npm release
@@ -561,6 +559,10 @@ make help           # show all targets
 
 See [Development and Deployment](docs/DEPLOYMENT.md) for Docker, Compose, Ollama embedding, and release setup.
 
+The DeepSeek Harness plugin workspace in [`dsh/`](dsh/) is a separate pnpm
+workspace (TypeScript). Its setup, checks and release process are in
+[dsh/CONTRIBUTING.md](dsh/CONTRIBUTING.md).
+
 ## Documentation
 
 - [Agency Preview](docs/AGENCY.md) — maturity boundary, Pi setup, operating model, completion semantics, and optional peers
@@ -594,6 +596,9 @@ Mnemon combines the paradigm of one paper with the methodology of another, groun
 Copyright 2026 Grivn and Mnemon contributors.
 
 [Apache-2.0](LICENSE)
+
+The DeepSeek Harness plugin workspace in [`dsh/`](dsh/) keeps its own
+[MIT license](dsh/LICENSE).
 
 The bracketed copyright example near the end of `LICENSE` is part of Apache
 2.0's standard application appendix; this section carries the project's actual

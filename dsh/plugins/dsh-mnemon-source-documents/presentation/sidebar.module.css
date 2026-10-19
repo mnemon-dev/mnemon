@@ -1,0 +1,27 @@
+.shell .modal form[class*='documentEditor'] {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.shell .modal form[class*='documentEditor'] > header { display: none; }
+
+.shell [class*='documentWorkspace'] {
+  height: clamp(520px, calc(100dvh - 220px), 760px);
+  min-height: 520px;
+  align-items: stretch;
+}
+.shell [class*='documentList'],
+.shell [class*='documentReader'] {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+@media (max-width: 760px) {
+  .shell [class*='documentWorkspace'] { height: auto; min-height: 0; }
+  .shell [class*='documentList'] { overflow-y: auto; scrollbar-gutter: auto; }
+  .shell [class*='documentReader'] { overflow: visible; scrollbar-gutter: auto; }
+}

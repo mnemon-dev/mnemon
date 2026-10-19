@@ -1,0 +1,10 @@
+{
+  "background": "rgb(224, 247, 237) linear-gradient(115deg, rgba(35, 166, 136, 0.18), rgba(238, 195, 88, 0.16)) repeat scroll 0% 0% / auto padding-box border-box",
+  "bg": "#e0f7ed",
+  "mnemonStyleIndex": 61,
+  "sidebarSurfaceToken": "",
+  "skinStyleIndex": 0,
+  "stableRootCount": 1,
+  "surface": "sidebar",
+  "surfaceToken": "linear-gradient(115deg, rgba(35, 166, 136, .18), rgba(238, 195, 88, .16)) #e0f7ed"
+}

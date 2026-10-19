@@ -1,0 +1,10 @@
+file://<fixture>/baseline-desktop-web-native/dsh-home/profiles/.generations/live/dsh-mnemon+0.5.13+5b2e12f917e4/node_modules/schemastery-live/lib/index.mjs:1
+import { Binary, clone, createVolatile, deepEqual, filterKeys, isNullable, isPlainObject, isVolatile, pick, valueMap } from "@deepseek-ai/cosmokit";
+                        ^^^^^^^^^^^^^^
+SyntaxError: The requested module '@deepseek-ai/cosmokit' does not provide an export named 'createVolatile'
+    at #asyncInstantiate (node:internal/modules/esm/module_job:455:21)
+    at async ModuleJob.run (node:internal/modules/esm/module_job:553:5)
+    at async node:internal/modules/esm/loader:647:26
+    at async file://<checkout>/docs/pr-assets/issue-274-profile-generation/harness/desktop-import.mjs:28:18
+
+Node.js v24.20.0

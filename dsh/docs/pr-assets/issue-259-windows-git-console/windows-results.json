@@ -1,0 +1,377 @@
+{
+  "issue": 259,
+  "runs": [
+    {
+      "id": 35240525857,
+      "url": "https://github.com/omdsh-dev/dsh-mnemon/actions/runs/35240525857",
+      "metadata": {
+        "git": "git version 2.55.0.windows.5",
+        "baselineSha256": "1CAFEEB141E84721FD1E42AFB1A7F546593C32C6535CF5BFEDA12FA1ABB34473",
+        "baselineBlob": "eca1a05ed7fc1b382ed31ccdcbadfbc800afba64",
+        "fixedRevision": "1a9d455004c9204a74b87c920d81b67b3f7b954f",
+        "runnerImageVersion": "20260907.229.1",
+        "baselineRevision": "6da061e8fa51a30ed50c6fff2a4cadcddf7a4a6a",
+        "fixedBlob": "340e4817a695d4807142e12d09bd70e792cec847",
+        "validationRevision": "f5979b854b22a47c1dd77434bb7cacc2a40e5ce7",
+        "runnerImage": "win25-vs2026",
+        "gitPath": "C:\\Program Files\\Git\\bin\\git.exe",
+        "node": "v22.19.0",
+        "nodePath": "C:\\hostedtoolcache\\windows\\node\\22.19.0\\x64\\node.exe",
+        "operatingSystem": {
+          "Caption": "Microsoft Windows Server 2025 Datacenter",
+          "Version": "10.0.26100",
+          "BuildNumber": "26100"
+        },
+        "fixedSha256": "B66C292271C41361CA21214B673D89BB5FA208BC8DDCA683ADF5F8FC5487A00F",
+        "sourcePath": "plugins/dsh-mnemon-source-runtime/src/git-branch.ts"
+      },
+      "observerConsoleHandle": 0,
+      "userInteractive": true,
+      "screenBounds": "{X=0,Y=0,Width=1024,Height=768}",
+      "sourceBlobsVerifiedFromArtifactBytes": true,
+      "phases": [
+        {
+          "phase": "positive-control",
+          "flags": "CREATE_NEW_CONSOLE",
+          "checkedConsole": true,
+          "nodeHadConsole": true,
+          "attachError": 0,
+          "exitCode": 0,
+          "samples": 859,
+          "newVisibleConsoleWindowCount": 1,
+          "windowClasses": {
+            "CASCADIA_HOSTING_WINDOW_CLASS": 1
+          },
+          "probes": null,
+          "branch": null,
+          "behaviors": null,
+          "success": true,
+          "screenshot": null,
+          "screenshotObservation": null
+        },
+        {
+          "phase": "baseline-1",
+          "flags": "DETACHED_PROCESS",
+          "checkedConsole": true,
+          "nodeHadConsole": false,
+          "attachError": 6,
+          "exitCode": 0,
+          "samples": 7594,
+          "newVisibleConsoleWindowCount": 105,
+          "windowClasses": {
+            "CASCADIA_HOSTING_WINDOW_CLASS": 104,
+            "ConsoleWindowClass": 1
+          },
+          "probes": 100,
+          "branch": "console-probe",
+          "behaviors": {
+            "padded": "console-probe",
+            "absent": null,
+            "blank": null,
+            "detached": null,
+            "nonRepository": null,
+            "nonexistent": null
+          },
+          "success": true,
+          "screenshot": null,
+          "screenshotObservation": null
+        },
+        {
+          "phase": "fixed-1",
+          "flags": "DETACHED_PROCESS",
+          "checkedConsole": true,
+          "nodeHadConsole": false,
+          "attachError": 6,
+          "exitCode": 0,
+          "samples": 1937,
+          "newVisibleConsoleWindowCount": 0,
+          "windowClasses": {},
+          "probes": 100,
+          "branch": "console-probe",
+          "behaviors": {
+            "padded": "console-probe",
+            "absent": null,
+            "blank": null,
+            "detached": null,
+            "nonRepository": null,
+            "nonexistent": null
+          },
+          "success": true,
+          "screenshot": null,
+          "screenshotObservation": null
+        },
+        {
+          "phase": "baseline-2",
+          "flags": "DETACHED_PROCESS",
+          "checkedConsole": true,
+          "nodeHadConsole": false,
+          "attachError": 6,
+          "exitCode": 0,
+          "samples": 7359,
+          "newVisibleConsoleWindowCount": 104,
+          "windowClasses": {
+            "CASCADIA_HOSTING_WINDOW_CLASS": 104
+          },
+          "probes": 100,
+          "branch": "console-probe",
+          "behaviors": {
+            "padded": "console-probe",
+            "absent": null,
+            "blank": null,
+            "detached": null,
+            "nonRepository": null,
+            "nonexistent": null
+          },
+          "success": true,
+          "screenshot": null,
+          "screenshotObservation": null
+        },
+        {
+          "phase": "fixed-2",
+          "flags": "DETACHED_PROCESS",
+          "checkedConsole": true,
+          "nodeHadConsole": false,
+          "attachError": 6,
+          "exitCode": 0,
+          "samples": 1942,
+          "newVisibleConsoleWindowCount": 0,
+          "windowClasses": {},
+          "probes": 100,
+          "branch": "console-probe",
+          "behaviors": {
+            "padded": "console-probe",
+            "absent": null,
+            "blank": null,
+            "detached": null,
+            "nonRepository": null,
+            "nonexistent": null
+          },
+          "success": true,
+          "screenshot": null,
+          "screenshotObservation": null
+        }
+      ]
+    },
+    {
+      "id": 35241111560,
+      "url": "https://github.com/omdsh-dev/dsh-mnemon/actions/runs/35241111560",
+      "metadata": {
+        "fixedSha256": "B66C292271C41361CA21214B673D89BB5FA208BC8DDCA683ADF5F8FC5487A00F",
+        "git": "git version 2.55.0.windows.5",
+        "fixedBlob": "340e4817a695d4807142e12d09bd70e792cec847",
+        "gitPath": "C:\\Program Files\\Git\\bin\\git.exe",
+        "node": "v22.19.0",
+        "baselineRevision": "6da061e8fa51a30ed50c6fff2a4cadcddf7a4a6a",
+        "baselineBlob": "eca1a05ed7fc1b382ed31ccdcbadfbc800afba64",
+        "validationRevision": "b81ccd541e93644d3ae2106a8163acdce654534c",
+        "runnerImageVersion": "20260907.229.1",
+        "runnerImage": "win25-vs2026",
+        "nodePath": "C:\\hostedtoolcache\\windows\\node\\22.19.0\\x64\\node.exe",
+        "sourcePath": "plugins/dsh-mnemon-source-runtime/src/git-branch.ts",
+        "baselineSha256": "1CAFEEB141E84721FD1E42AFB1A7F546593C32C6535CF5BFEDA12FA1ABB34473",
+        "fixedRevision": "1a9d455004c9204a74b87c920d81b67b3f7b954f",
+        "operatingSystem": {
+          "Caption": "Microsoft Windows Server 2025 Datacenter",
+          "Version": "10.0.26100",
+          "BuildNumber": "26100"
+        }
+      },
+      "observerConsoleHandle": 0,
+      "userInteractive": true,
+      "screenBounds": "{X=0,Y=0,Width=1024,Height=768}",
+      "sourceBlobsVerifiedFromArtifactBytes": true,
+      "phases": [
+        {
+          "phase": "positive-control",
+          "flags": "CREATE_NEW_CONSOLE",
+          "checkedConsole": true,
+          "nodeHadConsole": true,
+          "attachError": 0,
+          "exitCode": 0,
+          "samples": 879,
+          "newVisibleConsoleWindowCount": 1,
+          "windowClasses": {
+            "CASCADIA_HOSTING_WINDOW_CLASS": 1
+          },
+          "probes": null,
+          "branch": null,
+          "behaviors": null,
+          "success": true,
+          "screenshot": "run-35241111560/positive-control-desktop.png",
+          "screenshotObservation": {
+            "elapsedMs": 391.458,
+            "window": {
+              "handle": "2017E",
+              "pid": 6444,
+              "class": "CASCADIA_HOSTING_WINDOW_CLASS",
+              "process": "WindowsTerminal",
+              "title": "Windows Terminal",
+              "visible": true,
+              "minimized": false,
+              "cloaked": 0,
+              "bounds": [
+                44,
+                52,
+                1088,
+                687
+              ],
+              "firstMs": 107.9269,
+              "samples": 829,
+              "lastMs": 2074.918
+            }
+          }
+        },
+        {
+          "phase": "baseline-1",
+          "flags": "DETACHED_PROCESS",
+          "checkedConsole": true,
+          "nodeHadConsole": false,
+          "attachError": 6,
+          "exitCode": 0,
+          "samples": 3293,
+          "newVisibleConsoleWindowCount": 105,
+          "windowClasses": {
+            "CASCADIA_HOSTING_WINDOW_CLASS": 104,
+            "ConsoleWindowClass": 1
+          },
+          "probes": 100,
+          "branch": "console-probe",
+          "behaviors": {
+            "padded": "console-probe",
+            "absent": null,
+            "blank": null,
+            "detached": null,
+            "nonRepository": null,
+            "nonexistent": null
+          },
+          "success": true,
+          "screenshot": "run-35241111560/baseline-1-desktop.png",
+          "screenshotObservation": {
+            "elapsedMs": 650.4541,
+            "window": {
+              "handle": "70150",
+              "pid": 6444,
+              "class": "CASCADIA_HOSTING_WINDOW_CLASS",
+              "process": "WindowsTerminal",
+              "title": "Terminal",
+              "visible": true,
+              "minimized": false,
+              "cloaked": 0,
+              "bounds": [
+                70,
+                78,
+                1114,
+                713
+              ],
+              "firstMs": 581.1235,
+              "samples": 10,
+              "lastMs": 684.8246
+            }
+          }
+        },
+        {
+          "phase": "fixed-1",
+          "flags": "DETACHED_PROCESS",
+          "checkedConsole": true,
+          "nodeHadConsole": false,
+          "attachError": 6,
+          "exitCode": 0,
+          "samples": 459,
+          "newVisibleConsoleWindowCount": 0,
+          "windowClasses": {},
+          "probes": 100,
+          "branch": "console-probe",
+          "behaviors": {
+            "padded": "console-probe",
+            "absent": null,
+            "blank": null,
+            "detached": null,
+            "nonRepository": null,
+            "nonexistent": null
+          },
+          "success": true,
+          "screenshot": "run-35241111560/fixed-1-desktop.png",
+          "screenshotObservation": {
+            "elapsedMs": 1097.5217,
+            "visibleConsoleWindows": []
+          }
+        },
+        {
+          "phase": "baseline-2",
+          "flags": "DETACHED_PROCESS",
+          "checkedConsole": true,
+          "nodeHadConsole": false,
+          "attachError": 6,
+          "exitCode": 0,
+          "samples": 2093,
+          "newVisibleConsoleWindowCount": 105,
+          "windowClasses": {
+            "CASCADIA_HOSTING_WINDOW_CLASS": 104,
+            "ConsoleWindowClass": 1
+          },
+          "probes": 100,
+          "branch": "console-probe",
+          "behaviors": {
+            "padded": "console-probe",
+            "absent": null,
+            "blank": null,
+            "detached": null,
+            "nonRepository": null,
+            "nonexistent": null
+          },
+          "success": true,
+          "screenshot": "run-35241111560/baseline-2-desktop.png",
+          "screenshotObservation": {
+            "elapsedMs": 650.9873,
+            "window": {
+              "handle": "6D0178",
+              "pid": 6444,
+              "class": "CASCADIA_HOSTING_WINDOW_CLASS",
+              "process": "WindowsTerminal",
+              "title": "Terminal",
+              "visible": true,
+              "minimized": false,
+              "cloaked": 0,
+              "bounds": [
+                70,
+                78,
+                1114,
+                713
+              ],
+              "firstMs": 571.1632000000001,
+              "samples": 4,
+              "lastMs": 680.7619000000001
+            }
+          }
+        },
+        {
+          "phase": "fixed-2",
+          "flags": "DETACHED_PROCESS",
+          "checkedConsole": true,
+          "nodeHadConsole": false,
+          "attachError": 6,
+          "exitCode": 0,
+          "samples": 451,
+          "newVisibleConsoleWindowCount": 0,
+          "windowClasses": {},
+          "probes": 100,
+          "branch": "console-probe",
+          "behaviors": {
+            "padded": "console-probe",
+            "absent": null,
+            "blank": null,
+            "detached": null,
+            "nonRepository": null,
+            "nonexistent": null
+          },
+          "success": true,
+          "screenshot": "run-35241111560/fixed-2-desktop.png",
+          "screenshotObservation": {
+            "elapsedMs": 1066.5727,
+            "visibleConsoleWindows": []
+          }
+        }
+      ]
+    }
+  ]
+}

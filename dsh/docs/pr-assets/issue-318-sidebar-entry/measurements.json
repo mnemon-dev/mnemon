@@ -1,0 +1,404 @@
+{
+  "issue": "https://github.com/omdsh-dev/dsh-mnemon/issues/318",
+  "date": "2026-10-01",
+  "revisions": {
+    "baseline": "dfb3196cbcea58fb9b36b7283ccac4662d366858",
+    "fix": "1d18173aa88933528860ac6b40b9dcdf001b5726"
+  },
+  "environment": {
+    "os": "macOS 15.6 arm64",
+    "node": "24.19.0",
+    "dsh": "@deepseek-ai/dsh 0.1.7-rc.2 (repository pin); dsh-client-ui-sidebar .panelRow rules are identical in 0.2.0-rc.2",
+    "viewport": "1440x900, device scale 2, light, zh-CN"
+  },
+  "method": "pnpm e2e:serve shows the native seat, so the page already has DSH's own Memory System row. The fallback entry mounts only in layouts without that seat, so the check builds the element the fallback builds on the live page: the classes of the loaded Mnemon stylesheet (NS3bAW_entry, _entryIcon, _entryLabel), the shared brain icon at the size the fallback passes (18 on main, 16 with the fix), inserted under New Session as placeEntry does. Values are getComputedStyle and getBoundingClientRect with every row present; iconLeft and labelLeft are relative to the sidebar column. \"open\" selects the native Memory System row and marks the fallback as the fallback marks itself. The screenshots hide the native Memory System row, so each shows one Memory System entry beside Plugins, as a fallback layout does.",
+  "rows": {
+    "plugins": "DSH native Plugins row",
+    "nativeMemory": "Memory System through the native seat (DSH renders the row)",
+    "fallback": "Memory System fallback entry"
+  },
+  "baseline": {
+    "expanded": {
+      "plugins": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(0, 0, 0, 0)",
+        "padding": "7px 8px",
+        "margin": "0px 2px",
+        "borderRadius": "12px",
+        "width": 252,
+        "height": 36,
+        "icon": [
+          16,
+          16
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 22,
+        "labelLeft": 46,
+        "ariaCurrent": null
+      },
+      "nativeMemory": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(0, 0, 0, 0)",
+        "padding": "7px 8px",
+        "margin": "0px 2px",
+        "borderRadius": "12px",
+        "width": 252,
+        "height": 36,
+        "icon": [
+          16,
+          16
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 22,
+        "labelLeft": 46,
+        "ariaCurrent": null
+      },
+      "fallback": {
+        "fontSize": "13px",
+        "fontWeight": "400",
+        "lineHeight": "normal",
+        "color": "rgb(97, 102, 107)",
+        "background": "rgba(0, 0, 0, 0)",
+        "padding": "0px 10px",
+        "margin": "0px",
+        "borderRadius": "8px",
+        "width": 256,
+        "height": 36,
+        "icon": [
+          18,
+          18
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 25,
+        "labelLeft": 54,
+        "ariaCurrent": null
+      }
+    },
+    "open": {
+      "plugins": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(0, 0, 0, 0)",
+        "padding": "7px 8px",
+        "margin": "0px 2px",
+        "borderRadius": "12px",
+        "width": 252,
+        "height": 36,
+        "icon": [
+          16,
+          16
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 22,
+        "labelLeft": 46,
+        "ariaCurrent": null
+      },
+      "nativeMemory": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(38, 49, 72, 0.06)",
+        "padding": "7px 8px",
+        "margin": "0px 2px",
+        "borderRadius": "12px",
+        "width": 252,
+        "height": 36,
+        "icon": [
+          16,
+          16
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 22,
+        "labelLeft": 46,
+        "ariaCurrent": "page"
+      },
+      "fallback": {
+        "fontSize": "13px",
+        "fontWeight": "600",
+        "lineHeight": "normal",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(38, 49, 72, 0.1)",
+        "padding": "0px 10px",
+        "margin": "0px",
+        "borderRadius": "8px",
+        "width": 256,
+        "height": 36,
+        "icon": [
+          18,
+          18
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 25,
+        "labelLeft": 54,
+        "ariaCurrent": null
+      }
+    },
+    "collapsed": {
+      "plugins": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(0, 0, 0, 0)",
+        "padding": "0px",
+        "margin": "0px",
+        "borderRadius": "12px",
+        "width": 36,
+        "height": 36,
+        "icon": [
+          18,
+          18
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 19,
+        "labelLeft": null,
+        "ariaCurrent": null
+      },
+      "nativeMemory": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(38, 49, 72, 0.06)",
+        "padding": "0px",
+        "margin": "0px",
+        "borderRadius": "12px",
+        "width": 36,
+        "height": 36,
+        "icon": [
+          18,
+          18
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 19,
+        "labelLeft": null,
+        "ariaCurrent": "page"
+      },
+      "fallback": {
+        "fontSize": "13px",
+        "fontWeight": "600",
+        "lineHeight": "normal",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(38, 49, 72, 0.1)",
+        "padding": "0px",
+        "margin": "0px 0px 12px",
+        "borderRadius": "50%",
+        "width": 36,
+        "height": 36,
+        "icon": [
+          20,
+          20
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 18,
+        "labelLeft": 0,
+        "ariaCurrent": null
+      }
+    }
+  },
+  "fix": {
+    "expanded": {
+      "plugins": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(0, 0, 0, 0)",
+        "padding": "7px 8px",
+        "margin": "0px 2px",
+        "borderRadius": "12px",
+        "width": 252,
+        "height": 36,
+        "icon": [
+          16,
+          16
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 22,
+        "labelLeft": 46,
+        "ariaCurrent": null
+      },
+      "nativeMemory": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(0, 0, 0, 0)",
+        "padding": "7px 8px",
+        "margin": "0px 2px",
+        "borderRadius": "12px",
+        "width": 252,
+        "height": 36,
+        "icon": [
+          16,
+          16
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 22,
+        "labelLeft": 46,
+        "ariaCurrent": null
+      },
+      "fallback": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(0, 0, 0, 0)",
+        "padding": "7px 8px",
+        "margin": "0px 2px",
+        "borderRadius": "12px",
+        "width": 252,
+        "height": 36,
+        "icon": [
+          16,
+          16
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 22,
+        "labelLeft": 46,
+        "ariaCurrent": null
+      }
+    },
+    "open": {
+      "plugins": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(0, 0, 0, 0)",
+        "padding": "7px 8px",
+        "margin": "0px 2px",
+        "borderRadius": "12px",
+        "width": 252,
+        "height": 36,
+        "icon": [
+          16,
+          16
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 22,
+        "labelLeft": 46,
+        "ariaCurrent": null
+      },
+      "nativeMemory": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(38, 49, 72, 0.06)",
+        "padding": "7px 8px",
+        "margin": "0px 2px",
+        "borderRadius": "12px",
+        "width": 252,
+        "height": 36,
+        "icon": [
+          16,
+          16
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 22,
+        "labelLeft": 46,
+        "ariaCurrent": "page"
+      },
+      "fallback": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(38, 49, 72, 0.06)",
+        "padding": "7px 8px",
+        "margin": "0px 2px",
+        "borderRadius": "12px",
+        "width": 252,
+        "height": 36,
+        "icon": [
+          16,
+          16
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 22,
+        "labelLeft": 46,
+        "ariaCurrent": "page"
+      }
+    },
+    "collapsed": {
+      "plugins": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(0, 0, 0, 0)",
+        "padding": "0px",
+        "margin": "0px",
+        "borderRadius": "12px",
+        "width": 36,
+        "height": 36,
+        "icon": [
+          18,
+          18
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 19,
+        "labelLeft": null,
+        "ariaCurrent": null
+      },
+      "nativeMemory": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(38, 49, 72, 0.06)",
+        "padding": "0px",
+        "margin": "0px",
+        "borderRadius": "12px",
+        "width": 36,
+        "height": 36,
+        "icon": [
+          18,
+          18
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 19,
+        "labelLeft": null,
+        "ariaCurrent": "page"
+      },
+      "fallback": {
+        "fontSize": "14px",
+        "fontWeight": "400",
+        "lineHeight": "22px",
+        "color": "rgb(15, 17, 21)",
+        "background": "rgba(38, 49, 72, 0.06)",
+        "padding": "0px",
+        "margin": "0px 0px 12px",
+        "borderRadius": "12px",
+        "width": 36,
+        "height": 36,
+        "icon": [
+          18,
+          18
+        ],
+        "strokeWidth": "1",
+        "iconLeft": 19,
+        "labelLeft": 0,
+        "ariaCurrent": "page"
+      }
+    }
+  },
+  "screenshots": {
+    "after-collapsed.jpg": "04331aa7a4c37f17a34453d74841fbf306a5278ddf00e15d90c1b3a7edbd419a",
+    "after-expanded.jpg": "3cc795239e48b93a7d622864c27d0130e60161810788a4db7cb30b1b5583886e",
+    "after-open.jpg": "2506439a12e1addabdb1672db92c62e9c0737596ae17b9540ff888f6566a4738",
+    "before-collapsed.jpg": "4a39ba6c3426a07e40e6db6cf258db6094e4771d3a189c918a3c3e1f5c64a5ba",
+    "before-expanded.jpg": "baf04842c54ffe494b677458bd4e67b0660d35664efab4b192f29227d971c729",
+    "before-open.jpg": "5dd74392f7d9c1b83298d068782fa4528b9372be394eb1e15c1ed2ed515a5b82"
+  }
+}

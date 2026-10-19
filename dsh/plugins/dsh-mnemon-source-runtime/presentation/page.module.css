@@ -1,0 +1,77 @@
+.runtimeComposer { border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-lg); }
+.runtimeComposer { margin-bottom: 12px; padding: 16px; }
+.runtimeComposerHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.runtimeComposerHeading h3 { margin: 0 0 2px; font-size: 14px; font-weight: 500; line-height: 22px; }
+.runtimeComposerHeading p { margin: 0; color: var(--mn-faint); font-size: 12px; line-height: 18px; }
+.runtimeComposerHeading > span { flex: 0 0 auto; padding: 1px 8px; border-radius: 999px; color: var(--mn-muted); background: var(--mn-fill); font-size: 11px; font-weight: 500; line-height: 17px; }
+.runtimeComposer > textarea,
+.runtimeEntry textarea { width: 100%; resize: vertical; border: .5px solid var(--mn-field-line); border-radius: var(--dsw-radius-md); outline: 0; padding: 8px 10px; color: var(--mn-text); background: var(--mn-input); font-size: 13px; line-height: 20px; }
+.runtimeComposer > textarea:focus,
+.runtimeEntry textarea:focus { border-color: var(--mn-accent); }
+.runtimeComposerActions { display: flex; align-items: flex-end; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.runtimeComposerActions label { display: grid; gap: 6px; color: var(--mn-muted); font-size: 12px; font-weight: 500; line-height: 18px; }
+.runtimeChoice button { min-width: 136px; }
+.runtimeReadOnly { margin-bottom: 12px; padding: 8px 12px; border-radius: var(--dsw-radius-md); color: var(--mn-muted); background: var(--mn-fill); font-size: 12px; line-height: 18px; }
+.runtimeSummaryGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.runtimeSummaryCard { min-width: 0; border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-lg); }
+.runtimeBrowser { overflow: hidden; border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-lg); }
+.runtimeBrowserToolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-bottom: .5px solid var(--mn-line); }
+/* Scope filter, as the DSH SegmentedControl. */
+.runtimeScopeFilter { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 3px; border-radius: var(--dsw-radius-md); background: var(--mn-hover); }
+.runtimeScopeFilter button { min-height: 28px; border: 0; border-radius: var(--dsw-radius-sm); padding: 0 12px; color: var(--mn-muted); background: transparent; font-size: 13px; font-weight: 500; line-height: 20px; cursor: pointer; }
+.runtimeScopeFilter button:hover { color: var(--mn-text); }
+.runtimeScopeFilter button[data-active] { color: var(--mn-text); background: var(--mn-layer-1); box-shadow: var(--dsw-elevation-soft); }
+.runtimeScopeFilter b { margin-left: 6px; color: var(--mn-faint); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.runtimeFilterQuery { width: min(320px, 42%); min-width: 210px; }
+.runtimeUnifiedList { display: grid; grid-template-columns: 1fr; gap: 8px; padding: 12px; }
+.runtimeEntryBadges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.runtimeEntryMeta .runtimeEntryTarget { color: var(--mn-accent); background: color-mix(in srgb, var(--mn-accent) 10%, transparent); }
+.runtimeEntryMeta .runtimeEntryBranch { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mn-muted); background: var(--mn-fill); font-family: var(--mn-code); }
+.runtimeComposerBranch { display: grid; gap: 6px; color: var(--mn-muted); font-size: 12px; font-weight: 500; line-height: 18px; }
+.runtimeComposerBranch input { width: 100%; height: 36px; border: .5px solid var(--mn-field-line); border-radius: var(--dsw-radius-md); outline: 0; padding: 0 10px; color: var(--mn-text); background: var(--mn-input); font-size: 13px; font-weight: 400; }
+.runtimeComposerBranch input:focus { border-color: var(--mn-accent); }
+.bodyEditBranch { display: grid; gap: 6px; color: var(--mn-muted); font-size: 12px; font-weight: 500; line-height: 18px; }
+.bodyEditBranch input { width: 100%; height: 32px; border: .5px solid var(--mn-field-line); border-radius: var(--dsw-radius-md); outline: 0; padding: 0 10px; color: var(--mn-text); background: var(--mn-input); font-size: 13px; font-weight: 400; }
+.bodyEditBranch input:focus { border-color: var(--mn-accent); }
+.bodyEditBranch small { color: var(--mn-faint); font-size: 12px; font-weight: 400; }
+.runtimeTargetHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px 8px; }
+.runtimeTargetHeader > div { display: grid; gap: 0; }
+.runtimeTargetHeader span { color: var(--mn-faint); font-family: var(--mn-code); font-size: 11px; line-height: 16px; }
+.runtimeTargetHeader h3 { margin: 0; font-size: 14px; font-weight: 500; line-height: 22px; }
+.runtimeTargetHeader > strong { padding: 1px 8px; border-radius: 999px; color: var(--mn-muted); background: var(--mn-fill); font-size: 11px; font-weight: 500; line-height: 17px; font-variant-numeric: tabular-nums; }
+.capacityLine { display: flex; align-items: center; gap: 10px; padding: 0 16px; }
+.capacityLine > div { height: 4px; flex: 1; overflow: hidden; border-radius: 999px; background: var(--mn-fill); }
+.capacityLine i { display: block; height: 100%; border-radius: inherit; background: var(--dsw-alias-brand-primary); transition: width .25s ease; }
+.capacityLine > span { min-width: 88px; color: var(--mn-faint); font-size: 11px; text-align: right; font-variant-numeric: tabular-nums; }
+.runtimeTargetDescription { min-height: 36px; margin: 8px 16px 14px; color: var(--mn-faint); font-size: 12px; line-height: 18px; }
+.runtimeEntry { --mn-provider-color: var(--mn-accent); position: relative; padding: 12px 14px 10px; border: .5px solid var(--mn-card-line); border-radius: var(--dsw-radius-md); }
+.runtimeEntry[data-importance="critical"] { --mn-provider-color: var(--mn-priority); }
+.runtimeEntry[data-importance="low"] { --mn-provider-color: var(--mn-faint); }
+/* The entry a conversation turn wrote, when the turn opened this page. */
+.runtimeEntry[data-focused] { border-color: color-mix(in srgb, var(--mn-accent) 60%, var(--mn-card-line)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--mn-accent) 14%, transparent); }
+.runtimeEntryMeta { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.runtimeEntryMeta > span,
+.runtimeEntryBadges > span { padding: 1px 8px; border-radius: 999px; color: var(--mn-muted); background: var(--mn-fill); font-size: 11px; font-weight: 500; line-height: 17px; }
+.runtimeEntry[data-importance="critical"] .runtimeEntryMeta > span,
+.runtimeEntry[data-importance="critical"] .runtimeEntryBadges > span:not(.runtimeEntryTarget) { color: var(--mn-warn); background: color-mix(in srgb, var(--mn-warn) 12%, transparent); }
+.runtimeEntryMeta time { overflow: hidden; color: var(--mn-faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.runtimeEntry > p { margin: 8px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 22px; }
+.runtimeEntry > select { margin-top: 8px; }
+.runtimeEntry footer { display: flex; min-height: 32px; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: .5px solid var(--mn-line); }
+.runtimeEntry footer > span { margin-right: auto; color: var(--mn-danger); font-size: 12px; }
+.runtimeEmpty { display: grid; min-height: 128px; place-items: center; align-content: center; gap: 6px; color: var(--mn-faint); text-align: center; }
+.runtimeEmpty > span { font-size: 20px; line-height: 1; }
+.runtimeEmpty p { margin: 0; font-size: 13px; line-height: 20px; }
+
+@media (max-width: 1000px) {
+  .runtimeSummaryGrid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 760px) {
+  .runtimeComposerHeading,
+.runtimeComposerActions { align-items: stretch; flex-direction: column; }
+  .runtimeComposerActions > *,
+.runtimeComposerActions button { width: 100%; }
+  .runtimeBrowserToolbar { align-items: stretch; flex-direction: column; }
+  .runtimeFilterQuery { width: 100%; min-width: 0; }
+}

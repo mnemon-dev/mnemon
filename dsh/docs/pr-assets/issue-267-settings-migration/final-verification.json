@@ -1,0 +1,523 @@
+{
+  "verifiedAt": "2026-09-22",
+  "sourceCommit": "dc10b5b6a2b39bd3093823741e286592dc640cd6",
+  "baselineCommit": "65c0e23ba410993e16c00c8b3adf92d59d853425",
+  "scope": "Final packed Session V3/V4 WebUI turns and alpha7 Host restart. Earlier settings/migration evidence is retained separately.",
+  "environment": {
+    "platform": "macOS",
+    "node": "25.1.0",
+    "pnpm": "10.13.1",
+    "nativeMnemonCli": "0.2.8"
+  },
+  "allRootArchivesIdentical": true,
+  "allInstalledRootIndicesIdentical": true,
+  "allHaveExactlyOneFixtureMemory": true,
+  "allPersistMnemonSource": true,
+  "allPersistSuccessfulRuntimeAddAndHealthyStatus": true,
+  "cohorts": [
+    {
+      "frameworkVersion": "0.1.5-rc.2",
+      "artifactCommit": "dc10b5b6a2b39bd3093823741e286592dc640cd6",
+      "rootArtifactSha256": "b2204a284db063a128dce845cd115ecac33b5c91e91071d050d2a9d5daf1db16",
+      "actualRootArchiveSha256": "b2204a284db063a128dce845cd115ecac33b5c91e91071d050d2a9d5daf1db16",
+      "rootArchiveMatchesProvenance": true,
+      "installedRootIndexSha256": "1fa52c2d95acd2be01d7335926ef42dbfb2cf5a27cd5fec196a263be05c54ded",
+      "runtimeMemories": {
+        "count": 1,
+        "exactFixtureMemory": true,
+        "target": "memory",
+        "importance": "normal",
+        "contentSha256": "b4b99ca1dd86117d5ecfe875ed2af85d6d38486722167d114294cb52532e5045",
+        "fileSha256": "334e39646ad4ea4b03d8392a7eda07405b0e585978ac05c4b5890c0ad6064183"
+      },
+      "sessions": [
+        {
+          "formatVersion": 3,
+          "compressedSha256": "ad857041e9a5df3465b1fe9d5e1ace6618e8cde5ac270e2cc2595a8953412e8d",
+          "frameCount": 12,
+          "eventCount": 28,
+          "allFramesDecoded": true,
+          "mnemonSourceMessageCount": 2,
+          "persistedSourceKind": "dsh-mnemon",
+          "toolCalls": [
+            {
+              "name": "mnemon_runtime_memory",
+              "action": "add"
+            },
+            {
+              "name": "mnemon_status"
+            }
+          ],
+          "toolReceipts": [
+            {
+              "tool": "mnemon_runtime_memory",
+              "success": true,
+              "target": "memory",
+              "entryCount": 1,
+              "sourceTypeId": "runtime"
+            },
+            {
+              "tool": "mnemon_status",
+              "healthy": true,
+              "commandFound": true,
+              "writeEnabled": true
+            }
+          ],
+          "turnEndCount": 1,
+          "runtimeAddSucceeded": true,
+          "statusHealthy": true
+        }
+      ],
+      "dshPackageCount": 234,
+      "mnemonPackageCount": 17,
+      "officialInstalledFilesChecked": 8,
+      "normalNpmPeers": true,
+      "sourceCheckoutClean": true,
+      "mnemonErrorLogCandidateCount": 0,
+      "webuiTurnVerified": true,
+      "webuiScreenshot": "final-rc2-session-tools.png"
+    },
+    {
+      "frameworkVersion": "0.1.6-alpha.2",
+      "artifactCommit": "dc10b5b6a2b39bd3093823741e286592dc640cd6",
+      "rootArtifactSha256": "b2204a284db063a128dce845cd115ecac33b5c91e91071d050d2a9d5daf1db16",
+      "actualRootArchiveSha256": "b2204a284db063a128dce845cd115ecac33b5c91e91071d050d2a9d5daf1db16",
+      "rootArchiveMatchesProvenance": true,
+      "installedRootIndexSha256": "1fa52c2d95acd2be01d7335926ef42dbfb2cf5a27cd5fec196a263be05c54ded",
+      "runtimeMemories": {
+        "count": 1,
+        "exactFixtureMemory": true,
+        "target": "memory",
+        "importance": "normal",
+        "contentSha256": "b4b99ca1dd86117d5ecfe875ed2af85d6d38486722167d114294cb52532e5045",
+        "fileSha256": "fcb84238c640a5f9496423d9d089f33d710c5e09f12a07db7f6a38eb0d8666ea"
+      },
+      "sessions": [
+        {
+          "formatVersion": 3,
+          "compressedSha256": "72e2fd12a5b5b52e951defebaa17045c2cf9e2c82d2eda88068ebc7617ecce79",
+          "frameCount": 12,
+          "eventCount": 32,
+          "allFramesDecoded": true,
+          "mnemonSourceMessageCount": 2,
+          "persistedSourceKind": "dsh-mnemon",
+          "toolCalls": [
+            {
+              "name": "mnemon_runtime_memory",
+              "action": "add"
+            },
+            {
+              "name": "mnemon_status"
+            }
+          ],
+          "toolReceipts": [
+            {
+              "tool": "mnemon_runtime_memory",
+              "success": true,
+              "target": "memory",
+              "entryCount": 1,
+              "sourceTypeId": "runtime"
+            },
+            {
+              "tool": "mnemon_status",
+              "healthy": true,
+              "commandFound": true,
+              "writeEnabled": true
+            }
+          ],
+          "turnEndCount": 1,
+          "runtimeAddSucceeded": true,
+          "statusHealthy": true
+        }
+      ],
+      "dshPackageCount": 251,
+      "mnemonPackageCount": 17,
+      "officialInstalledFilesChecked": 8,
+      "normalNpmPeers": true,
+      "sourceCheckoutClean": true,
+      "mnemonErrorLogCandidateCount": 0,
+      "webuiTurnVerified": true,
+      "webuiScreenshot": "final-alpha2-session-tools.png"
+    },
+    {
+      "frameworkVersion": "0.1.7-alpha.1",
+      "artifactCommit": "dc10b5b6a2b39bd3093823741e286592dc640cd6",
+      "rootArtifactSha256": "b2204a284db063a128dce845cd115ecac33b5c91e91071d050d2a9d5daf1db16",
+      "actualRootArchiveSha256": "b2204a284db063a128dce845cd115ecac33b5c91e91071d050d2a9d5daf1db16",
+      "rootArchiveMatchesProvenance": true,
+      "installedRootIndexSha256": "1fa52c2d95acd2be01d7335926ef42dbfb2cf5a27cd5fec196a263be05c54ded",
+      "runtimeMemories": {
+        "count": 1,
+        "exactFixtureMemory": true,
+        "target": "memory",
+        "importance": "normal",
+        "contentSha256": "b4b99ca1dd86117d5ecfe875ed2af85d6d38486722167d114294cb52532e5045",
+        "fileSha256": "dbde2cd48a29428c66e8e3282ecf4dcf971d6ee555dd65b81bde0d8d7b8b7a51"
+      },
+      "sessions": [
+        {
+          "formatVersion": 4,
+          "compressedSha256": "bf43654d40eae5d72c5e1ee079ae1db62d9af6b29aae035889d69c3e78045ea3",
+          "frameCount": 12,
+          "eventCount": 32,
+          "allFramesDecoded": true,
+          "mnemonSourceMessageCount": 2,
+          "persistedSourceKind": "dsh-mnemon",
+          "toolCalls": [
+            {
+              "name": "mnemon_runtime_memory",
+              "action": "add"
+            },
+            {
+              "name": "mnemon_status"
+            }
+          ],
+          "toolReceipts": [
+            {
+              "tool": "mnemon_runtime_memory",
+              "success": true,
+              "target": "memory",
+              "entryCount": 1,
+              "sourceTypeId": "runtime"
+            },
+            {
+              "tool": "mnemon_status",
+              "healthy": true,
+              "commandFound": true,
+              "writeEnabled": true
+            }
+          ],
+          "turnEndCount": 1,
+          "runtimeAddSucceeded": true,
+          "statusHealthy": true
+        }
+      ],
+      "afterRestartSettings": {
+        "state": {
+          "displayMode": "builtin",
+          "minIntervalMs": 340000,
+          "lightEnabled": false,
+          "autoCaptureNativeEnabled": true,
+          "scopedNativeEnabled": true,
+          "autoCaptureViewOverridePresent": false,
+          "scopedViewOverridePresent": false,
+          "turnBar": false,
+          "saveAction": true
+        },
+        "allExpectedValuesMatch": true,
+        "patchSha256": "79e6541ee888503b1e478bde4349cd566601774f150aaeaa8049421bc8fabe89"
+      },
+      "dshPackageCount": 267,
+      "mnemonPackageCount": 17,
+      "officialInstalledFilesChecked": 10,
+      "normalNpmPeers": true,
+      "sourceCheckoutClean": true,
+      "mnemonErrorLogCandidateCount": 0,
+      "webuiTurnVerified": true,
+      "webuiScreenshot": "final-alpha7-session-tools.png",
+      "webuiAfterFullHostRestart": {
+        "settingsVerified": true,
+        "restoredConversationVerified": true,
+        "builtinRuntimeMemoryCount": 1,
+        "screenshots": [
+          "final-alpha7-settings-restart.png",
+          "final-alpha7-builtin-restart.png"
+        ]
+      }
+    }
+  ],
+  "originalFileMigration": {
+    "sourceCommit": "407eac75ee46e677f694e6c318ca9380357fae27",
+    "result": "pass",
+    "settingsImplementationUnchangedAtFinalSourceCommit": true,
+    "fullHostRestartCount": 1,
+    "backupBytesUnchangedAcrossStages": true,
+    "webuiAfterRestartVerified": true,
+    "screenshot": "after-alpha7-native-import-restart.png",
+    "stages": [
+      {
+        "stage": "first-start-native-import",
+        "checkedAt": "2026-09-22T12:30:46.211Z",
+        "result": "pass",
+        "checks": {
+          "normalPeers": true,
+          "exactAlpha7Framework": true,
+          "seventeenArtifacts": true,
+          "tenOfficialBytechecks": true,
+          "settingsSourceRenamed": true,
+          "retainedBackupUnchanged": true,
+          "mnemonMarkerAbsent": true,
+          "mnemonViewAbsent": true,
+          "nativeDefaultRecallLimitRetained": true,
+          "nativeCliRetained": true,
+          "explicitTurnBarRetained": true,
+          "supplementalSaveActionNotYetImported": true,
+          "pendingNativeImportWarning": true,
+          "nativeCli028": true,
+          "noStartupErrors": true
+        },
+        "observed": {
+          "defaultRecallLimit": 7,
+          "cliPathMatchesNative": true,
+          "turnBar": true,
+          "legacySettingsImported": null,
+          "memoryViewPresent": false,
+          "saveAction": null
+        },
+        "backupSha256": "c372088ea43007431c7841032c7249c7b21b7a4f02f50b9f470b1d2e706c6c4e",
+        "expectedBackupSha256": "c372088ea43007431c7841032c7249c7b21b7a4f02f50b9f470b1d2e706c6c4e",
+        "profileSha256": "e68f5f2e8d2052ebc41608f841c12dbff9ef6d844f6741b169ca6cafe3873ec2"
+      },
+      {
+        "stage": "after-single-SIGUSR2-supplementary-import",
+        "checkedAt": "2026-09-22T12:32:29.200Z",
+        "result": "pass",
+        "checks": {
+          "sameHarness": true,
+          "newWebProcess": true,
+          "harnessAlive": true,
+          "webAlive": true,
+          "sourceRemainsRenamed": true,
+          "supplementaryMarkerWritten": true,
+          "retainedBackupEqualsFixture": true,
+          "retainedBackupEqualsFirstStage": true,
+          "nativeDefaultRecallLimitPreserved": true,
+          "nativeCliPreserved": true,
+          "ownViewStrategyImported": true,
+          "otherProfileViewIgnored": true,
+          "noPendingImportWarning": true,
+          "noStartupErrors": true,
+          "otherServicesUndisturbed": true,
+          "defaultRecallLimit": true,
+          "turnBar": true,
+          "saveAction": true,
+          "lightEnabled": true,
+          "lightMaxProjectionCharacters": true,
+          "autoCaptureEnabled": true,
+          "documentsEnabled": true,
+          "scopedEnabled": true
+        },
+        "observed": {
+          "defaultRecallLimit": 7,
+          "turnBar": true,
+          "saveAction": false,
+          "lightEnabled": true,
+          "lightMaxProjectionCharacters": 1200,
+          "autoCaptureEnabled": true,
+          "documentsEnabled": true,
+          "scopedEnabled": true
+        },
+        "expected": {
+          "defaultRecallLimit": 7,
+          "turnBar": true,
+          "saveAction": false,
+          "lightEnabled": true,
+          "lightMaxProjectionCharacters": 1200,
+          "autoCaptureEnabled": true,
+          "documentsEnabled": true,
+          "scopedEnabled": true
+        },
+        "legacySettingsImported": true,
+        "backupSha256": "c372088ea43007431c7841032c7249c7b21b7a4f02f50b9f470b1d2e706c6c4e",
+        "profileSha256": "dc9a81f6289ae345e514d3a744e6c94b1ff03d3d62db4f1207ea1bae81d640e5"
+      }
+    ]
+  },
+  "localValidation": {
+    "verify": {
+      "result": "pass",
+      "command": "MNEMON_NATIVE_TEST_CLI=/path/to/mnemon MNEMON_DSH_V4_CONTRACT_ROOT=/path/to/alpha7-consumer/node_modules npx --yes pnpm@10.13.1 run verify",
+      "rootTests": {
+        "passed": 1342,
+        "skipped": 5
+      },
+      "pluginTests": {
+        "passed": 382,
+        "skipped": 2
+      },
+      "lifecycleTests": {
+        "passed": 56,
+        "actualPublishedV4CodecEnabled": true
+      },
+      "nativeCliCasesEnabled": true,
+      "skippedReasons": [
+        "Five external Flash quality/stress cases",
+        "One Windows-only case",
+        "One live OpenViking integration case"
+      ],
+      "package": {
+        "files": 49,
+        "packedBytes": 306952,
+        "unpackedBytes": 1370207,
+        "nodeCompatibleEntries": 12,
+        "publicTypeDependencies": 28,
+        "executableHelpEntries": 1
+      },
+      "headless": {
+        "tools": 39,
+        "representativeTools": 8
+      },
+      "logSha256": "bc72b05e768a5a81f233de7a04e9ffda5e01be9ab65f55baf03032eb218e3930"
+    },
+    "verifyPlugins": {
+      "result": "pass",
+      "command": "npx --yes pnpm@10.13.1 run verify:plugins --skip-build",
+      "runAfterVerify": true,
+      "independentPluginRepositories": 16,
+      "tarballs": 17,
+      "externalSdkOnlyConsumer": true,
+      "threeOptionalStrategiesTogether": true,
+      "starterOnlyActivation": true,
+      "logSha256": "f73a1039ed403a44c2887fe90e7256485630e1490d3155cc783bd1879b2f89a0"
+    }
+  },
+  "browserFixtureHeaderLimit": {
+    "nodeDefaultMaxHeaderSize": 16384,
+    "sameCookieShortLongComparison": [
+      {
+        "phase": "bootstrap",
+        "requestTargetBytes": 69,
+        "syntheticCookieValueBytes": 14000,
+        "status": 200
+      },
+      {
+        "phase": "application",
+        "requestTargetBytes": 2823,
+        "syntheticCookieValueBytes": 14000,
+        "status": 431
+      }
+    ],
+    "realBrowserCookiesRead": false,
+    "realBrowserCookiesChanged": false,
+    "observedBrowserStatus": 431,
+    "resolution": "Navigate the private bootstrap URL using localhost on the same running loopback listener. No profile, data, framework, header limit or existing cookie changes.",
+    "finalWebuiRestartVerified": true
+  },
+  "limits": [
+    "Deterministic loopback model; no external model API used.",
+    "The fixture title and prompt reuse Issue 261; all final artifacts and runs documented here are for Issue 267.",
+    "Minimal fixture omits terminal, deliverables and workspace-change services; general permission-preset and terminal UI failures are outside Mnemon.",
+    "External model quality, external Provider integration, embeddings and Windows execution are not claimed by the browser runs."
+  ],
+  "artifacts": [
+    {
+      "name": "dsh-mnemon",
+      "version": "0.5.12",
+      "filename": "dsh-mnemon-0.5.12.tgz",
+      "sha256": "b2204a284db063a128dce845cd115ecac33b5c91e91071d050d2a9d5daf1db16",
+      "integrity": "sha512-ixlnhOupSnCiFjWGKRd0weldp4xJ+Fdiq3sdE/35iMgzkhNPeBsa38mX2YWfXZ4i7YNYWNZbtAViqL0xlixoOQ=="
+    },
+    {
+      "name": "dsh-mnemon-provider-byterover",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-byterover-0.5.4.tgz",
+      "sha256": "94677bb5a27261dd2051f67c9ae5bc41c17ea86a4ea95cbd0baee1728203633f",
+      "integrity": "sha512-0/ru18uVKNILv3Q2Dx7soOpm+9SrARnbxCsewmQKPy8fvj14zwd7TNLlI9/lV0/vN5SgjKq95PnOvsJZVD/krw=="
+    },
+    {
+      "name": "dsh-mnemon-provider-hindsight",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-hindsight-0.5.4.tgz",
+      "sha256": "bf527bc83d51bd7b2e510ed3be59665ae6b3ddbd4e1c3beee16c32235fa0afbb",
+      "integrity": "sha512-nQ3rQ83J2ugNLXDkG1eYPjpibFANoe3n9OkxfyPCxXkAHHKYdmIZ35mzCFG8sMWsDeSt8y1RezulWjima4ZAVw=="
+    },
+    {
+      "name": "dsh-mnemon-provider-holographic",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-holographic-0.5.4.tgz",
+      "sha256": "67f9cc593a7bcf33001e0817a4932e23cf9f0927e90b6bc2b2ccd5ef49b91259",
+      "integrity": "sha512-ULO6MBVq8rmRMlMnDcqJ26XPsk1K5j3HPjtTXHoBlEy6GdYQ7/2vZLtDQZ9FNjMZ9VT/W6Qj+RAc1HfgIj3bZA=="
+    },
+    {
+      "name": "dsh-mnemon-provider-honcho",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-honcho-0.5.4.tgz",
+      "sha256": "c102952aa1b9fdd953b25068663635a9ffad606bb39c68b56eafa538c8fab72d",
+      "integrity": "sha512-xbbDeshwpiFZHlIUFveMbv6o6xTRY1sjNUvkcXKN/oInxCYdV4sC7Q6pBMRoSoSXYoAgUVExLLXxG+p9Z7uDZA=="
+    },
+    {
+      "name": "dsh-mnemon-provider-mem0",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-mem0-0.5.4.tgz",
+      "sha256": "42cd225bb376d387d8e7f5503d64b6a00ddae4f5aea26b495cb9d5aa44dab3b0",
+      "integrity": "sha512-jriF73KpQp6DoH0RbdfJx+6HzUGEGq1/zy1Y8DmyRaRF62OhBmySGSTHZHasVu1kw61NWzSqIBFWFVn6La0wYQ=="
+    },
+    {
+      "name": "dsh-mnemon-provider-mnemon-native",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-provider-mnemon-native-0.5.5.tgz",
+      "sha256": "cb1532ec04e1bc2550456340b453717686c2bc399e742e61be529bdae5e6f812",
+      "integrity": "sha512-M6v7W2MomcPaPEcf5vUVfJa0j1HUdEmHwdCYR+jmK05doyuP/Vfg/+S2ZnpySKWEGu7jDlgRQbd5hb8RANKahg=="
+    },
+    {
+      "name": "dsh-mnemon-provider-openviking",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-provider-openviking-0.5.5.tgz",
+      "sha256": "da3505e93462a7860d331e830930a04d4e2406be5b540333f340f9351346920f",
+      "integrity": "sha512-7XP4we0/Zl9QasILR5SvEGEONk7YSXj1X9PTpPZ7eS6IgCV3uauhTV5aqZ0d2VPgSR7MYaq1nWnc0MuEZfVbXA=="
+    },
+    {
+      "name": "dsh-mnemon-provider-retaindb",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-retaindb-0.5.4.tgz",
+      "sha256": "a7b5f1efb4e68df2d7ccc7e6078cd8c3229c82cf14f0162a196c975cbe19727f",
+      "integrity": "sha512-wztasXBFvV0M4xnJM0G0K819EMWLB0gVE0rvc4CY7XkmnqTAPoZ/26pZT9WY6ENHj84onkC2ck58xy7eqiX70A=="
+    },
+    {
+      "name": "dsh-mnemon-provider-supermemory",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-supermemory-0.5.4.tgz",
+      "sha256": "d04b900f7f9e9359ba53b349bdbc4550fc19b350771e61df3aa451e8f67f9afd",
+      "integrity": "sha512-hB6G2B5hu1ktMyqP5Al7b9uLVfV876Fs5zrgh5URlaE25e4s3VrJBkzebq5ZuhSocTDYFKMsZL4AWQGLFkb0Rg=="
+    },
+    {
+      "name": "dsh-mnemon-source-documents",
+      "version": "0.5.6",
+      "filename": "dsh-mnemon-source-documents-0.5.6.tgz",
+      "sha256": "411900a7eef2e2d9b90e83bb4a3669269d150a46142fcfe51cc4ba3819ccb9ec",
+      "integrity": "sha512-GlSzJs5C4nR1fG7dLRWMx7KOEF5ZDyKbU2UQGaBKXWeQrD5xZKfu/fZUbvUr/yj0HVfRKxbhvwkK1Iv9Oq3BLQ=="
+    },
+    {
+      "name": "dsh-mnemon-source-memory-spaces",
+      "version": "0.5.8",
+      "filename": "dsh-mnemon-source-memory-spaces-0.5.8.tgz",
+      "sha256": "a98a8b03fd384785406d85548254b1182276057c6f9b98784a7a35cee58f90c6",
+      "integrity": "sha512-OuNWar7KABXPS+6XKan5FVcJPrjIV9vdeNUkXNzvp9ofc2CRiKqwpBNjDADPemza3XqIeWZQYF6SrBCN6r+1kg=="
+    },
+    {
+      "name": "dsh-mnemon-source-runtime",
+      "version": "0.5.8",
+      "filename": "dsh-mnemon-source-runtime-0.5.8.tgz",
+      "sha256": "f9cdd113522fc62b08b4993260e03ca7cf71d14f0f2bd188cacb400f6e27f607",
+      "integrity": "sha512-QPZBv2dvwa7so77NvyAZcAC0YkfXRfRzgTogaLWCbkrBf0Xk39zz0noo+4GgE8idMh0M/oLS6Erb2fErWSz2AQ=="
+    },
+    {
+      "name": "dsh-mnemon-strategy-auto-capture",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-auto-capture-0.5.4.tgz",
+      "sha256": "3816601abd83f0c5c679f3e4c9ae96c8f697e8e15f6546e975a96fd7f86b8c02",
+      "integrity": "sha512-SYHrc0H2Pxgs5dqa48AgoYudnAlkB450H8dqAz7ILiFGEo4V2u6RQuBsF5A7QOJXwV9v3fd0YQ9eAcc5tFds9Q=="
+    },
+    {
+      "name": "dsh-mnemon-strategy-default-three-tier",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-strategy-default-three-tier-0.5.5.tgz",
+      "sha256": "52af5caf635f2cf2b165feff1ff3d35d241e6d073771b7b92b3ea37b36ff589f",
+      "integrity": "sha512-6cg2mz8QyYKYjdk0YnW+IYp2TEQQsZatj89CwsDXU50sN2D8dDal5TZwBl5+qRa5MZj11mIN5ZENWCDcBqTFxw=="
+    },
+    {
+      "name": "dsh-mnemon-strategy-light-context",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-light-context-0.5.4.tgz",
+      "sha256": "62947c3ff777fbb8d42724acf2a9c651d2b2302b387bb8579c59cd79f82a9e0d",
+      "integrity": "sha512-7qbo0e9igj0x03ekcBbAunkldWOme07d/R+tI/U+0P6WsyiPGy8EX0UnqYAervd1oZ8G06+srJ0zDX6tcFX0JA=="
+    },
+    {
+      "name": "dsh-mnemon-strategy-scoped",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-scoped-0.5.4.tgz",
+      "sha256": "f3f945add93d2d5f8f48f0e70f5de9360814499a552218af7fa93f574dd3457a",
+      "integrity": "sha512-aWPYgkexWdmg8LWFddnlnX9HbFRA6E43pbQxMTnkC8YOFja/EAArpqa0McBlffYMZedvCg7FhGWuQV7Qy7nezw=="
+    }
+  ]
+}

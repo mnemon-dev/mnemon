@@ -1,0 +1,350 @@
+{
+  "issue": 261,
+  "recordedAt": "2026-09-18T03:34:30.164Z",
+  "baselineCommit": "02ce994c8f05b6bf83a6b5872bd018bbfc8970ce",
+  "fixedCommit": "2a593c9a6f6510afc0e12704ff2103abc1a1f597",
+  "sourceAliases": false,
+  "frameworkSourceModifications": false,
+  "nativeRuntimeMemoryDistinction": "The fixture writes through the real Runtime Source JSON storage; the Native CLI is configured and version-checked. It does not claim a Native memory-space backend write.",
+  "artifactCount": 17,
+  "artifacts": [
+    {
+      "name": "dsh-mnemon",
+      "version": "0.5.11",
+      "filename": "dsh-mnemon-0.5.11.tgz",
+      "integrity": "sha512-FFzaR68Ita2O08qveSa2i8hofy3yqOF2qNnr5pfOOUQWQHkLdYvtnUeTBJ6kvFgnzskz/azo/spCFRRJJzFNPQ==",
+      "sha256": "57976643ee3577a8b4c3cd9dacd6eea49b3814ffb6fc33f31161802a10297336",
+      "reusedUnchangedBaselineCompanion": false
+    },
+    {
+      "name": "dsh-mnemon-provider-byterover",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-byterover-0.5.4.tgz",
+      "integrity": "sha512-0/ru18uVKNILv3Q2Dx7soOpm+9SrARnbxCsewmQKPy8fvj14zwd7TNLlI9/lV0/vN5SgjKq95PnOvsJZVD/krw==",
+      "sha256": "94677bb5a27261dd2051f67c9ae5bc41c17ea86a4ea95cbd0baee1728203633f",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-provider-hindsight",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-hindsight-0.5.4.tgz",
+      "integrity": "sha512-nQ3rQ83J2ugNLXDkG1eYPjpibFANoe3n9OkxfyPCxXkAHHKYdmIZ35mzCFG8sMWsDeSt8y1RezulWjima4ZAVw==",
+      "sha256": "bf527bc83d51bd7b2e510ed3be59665ae6b3ddbd4e1c3beee16c32235fa0afbb",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-provider-holographic",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-holographic-0.5.4.tgz",
+      "integrity": "sha512-ULO6MBVq8rmRMlMnDcqJ26XPsk1K5j3HPjtTXHoBlEy6GdYQ7/2vZLtDQZ9FNjMZ9VT/W6Qj+RAc1HfgIj3bZA==",
+      "sha256": "67f9cc593a7bcf33001e0817a4932e23cf9f0927e90b6bc2b2ccd5ef49b91259",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-provider-honcho",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-honcho-0.5.4.tgz",
+      "integrity": "sha512-xbbDeshwpiFZHlIUFveMbv6o6xTRY1sjNUvkcXKN/oInxCYdV4sC7Q6pBMRoSoSXYoAgUVExLLXxG+p9Z7uDZA==",
+      "sha256": "c102952aa1b9fdd953b25068663635a9ffad606bb39c68b56eafa538c8fab72d",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-provider-mem0",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-mem0-0.5.4.tgz",
+      "integrity": "sha512-jriF73KpQp6DoH0RbdfJx+6HzUGEGq1/zy1Y8DmyRaRF62OhBmySGSTHZHasVu1kw61NWzSqIBFWFVn6La0wYQ==",
+      "sha256": "42cd225bb376d387d8e7f5503d64b6a00ddae4f5aea26b495cb9d5aa44dab3b0",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-provider-mnemon-native",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-provider-mnemon-native-0.5.5.tgz",
+      "integrity": "sha512-M6v7W2MomcPaPEcf5vUVfJa0j1HUdEmHwdCYR+jmK05doyuP/Vfg/+S2ZnpySKWEGu7jDlgRQbd5hb8RANKahg==",
+      "sha256": "cb1532ec04e1bc2550456340b453717686c2bc399e742e61be529bdae5e6f812",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-provider-openviking",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-provider-openviking-0.5.5.tgz",
+      "integrity": "sha512-7XP4we0/Zl9QasILR5SvEGEONk7YSXj1X9PTpPZ7eS6IgCV3uauhTV5aqZ0d2VPgSR7MYaq1nWnc0MuEZfVbXA==",
+      "sha256": "da3505e93462a7860d331e830930a04d4e2406be5b540333f340f9351346920f",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-provider-retaindb",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-retaindb-0.5.4.tgz",
+      "integrity": "sha512-wztasXBFvV0M4xnJM0G0K819EMWLB0gVE0rvc4CY7XkmnqTAPoZ/26pZT9WY6ENHj84onkC2ck58xy7eqiX70A==",
+      "sha256": "a7b5f1efb4e68df2d7ccc7e6078cd8c3229c82cf14f0162a196c975cbe19727f",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-provider-supermemory",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-provider-supermemory-0.5.4.tgz",
+      "integrity": "sha512-hB6G2B5hu1ktMyqP5Al7b9uLVfV876Fs5zrgh5URlaE25e4s3VrJBkzebq5ZuhSocTDYFKMsZL4AWQGLFkb0Rg==",
+      "sha256": "d04b900f7f9e9359ba53b349bdbc4550fc19b350771e61df3aa451e8f67f9afd",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-source-documents",
+      "version": "0.5.6",
+      "filename": "dsh-mnemon-source-documents-0.5.6.tgz",
+      "integrity": "sha512-1wVN68FNzsAuiS3msECGC2RtEC2m+aTmGPCdjvYxvIJFncEyJbJ56mdf8mwiJNt8lul5Kuzvyr3G6c0OxCmQUw==",
+      "sha256": "d34ba96c9e1de64dcdec661b5b1e9a5bf84166b8b261e6ddf4f9756c7d50c0ce",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-source-memory-spaces",
+      "version": "0.5.8",
+      "filename": "dsh-mnemon-source-memory-spaces-0.5.8.tgz",
+      "integrity": "sha512-2NNbKuMnbWcGQ0gXFjY7u6C/m+fIkjh9QscOf2Rc+LjdOHtVZUduOOV2EPFMMgOHiz8eqtvuqY9Wu6S0jj75aA==",
+      "sha256": "c3ea9dd2cb5b4ff50a914d904156dd4028551e9544672198263a01095bde9bc3",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-source-runtime",
+      "version": "0.5.8",
+      "filename": "dsh-mnemon-source-runtime-0.5.8.tgz",
+      "integrity": "sha512-kOoHYl8pF1LVzABQcWpAMy0d/H6YuyVJCajyHVC7i5yPDyJpG0zKwTSL2UI+ncvPfvqKng+yOcdDVRAUfs0/mg==",
+      "sha256": "e9c7313b640c367d0f9fdee9638d93cc755396e59f2c88d6b3c9adaecf1c95ff",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-strategy-auto-capture",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-auto-capture-0.5.4.tgz",
+      "integrity": "sha512-SYHrc0H2Pxgs5dqa48AgoYudnAlkB450H8dqAz7ILiFGEo4V2u6RQuBsF5A7QOJXwV9v3fd0YQ9eAcc5tFds9Q==",
+      "sha256": "3816601abd83f0c5c679f3e4c9ae96c8f697e8e15f6546e975a96fd7f86b8c02",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-strategy-default-three-tier",
+      "version": "0.5.5",
+      "filename": "dsh-mnemon-strategy-default-three-tier-0.5.5.tgz",
+      "integrity": "sha512-6cg2mz8QyYKYjdk0YnW+IYp2TEQQsZatj89CwsDXU50sN2D8dDal5TZwBl5+qRa5MZj11mIN5ZENWCDcBqTFxw==",
+      "sha256": "52af5caf635f2cf2b165feff1ff3d35d241e6d073771b7b92b3ea37b36ff589f",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-strategy-light-context",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-light-context-0.5.4.tgz",
+      "integrity": "sha512-hLhVwtVC7s9Zf0xyvm8GfY/IYbK+2o98WMBBo2gZQ+5CCzx2kAQzxPCkTaxFstfxS9IZlBrfmkzI7Z+8zC+KDw==",
+      "sha256": "46261e60c2c720ec8ccca5fe13e2d36d0125bbffcfeb2c09cf5f941009dca7f0",
+      "reusedUnchangedBaselineCompanion": true
+    },
+    {
+      "name": "dsh-mnemon-strategy-scoped",
+      "version": "0.5.4",
+      "filename": "dsh-mnemon-strategy-scoped-0.5.4.tgz",
+      "integrity": "sha512-MA2LxRmNPwgy1hZE8X4uZXvEcOuhUmVNbLvjWXRw2dlZj3OABO2BbuU49ZDpQtULJO3V/FzZO7IWECTC+xv+Qw==",
+      "sha256": "d4f09db97300a81d64446739cd99b777acfc46892080f3935f81c2bcc5f97910",
+      "reusedUnchangedBaselineCompanion": true
+    }
+  ],
+  "cases": [
+    {
+      "name": "baseline-alpha",
+      "version": "0.1.6-alpha.2",
+      "dshPackageCount": 251,
+      "mnemonPackageCount": 17,
+      "testClientPackages": [],
+      "normalNpmInstall": false,
+      "baselineOnlyLegacyPeerBypass": true,
+      "originalPublicModulesChecked": [
+        {
+          "package": "@deepseek-ai/dsh-client-ui-slots",
+          "file": "lib/index.js",
+          "sha256": "57e1314e31a2015f30231e1e7596da658f1bb5cb64c103c4cf13381647412c99"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-chat",
+          "file": "lib/client.js",
+          "sha256": "a022200a86e6ba0301c861f6114214ee5fe0a849401332d1962276f142641f9e"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-renderer",
+          "file": "lib/client.js",
+          "sha256": "ed156076ac2a5c26e6db40d8fab165a0ec8dd4f6d36f6cf0e595111bf4afea34"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-conversation",
+          "file": "lib/client.js",
+          "sha256": "c02a68ebd98c7f32f70ab3302a6a6f5304c61717f28e87f616b070cbf105dabe"
+        }
+      ],
+      "headless": {
+        "result": "pass",
+        "nativeVersion": "mnemon version 0.2.8",
+        "enabledMnemonToolCount": 17,
+        "disabledMnemonToolCount": 0,
+        "persistence": [
+          {
+            "file": "runtime/memories.json",
+            "sha256": "f401893f81deb16cae6e15beeb5df2f3555534bb24a5049a1ee5fb230351e6dc"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fixed-alpha",
+      "version": "0.1.6-alpha.2",
+      "dshPackageCount": 251,
+      "mnemonPackageCount": 17,
+      "testClientPackages": [
+        "issue261-turn-tail-peers"
+      ],
+      "normalNpmInstall": true,
+      "baselineOnlyLegacyPeerBypass": false,
+      "originalPublicModulesChecked": [
+        {
+          "package": "@deepseek-ai/dsh-client-ui-slots",
+          "file": "lib/index.js",
+          "sha256": "57e1314e31a2015f30231e1e7596da658f1bb5cb64c103c4cf13381647412c99"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-chat",
+          "file": "lib/client.js",
+          "sha256": "a022200a86e6ba0301c861f6114214ee5fe0a849401332d1962276f142641f9e"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-renderer",
+          "file": "lib/client.js",
+          "sha256": "ed156076ac2a5c26e6db40d8fab165a0ec8dd4f6d36f6cf0e595111bf4afea34"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-conversation",
+          "file": "lib/client.js",
+          "sha256": "c02a68ebd98c7f32f70ab3302a6a6f5304c61717f28e87f616b070cbf105dabe"
+        }
+      ],
+      "headless": {
+        "result": "pass",
+        "nativeVersion": "mnemon version 0.2.8",
+        "enabledMnemonToolCount": 17,
+        "disabledMnemonToolCount": 0,
+        "persistence": [
+          {
+            "file": "runtime/memories.json",
+            "sha256": "6de65bc0bae079790fd8614b3fb4704466faa35c0e435d5e3e084aa00272a8b6"
+          }
+        ]
+      }
+    },
+    {
+      "name": "fixed-rc",
+      "version": "0.1.5-rc.2",
+      "dshPackageCount": 234,
+      "mnemonPackageCount": 17,
+      "testClientPackages": [
+        "issue261-turn-tail-peers"
+      ],
+      "normalNpmInstall": true,
+      "baselineOnlyLegacyPeerBypass": false,
+      "originalPublicModulesChecked": [
+        {
+          "package": "@deepseek-ai/dsh-client-ui-slots",
+          "file": "lib/index.js",
+          "sha256": "5433ef2cb74699a59000052c4b1899808c83544f45ba6176f297efc68414c588"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-chat",
+          "file": "lib/client.js",
+          "sha256": "6527556d25c7b2a27f2e3bfb96cc2ae3d9244f1213147e245b17684ad8d9e396"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-renderer",
+          "file": "lib/client.js",
+          "sha256": "859d0a187e436d682c71d18f0266d588f923d7e1628157ad73000f99a377d151"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-conversation",
+          "file": "lib/client.js",
+          "sha256": "81314dfd95864f2522f8edb812e3f8e08b04a8ef2141913e6e8cbdaae1ffc37f"
+        }
+      ],
+      "headless": {
+        "result": "pass",
+        "nativeVersion": "mnemon version 0.2.8",
+        "enabledMnemonToolCount": 17,
+        "disabledMnemonToolCount": 0,
+        "persistence": [
+          {
+            "file": "runtime/memories.json",
+            "sha256": "ab147c515b60abe3513f710f134d96126c642f3e1ec2d0af7e9ef7fc5280b95a"
+          }
+        ]
+      }
+    }
+  ],
+  "fixtureProtocols": [
+    "OpenAI chat completions SSE",
+    "Anthropic Messages SSE"
+  ],
+  "fixtureFailureClassification": "The initial OpenAI-only fixture failed on alpha Anthropic requests; those retained attempts are fixture failures. The missing turnTail ID was independently reproduced by the parent in the real browser.",
+  "browserOwner": "The surrounding evidence report and screenshots document browser verification. This reusable harness does not automate the browser.",
+  "sourceBundleScriptHashes": [
+    {
+      "file": "pack-artifacts.mjs",
+      "sha256": "e695a91b01fa17ef55b8954b24481aee3beea0eb9ad8476d429000c2d47677b0"
+    },
+    {
+      "file": "assemble-fixed-artifacts.mjs",
+      "sha256": "a101bef2ba8d41d4eaeb8b298fca92a95cdcb8a578535efd089d89a47b32db3f"
+    },
+    {
+      "file": "packed-e2e.mjs",
+      "sha256": "bb41816d293e369bea096d50b800c814d58c0de3def66fe4c4a65218868d3b80"
+    },
+    {
+      "file": "compatibility-model.mjs",
+      "sha256": "844f685eb57190e2f414add7cf0bf3af66fb98ef397a82d03cb92a12683207bb"
+    },
+    {
+      "file": "headless-check.mjs",
+      "sha256": "5b1a38435d9cc781fc238dd66ab5437a10baeb0fbe73250d18e2bb4ce80bfd32"
+    },
+    {
+      "file": "framework-pins.mjs",
+      "sha256": "9fc56d492618e9db1fcf637b2b9dac69a1acfdeb13b48dab73127e9807117db2"
+    },
+    {
+      "file": "pack-peer-fixture.mjs",
+      "sha256": "66f71ecf5086ec1611e1299d020d34cfde49547760ff027eb8a8a58d6b7c931e"
+    },
+    {
+      "file": "HARNESS.md",
+      "sha256": "ba8fb1f2e08d01a45b22f8779fb19d6a0f81d2cebdfeb56710b57bfbb9f34011"
+    }
+  ],
+  "bundledHarnessAudit": "bundle-audit.json",
+  "rawRunArtifactsIncluded": false,
+  "rawRunArtifactsNote": "Detailed local logs, dependency trees, model requests, bootstrap URLs, and tarballs are excluded; summarized results and artifact hashes are retained.",
+  "copiedHarnessValidation": {
+    "headless": [
+      {
+        "cohort": "alpha",
+        "version": "0.1.6-alpha.2",
+        "result": "pass",
+        "nativeVersion": "mnemon version 0.2.8",
+        "enabledMnemonToolCount": 17,
+        "disabledMnemonToolCount": 0,
+        "completedAt": "2026-09-18T03:41:00.148Z"
+      },
+      {
+        "cohort": "rc",
+        "version": "0.1.5-rc.2",
+        "result": "pass",
+        "nativeVersion": "mnemon version 0.2.8",
+        "enabledMnemonToolCount": 17,
+        "disabledMnemonToolCount": 0,
+        "completedAt": "2026-09-18T03:41:00.515Z"
+      }
+    ],
+    "peerRepackIntegrityMatchesRecordedRun": true,
+    "peerIntegrity": "sha512-u4Y8TtOwKETc0dn+tldH5FdU6thrydv0qMaUY1Ly2h5KZgcgbF++Qpt/eZKuEUMlUTgCerx576gimkwMabXkiA=="
+  }
+}

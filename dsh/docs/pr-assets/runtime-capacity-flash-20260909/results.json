@@ -1,0 +1,181 @@
+{
+  "date": "2026-09-09",
+  "baseCommit": "583842c2847bfb1f0bf4423cc41c261fd4b941d9",
+  "environment": {
+    "platform": "macOS arm64",
+    "node": "v25.1.0",
+    "dsh": "0.1.2-rc.1",
+    "nativeCli": "0.2.7",
+    "model": "deepseek-v4-flash",
+    "thinking": "disabled",
+    "endpoint": "https://api.deepseek.com/chat/completions"
+  },
+  "sourceSha256": {
+    "tests/runtime-capacity-flash-stress.spec.ts": "8873e780e590deab30ade1a1c176e2c6cf92bda8eb953246e7e6fed05365d5f3",
+    "tests/host-process.spec.ts": "34b972dc74f6eeffd9850a55d534bffea1e44ae982964022c416d95fcbf0fc7f",
+    "src/host/process.ts": "536f1fbed2057b753d251d59f2a4690bc66822af830be1d456aa90bb2b993edd",
+    "src/host/subagent.ts": "9724e7b91f912111db513a42100b87a4fc3c4ea426c53a97439a1a250be966f8",
+    "src/host/lifecycle.ts": "861eef8b93af71417edf7a7a7b203397fd9069fdcc2bd2fa1474a4bd783c9af6",
+    "plugins/dsh-mnemon-source-memory-spaces/src/providers/process.ts": "536f1fbed2057b753d251d59f2a4690bc66822af830be1d456aa90bb2b993edd",
+    "plugins/dsh-mnemon-source-memory-spaces/tests/process.spec.ts": "5fed51f8c737817226c6f7cf586bf32702836a264f189240a02667f239020edd",
+    "plugins/dsh-mnemon-provider-mnemon-native/src/driver.ts": "904e407aefe3720a61130cf875b52fc9b5265086c99745d501092de79947282d",
+    "plugins/dsh-mnemon-provider-mnemon-native/tests/provider.spec.ts": "eff4b661b6890d2fb87f5aa4571f9a693c3aadc2ade2e8c77cfdd51adcaf98da",
+    "plugins/dsh-mnemon-source-memory-spaces/tests/service.spec.ts": "0a71c47d2200aa1b75b0ddd3515b03506ffe37331ca68658cd03eb741d9c6925"
+  },
+  "format": "aggregate-summary",
+  "archiveManifest": "../runtime-flash-evidence-20260909.json",
+  "mainRun": [
+    {
+      "scenario": "four-roots-single-space",
+      "promptFormat": "record-elements",
+      "writers": 4,
+      "memoryLimitBytes": 10240,
+      "successfulWrites": 96,
+      "archiveCycles": 16,
+      "maxHotBytes": 10235,
+      "finalHotFacts": 11,
+      "finalColdFacts": 94,
+      "duplicateColdFacts": 0,
+      "maxConcurrentModels": 4,
+      "maxConcurrentWrites": 4,
+      "taskAgentsCreated": 0,
+      "taskAgentsRemaining": 0,
+      "elapsedMs": 67467,
+      "status": "passed",
+      "configuredRounds": 8,
+      "completedWaves": 8,
+      "modelUsage": {
+        "calls": 80,
+        "inputTokens": 113805,
+        "outputTokens": 24358,
+        "purposes": {
+          "conversation": 80
+        }
+      },
+      "toolWriteLatencyMs": {
+        "samples": 96,
+        "p50": 4,
+        "p95": 834,
+        "max": 871
+      },
+      "modelInputDriftCount": 0,
+      "misroutedFactCount": 0
+    },
+    {
+      "scenario": "four-children-four-spaces",
+      "promptFormat": "record-elements",
+      "writers": 4,
+      "memoryLimitBytes": 10240,
+      "successfulWrites": 96,
+      "archiveCycles": 16,
+      "maxHotBytes": 10229,
+      "finalHotFacts": 13,
+      "finalColdFacts": 95,
+      "duplicateColdFacts": 3,
+      "maxConcurrentModels": 4,
+      "maxConcurrentWrites": 4,
+      "taskAgentsCreated": 80,
+      "taskAgentsRemaining": 0,
+      "elapsedMs": 244035,
+      "status": "passed",
+      "configuredRounds": 8,
+      "completedWaves": 8,
+      "modelUsage": {
+        "calls": 165,
+        "inputTokens": 254715,
+        "outputTokens": 46376,
+        "purposes": {
+          "conversation": 165
+        }
+      },
+      "toolWriteLatencyMs": {
+        "samples": 96,
+        "p50": 9323,
+        "p95": 14157,
+        "max": 14715
+      },
+      "modelInputDriftCount": 0,
+      "misroutedFactCount": 10
+    },
+    {
+      "scenario": "no-session-four-spaces",
+      "promptFormat": "record-elements",
+      "writers": 4,
+      "memoryLimitBytes": 10240,
+      "successfulWrites": 48,
+      "archiveCycles": 6,
+      "maxHotBytes": 10237,
+      "finalHotFacts": 12,
+      "finalColdFacts": 45,
+      "duplicateColdFacts": 0,
+      "maxConcurrentModels": 1,
+      "maxConcurrentWrites": 0,
+      "taskAgentsCreated": 30,
+      "taskAgentsRemaining": 0,
+      "elapsedMs": 76488,
+      "status": "passed",
+      "configuredRounds": 8,
+      "completedWaves": 4,
+      "modelUsage": {
+        "calls": 30,
+        "inputTokens": 72708,
+        "outputTokens": 6497,
+        "purposes": {
+          "conversation": 30
+        }
+      },
+      "toolWriteLatencyMs": null,
+      "modelInputDriftCount": 0,
+      "misroutedFactCount": 0
+    }
+  ],
+  "quotedJsonDiagnostic": [
+    {
+      "scenario": "four-roots-single-space",
+      "promptFormat": "json-strings",
+      "writers": 4,
+      "memoryLimitBytes": 10240,
+      "successfulWrites": 96,
+      "archiveCycles": 17,
+      "maxHotBytes": 9646,
+      "finalHotFacts": 11,
+      "finalColdFacts": 94,
+      "duplicateColdFacts": 0,
+      "maxConcurrentModels": 4,
+      "maxConcurrentWrites": 4,
+      "taskAgentsCreated": 0,
+      "taskAgentsRemaining": 0,
+      "elapsedMs": 65523,
+      "status": "passed",
+      "configuredRounds": 8,
+      "completedWaves": 8,
+      "modelUsage": {
+        "calls": 96,
+        "inputTokens": 114271,
+        "outputTokens": 24946,
+        "purposes": {
+          "conversation": 96
+        }
+      },
+      "toolWriteLatencyMs": {
+        "samples": 96,
+        "p50": 4,
+        "p95": 824,
+        "max": 864
+      },
+      "modelInputDriftCount": 96,
+      "misroutedFactCount": 0
+    }
+  ],
+  "allRunsChecks": {
+    "missingFacts": 0,
+    "changedFacts": 0,
+    "toolErrors": 0,
+    "unexpectedActions": 0,
+    "routerFallbacks": 0,
+    "observedModels": [
+      "deepseek-v4-flash"
+    ],
+    "exactContentReference": "Actual text committed by each tool call, including model-added quotes in the diagnostic."
+  }
+}

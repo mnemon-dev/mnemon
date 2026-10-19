@@ -1,0 +1,247 @@
+{
+  "source": "Controlled loopback model endpoint; real DSH WebUI requests. SHA256 covers JSON.stringify(request.tools).",
+  "baseline": [
+    {
+      "event": "parent-tools",
+      "names": [
+        "mnemon_document_create",
+        "mnemon_document_manage",
+        "mnemon_document_search",
+        "mnemon_forget",
+        "mnemon_link",
+        "mnemon_memory_bodies",
+        "mnemon_memory_body_create",
+        "mnemon_memory_body_merge",
+        "mnemon_memory_body_update",
+        "mnemon_recall",
+        "mnemon_related",
+        "mnemon_remember",
+        "mnemon_runtime_memory",
+        "mnemon_status",
+        "mnemon_view_action",
+        "mnemon_view_route"
+      ],
+      "sha256": "9a76b5225a98bfda5c239d8a0c4d8c2d90c654b150a6b1c2c40ac2f7fa1e0026"
+    },
+    {
+      "event": "child-tools",
+      "names": [
+        "mnemon_link",
+        "mnemon_memory_bodies",
+        "mnemon_memory_body_create",
+        "mnemon_memory_body_merge",
+        "mnemon_memory_body_update",
+        "mnemon_recall",
+        "mnemon_related",
+        "mnemon_remember",
+        "mnemon_subagent_result_ee8cebfce93847a78c93ba21fbaabf39"
+      ],
+      "sha256": "43791240edf2dd263242adc807ceef4c2f5d528a6df2bc1f11029c4283d0294b"
+    },
+    {
+      "event": "parent-tools",
+      "names": [
+        "mnemon_document_create",
+        "mnemon_document_manage",
+        "mnemon_document_search",
+        "mnemon_forget",
+        "mnemon_link",
+        "mnemon_memory_bodies",
+        "mnemon_memory_body_create",
+        "mnemon_memory_body_merge",
+        "mnemon_memory_body_update",
+        "mnemon_recall",
+        "mnemon_related",
+        "mnemon_remember",
+        "mnemon_runtime_memory",
+        "mnemon_status",
+        "mnemon_view_action",
+        "mnemon_view_route"
+      ],
+      "sha256": "9a76b5225a98bfda5c239d8a0c4d8c2d90c654b150a6b1c2c40ac2f7fa1e0026"
+    },
+    {
+      "event": "parent-tools",
+      "names": [
+        "mnemon_document_create",
+        "mnemon_document_manage",
+        "mnemon_document_search",
+        "mnemon_forget",
+        "mnemon_link",
+        "mnemon_memory_bodies",
+        "mnemon_memory_body_create",
+        "mnemon_memory_body_merge",
+        "mnemon_memory_body_update",
+        "mnemon_recall",
+        "mnemon_related",
+        "mnemon_remember",
+        "mnemon_runtime_memory",
+        "mnemon_status",
+        "mnemon_view_action",
+        "mnemon_view_route"
+      ],
+      "sha256": "9a76b5225a98bfda5c239d8a0c4d8c2d90c654b150a6b1c2c40ac2f7fa1e0026"
+    },
+    {
+      "event": "child-tools",
+      "names": [
+        "mnemon_link",
+        "mnemon_memory_bodies",
+        "mnemon_memory_body_create",
+        "mnemon_memory_body_merge",
+        "mnemon_memory_body_update",
+        "mnemon_recall",
+        "mnemon_related",
+        "mnemon_remember",
+        "mnemon_subagent_result_c04cad1861f84ecd9af5fa32edf465af"
+      ],
+      "sha256": "51b1596e83a43ce7f9cf4b3c62161bb4641cd601881d7aba61219c10e76f4f6f"
+    },
+    {
+      "event": "parent-tools",
+      "names": [
+        "mnemon_document_create",
+        "mnemon_document_manage",
+        "mnemon_document_search",
+        "mnemon_forget",
+        "mnemon_link",
+        "mnemon_memory_bodies",
+        "mnemon_memory_body_create",
+        "mnemon_memory_body_merge",
+        "mnemon_memory_body_update",
+        "mnemon_recall",
+        "mnemon_related",
+        "mnemon_remember",
+        "mnemon_runtime_memory",
+        "mnemon_status",
+        "mnemon_view_action",
+        "mnemon_view_route"
+      ],
+      "sha256": "9a76b5225a98bfda5c239d8a0c4d8c2d90c654b150a6b1c2c40ac2f7fa1e0026"
+    }
+  ],
+  "fixed": [
+    {
+      "event": "parent-tools",
+      "names": [
+        "mnemon_document_create",
+        "mnemon_document_manage",
+        "mnemon_document_search",
+        "mnemon_forget",
+        "mnemon_link",
+        "mnemon_memory_bodies",
+        "mnemon_memory_body_create",
+        "mnemon_memory_body_merge",
+        "mnemon_memory_body_update",
+        "mnemon_recall",
+        "mnemon_related",
+        "mnemon_remember",
+        "mnemon_runtime_memory",
+        "mnemon_status",
+        "mnemon_subagent_result",
+        "mnemon_view_action",
+        "mnemon_view_route"
+      ],
+      "sha256": "bdd050ee49e46a614f74e46913e9658a705246b308c0df7407c22a4c65f897df"
+    },
+    {
+      "event": "child-tools",
+      "names": [
+        "mnemon_link",
+        "mnemon_memory_bodies",
+        "mnemon_memory_body_create",
+        "mnemon_memory_body_merge",
+        "mnemon_memory_body_update",
+        "mnemon_recall",
+        "mnemon_related",
+        "mnemon_remember",
+        "mnemon_subagent_result"
+      ],
+      "sha256": "b01c520da60b2e631963e1e8f4b8f0ba26026cd13b57e7a92ff17d20503dd28e"
+    },
+    {
+      "event": "parent-tools",
+      "names": [
+        "mnemon_document_create",
+        "mnemon_document_manage",
+        "mnemon_document_search",
+        "mnemon_forget",
+        "mnemon_link",
+        "mnemon_memory_bodies",
+        "mnemon_memory_body_create",
+        "mnemon_memory_body_merge",
+        "mnemon_memory_body_update",
+        "mnemon_recall",
+        "mnemon_related",
+        "mnemon_remember",
+        "mnemon_runtime_memory",
+        "mnemon_status",
+        "mnemon_subagent_result",
+        "mnemon_view_action",
+        "mnemon_view_route"
+      ],
+      "sha256": "bdd050ee49e46a614f74e46913e9658a705246b308c0df7407c22a4c65f897df"
+    },
+    {
+      "event": "parent-tools",
+      "names": [
+        "mnemon_document_create",
+        "mnemon_document_manage",
+        "mnemon_document_search",
+        "mnemon_forget",
+        "mnemon_link",
+        "mnemon_memory_bodies",
+        "mnemon_memory_body_create",
+        "mnemon_memory_body_merge",
+        "mnemon_memory_body_update",
+        "mnemon_recall",
+        "mnemon_related",
+        "mnemon_remember",
+        "mnemon_runtime_memory",
+        "mnemon_status",
+        "mnemon_subagent_result",
+        "mnemon_view_action",
+        "mnemon_view_route"
+      ],
+      "sha256": "bdd050ee49e46a614f74e46913e9658a705246b308c0df7407c22a4c65f897df"
+    },
+    {
+      "event": "child-tools",
+      "names": [
+        "mnemon_link",
+        "mnemon_memory_bodies",
+        "mnemon_memory_body_create",
+        "mnemon_memory_body_merge",
+        "mnemon_memory_body_update",
+        "mnemon_recall",
+        "mnemon_related",
+        "mnemon_remember",
+        "mnemon_subagent_result"
+      ],
+      "sha256": "b01c520da60b2e631963e1e8f4b8f0ba26026cd13b57e7a92ff17d20503dd28e"
+    },
+    {
+      "event": "parent-tools",
+      "names": [
+        "mnemon_document_create",
+        "mnemon_document_manage",
+        "mnemon_document_search",
+        "mnemon_forget",
+        "mnemon_link",
+        "mnemon_memory_bodies",
+        "mnemon_memory_body_create",
+        "mnemon_memory_body_merge",
+        "mnemon_memory_body_update",
+        "mnemon_recall",
+        "mnemon_related",
+        "mnemon_remember",
+        "mnemon_runtime_memory",
+        "mnemon_status",
+        "mnemon_subagent_result",
+        "mnemon_view_action",
+        "mnemon_view_route"
+      ],
+      "sha256": "bdd050ee49e46a614f74e46913e9658a705246b308c0df7407c22a4c65f897df"
+    }
+  ]
+}

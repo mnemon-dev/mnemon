@@ -1,0 +1,60 @@
+{
+  "name": "dsh-mnemon-strategy-scoped",
+  "version": "0.5.5",
+  "description": "Additive Source selection and write narrowing for any Mnemon main Strategy.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "lib",
+    "locale",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsdown",
+    "test": "vitest run",
+    "verify": "pnpm typecheck && pnpm test && pnpm build"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "dsh-mnemon": "^0.5.17"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "dsh-mnemon": "^0.5.17",
+    "dsh-mnemon-strategy-default-three-tier": "^0.5.7",
+    "tsdown": "^0.22.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mnemon-dev/mnemon.git",
+    "directory": "dsh/plugins/dsh-mnemon-strategy-scoped"
+  },
+  "homepage": "https://github.com/mnemon-dev/mnemon/tree/master/dsh/plugins/dsh-mnemon-strategy-scoped#readme",
+  "bugs": {
+    "url": "https://github.com/mnemon-dev/mnemon/issues"
+  }
+}

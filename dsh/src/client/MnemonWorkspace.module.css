@@ -1,0 +1,124 @@
+.workspacePanel {
+  box-sizing: border-box;
+  position: fixed;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-overlay, var(--dsw-alias-bg-base));
+  pointer-events: auto;
+}
+
+.workspacePanel > * {
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.betterSidebarSeat,
+.nativeWorkspace {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  flex: 1 1 auto;
+}
+
+.betterSidebarSeat > *,
+.nativeWorkspace > * {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.nativeWorkspace {
+  /* Keep the page above decorative body layers and below DSH window chrome. */
+  position: relative;
+  z-index: 2;
+}
+
+.nativeWorkspace[data-dsh-mnemon-main-seat] {
+  box-sizing: border-box;
+  padding-block-start: var(--dsh-frame-top-clearance, 0px);
+}
+
+.nativeWorkspace[hidden] {
+  display: none;
+}
+
+/*
+ * The fallback entry, used when the layout offers no native panel seat, copies
+ * DSH's own panel row (dsh-client-ui-sidebar .panelRow, identical in 0.1.7-rc.2
+ * and 0.2.0-rc.2) so it lines up with built-in and plugin rows (#318). The width
+ * leaves the row's 2px side margins inside the sidebar column.
+ */
+.entry {
+  box-sizing: border-box;
+  display: flex;
+  width: calc(100% - 4px);
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  margin: 0 2px;
+  border: none;
+  border-radius: var(--dsw-radius-md);
+  padding: 7px 8px;
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  font: inherit;
+  line-height: 22px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Like the native row, hover and the open workspace share one highlight. */
+.entry:hover,
+.entry[data-active] {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.entry:focus-visible {
+  outline: var(--dsw-focus-ring-width) solid var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary));
+  outline-offset: -2px;
+}
+
+.entryIcon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+}
+
+/* DSH draws panel glyphs at 16px in the wide sidebar and 18px on the rail. */
+.entryIcon svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+.entryLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The native DSH frame exposes collapse state without a skin's data-dsh-frame. */
+[data-sidebar-collapsed] .entry {
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  justify-content: center;
+  margin: 0 auto 12px;
+  padding: 0;
+}
+
+[data-sidebar-collapsed] .entryIcon svg {
+  width: 18px;
+  height: 18px;
+}
+
+[data-sidebar-collapsed] .entryLabel {
+  display: none;
+}

@@ -1,0 +1,167 @@
+{
+  "before": {
+    "snapshotFound": true,
+    "annotations": [],
+    "projection": "MNEMON RUNTIME MEMORY SNAPSHOT\nRevision: 62a0c7fb2db0134568d5480cdcde5e04551fe84e712734e627150689cc6e5460\nGit branch: main\n\nContents of USER.md (user profile; entries: 1; UTF-8 bytes: 39/4096)\n<runtime-memory-file name=\"USER.md\">\nMETA280_USER: I prefer concise replies.\n</runtime-memory-file>\n\nContents of MEMORY.md (working reference; entries: 2; UTF-8 bytes: 84/10240)\n<runtime-memory-file name=\"MEMORY.md\">\nMETA280_PROJECT: The project uses SQLite.\n\u00a7\nMETA280_LOW: The sample accent is blue.\n</runtime-memory-file>",
+    "reply": "The actual Runtime projection contains no importance/age annotations.\n\nUSER.md:\nMETA280_USER: I prefer concise replies.\n\nMEMORY.md:\nMETA280_PROJECT: The project uses SQLite.\n\u00a7\nMETA280_LOW: The sample accent is blue."
+  },
+  "after": {
+    "snapshotFound": true,
+    "annotations": [
+      {
+        "importance": "critical",
+        "created": "14d",
+        "updated": "2d"
+      },
+      {
+        "importance": "normal",
+        "created": "7d",
+        "updated": "3d"
+      },
+      {
+        "importance": "low",
+        "created": "4d",
+        "updated": "1d"
+      }
+    ],
+    "projection": "MNEMON RUNTIME MEMORY SNAPSHOT\nRevision: aeaafba6adc2ca6202c296261a628c430cabefc08a94cc9290f9b556a35cc624\nGit branch: main\nMetadata lines are annotations; created/updated are ages at projection in whole days (future/unknown for future/invalid timestamps). Current instructions win. For old_text/oldText, use entry content only.\n\nContents of USER.md (user profile; entries: 1; UTF-8 bytes: 39/4096)\n<runtime-memory-file name=\"USER.md\">\n[importance=critical; created=14d; updated=2d]\nMETA280_USER: I prefer concise replies.\n</runtime-memory-file>\n\nContents of MEMORY.md (working reference; entries: 2; UTF-8 bytes: 84/10240)\n<runtime-memory-file name=\"MEMORY.md\">\n[importance=normal; created=7d; updated=3d]\nMETA280_PROJECT: The project uses SQLite.\n\u00a7\n[importance=low; created=4d; updated=1d]\nMETA280_LOW: The sample accent is blue.\n</runtime-memory-file>",
+    "reply": "The actual Runtime projection contains 3 importance/age annotations.\n\nUSER.md:\n[importance=critical; created=14d; updated=2d]\nMETA280_USER: I prefer concise replies.\n\nMEMORY.md:\n[importance=normal; created=7d; updated=3d]\nMETA280_PROJECT: The project uses SQLite.\n\u00a7\n[importance=low; created=4d; updated=1d]\nMETA280_LOW: The sample accent is blue."
+  },
+  "mutations": [
+    {
+      "command": "METADATA280_ADD",
+      "call": {
+        "id": "issue280-5",
+        "name": "mnemon_runtime_memory",
+        "args": {
+          "action": "add",
+          "target": "user",
+          "content": "META280_LIVE: I prefer metric units.",
+          "importance": "low"
+        }
+      },
+      "receipt": {
+        "callId": "issue280-5",
+        "isError": false,
+        "result": {
+          "success": true,
+          "message": "Entry added.",
+          "target": "user",
+          "entryCount": 2,
+          "usage": {
+            "used": 79,
+            "limit": 4096
+          },
+          "added": "META280_LIVE: I prefer metric units.",
+          "revision": "ffdec3e9bbe8f8468bb89a473ef61b1fbe5f3c9041e66b7bf95538baaa7ef16c",
+          "memoryReceipt": {
+            "status": "succeeded",
+            "completion": "committed",
+            "committedAt": "2026-09-26T02:50:08.125Z"
+          }
+        }
+      }
+    },
+    {
+      "command": "METADATA280_REPLACE",
+      "call": {
+        "id": "issue280-7",
+        "name": "mnemon_runtime_memory",
+        "args": {
+          "action": "replace",
+          "target": "user",
+          "old_text": "META280_LIVE: I prefer metric units.",
+          "content": "META280_UPDATED: I prefer metric units and Celsius.",
+          "importance": "critical"
+        }
+      },
+      "receipt": {
+        "callId": "issue280-7",
+        "isError": false,
+        "result": {
+          "success": true,
+          "message": "Entry replaced.",
+          "target": "user",
+          "entryCount": 2,
+          "usage": {
+            "used": 94,
+            "limit": 4096
+          },
+          "replaced": {
+            "from": "META280_LIVE: I prefer metric units.",
+            "to": "META280_UPDATED: I prefer metric units and Celsius."
+          },
+          "revision": "3a8baa58a7acf8fdb224a22e105adb0e474ab2d2ef7001f365bd05a20de58cf4",
+          "memoryReceipt": {
+            "status": "succeeded",
+            "completion": "committed",
+            "committedAt": "2026-09-26T02:50:08.334Z"
+          }
+        }
+      }
+    },
+    {
+      "command": "METADATA280_REMOVE",
+      "call": {
+        "id": "issue280-9",
+        "name": "mnemon_runtime_memory",
+        "args": {
+          "action": "remove",
+          "target": "user",
+          "old_text": "META280_UPDATED: I prefer metric units and Celsius."
+        }
+      },
+      "receipt": {
+        "callId": "issue280-9",
+        "isError": false,
+        "result": {
+          "success": true,
+          "message": "Entry removed.",
+          "target": "user",
+          "entryCount": 1,
+          "usage": {
+            "used": 39,
+            "limit": 4096
+          },
+          "removed": "META280_UPDATED: I prefer metric units and Celsius.",
+          "revision": "aeaafba6adc2ca6202c296261a628c430cabefc08a94cc9290f9b556a35cc624",
+          "memoryReceipt": {
+            "status": "succeeded",
+            "completion": "committed",
+            "committedAt": "2026-09-26T02:50:08.446Z"
+          }
+        }
+      }
+    }
+  ],
+  "storage": {
+    "originalEntriesRestored": true,
+    "entries": [
+      {
+        "content": "META280_USER: I prefer concise replies.",
+        "created_at": "2026-09-11T20:45:51.825Z",
+        "updated_at": "2026-09-23T20:45:51.825Z",
+        "target": "user",
+        "importance": "critical"
+      },
+      {
+        "content": "META280_PROJECT: The project uses SQLite.",
+        "created_at": "2026-09-18T20:45:51.825Z",
+        "updated_at": "2026-09-22T20:45:51.825Z",
+        "target": "memory",
+        "importance": "normal"
+      },
+      {
+        "content": "META280_LOW: The sample accent is blue.",
+        "created_at": "2026-09-21T20:45:51.825Z",
+        "updated_at": "2026-09-24T20:45:51.825Z",
+        "target": "memory",
+        "importance": "low"
+      }
+    ],
+    "plainMarkdown": {
+      "USER.md": "META280_USER: I prefer concise replies.\n",
+      "MEMORY.md": "META280_PROJECT: The project uses SQLite.\n\u00a7\nMETA280_LOW: The sample accent is blue.\n"
+    }
+  }
+}

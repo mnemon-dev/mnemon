@@ -1,0 +1,61 @@
+{
+  "implementationCommit": "4ed532540a6353e87be08f744934d9c51f829c5b",
+  "artifactManifest": "artifacts-after.json",
+  "runtimeProof": "browser-runtime.json",
+  "fixture": "deterministic-openviking-user-key",
+  "cloudAccountVerified": false,
+  "manualResults": {
+    "aliceSave": "succeeded",
+    "bobReplacement": "rejected by data API",
+    "contentAfterRejection": "one exact synthetic alice memory",
+    "searchAfterRejection": "one exact synthetic alice result",
+    "runtimeComposition": "one independently stored runtime canary"
+  },
+  "persistenceChecks": {
+    "ownerAlicePreserved": true,
+    "originalKeyPreserved": true,
+    "accountPreserved": true,
+    "endpointPreserved": true,
+    "serviceEnabled": true,
+    "oneAliceProjectionPreserved": true,
+    "projectionActive": true,
+    "rejectedOwnerNotPersisted": true,
+    "registryMode600": true,
+    "runtimeCanaryPersisted": true
+  },
+  "screenshots": [
+    {
+      "file": "after-user-key-saved.png",
+      "sha256": "75270e744eec7f0dd59372c6f2a6de0323b5fbe5571d4ef8544f8a2817e0c1ba"
+    },
+    {
+      "file": "after-invalid-user-rejected.png",
+      "sha256": "9e7b69e318e975c5438f9c5dc42ab1c49c0a169484ae2731d589d39d54c98056"
+    },
+    {
+      "file": "after-user-memory-content.png",
+      "sha256": "b014825746e385ed4a093903e76c261132194acdbf051d99afce164801a5df13"
+    },
+    {
+      "file": "after-user-memory-search.png",
+      "sha256": "e8ff0fd92d3fb8b961b5297c3b57be1d2fbcb8b9a6dd3f24e8d27306b55dabb8"
+    },
+    {
+      "file": "after-runtime-coexistence.png",
+      "sha256": "f2a093e6cb4a45f0b0fd85d36939a8beabbd268d6387d40507e9999a9c285fe0"
+    }
+  ],
+  "requestSummary": {
+    "total": 11,
+    "adminRequests": 0,
+    "identityHeaderRequests": 0,
+    "paths": [
+      "GET /api/v1/fs/ls",
+      "GET /api/v1/content/read",
+      "POST /api/v1/search/find"
+    ],
+    "aliceDataRequests": 10,
+    "bobDataRequests": 1
+  },
+  "fixtureFilesUnchanged": true
+}

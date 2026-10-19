@@ -1,0 +1,293 @@
+{
+  "dshVersion": "0.1.7-rc.2",
+  "baseCommit": "6d79c663262f71c4309cd6db5bd70b204abb143d",
+  "finalCodeCommit": "34da8b03d0bf2832aadd435a3331ea8ff44907e2",
+  "sameSizeViewport": {
+    "width": 693,
+    "height": 983
+  },
+  "sameSizeFrames": [
+    {
+      "page": "Status",
+      "before": {
+        "title": {
+          "x": 292,
+          "y": 123.1484375
+        },
+        "canvas": {
+          "clientHeight": 874,
+          "scrollHeight": 2207,
+          "scrollTop": 0
+        }
+      },
+      "after": {
+        "title": {
+          "x": 292,
+          "y": 123.1484375
+        }
+      },
+      "initialFrameCanvas": {
+        "clientHeight": 874,
+        "scrollHeight": 2207,
+        "scrollTop": 0
+      }
+    },
+    {
+      "page": "Runtime",
+      "before": {
+        "title": {
+          "x": 305,
+          "y": 141.1484375
+        },
+        "canvas": {
+          "clientHeight": 874,
+          "scrollHeight": 1166,
+          "scrollTop": 0
+        }
+      },
+      "after": {
+        "title": {
+          "x": 292,
+          "y": 123.1484375
+        }
+      },
+      "initialFrameCanvas": {
+        "clientHeight": 874,
+        "scrollHeight": 959,
+        "scrollTop": 0
+      }
+    },
+    {
+      "page": "Documents",
+      "before": {
+        "title": {
+          "x": 305,
+          "y": 141.1484375
+        },
+        "canvas": {
+          "clientHeight": 874,
+          "scrollHeight": 1439,
+          "scrollTop": 0
+        }
+      },
+      "after": {
+        "title": {
+          "x": 292,
+          "y": 123.1484375
+        }
+      },
+      "initialFrameCanvas": {
+        "clientHeight": 874,
+        "scrollHeight": 1231,
+        "scrollTop": 0
+      }
+    },
+    {
+      "page": "Memory Spaces",
+      "before": {
+        "title": {
+          "x": 308,
+          "y": 135.1484375
+        },
+        "canvas": {
+          "clientHeight": 874,
+          "scrollHeight": 1235,
+          "scrollTop": 0
+        }
+      },
+      "after": {
+        "title": {
+          "x": 292,
+          "y": 123.1484375
+        }
+      },
+      "initialFrameCanvas": {
+        "clientHeight": 874,
+        "scrollHeight": 1011,
+        "scrollTop": 0
+      }
+    }
+  ],
+  "memorySpacesScroll": {
+    "viewport": {
+      "width": 1280,
+      "height": 720
+    },
+    "canvasScrollTop": 135.5,
+    "primaryHeadingY": 101.1484375,
+    "overviewMovesWithContent": true,
+    "canvasScrollTopAfterRecall": 0
+  },
+  "relatedBefore": {
+    "commit": "4a5511f7",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    },
+    "canvasScrollTop": 473.5,
+    "stickyHeaderBottom": 208.1875,
+    "headingTop": 124.09375,
+    "closeButtonTop": 121.71875,
+    "closeButtonBottom": 147.71875,
+    "occluded": true
+  },
+  "relatedAfter": {
+    "commit": "34da8b03",
+    "status": "passed",
+    "viewport": {
+      "height": 720,
+      "width": 1280
+    },
+    "stickyHeaderBottom": 208.1875,
+    "headingTop": 245.09375,
+    "closeButtonTop": 242.71875,
+    "closeButtonBottom": 268.71875,
+    "occluded": false,
+    "closeClickedSuccessfully": true
+  },
+  "functionalChecks": {
+    "runtimeCreated": 1,
+    "documentCreatedBytes": 503,
+    "documentKeywordSearch": "bounded scroll",
+    "nativeSyntheticMemoriesWritten": 12,
+    "nativeSharedEntity": "FrameAcceptance",
+    "nativeContentAndKeywordRecall": "passed"
+  },
+  "oldRootCompatibility": [
+    {
+      "root": "0.5.1",
+      "scrollCallbacksAbsent": true,
+      "scrolling": "manual; automatic reset and reveal are unavailable on these Hosts",
+      "registrations": 5,
+      "rendered": [
+        "content",
+        "explore",
+        "related",
+        "entities"
+      ],
+      "operations": [
+        "list",
+        "status-summary",
+        "search",
+        "related",
+        "entities"
+      ],
+      "result": "passed"
+    },
+    {
+      "root": "0.5.15-main",
+      "scrollCallbacksAbsent": true,
+      "scrolling": "manual; automatic reset and reveal are unavailable on these Hosts",
+      "registrations": 5,
+      "rendered": [
+        "content",
+        "explore",
+        "related",
+        "entities"
+      ],
+      "operations": [
+        "list",
+        "status-summary",
+        "search",
+        "related",
+        "entities"
+      ],
+      "result": "passed"
+    }
+  ],
+  "initialFrameCommit": "4a5511f7a306447b41d64f6deef3c24ff593226e",
+  "frameCommit": "34da8b03d0bf2832aadd435a3331ea8ff44907e2",
+  "installedRuntimeHashesMatched": {
+    "environments": 2,
+    "artifactsPerEnvironment": 17,
+    "method": "official DSH CLI installation followed by per-file runtime JS/CSS hashes"
+  },
+  "verification": [
+    {
+      "command": [
+        "pnpm",
+        "run",
+        "verify"
+      ],
+      "startedAt": "2026-09-26T13:31:59.446Z",
+      "finishedAt": "2026-09-26T13:33:26.405Z",
+      "code": 0
+    },
+    {
+      "command": [
+        "pnpm",
+        "run",
+        "verify:plugins"
+      ],
+      "startedAt": "2026-09-26T13:33:26.406Z",
+      "finishedAt": "2026-09-26T13:35:15.952Z",
+      "code": 0
+    }
+  ],
+  "postVerificationRepack": {
+    "artifacts": 17,
+    "sha256Unchanged": true
+  },
+  "supplementalCombinedPreview": {
+    "commit": "68f74fb849214ba3fa4e295eef8f77f72289469d",
+    "includes": [
+      "PR #287 native Sidebar at 29e74522",
+      "Source frame commits 4a5511f7 and 34da8b03"
+    ],
+    "dshVersion": "0.1.7-rc.2",
+    "skin": "Maid Atelier",
+    "viewport": {
+      "height": 983,
+      "width": 1055
+    },
+    "primaryHeadings": [
+      {
+        "page": "Status",
+        "x": 296,
+        "y": 101.1484375
+      },
+      {
+        "page": "Runtime",
+        "x": 296,
+        "y": 101.1484375
+      },
+      {
+        "page": "Documents",
+        "x": 296,
+        "y": 101.1484375
+      },
+      {
+        "page": "Memory Spaces",
+        "x": 296,
+        "y": 101.1484375
+      }
+    ],
+    "nativePanelRows": [
+      {
+        "font": "14px",
+        "height": 36,
+        "text": "Plugins",
+        "width": 252,
+        "x": 14
+      },
+      {
+        "font": "14px",
+        "height": 36,
+        "text": "Memory System",
+        "width": 252,
+        "x": 14
+      }
+    ],
+    "installedRuntimeHashesMatched": 17,
+    "uiTests": {
+      "files": 11,
+      "passed": 141
+    },
+    "buildTypesPackage": "passed",
+    "interactions": {
+      "recallPreservedAcrossPluginsPanel": true,
+      "collapsedSidebarUsable": true,
+      "collapsedKeywordRecallNativeMatches": 1
+    }
+  }
+}

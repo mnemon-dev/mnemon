@@ -1,0 +1,166 @@
+{
+  "issue": "https://github.com/omdsh-dev/dsh-mnemon/issues/320",
+  "date": "2026-10-01",
+  "revisions": {
+    "baseline": "dfb3196cbcea58fb9b36b7283ccac4662d366858",
+    "fix": "dd7289d57dddec408b60c11ccb3aed1b2409f0f1",
+    "note": "The baseline builds dsh-mnemon-source-memory-spaces 0.5.13 and dsh-mnemon-provider-mnemon-native 0.5.7 from main, the code published in 0.5.20; only these two plugins differ between the runs."
+  },
+  "environment": {
+    "os": "macOS 15.6 arm64",
+    "node": "24.19.0",
+    "pnpm": "11.19.0",
+    "dsh": "@deepseek-ai/dsh 0.1.7-rc.2 (repository pin)",
+    "mnemon": "0.2.9",
+    "viewport": "1440x900, device scale 2, light, zh-CN"
+  },
+  "fixture": {
+    "command": "MNEMON_CLI_PATH=<mnemon> pnpm e2e:serve --runtime-write-scope",
+    "runtimeMemoryLimitBytes": 512,
+    "persistence": "manual, providerId mnemon-native",
+    "store": {
+      "draft": "large-store-draft.mjs",
+      "draftSha256": "f0e8fec0f9e6727dbc6c7ad6706de539d46f30d6c1c213d24422d409750bbfa7",
+      "import": "mnemon --data-dir <dir> --store default import <draft.json> --no-diff",
+      "insights": 900,
+      "edges": 14956,
+      "placedAs": "<fixture>/data/data/default/mnemon.db before the first page load"
+    }
+  },
+  "wholeStoreOutputBytes": {
+    "cap": 2097152,
+    "recallAllBasic": 3248516,
+    "vizHtml": 5687735,
+    "searchLimit10": 34545,
+    "status": 1652
+  },
+  "steps": [
+    "Memory System > Memory Spaces > Overview",
+    "Memory Spaces > Contents",
+    "Runtime Memory > Add memory: entries A (200 B) and B (210 B) bring working memory to 414 of 512 B; entry C (205 B) then needs capacity maintenance",
+    "Memory Spaces > Overview again"
+  ],
+  "entries": {
+    "A": {
+      "bytes": 200,
+      "sha256": "a650c18d00d234adccf3c27f7b1169d8e0d703396553249672918f3fab67d1a1"
+    },
+    "B": {
+      "bytes": 210,
+      "sha256": "ee0f2b17fbe732e4e81c4c4b10050d5ce59eec4dbc626e002862c4fdc4968cbd"
+    },
+    "C": {
+      "bytes": 205,
+      "sha256": "c56aeeec142cb17a483daac416879aeb40dc11784f133aebda790151ee7b14c8"
+    }
+  },
+  "baseline": {
+    "label": "baseline",
+    "store": {
+      "before": {
+        "insights": 900,
+        "edges": 14956,
+        "recallAllBytes": 3248516
+      },
+      "after": {
+        "insights": 900,
+        "edges": 14956
+      }
+    },
+    "contents": {
+      "count": "0 条记忆",
+      "providerRow": "连接不可用"
+    },
+    "graph": {
+      "scopeRow": "连接不可用",
+      "liveSnapshot": false
+    },
+    "runtimeAdds": [
+      {
+        "entry": "A",
+        "dialogStillOpen": false,
+        "notice": "已添加到工作记忆 · 当前 1 条"
+      },
+      {
+        "entry": "B",
+        "dialogStillOpen": false,
+        "notice": "已添加到工作记忆 · 当前 2 条"
+      },
+      {
+        "entry": "C",
+        "dialogStillOpen": true,
+        "notice": "mnemon output exceeded 2097152 bytes. Install Mnemon and ensure \"mnemon\" is on PATH, or set MNEMON_CLI_PATH or mnemon.cliPath."
+      }
+    ],
+    "archivedExactInNative": {
+      "A": false,
+      "B": false,
+      "C": false
+    },
+    "runtimeEntriesAfter": [
+      "A",
+      "B"
+    ],
+    "spaceAfterCapacity": "900 条记忆",
+    "consoleErrors": 0
+  },
+  "fix": {
+    "label": "fix",
+    "store": {
+      "before": {
+        "insights": 900,
+        "edges": 14956,
+        "recallAllBytes": 3248516
+      },
+      "after": {
+        "insights": 902,
+        "edges": 14958
+      }
+    },
+    "contents": {
+      "count": "900 条记忆",
+      "providerRow": "900 条可观察"
+    },
+    "graph": {
+      "scopeRow": "900 条可观察 · 14956 条真实关系",
+      "liveSnapshot": true
+    },
+    "runtimeAdds": [
+      {
+        "entry": "A",
+        "dialogStillOpen": false,
+        "notice": "已添加到工作记忆 · 当前 1 条"
+      },
+      {
+        "entry": "B",
+        "dialogStillOpen": false,
+        "notice": "已添加到工作记忆 · 当前 2 条"
+      },
+      {
+        "entry": "C",
+        "dialogStillOpen": false,
+        "notice": "容量整理完成：已先归档到记忆空间 default，再更新工作记忆 · 当前 1 条"
+      }
+    ],
+    "archivedExactInNative": {
+      "A": true,
+      "B": true,
+      "C": false
+    },
+    "runtimeEntriesAfter": [
+      "C"
+    ],
+    "spaceAfterCapacity": "902 条记忆",
+    "consoleErrors": 0
+  },
+  "readback": "mnemon --readonly status and recall \"Issue 320 checkpoint\" --basic on the fixture store; runtime/memories.json read from disk. Content equality is exact on UTF-8 strings.",
+  "screenshots": {
+    "after-archived-space.jpg": "cf835d9212a40e6b876855acbfa8bbb027021865e86f8917415b6c078a31a431",
+    "after-capacity-archived.jpg": "ff64ad0981b4fee8ac4ba7f40476d572ef1e6111d632050c7b8aef2db9ee8de4",
+    "after-contents.jpg": "9d68181bafc716278e7927760a07373d91482ceb17bdc8926855c7bde64ed882",
+    "after-graph.jpg": "ec780fe7d5005cae1adc4f06cd2c0437809f1ed5dfd0d1239e5861f69ccd7442",
+    "before-capacity-error.jpg": "2d5580b2008941802ff1c0dac91879c4f4ad4daabf0bec12689e76ced123d211",
+    "before-contents.jpg": "9c149fd327b32ec09857255beb19873e063ba8942605f953f4c34b7631743bdd",
+    "before-graph.jpg": "71234ecf108bdd4b4bc7ede98b3b43d95c1bd3bfd25ab5e989b6813fcaf6e6a9"
+  }
+}

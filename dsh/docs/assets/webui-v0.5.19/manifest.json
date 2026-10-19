@@ -1,0 +1,955 @@
+{
+  "schemaVersion": 1,
+  "productVersion": "0.5.19",
+  "packageVersionAtCapture": "0.5.17",
+  "sourceRevision": "0035dd5c9758bf1b7037425ecf351a6869b5cbdf",
+  "captureDate": "2026-09-28",
+  "captureTimezone": "Asia/Shanghai",
+  "theme": "light",
+  "hostVersion": "0.1.7-rc.2",
+  "mnemonCliVersion": "0.2.7",
+  "model": "DeepSeek API, deepseek-flash (shown as DeepSeek-V41-Flash)",
+  "browser": "Headless Google Chrome driven over the DevTools protocol",
+  "fixture": "node scripts/serve-e2e.mjs --docs-demo --live-model (zh-CN) and --docs-demo=en --live-model: a disposable Profile, a seeded fictional project, and the live DeepSeek API answering",
+  "data": {
+    "project": "Lumen (fictional)",
+    "runtimeEntries": 8,
+    "userProfileEntries": 3,
+    "workingMemoryEntries": 5,
+    "documents": 6,
+    "activeDocuments": 5,
+    "archivedDocuments": 1,
+    "memorySpaces": 3,
+    "activeMemorySpaces": 2,
+    "storedMemories": 17,
+    "activeSpaceMemories": 15,
+    "personalData": false,
+    "credentials": false
+  },
+  "conversation": "Each locale is one pass over a fresh fixture. The questions are typed; the model decides which memory tools to call, the task Agent performs the Save to memory and the Agent answer, and every reply is the model's own. Another run gives different wording and may read different documents.",
+  "recordingNote": "Chrome screencast frames played at their own timestamps (H.264 CRF 27, 30 fps, no audio; GIF 880 px, 8 fps). Waits for the model play faster, with an on-screen badge: 4x for chat replies, 6x for the task Agent and the Agent answer. The save recording joins three consecutive segments; the pauses between them, while its screenshots were taken, are left out. A drawn cursor ring shows where each click lands.",
+  "runs": {
+    "zh-CN": {
+      "turns": {
+        "q1": {
+          "replySeconds": 6,
+          "memoryItems": [
+            [
+              "项目档案检索",
+              "架构决策：事件摄取改用队列",
+              "故障复盘：9 月 12 日指标延迟"
+            ],
+            [
+              "记忆空间召回",
+              "事件摄取改为 Kafka 队列，由消费者批量写入 ClickHouse。 Lumen 项目"
+            ]
+          ]
+        },
+        "q2": {
+          "replySeconds": 5,
+          "memoryItems": [
+            [
+              "项目档案检索",
+              "架构决策：事件摄取改用队列",
+              "故障复盘：9 月 12 日指标延迟"
+            ],
+            [
+              "记忆空间召回",
+              "事件摄取改为 Kafka 队列，由消费者批量写入 ClickHouse。 Lumen 项目"
+            ],
+            [
+              "运行时记忆更新",
+              "支付 SDK 改为用户交互后再加载：结账页 p75 LCP 从 2.9 秒降到 2.4 秒，已达成 p75 < 2.5 秒目标。"
+            ]
+          ]
+        },
+        "q3": {
+          "replySeconds": 5,
+          "memoryItems": [
+            [
+              "运行时记忆更新",
+              "本周重点：结账页性能，目标 p75 LCP 低于 2.2 秒。"
+            ]
+          ]
+        }
+      },
+      "receipt": "已存入 已在「Lumen 项目」中新增记录：支付 SDK 改为用户交互后再加载，结账页 p75 LCP 从 2.9 秒降至 2.4 秒。既有的一条「同步加载支付 SDK 阻塞首屏约 400 毫秒」的事实已明显过时，但现有记忆无法删除，故以这条更正记录为准。 在记忆空间中查看",
+      "notes": []
+    },
+    "en": {
+      "turns": {
+        "q1": {
+          "replySeconds": 8,
+          "memoryItems": [
+            [
+              "Document search",
+              "Decision: queue event ingestion",
+              "Investigation: checkout LCP",
+              "Incident review: delayed metrics on September 12"
+            ],
+            [
+              "Memory Spaces recall",
+              "Event ingestion moves to a Kafka queue; consumers write to ClickHouse in batches. Lumen project"
+            ]
+          ]
+        },
+        "q2": {
+          "replySeconds": 13,
+          "memoryItems": [
+            [
+              "Document search",
+              "Decision: queue event ingestion",
+              "Investigation: checkout LCP",
+              "Incident review: delayed metrics on September 12"
+            ],
+            [
+              "Memory Spaces recall",
+              "Event ingestion moves to a Kafka queue; consumers write to ClickHouse in batches. Lumen project"
+            ],
+            [
+              "Runtime memory update",
+              "Checkout performance target: p75 LCP under 2.5 s (this week's focus); after deferring the payment SDK to first interaction, checkout p75 LCP went 2.9 s → 2.4 s…"
+            ],
+            [
+              "Document update",
+              "Investigation: checkout LCP"
+            ]
+          ]
+        },
+        "q3": {
+          "replySeconds": 9,
+          "memoryItems": [
+            [
+              "Runtime memory update",
+              "Checkout performance target this week: p75 LCP under 2.2 s (tightened from 2.5 s); deferring the payment SDK to first interaction brought checkout p75 LCP from…"
+            ],
+            [
+              "Document update",
+              "Investigation: checkout LCP"
+            ]
+          ]
+        }
+      },
+      "receipt": "Saved Saved the checkout performance result — deferring the payment SDK until first interaction cut p75 LCP from 2.9 s to 2.4 s — in the Lumen project Memory Space, linked to the existing note about the synchronous payment SDK load. View in Memory Spaces",
+      "notes": []
+    }
+  },
+  "files": [
+    {
+      "file": "zh-CN/chat-correction.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 129641,
+      "sha256": "13c565a29c8c3927b9b7d0d325029358457b43a86bc701ebd87fe6623dd98736"
+    },
+    {
+      "file": "zh-CN/chat-recall.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 155270,
+      "sha256": "bad84f1ef15f4a1650333f06b528469541fbe062f4e71d2867180b936f2e1779"
+    },
+    {
+      "file": "zh-CN/chat-save-receipt.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 120920,
+      "sha256": "0d1213614889bf13ed2760730597d3f0d82c4ceebb802e6d18251cc57fb61413"
+    },
+    {
+      "file": "zh-CN/chat-save.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 122209,
+      "sha256": "5d95a4b64ebbad2a4e0bf3cc6f7cb3d75b9e617a7097de8bd923bcd1c7563fa4"
+    },
+    {
+      "file": "zh-CN/memory-agent.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 176066,
+      "sha256": "6bf1afb62ed1520697167d14a67a9a4ce78eb76ab0380b86c9a19f6d9a61a7e4"
+    },
+    {
+      "file": "zh-CN/memory-content.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 178190,
+      "sha256": "f6c490ff011305bb58114beed4d9448730a62830f0fe2bedf55f89fbe096e4eb"
+    },
+    {
+      "file": "zh-CN/memory-documents.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 155069,
+      "sha256": "9f3f0b375f0ea080c40ab6f4a077348a9ae2d36fe8a664c847c37048efe117c5"
+    },
+    {
+      "file": "zh-CN/memory-entities.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 151799,
+      "sha256": "ec37e37c5ab7b170f021a14958fbb0a803d2e1b7815b5b8ba03697d13612e555"
+    },
+    {
+      "file": "zh-CN/memory-graph.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 155057,
+      "sha256": "8d76273b23ac8c649a1d266d3b5b21e1e6bd42acf526d2d6ba52d01d2dec3fa0"
+    },
+    {
+      "file": "zh-CN/memory-recall.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 140972,
+      "sha256": "336baaa9076d6ec1f62ee7bc7c41ab50cb23f62f7b5c7067020d0c1c955419d1"
+    },
+    {
+      "file": "zh-CN/memory-remember.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 132838,
+      "sha256": "791526f71354255a04fb54ced16492d84f1aeccc3b322b6f95be83c0fce64a71"
+    },
+    {
+      "file": "zh-CN/memory-runtime.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 152899,
+      "sha256": "5f0daa7677a8d9b87f93d41846f8f0a6867462b448a988d199459adbe4540fa7"
+    },
+    {
+      "file": "zh-CN/memory-spaces.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 146758,
+      "sha256": "a0a41891bb36451e0c66be2545d9c05bf9e630445a65748cb0e8d27ec5365ad9"
+    },
+    {
+      "file": "zh-CN/memory-status.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 143726,
+      "sha256": "53a450762dcb0fdbfa50a11f36a30beb01d7feb70ba34924e0da11d0b80ab916"
+    },
+    {
+      "file": "zh-CN/narrow-chat.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "390x844",
+      "deviceScaleFactor": 2,
+      "width": 780,
+      "height": 1688,
+      "bytes": 129419,
+      "sha256": "fa6cd46d10217d7ef0725e4f09a037bbabf6c0ac12924a0f8615a72bc6bb374a"
+    },
+    {
+      "file": "zh-CN/narrow-plugin.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "390x844",
+      "deviceScaleFactor": 2,
+      "width": 780,
+      "height": 1688,
+      "bytes": 83141,
+      "sha256": "9215d35c82ebd55a93fd32fc2e9fc0284076ef6c40f16597368c70163fd56281"
+    },
+    {
+      "file": "zh-CN/narrow-spaces.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "390x844",
+      "deviceScaleFactor": 2,
+      "width": 780,
+      "height": 1688,
+      "bytes": 108275,
+      "sha256": "98d8a542129ebd86d526e8b9f63e4749f302159e63be9f17aa26bb81815969de"
+    },
+    {
+      "file": "zh-CN/plugin-backup-preview.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 108163,
+      "sha256": "472901cbda515029a394c2fbc80b8a7a7c279d4c5067168f0516ef2a978111bd"
+    },
+    {
+      "file": "zh-CN/plugin-composition.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 109897,
+      "sha256": "039049e3bc32b0d3a0b339beaca6ce9f50e5bb97b01037e54534f392c26642e8"
+    },
+    {
+      "file": "zh-CN/plugin-layered.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 124661,
+      "sha256": "f1594433c557927dd3acdf459eaf2fe98b33b93b636dabd726ec000f126de39f"
+    },
+    {
+      "file": "zh-CN/plugin-row-page.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 105553,
+      "sha256": "37fd4438e10c8944f69474e0344ee11a10a08befa664ffc934853fd70daaadf1"
+    },
+    {
+      "file": "zh-CN/plugin-rows.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 125145,
+      "sha256": "0428149df6150ad68a6bce540c82187cecbed7168e78a40f6fa26b2adf9f14c5"
+    },
+    {
+      "file": "zh-CN/plugin-spaces.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 150077,
+      "sha256": "d056c9e95b297587eb4261992a93cfc3d4d118e433ba42866b2564a89f0db114"
+    },
+    {
+      "file": "zh-CN/plugin-storage.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 104964,
+      "sha256": "0a95e44398057933029efd494d78ea03e3e3bd0917b449fb9cded8efd6005688"
+    },
+    {
+      "file": "zh-CN/plugin-strategy-menu.jpg",
+      "kind": "screenshot",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1416,
+      "height": 290,
+      "bytes": 26788,
+      "sha256": "c3293802047a559519dd4ea1da4f281b75f5622b15d71f57b4a04a9e31ea1a4f"
+    },
+    {
+      "file": "zh-CN/recall.mp4",
+      "kind": "recording",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "durationSeconds": 13.6,
+      "bytes": 247994,
+      "sha256": "0e1f2b870c52c7d92352e22623c677dde620e2ffda14cdc6eeda2cb3b17ba291"
+    },
+    {
+      "file": "zh-CN/recall.gif",
+      "kind": "animation",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 880,
+      "height": 550,
+      "durationSeconds": 13.63,
+      "bytes": 390200,
+      "sha256": "83a80e62a444df84fb37cfdbdbff93600ca28d4c4c04ddf02659b34ce3b6fa96"
+    },
+    {
+      "file": "zh-CN/save.mp4",
+      "kind": "recording",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "durationSeconds": 28.73,
+      "bytes": 613725,
+      "sha256": "3303c6d359a44130d54d76b062b95b614740ec300c2cdb84b516217f2b699f4d"
+    },
+    {
+      "file": "zh-CN/save.gif",
+      "kind": "animation",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 880,
+      "height": 550,
+      "durationSeconds": 28.76,
+      "bytes": 950828,
+      "sha256": "869c0fa6a23e089626a6f1b28f60c861ea2f249ba9629719b8ed83291b5f368f"
+    },
+    {
+      "file": "zh-CN/correct.mp4",
+      "kind": "recording",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "durationSeconds": 11.6,
+      "bytes": 262032,
+      "sha256": "0bc47ed43edf8eb8cf27bccae5c7e18918b6e3a381bedf0d8347cceaf1c8dbcd"
+    },
+    {
+      "file": "zh-CN/memory.mp4",
+      "kind": "recording",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "durationSeconds": 26.57,
+      "bytes": 534229,
+      "sha256": "e4b46a65782583e35f85380032cafb317de2baba8e11562f66d040f7bdf9a403"
+    },
+    {
+      "file": "zh-CN/memory.gif",
+      "kind": "animation",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 880,
+      "height": 550,
+      "durationSeconds": 26.63,
+      "bytes": 842356,
+      "sha256": "52a0d8b65df0eea3f37f4ceab7638f7b8a5f6c49505404b3402c193a1098be4d"
+    },
+    {
+      "file": "zh-CN/plugins.mp4",
+      "kind": "recording",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "durationSeconds": 22,
+      "bytes": 476718,
+      "sha256": "bda82ec8937b0f8be47d4ddb593e727cbaf40d68f96ae97b711cffd9f2141d96"
+    },
+    {
+      "file": "zh-CN/plugins.gif",
+      "kind": "animation",
+      "locale": "zh-CN",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 880,
+      "height": 550,
+      "durationSeconds": 22.01,
+      "bytes": 886686,
+      "sha256": "d757f8a5437586fa509801318314c965e025f2f66a58cde4c7c50ff347b2b36f"
+    },
+    {
+      "file": "en/chat-correction.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 153408,
+      "sha256": "6c1aef7d660789917de8e4c6e76082d774a3d8639e6ca9c6af6f466268a0dd9b"
+    },
+    {
+      "file": "en/chat-recall.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 167934,
+      "sha256": "ebd6fa6ddb9ebfdece6e26eab8f6a34b4988ee75c0c1942590f66a7fe6a5e623"
+    },
+    {
+      "file": "en/chat-save-receipt.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 132628,
+      "sha256": "e38d456b36c3bd56357f0810cbde436d11dd0d81257e9e5a574a5487d7b88675"
+    },
+    {
+      "file": "en/chat-save.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 132517,
+      "sha256": "5524a60250a502d9c004bda480694f11c038144f810fd1b6786b97c5cd2f80bf"
+    },
+    {
+      "file": "en/memory-agent.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 197187,
+      "sha256": "83ad6b74596e15899736c6b55857b2d95eff85c0345d3fae88aa18f8f6f76eb1"
+    },
+    {
+      "file": "en/memory-content.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 190834,
+      "sha256": "6ad812f8a99a43c1bc975203ce019a0d3fdc9d40d8ce8a2d79706a5f2f8a2e92"
+    },
+    {
+      "file": "en/memory-documents.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 166465,
+      "sha256": "6dbf25f07729af6b88026314db98dc989efdef6441f1ac9c3022558daaadaa7d"
+    },
+    {
+      "file": "en/memory-entities.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 170190,
+      "sha256": "be2c3842b21af4bd3d2bf9f1a49d465e05d79faf3510255dcd3617441425e400"
+    },
+    {
+      "file": "en/memory-graph.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 165510,
+      "sha256": "0863774a6e403327b3d12799f9ba6b02acf3af5b12a8473e01a0e6f00e47db42"
+    },
+    {
+      "file": "en/memory-recall.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 158818,
+      "sha256": "4345118a586fbf07e4e9b1759b4fbfd6359e52bd1245f398dd11c8a6a11952dd"
+    },
+    {
+      "file": "en/memory-remember.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 157339,
+      "sha256": "2cd03730db3cc1bd0a7a22bb9c8504db74fb4c5f0706fb6212830b7bbb055d76"
+    },
+    {
+      "file": "en/memory-runtime.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 168745,
+      "sha256": "5218f334adce9cd1a6dbd3f122b61e75ef51e90825766a3012696387353241b0"
+    },
+    {
+      "file": "en/memory-spaces.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 157713,
+      "sha256": "bf1494830900ec3144e7f0f211500b1269980536b399eab5e77a595d2ce66d8d"
+    },
+    {
+      "file": "en/memory-status.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 158153,
+      "sha256": "aa961080234a6bf1d9652c6483c3d00d33d7aeda7f539f5c6950544b7cc02d0b"
+    },
+    {
+      "file": "en/narrow-chat.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "390x844",
+      "deviceScaleFactor": 2,
+      "width": 780,
+      "height": 1688,
+      "bytes": 119820,
+      "sha256": "b7293314719e7e0e77dbad3fdba7b0117423ec00a952f9725312b3856c1c6db6"
+    },
+    {
+      "file": "en/narrow-plugin.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "390x844",
+      "deviceScaleFactor": 2,
+      "width": 780,
+      "height": 1688,
+      "bytes": 92472,
+      "sha256": "7ee9707d299c8838fa0b24adace0f69229bd0939b542f5d6367a023bcb5c96e8"
+    },
+    {
+      "file": "en/narrow-spaces.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "390x844",
+      "deviceScaleFactor": 2,
+      "width": 780,
+      "height": 1688,
+      "bytes": 111060,
+      "sha256": "dbf1c258b8940c988d57ec4db9abb9116f731f8abde1e8839845ec7b0c713bf5"
+    },
+    {
+      "file": "en/plugin-backup-preview.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 120681,
+      "sha256": "d0584c0854878edcbfa82f6d0ee3a45a46ab3b1f8b3a24add72427b67c8e0c06"
+    },
+    {
+      "file": "en/plugin-composition.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 125725,
+      "sha256": "48b4e8428f2cb21b0e435838fb8e7557b43900881eca3222c37d7c85faf1ebdc"
+    },
+    {
+      "file": "en/plugin-layered.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 146305,
+      "sha256": "bd3d4bac06a93f19e1d7957c7a1471b3ad57de6e77ff89b925eee6473fc150ee"
+    },
+    {
+      "file": "en/plugin-row-page.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 119792,
+      "sha256": "fd25e44e12a4f9991b5a18767f9e810a08057baec46625522dcafd60f5379681"
+    },
+    {
+      "file": "en/plugin-rows.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 137422,
+      "sha256": "4d0d5ceb8b53315e7298f63967da48bec16da20cdb51c0d642c79843a007d7d8"
+    },
+    {
+      "file": "en/plugin-spaces.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 155802,
+      "sha256": "0ed0c5b1b0b5bcf9e53194ef87b599d4bbfeadef583a78dbc00adc2ea641d794"
+    },
+    {
+      "file": "en/plugin-storage.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1920,
+      "height": 1200,
+      "bytes": 117275,
+      "sha256": "535b72dbc6de705b742e6327ad1937abc512768ebfb73b4d51ca69c64b1a23fa"
+    },
+    {
+      "file": "en/plugin-strategy-menu.jpg",
+      "kind": "screenshot",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "deviceScaleFactor": 2,
+      "width": 1416,
+      "height": 344,
+      "bytes": 40401,
+      "sha256": "ae5c0eb6e48aa33b4c18d654632c2f4b7a1f1a67e09bc1a9f96a03326e7816f1"
+    },
+    {
+      "file": "en/recall.mp4",
+      "kind": "recording",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "durationSeconds": 16.07,
+      "bytes": 365608,
+      "sha256": "ef603a6135caf1aa572594d0f33ec93bc046a370522352ce82bf0779a277addb"
+    },
+    {
+      "file": "en/recall.gif",
+      "kind": "animation",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 880,
+      "height": 550,
+      "durationSeconds": 16.13,
+      "bytes": 482462,
+      "sha256": "381eb96ed5a2e898a202e8aef635ff2af84cec27d48d6f785a9f5e6ca0d8aaf9"
+    },
+    {
+      "file": "en/save.mp4",
+      "kind": "recording",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "durationSeconds": 34.17,
+      "bytes": 875940,
+      "sha256": "f358ecfe6fde551eb86ae92a1c26f84a6a82575eb59f09ed42d388f698ea92dc"
+    },
+    {
+      "file": "en/save.gif",
+      "kind": "animation",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 880,
+      "height": 550,
+      "durationSeconds": 34.13,
+      "bytes": 1226374,
+      "sha256": "d1ca13e98bdd18c3b0c4a0880a460b8fa43a88de5ec54ccf9b82832f7e543d8d"
+    },
+    {
+      "file": "en/correct.mp4",
+      "kind": "recording",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "durationSeconds": 13.47,
+      "bytes": 452703,
+      "sha256": "4eb6ff082763efe7a2f8fbe2906927aa664d9407f58f71c907bc472664060b4f"
+    },
+    {
+      "file": "en/memory.mp4",
+      "kind": "recording",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "durationSeconds": 27.83,
+      "bytes": 602665,
+      "sha256": "abea03e3df28df50eb55da635243a4ace6740e9947e7f3d1dbaa683b5baaaa3a"
+    },
+    {
+      "file": "en/memory.gif",
+      "kind": "animation",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 880,
+      "height": 550,
+      "durationSeconds": 27.88,
+      "bytes": 910186,
+      "sha256": "789c921872d6ce1308015ed882c5e2ed2dbde39dc7c73768b860b4cae0df8305"
+    },
+    {
+      "file": "en/plugins.mp4",
+      "kind": "recording",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 1280,
+      "height": 800,
+      "durationSeconds": 22.03,
+      "bytes": 554272,
+      "sha256": "1b270a34eef55801d9ffa9e1a1d853b1fca4d091b4cecf8633fa783d6c239125"
+    },
+    {
+      "file": "en/plugins.gif",
+      "kind": "animation",
+      "locale": "en",
+      "theme": "light",
+      "viewport": "1280x800",
+      "width": 880,
+      "height": 550,
+      "durationSeconds": 22.01,
+      "bytes": 1088393,
+      "sha256": "cf0624f771c297317d5a3f30eb535b9fbd26110c13d416cf1eba01e86dc5c247"
+    }
+  ]
+}

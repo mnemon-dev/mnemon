@@ -253,7 +253,7 @@ mnemon setup --target hermes --yes
 
 ### [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
-DeepSeek Harness（DSH）通过 [dsh-mnemon](https://github.com/omdsh-dev/dsh-mnemon) 插件集成：该插件把 DSH 的运行时热记忆、受管项目档案与 Mnemon 长期记忆体组织成一套受监督的三层记忆系统。
+DeepSeek Harness（DSH）通过 [dsh-mnemon](../../dsh/README.zh-CN.md) 插件集成，插件在本仓库的 [`dsh/`](../../dsh/) 中开发：该插件把 DSH 的运行时热记忆、受管项目档案与 Mnemon 长期记忆体组织成一套受监督的三层记忆系统。
 
 宿主机安装好 `mnemon`（见[安装](#安装)）后，安装插件并重启 DSH Web profile：
 
@@ -262,13 +262,11 @@ dsh plugin --profile web add dsh-mnemon
 dsh --profile web
 ```
 
-Mnemon 主仓库也可以直接作为 GitHub 安装源。未发布到 npm 的插件版本仍可从
-独立仓库安装；本地开发检出使用绝对路径：
+Mnemon 主仓库也可以直接作为 GitHub 安装源；插件工作区的本地检出使用绝对路径安装：
 
 ```bash
 dsh plugin --profile web add github:mnemon-dev/mnemon
-dsh plugin --profile web add "github:omdsh-dev/dsh-mnemon"
-dsh plugin --profile web add "link:/absolute/path/to/dsh-mnemon"
+dsh plugin --profile web add "link:/absolute/path/to/mnemon/dsh"
 ```
 
 从 Mnemon 主仓库执行全新安装时，会解析 npm 上标记为 `latest` 的
@@ -466,6 +464,9 @@ make help           # 显示所有目标
 
 **可选**：[Ollama](https://ollama.ai) 或 OpenAI 兼容的嵌入服务器
 
+[`dsh/`](../../dsh/) 中的 DeepSeek Harness 插件工作区是独立的 pnpm 工作区（TypeScript），
+安装、检查和发布流程见 [dsh/CONTRIBUTING.zh-CN.md](../../dsh/CONTRIBUTING.zh-CN.md)。
+
 ## 文档
 
 - [Agency Preview 指南](AGENCY.md) — 成熟度边界、Pi 设置、View → Intent → Receipt 与可选 peer 协作
@@ -489,6 +490,8 @@ Mnemon 取用了一篇论文的范式和另一篇论文的方法论，并基于�
 Copyright 2026 Grivn and Mnemon contributors.
 
 [Apache-2.0](../../LICENSE)
+
+[`dsh/`](../../dsh/) 中的 DeepSeek Harness 插件工作区保留自己的 [MIT 许可证](../../dsh/LICENSE)。
 
 `LICENSE` 末尾带方括号的版权示例属于 Apache 2.0 标准许可证的应用附录；
 本节所列内容才是本项目的实际版权声明。

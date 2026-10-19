@@ -1,0 +1,4 @@
+{"label":"npm symlink","electron":"44.3.0","node":"24.20.0","hostType":"browser","hostRunAsNode":null,"status":true,"write":true,"recall":true,"forget":true,"version":"0.2.8","mode":"npm"}
+Actual npm launcher self-update completed in the isolated prefix; 0.2.8 was already latest.
+{"label":"Windows-shaped .cmd","electron":"44.3.0","node":"24.20.0","hostType":"browser","hostRunAsNode":null,"status":true,"write":true,"recall":true,"forget":true,"version":"0.2.8","mode":"npm"}
+{"label":"native binary","electron":"44.3.0","node":"24.20.0","hostType":"browser","hostRunAsNode":null,"status":true,"write":true,"recall":true,"forget":true,"version":"0.2.8","mode":"manual"}

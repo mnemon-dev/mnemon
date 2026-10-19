@@ -1,0 +1,36 @@
+{
+  "sourceRevision": "099d39f8fabf8d118b87455b4399f80eb2f98f7b",
+  "baseMain": "ae710d3a552df76739b8ada36240e9176f2e4726",
+  "baseRelease": "2fa306b916e0995eb739953318ec7a3d4b89709b",
+  "version": "0.5.8",
+  "publish": [
+    "dsh-mnemon@0.5.8"
+  ],
+  "rootTestsPassed": 978,
+  "pluginTestsPassed": 323,
+  "optionalTestsSkipped": 7,
+  "nativeCliTestsPassed": 1,
+  "independentPlugins": 16,
+  "packedArtifacts": 17,
+  "package": {
+    "files": 47,
+    "packedBytes": 284282,
+    "unpackedBytes": 1278996
+  },
+  "webui": {
+    "version": "0.5.8",
+    "dsh": "0.1.5-rc.1",
+    "mnemonCli": "0.2.7",
+    "runtimePersistedAfterReload": true,
+    "runtimeEntries": 1,
+    "runtimeMarkdownBytes": 95,
+    "activeNativeSpaces": 1,
+    "strategyEnhancements": 3
+  },
+  "screenshots": {
+    "01-runtime-after-reload.jpg": "311b1af64a6c014adab36be1178e25e0ac432ad0ce9c6acc71c8dc9a82b3ae8a",
+    "02-version-native-status.jpg": "d024e8d67f017feed055e03001b718a2ed40f041b5eac7de2eb227b966f2fd6e"
+  },
+  "externalModelCalls": 0,
+  "disposableFixtureRemoved": true
+}

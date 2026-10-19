@@ -1,0 +1,12 @@
+{
+  "framework": "0.1.5-rc.2",
+  "node": "v24.20.0",
+  "generation": "dsh-mnemon+0.5.13+2775bb3fa512",
+  "checks": [
+    "the old host receives PlainConfig and retains the mnemon and mnemon-ui settings namespaces",
+    "all three Strategy extensions activate",
+    "legacy Settings.update validates and persists an ordinary value",
+    "restart retains the saved settings and comment bytes",
+    "the original root gate disposes all eight entries and the owned settings namespace"
+  ]
+}

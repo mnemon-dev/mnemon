@@ -1,0 +1,139 @@
+{
+  "date": "2026-09-17",
+  "issue": 259,
+  "baseline": "6da061e8fa51a30ed50c6fff2a4cadcddf7a4a6a",
+  "implementation": "1a9d455004c9204a74b87c920d81b67b3f7b954f",
+  "webui": {
+    "platform": "macOS arm64",
+    "node": "25.1.0",
+    "pnpm": "11.19.0",
+    "dsh": "0.1.5-rc.1",
+    "model": "loopback deterministic fixture; no external model API",
+    "cli": {
+      "version": "0.2.8",
+      "sha256": "f8f21151ce9777983b8d2dfb9cbea1a00b223de6063659af232d04aa57cedad0"
+    },
+    "optionalStrategiesEnabled": [
+      "scoped",
+      "light-context",
+      "auto-capture"
+    ],
+    "bothRevisions": {
+      "conversationsCreated": 2,
+      "runtimeEntriesCreated": 2,
+      "switchSequence": [
+        "B",
+        "A",
+        "B"
+      ],
+      "browserReloadPassed": true
+    },
+    "fixedAdditionalBranches": [
+      "webui-other",
+      "detached HEAD"
+    ],
+    "fixedCliVersionCheckPassed": true,
+    "gitProbesBefore": 2,
+    "gitProbesAfter": 4,
+    "caveat": "Actual Git probes occurred on conversation turns. Hot A/B switching and browser reload did not add probes in this DSH/macOS fixture. Windows console reproduction is separately observed in the Windows harness."
+  },
+  "checks": {
+    "newRegressionBefore": {
+      "passed": 11,
+      "failed": 1
+    },
+    "newRegressionAfter": {
+      "passed": 12,
+      "failed": 0
+    },
+    "runtimeSuite": {
+      "passed": 59,
+      "failed": 0
+    },
+    "rootSuite": {
+      "passed": 1162,
+      "skipped": 5,
+      "failed": 0
+    },
+    "rootSkips": "opt-in live Flash quality/stress",
+    "pluginSkips": [
+      "one Memory Spaces Windows-only test on macOS",
+      "one opt-in live OpenViking test"
+    ],
+    "nativeCapacityTests": 43,
+    "independentPluginRepositories": 16,
+    "packedArtifacts": 17,
+    "packedStarterActivation": true,
+    "allThreeOptionalStrategiesTogether": true,
+    "headlessTools": 39,
+    "package": {
+      "files": 47,
+      "packedBytes": 298499,
+      "unpackedBytes": 1335667,
+      "unpackedBudget": 1338000
+    }
+  },
+  "changeScope": "Runtime process launch option only; no protocol, storage or DSH-source change",
+  "files": {
+    "README.md": {
+      "bytes": 8106,
+      "sha256": "c9d6449afd4ebc29d7271ffc8a6ca1e6150807f6955f07903bc1d448f7a277d3"
+    },
+    "README.zh-CN.md": {
+      "bytes": 7764,
+      "sha256": "0e7996eb6fbda19e6ac7c29044c3e261e9ab4120e68f90a31d5d22c215e98151"
+    },
+    "after-cli-version.png": {
+      "bytes": 97421,
+      "sha256": "f23b3776d3f3165b567f70152c4aacbeec26312c3850537124e7af63f96292d3"
+    },
+    "after-conversation-switch.png": {
+      "bytes": 44293,
+      "sha256": "5e179450679bb4641c1e3226d2d091ca23bf87d348fbae4f83e793f5bb08a824"
+    },
+    "after-detached-reload.png": {
+      "bytes": 64461,
+      "sha256": "bef9c9903ffe736f5089ded3ed43d6a04b1965b39f71755fadb85b55dd916291"
+    },
+    "after-runtime.png": {
+      "bytes": 80407,
+      "sha256": "cc6a547d8470aef8ae0edb59c112696b320d5788afa5e080ca961203decd7bf1"
+    },
+    "before-conversation-switch.png": {
+      "bytes": 44958,
+      "sha256": "d1901089d310710be4a3a2ed8b3f7fe718969d298682f7993c94a61d525fd2aa"
+    },
+    "before-runtime.png": {
+      "bytes": 81454,
+      "sha256": "123e8d4994e268e3c83cfe566b62dc29783564e1d1b10b3f41aff2083e6f7cd9"
+    },
+    "trace-git-probe.mjs": {
+      "bytes": 1298,
+      "sha256": "b524a9bada30937c308ff6cf3f54b34185f5e5ccfb122259981be0c1da834242"
+    },
+    "webui-git-probes.json": {
+      "bytes": 1712,
+      "sha256": "280d90c9f3627f85fb9523883611651c32fbd6517acce12c15cc7acfc8a8d235"
+    },
+    "windows-after.png": {
+      "bytes": 786057,
+      "sha256": "011de9e35297b8c14a2112e0e7b17f9b7d9bf1f06c1d1ca396b58059f43b4134"
+    },
+    "windows-archive-manifest.json": {
+      "bytes": 3722,
+      "sha256": "de4f2584209651d3647827ab1a7f95cc4cc8a9cb7f4df285cd74c9f1c49749cd"
+    },
+    "windows-before.png": {
+      "bytes": 786383,
+      "sha256": "760c89932db104c71f4a07424f3bcd3eb2ef2273cdc2e553e401d39b854b10cb"
+    },
+    "windows-evidence.tar.gz": {
+      "bytes": 3308741,
+      "sha256": "f976d55ec68f6b18322e2c9e7b391f3a9d4ab4c965f15db9da6a60ff3a996dea"
+    },
+    "windows-results.json": {
+      "bytes": 12164,
+      "sha256": "c0f810298ef0a0a63e380f6a5e831f9caa12f21782e61a6d09c2de0c4eb07f62"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "nativeImport": {
+    "scenario": "four-children-four-spaces",
+    "successfulWritesBeforeBlock": 14,
+    "archiveCycles": 0,
+    "symptom": "runtime archive skipped an entry without exact durable recall evidence",
+    "standaloneCliProbe": {
+      "distinctSimilarInputs": 3,
+      "normalImported": 1,
+      "normalSkipped": 2
+    },
+    "effect": "The exact-receipt guard preserved committed hot memory and rejected pending writes."
+  },
+  "utf8Output": {
+    "successfulWritesBeforeDetection": 84,
+    "archiveCycles": 13,
+    "missingFacts": [],
+    "changedFacts": [
+      "flashstress-backend-004"
+    ],
+    "changedEvidence": [
+      {
+        "id": "flashstress-backend-004",
+        "submitted": "项目 Orion，模块 backend，记录 flashstress-backend-004。后端订单服务采用事务发件箱处理支付回调，幂等键由租户、订单和请求序列组成。所有状态更新先校验版本号，数据库提交后才发布消息。失败重试必须保留审计记录，禁止绕过租户隔离。接口以服务端生成的追踪编号关联日志，测试环境只使用合成订单。 本记录对应独立验收项 4，配置键为 backend.rule.4，验证端口为 12004，重试上限为 6 次。验收必须保留该记录标识、模块归属、配置键与数字约束，以便跨会话精确召回；本段全部为压力测试合成数据。",
+        "observed": [
+          "项目 Orion，模块 backend，记录 flashstress-backend-004。后端订单服务采用事务发件箱处理支付回调，幂等键由租户、订单和请求序列组成。所有状态更新先校验版本号，数据库提交后才发布消息。失败重试必须保留审计记录，禁止绕过租户隔离。接口以服务端生成的追踪编号关联日志，测试环境只使用合成订单。 本记录对应独立验收项 4，配置键为 backend.rule.4���验证端口为 12004，重试上限为 6 次。验收必须保留该记录标识、模块归属、配置键与数字约束，以便跨会话精确召回；本段全部为压力测试合成数据。"
+        ]
+      }
+    ],
+    "cause": "Per-chunk Buffer.toString decoded a Chinese comma split across stdout buffers as replacement characters."
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Memory Spaces",
+    "description": "Provider-backed durable evidence recalled on demand across tasks and sessions."
+  }
+}

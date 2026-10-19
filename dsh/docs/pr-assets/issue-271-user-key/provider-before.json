@@ -1,0 +1,29 @@
+{
+  "fixture": "deterministic-openviking-user-key",
+  "cloudAccountVerified": false,
+  "requests": [
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/accounts",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": false,
+      "uri": null
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/admin/accounts/fixture/users",
+      "account": "fixture",
+      "user": "alice",
+      "identityHeaders": true,
+      "uri": null
+    }
+  ],
+  "files": [
+    {
+      "account": "fixture",
+      "uri": "viking://user/alice/memories/entities/issue-271-canary.md",
+      "content": "Issue 271 synthetic memory: user-key discovery can browse this exact text.\n这是隔离夹具数据，不是真实火山云账号。"
+    }
+  ]
+}

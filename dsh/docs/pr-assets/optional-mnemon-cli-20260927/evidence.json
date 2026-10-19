@@ -1,0 +1,145 @@
+{
+  "testedImplementation": "c45680308ad74be9963f9e20e41897da5af2f9a8",
+  "base": "533b67fe78470fb08488a379346313f26e80ec21",
+  "environment": {
+    "os": "macOS 15.6",
+    "node": "v25.1.0",
+    "pnpm": "11.19.0",
+    "dsh": "0.1.7-rc.2",
+    "mnemonCli": "0.2.7",
+    "ollama": "0.34.4",
+    "models": [
+      "qwen2.5:3b",
+      "nomic-embed-text"
+    ]
+  },
+  "withoutCli": {
+    "webui": {
+      "statusFacts": {
+        "nativeCard": false,
+        "providers": "1 / 8 已启用"
+      },
+      "versionFacts": [
+        "dsh-mnemon | 本地 Link | 已是最新",
+        "Mnemon CLI | 未安装 | 未安装（可选）"
+      ],
+      "settingsFacts": {
+        "tag": "未安装 CLI（可选）",
+        "embedding": "测试需要 Mnemon CLI；向量设置只作用于 Mnemon Native。",
+        "testDisabled": true
+      },
+      "createFacts": [
+        {
+          "provider": "mem0",
+          "checked": true,
+          "disabled": false,
+          "hint": "始终使用全局范围 · 自动事实提取、语义召回、重排与去重"
+        },
+        {
+          "provider": "mnemon-native",
+          "checked": false,
+          "disabled": true,
+          "hint": "需要在本机安装 Mnemon CLI；其他 Provider 不受影响"
+        }
+      ]
+    },
+    "consoleErrors": 0,
+    "headlessJourney": [
+      {
+        "name": "directory-before",
+        "native": false,
+        "persistenceProvider": "mnemon-native"
+      },
+      {
+        "name": "persist-before-provider",
+        "error": "No memory provider is ready: install the Mnemon CLI to use Mnemon Native, or connect another provider in Settings"
+      },
+      {
+        "name": "directory-after-mem0",
+        "persistenceProvider": "mem0"
+      },
+      {
+        "name": "persisted-space",
+        "id": "mem0-c38ecb9d-195a-48fe-a17a-181687dd2f1e",
+        "provider": "mem0"
+      },
+      {
+        "name": "remember",
+        "action": "stored"
+      },
+      {
+        "name": "recall",
+        "count": 1,
+        "top": "The no-CLI journey stores this decision in Mem0: releases ship on Thursdays after the regression suite passes.",
+        "provider": "mem0-c38ecb9d-195a-48fe-a17a-181687dd2f1e"
+      },
+      {
+        "name": "status",
+        "commandFound": false,
+        "statsTotal": 0,
+        "error": null
+      }
+    ]
+  },
+  "providerLab": {
+    "seeded": {
+      "mnemon-native": 5,
+      "openviking": 5,
+      "honcho": 5,
+      "mem0": 5,
+      "hindsight": 5,
+      "holographic": 5,
+      "retaindb": 5,
+      "supermemory": 5
+    },
+    "createDialogWithCli": {
+      "checked": "mnemon-native",
+      "readyProviders": [
+        "hindsight",
+        "holographic",
+        "honcho",
+        "mem0",
+        "mnemon-native",
+        "openviking",
+        "retaindb",
+        "supermemory"
+      ]
+    },
+    "recallQuery": "记忆系统的三层结构是什么？",
+    "recallMatches": [
+      "openviking",
+      "mem0",
+      "honcho",
+      "retaindb",
+      "mem0 (space created without the CLI)"
+    ],
+    "content": {
+      "total": 43,
+      "perSpace": {
+        "mnemon-native": 5,
+        "openviking": 5,
+        "honcho": 5,
+        "mem0": [
+          5,
+          5,
+          1
+        ],
+        "hindsight": 2,
+        "holographic": 5,
+        "retaindb": [
+          5,
+          0
+        ],
+        "supermemory": 5
+      }
+    },
+    "entityIndexes": {
+      "mnemon-native": 9,
+      "hindsight": 15,
+      "holographic": 13
+    },
+    "notTested": {
+      "byterover": "brv CLI not installed"
+    }
+  }
+}

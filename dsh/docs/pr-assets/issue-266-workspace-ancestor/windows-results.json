@@ -1,0 +1,502 @@
+{
+  "issue": 266,
+  "date": "2026-09-22",
+  "runs": [
+    {
+      "phase": "baseline",
+      "productRevision": "65c0e23ba410993e16c00c8b3adf92d59d853425",
+      "validationRevision": "22690919434d18d8537ef74e08a4d200282a199e",
+      "runUrl": "https://github.com/omdsh-dev/dsh-mnemon/actions/runs/35715519552",
+      "source": {
+        "gitBlobSha256": "f78cffb1d777b9da384c4184e1514636392600c055b424a01746e656938d80c1",
+        "windowsCheckoutSha256": "54a2c24f6fc52f8e75faaf775fcddbca8767552647c885eda906204c47f66f45",
+        "lineEndings": "Git blob LF; Windows checkout CRLF; observed hashes match the respective checkout bytes"
+      },
+      "observations": [
+        {
+          "artifact": "issue-266-baseline-node-22.19.0",
+          "filesystem": {
+            "phase": "baseline",
+            "platform": "win32",
+            "osRelease": "10.0.26100",
+            "node": "v22.19.0",
+            "libuv": "1.51.0",
+            "sourceSha256": "54a2c24f6fc52f8e75faaf775fcddbca8767552647c885eda906204c47f66f45",
+            "native": [
+              {
+                "name": "file-child",
+                "threw": true,
+                "code": "ENOENT",
+                "errno": -4058
+              },
+              {
+                "name": "file-ancestor",
+                "returned": "<fixture>\\file"
+              }
+            ],
+            "cases": [
+              {
+                "name": "empty",
+                "shouldThrow": true,
+                "threw": true,
+                "code": null,
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "relative",
+                "shouldThrow": true,
+                "threw": true,
+                "code": null,
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "nul",
+                "shouldThrow": true,
+                "threw": true,
+                "code": null,
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "file-child",
+                "shouldThrow": true,
+                "returned": "19654417a7b36eb7879b868eb2993b3c5f131cfbfb84b9dac5e277e37ca10a57",
+                "passed": false
+              },
+              {
+                "name": "file-deeper",
+                "shouldThrow": true,
+                "returned": "a5a375613fc56e2be99b6cf071a62b294bbf8ed128bc9cc98ad18d5aeb9b63f3",
+                "passed": false
+              },
+              {
+                "name": "unicode-missing",
+                "shouldThrow": false,
+                "returned": "b1acc5e3f5b6dc73f75263ede731409c9aa10105ee2e946b42e0dcebe5b265eb",
+                "passed": true
+              },
+              {
+                "name": "existing-file",
+                "shouldThrow": false,
+                "returned": "6e847e62f6a759aa29c04728144a08825e217b5328123903c264b4f875d4ccbd",
+                "passed": true
+              },
+              {
+                "name": "missing-deeper",
+                "shouldThrow": false,
+                "returned": "8952e4a7303cbb4ebc71cbf98dc2d20c1bdb7f8ddb110e791c7d714a2ca73d95",
+                "passed": true
+              },
+              {
+                "name": "existing-root",
+                "shouldThrow": false,
+                "returned": "5dc50dd6409e963476fb99d7b6f6d90f6d79878a95796d99b3476665db9767f5",
+                "passed": true
+              },
+              {
+                "name": "workspace",
+                "shouldThrow": false,
+                "returned": "74be816a5cfe75104ccae7bf6bbd3c5b25439deafb181cbfee7e5405d4469557",
+                "passed": true
+              },
+              {
+                "name": "junction",
+                "shouldThrow": false,
+                "returned": "74be816a5cfe75104ccae7bf6bbd3c5b25439deafb181cbfee7e5405d4469557",
+                "passed": true
+              },
+              {
+                "name": "junction-missing",
+                "shouldThrow": false,
+                "returned": "f424b2120159e38722e39b636d4cea92b397ce01000e5066a4d3b75d83eec8b6",
+                "passed": true
+              }
+            ],
+            "contractFailures": [
+              "file-child",
+              "file-deeper"
+            ],
+            "junctionAliasesMatch": true,
+            "originalFileRetained": true
+          },
+          "tests": {
+            "total": 29,
+            "passed": 26,
+            "failed": 3,
+            "failures": [
+              "asynchronous child memory authority keeps the delegated workspace scope when a child header is changed",
+              "browser bundle platform boundary keeps all default and independent Client imports inside browser code or data-only contracts",
+              "built-in centralized workspace layout rejects malformed identities and non-directory ancestors while allowing Unicode names"
+            ]
+          }
+        },
+        {
+          "artifact": "issue-266-baseline-node-24",
+          "filesystem": {
+            "phase": "baseline",
+            "platform": "win32",
+            "osRelease": "10.0.26100",
+            "node": "v24.20.0",
+            "libuv": "1.52.1",
+            "sourceSha256": "54a2c24f6fc52f8e75faaf775fcddbca8767552647c885eda906204c47f66f45",
+            "native": [
+              {
+                "name": "file-child",
+                "threw": true,
+                "code": "ENOENT",
+                "errno": -4058
+              },
+              {
+                "name": "file-ancestor",
+                "returned": "<fixture>\\file"
+              }
+            ],
+            "cases": [
+              {
+                "name": "empty",
+                "shouldThrow": true,
+                "threw": true,
+                "code": null,
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "relative",
+                "shouldThrow": true,
+                "threw": true,
+                "code": null,
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "nul",
+                "shouldThrow": true,
+                "threw": true,
+                "code": null,
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "file-child",
+                "shouldThrow": true,
+                "returned": "e9904367bb62b5a67601ae37596db3804a6869dd46c4c6083a67ce0c4f1b09bf",
+                "passed": false
+              },
+              {
+                "name": "file-deeper",
+                "shouldThrow": true,
+                "returned": "8f208910d289032af8a98a868287484f8564a98cb222a1b5488b6cca9434f956",
+                "passed": false
+              },
+              {
+                "name": "unicode-missing",
+                "shouldThrow": false,
+                "returned": "c311e117b2c88b3add101ed4f08b632093d8f2aa40ac504de35db7dfcb926162",
+                "passed": true
+              },
+              {
+                "name": "existing-file",
+                "shouldThrow": false,
+                "returned": "4d0cd14d04fbb9da9a0b4d2b5f6a22aee4e73f061d2ed812e6f10b1292f5a161",
+                "passed": true
+              },
+              {
+                "name": "missing-deeper",
+                "shouldThrow": false,
+                "returned": "88a327e26b0fb53421ec911e6c8b2a33f1a27d1f023a8eada977957e9c689ca5",
+                "passed": true
+              },
+              {
+                "name": "existing-root",
+                "shouldThrow": false,
+                "returned": "9c63dcbe7f1fa5f9e0d9062157786f5b69a6acbfb21bc0f6d4e8bad2a9329d30",
+                "passed": true
+              },
+              {
+                "name": "workspace",
+                "shouldThrow": false,
+                "returned": "9389e09d93ba6d2a80cafe42c581b7bb412f498e5657c9970bf5c2d02f11ee89",
+                "passed": true
+              },
+              {
+                "name": "junction",
+                "shouldThrow": false,
+                "returned": "9389e09d93ba6d2a80cafe42c581b7bb412f498e5657c9970bf5c2d02f11ee89",
+                "passed": true
+              },
+              {
+                "name": "junction-missing",
+                "shouldThrow": false,
+                "returned": "2062623835ab24b20bf526e8ac35ce2170ba0708dfff7da60c04e0fee79b9f3e",
+                "passed": true
+              }
+            ],
+            "contractFailures": [
+              "file-child",
+              "file-deeper"
+            ],
+            "junctionAliasesMatch": true,
+            "originalFileRetained": true
+          },
+          "tests": {
+            "total": 29,
+            "passed": 26,
+            "failed": 3,
+            "failures": [
+              "asynchronous child memory authority keeps the delegated workspace scope when a child header is changed",
+              "browser bundle platform boundary keeps all default and independent Client imports inside browser code or data-only contracts",
+              "built-in centralized workspace layout rejects malformed identities and non-directory ancestors while allowing Unicode names"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "phase": "fixed",
+      "productRevision": "1750e497e58c24406c0092e4fc1549996283aab8",
+      "validationRevision": "fde19025ff6452fcfd0643f377593b83279ca232",
+      "runUrl": "https://github.com/omdsh-dev/dsh-mnemon/actions/runs/35715781789",
+      "source": {
+        "gitBlobSha256": "526da7a29d0ca6e5e0f79f877ddf4b4466644fe0a1599fbaa4f5018d5c637344",
+        "windowsCheckoutSha256": "7e4dae828209fe2a7d2b1ceea701c74ea6295ba34bce4733480a5d97e3c5e8f7",
+        "lineEndings": "Git blob LF; Windows checkout CRLF; observed hashes match the respective checkout bytes"
+      },
+      "observations": [
+        {
+          "artifact": "issue-266-fixed-node-22.19.0",
+          "filesystem": {
+            "phase": "fixed",
+            "platform": "win32",
+            "osRelease": "10.0.26100",
+            "node": "v22.19.0",
+            "libuv": "1.51.0",
+            "sourceSha256": "7e4dae828209fe2a7d2b1ceea701c74ea6295ba34bce4733480a5d97e3c5e8f7",
+            "native": [
+              {
+                "name": "file-child",
+                "threw": true,
+                "code": "ENOENT",
+                "errno": -4058
+              },
+              {
+                "name": "file-ancestor",
+                "returned": "<fixture>\\file"
+              }
+            ],
+            "cases": [
+              {
+                "name": "empty",
+                "shouldThrow": true,
+                "threw": true,
+                "code": null,
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "relative",
+                "shouldThrow": true,
+                "threw": true,
+                "code": null,
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "nul",
+                "shouldThrow": true,
+                "threw": true,
+                "code": null,
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "file-child",
+                "shouldThrow": true,
+                "threw": true,
+                "code": "ENOTDIR",
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "file-deeper",
+                "shouldThrow": true,
+                "threw": true,
+                "code": "ENOTDIR",
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "unicode-missing",
+                "shouldThrow": false,
+                "returned": "c4a69a9709588490d5c35a333362c7968c7c57f48f418629c12ee597a382f0a8",
+                "passed": true
+              },
+              {
+                "name": "existing-file",
+                "shouldThrow": false,
+                "returned": "8c2294e4a64dd689fab6e293fb9c4b46fe62792e0ed83dac2edd1d85853c57fe",
+                "passed": true
+              },
+              {
+                "name": "missing-deeper",
+                "shouldThrow": false,
+                "returned": "e5a9913f8124c01bb5301ac2fea2b27a637daa1a38477ca0a56f262f1c34ff6f",
+                "passed": true
+              },
+              {
+                "name": "existing-root",
+                "shouldThrow": false,
+                "returned": "33013274708740d724043c8602f9a317efba2c2ffcd5e0771a5fc8d10d1d4bc6",
+                "passed": true
+              },
+              {
+                "name": "workspace",
+                "shouldThrow": false,
+                "returned": "80a4cea84a53d989223ee3be8793a57960bdc3da838c4b0ebc2e6506f9e37da0",
+                "passed": true
+              },
+              {
+                "name": "junction",
+                "shouldThrow": false,
+                "returned": "80a4cea84a53d989223ee3be8793a57960bdc3da838c4b0ebc2e6506f9e37da0",
+                "passed": true
+              },
+              {
+                "name": "junction-missing",
+                "shouldThrow": false,
+                "returned": "455cbdf080bf0b7346136b2b05fb488a7cdc7991e50af8dd0fb280a65b48ff3f",
+                "passed": true
+              }
+            ],
+            "contractFailures": [],
+            "junctionAliasesMatch": true,
+            "originalFileRetained": true
+          },
+          "tests": {
+            "total": 31,
+            "passed": 31,
+            "failed": 0,
+            "failures": []
+          }
+        },
+        {
+          "artifact": "issue-266-fixed-node-24",
+          "filesystem": {
+            "phase": "fixed",
+            "platform": "win32",
+            "osRelease": "10.0.26100",
+            "node": "v24.20.0",
+            "libuv": "1.52.1",
+            "sourceSha256": "7e4dae828209fe2a7d2b1ceea701c74ea6295ba34bce4733480a5d97e3c5e8f7",
+            "native": [
+              {
+                "name": "file-child",
+                "threw": true,
+                "code": "ENOENT",
+                "errno": -4058
+              },
+              {
+                "name": "file-ancestor",
+                "returned": "<fixture>\\file"
+              }
+            ],
+            "cases": [
+              {
+                "name": "empty",
+                "shouldThrow": true,
+                "threw": true,
+                "code": null,
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "relative",
+                "shouldThrow": true,
+                "threw": true,
+                "code": null,
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "nul",
+                "shouldThrow": true,
+                "threw": true,
+                "code": null,
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "file-child",
+                "shouldThrow": true,
+                "threw": true,
+                "code": "ENOTDIR",
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "file-deeper",
+                "shouldThrow": true,
+                "threw": true,
+                "code": "ENOTDIR",
+                "errno": null,
+                "passed": true
+              },
+              {
+                "name": "unicode-missing",
+                "shouldThrow": false,
+                "returned": "3ff949f0692911975b4048bb2b9bea5cd6c9aadf3f70375f364d2b1f76fc7136",
+                "passed": true
+              },
+              {
+                "name": "existing-file",
+                "shouldThrow": false,
+                "returned": "c0e9a03965e3fd986b5ec5bffcfaea40cde0e79157e645c2dc92073af5684147",
+                "passed": true
+              },
+              {
+                "name": "missing-deeper",
+                "shouldThrow": false,
+                "returned": "5991542749057cc10fdc8a782bcdfa584399f9b10a4f0a50bb641c4a3dc19a6a",
+                "passed": true
+              },
+              {
+                "name": "existing-root",
+                "shouldThrow": false,
+                "returned": "9f8e5950e61830b962a383948facb6e244fdf8e0d7acb82236ddc553032aa23a",
+                "passed": true
+              },
+              {
+                "name": "workspace",
+                "shouldThrow": false,
+                "returned": "76c26bb73693098a1490ac55f9c14d5c293b686445f437d232f37fa85098a5c8",
+                "passed": true
+              },
+              {
+                "name": "junction",
+                "shouldThrow": false,
+                "returned": "76c26bb73693098a1490ac55f9c14d5c293b686445f437d232f37fa85098a5c8",
+                "passed": true
+              },
+              {
+                "name": "junction-missing",
+                "shouldThrow": false,
+                "returned": "491a008aba4de8d6f2f2248c841f69084bfdac77b03953dc4f3153c2e2db372c",
+                "passed": true
+              }
+            ],
+            "contractFailures": [],
+            "junctionAliasesMatch": true,
+            "originalFileRetained": true
+          },
+          "tests": {
+            "total": 31,
+            "passed": 31,
+            "failed": 0,
+            "failures": []
+          }
+        }
+      ]
+    }
+  ]
+}

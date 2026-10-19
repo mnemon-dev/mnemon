@@ -1,0 +1,508 @@
+{
+  "date": "2026-10-03",
+  "issue": "https://github.com/omdsh-dev/dsh-mnemon/issues/327",
+  "revisions": {
+    "baseline": "main 06182f4d828efb1569d2f68a2df5e0e1d1c69f89 (dsh-mnemon 0.5.21)",
+    "fix": "771d43e2bdc3ffcc06d2fa057ae0e9d913ce884f",
+    "firstVersion": "b0dc3c7ea684fcd17f2556482b9a3239e57af250 (a user turn on every continuation; narrowed after review)"
+  },
+  "environment": {
+    "os": "macOS 15.6 arm64",
+    "node": "24.19.0",
+    "browser": "headless Chrome 154, 1280x800, device scale 1, zh-CN, light",
+    "dsh": [
+      "@deepseek-ai/dsh 0.1.7-rc.2 (the repository devDependency)",
+      "@deepseek-ai/dsh 0.2.0-rc.2 (npm latest and next, isolated prefix)"
+    ]
+  },
+  "emulation": {
+    "server": "Ollama 0.33 serving a model whose chat template requires a user query (Qwen3.x), as ollama/ollama#18303 and #18697 describe",
+    "truncation": "Keep the system prompt and the longest suffix that fits num_ctx, always including the last message; tokens estimated as JSON length / 4",
+    "refusal": "HTTP 500 \"no user query found in messages\" when no user text turn survives",
+    "window": "Sized when the review sends its third request, to hold that request from the delegated prompt on; the fourth request then overflows it, as reported",
+    "model": "Scripted choices only: Document search, Document create, search, completion. DSH, the review, its tools and the browser are real"
+  },
+  "hostComposition": {
+    "test": "tests/review-user-turn-host.spec.ts: a real DSH 0.1.7-rc.2 composition in process (agent loop, fork and spawn providers, Mnemon lifecycle, coordinator and tools); pi-ai folds a non-leading system message into a user message",
+    "baseline": {
+      "fork": {
+        "outcome": {
+          "error": "memory subagent stopped with error: SERVER_ERROR: no user query found in messages",
+          "status": "partial",
+          "receipts": [
+            "mnemon_document_create · created"
+          ]
+        },
+        "childRequests": [
+          {
+            "request": 1,
+            "last": "runtime-context",
+            "continuations": 0,
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 2,
+            "last": "tool",
+            "continuations": 0,
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 3,
+            "last": "tool",
+            "continuations": 0,
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "continuations": 0,
+            "userQuery": false,
+            "promptKept": false
+          }
+        ]
+      },
+      "spawn": {
+        "outcome": {
+          "error": "memory subagent stopped with error: SERVER_ERROR: no user query found in messages",
+          "status": "partial",
+          "receipts": [
+            "mnemon_document_create · created"
+          ]
+        },
+        "childRequests": [
+          {
+            "request": 1,
+            "last": "runtime-context",
+            "continuations": 0,
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 2,
+            "last": "tool",
+            "continuations": 0,
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 3,
+            "last": "tool",
+            "continuations": 0,
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "continuations": 0,
+            "userQuery": false,
+            "promptKept": false
+          }
+        ]
+      }
+    },
+    "fix": {
+      "truncating": {
+        "fork": {
+          "outcome": {
+            "delegated": true,
+            "action": "created",
+            "documentIds": 1
+          },
+          "childRequests": [
+            {
+              "request": 1,
+              "last": "runtime-context",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            },
+            {
+              "request": 2,
+              "last": "tool",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            },
+            {
+              "request": 3,
+              "last": "tool",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            },
+            {
+              "request": 4,
+              "last": "tool",
+              "continuations": 0,
+              "userQuery": false,
+              "promptKept": false
+            },
+            {
+              "request": 5,
+              "last": "dsh-mnemon",
+              "continuations": 1,
+              "userQuery": true,
+              "promptKept": false
+            }
+          ]
+        },
+        "spawn": {
+          "outcome": {
+            "delegated": true,
+            "action": "created",
+            "documentIds": 1
+          },
+          "childRequests": [
+            {
+              "request": 1,
+              "last": "runtime-context",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            },
+            {
+              "request": 2,
+              "last": "tool",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            },
+            {
+              "request": 3,
+              "last": "tool",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            },
+            {
+              "request": 4,
+              "last": "tool",
+              "continuations": 0,
+              "userQuery": false,
+              "promptKept": false
+            },
+            {
+              "request": 5,
+              "last": "dsh-mnemon",
+              "continuations": 1,
+              "userQuery": true,
+              "promptKept": false
+            }
+          ]
+        }
+      },
+      "neverRefuses": {
+        "fork": {
+          "outcome": {
+            "delegated": true,
+            "action": "created",
+            "documentIds": 1
+          },
+          "childRequests": [
+            {
+              "request": 1,
+              "last": "runtime-context",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            },
+            {
+              "request": 2,
+              "last": "tool",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            },
+            {
+              "request": 3,
+              "last": "tool",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            },
+            {
+              "request": 4,
+              "last": "tool",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            }
+          ]
+        },
+        "spawn": {
+          "outcome": {
+            "delegated": true,
+            "action": "created",
+            "documentIds": 1
+          },
+          "childRequests": [
+            {
+              "request": 1,
+              "last": "runtime-context",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            },
+            {
+              "request": 2,
+              "last": "tool",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            },
+            {
+              "request": 3,
+              "last": "tool",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            },
+            {
+              "request": 4,
+              "last": "tool",
+              "continuations": 0,
+              "userQuery": true,
+              "promptKept": true
+            }
+          ]
+        }
+      }
+    }
+  },
+  "webui": {
+    "command": "pnpm e2e:serve --strict-template (DSH 0.2.0-rc.2: the same script with its DSH binary swapped); two substantive turns, then the idle review after 5 s",
+    "note": "DSH's DeepSeek adapter speaks the Messages protocol, so a continuation turn arrives as text in the user message that carries the tool results; the fixture reads it as a user text turn, as Ollama's /v1/messages does",
+    "baseline": {
+      "dsh-0.1.7-rc.2": {
+        "reviewRequests": [
+          {
+            "request": 1,
+            "last": "user",
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 2,
+            "last": "tool",
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 3,
+            "last": "tool",
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          }
+        ],
+        "statusAlert": [
+          "后台审查失败",
+          "memory subagent stopped with error: SERVER: no user query found in messages",
+          "本轮记忆检查未完成，不会自动重放。后续审查受冷却时间和会话次数限制。",
+          "已有写入提交；请按下列回执核对，未回滚。",
+          "mnemon_document_create · created · <document id>"
+        ],
+        "documentInProjectDocuments": true,
+        "consoleErrors": []
+      },
+      "dsh-0.2.0-rc.2": {
+        "reviewRequests": [
+          {
+            "request": 1,
+            "last": "user",
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 2,
+            "last": "tool",
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 3,
+            "last": "tool",
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          }
+        ],
+        "statusAlert": [
+          "后台审查失败",
+          "memory subagent stopped with error: SERVER: no user query found in messages",
+          "本轮记忆检查未完成，不会自动重放。后续审查受冷却时间和会话次数限制。",
+          "已有写入提交；请按下列回执核对，未回滚。",
+          "mnemon_document_create · created · <document id>"
+        ],
+        "documentInProjectDocuments": true,
+        "consoleErrors": []
+      }
+    },
+    "fix": {
+      "dsh-0.1.7-rc.2": {
+        "reviewRequests": [
+          {
+            "request": 1,
+            "last": "user",
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 2,
+            "last": "tool",
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 3,
+            "last": "tool",
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          },
+          {
+            "request": 4,
+            "last": "user",
+            "userQuery": true,
+            "promptKept": false
+          }
+        ],
+        "statusAlert": null,
+        "documentInProjectDocuments": true,
+        "consoleErrors": []
+      },
+      "dsh-0.2.0-rc.2": {
+        "reviewRequests": [
+          {
+            "request": 1,
+            "last": "user",
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 2,
+            "last": "tool",
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 3,
+            "last": "tool",
+            "userQuery": true,
+            "promptKept": true
+          },
+          {
+            "request": 4,
+            "last": "tool",
+            "userQuery": false,
+            "promptKept": false
+          },
+          {
+            "request": 4,
+            "last": "user",
+            "userQuery": true,
+            "promptKept": false
+          }
+        ],
+        "statusAlert": null,
+        "documentInProjectDocuments": true,
+        "consoleErrors": []
+      }
+    }
+  },
+  "automated": {
+    "command": "pnpm run verify",
+    "rootTests": {
+      "files": 115,
+      "passed": 1571,
+      "skipped": 6
+    },
+    "docsLocalLinks": 2979,
+    "packageUnpackedBytes": 1502943,
+    "packageBudget": 1504000,
+    "newTests": [
+      "tests/review-user-turn-host.spec.ts (fork and spawn, truncating and never refusing)",
+      "tests/continuation-turn.spec.ts (7)",
+      "tests/subagent.spec.ts: a delegated write child recovers"
+    ]
+  }
+}

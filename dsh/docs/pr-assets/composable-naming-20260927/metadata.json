@@ -1,0 +1,16 @@
+{
+  "dsh": "0.1.7-rc.2",
+  "node": "v24.20.0",
+  "packageVersion": "0.5.16",
+  "rootTarballSha256": "d38afb85784047b54cdb741862c4d3b6ee6c09aa5f56fee8f2bc4be6a9a9b410",
+  "metadata": {
+    "title": {
+      "en": "dsh-mnemon",
+      "zh": "可组合记忆 (dsh-mnemon)"
+    },
+    "description": {
+      "en": "Composable, view-based memory for DeepSeek Harness. Pluggable sources and strategies, with three-tier memory out of the box.",
+      "zh": "面向 DeepSeek Harness 的可组合视图记忆。记忆来源与策略可插拔，开箱即用提供三层记忆。"
+    }
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "issue": "https://github.com/omdsh-dev/dsh-mnemon/issues/319",
+  "date": "2026-10-01",
+  "revisions": {
+    "baseline": "dfb3196cbcea58fb9b36b7283ccac4662d366858",
+    "fix": "3eb6eb7dd30fd47bfcfebb9e361479c1e58653ad",
+    "note": "The baseline builds the root package from main (0.5.20 code); the fixture script and serve-e2e flag come from the fix branch and are identical in all runs."
+  },
+  "environment": {
+    "os": "macOS 15.6 arm64",
+    "node": "24.19.0",
+    "pnpm": "11.19.0",
+    "dsh": "@deepseek-ai/dsh 0.1.7-rc.2 (repository pin)",
+    "viewport": "1440x900, device scale 2, light, zh-CN"
+  },
+  "fixture": {
+    "command": "pnpm e2e:serve --review-layers",
+    "config": {
+      "idleReviewMs": 5000,
+      "idleReview.minIntervalMs": 5000,
+      "idleReview.maxPerSession": 1
+    },
+    "model": "scripts/fixtures/review-layers-model.mjs scripts model choices only: search Documents, create one Document, add the same fact to working memory (target=memory) when the runtime tool is offered, then finish",
+    "turns": [
+      "We settled the boot autostart design for the disposable project today: a boot entry must never run the panel as root. The boot script resolves the service account from the configured user first, then from the owner of the data directory, and it warns when neither is set.",
+      "The installer and the boot script share that account resolution, so both must change together. The warning should name both settings, so an operator can fix the configuration without reading the source."
+    ]
+  },
+  "runs": [
+    {
+      "label": "main",
+      "runtimeMemorySwitch": "on (default)",
+      "documentCreated": true,
+      "documentsListed": [
+        "Boot account resolution"
+      ],
+      "secondWrite": "working-memory-written",
+      "secondWriteResult": "Entry added. (target=memory, entryCount 1)",
+      "workingMemoryEntries": [
+        {
+          "target": "memory",
+          "content": "Boot entries never run the panel as root; the boot script resolves the service account from the configured user, then from the data directory owner."
+        }
+      ],
+      "consoleErrors": 0
+    },
+    {
+      "label": "fix",
+      "runtimeMemorySwitch": "on (default)",
+      "documentCreated": true,
+      "documentsListed": [
+        "Boot account resolution"
+      ],
+      "secondWrite": "working-memory-refused",
+      "secondWriteResult": "Error: This idle review already created a Document, so it cannot also change working memory (target=memory). Finish with the result tool.",
+      "workingMemoryEntries": [],
+      "consoleErrors": 0
+    },
+    {
+      "label": "fix, Write runtime memory off",
+      "runtimeMemorySwitch": "off",
+      "documentCreated": true,
+      "documentsListed": [
+        "Boot account resolution"
+      ],
+      "secondWrite": "runtime-memory-unavailable",
+      "secondWriteResult": "The review was not offered mnemon_runtime_memory.",
+      "workingMemoryEntries": [],
+      "consoleErrors": 0
+    }
+  ],
+  "screenshots": {
+    "after-documents.jpg": "6f9058633171c09cb06ab42dd24c10600134973e50ac094b2811a8b9b89be692",
+    "after-runtime.jpg": "c600aa273a4c02ebdf4bd795e0af988e93edf63d5bffe0a88db12841bff2a5cc",
+    "before-documents.jpg": "10fc85ed0d510f628e03aaf264bf31e4927f7eff44b0d481f6b95c71964e16bf",
+    "before-runtime.jpg": "22d0c8e436613f6bb7abe2e1b11bc29d45657a28eb53a65278515cc757cbf72d",
+    "conversation.jpg": "7a74665984777a06538227f9cebc824636d4ec23ef4df416d5a09cad866f3c6b",
+    "switch-off.jpg": "a75aba4b7e4b5ab7e519badcce59515e052873915cbbc6e31243ca0ef321d2c3"
+  }
+}

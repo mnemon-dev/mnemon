@@ -1,0 +1,58 @@
+{
+  "verifiedAt": "2026-09-28T12:41:22.857393+00:00",
+  "baseCommit": "accd87513c6330fbf8af64f4352657dcca390991",
+  "candidate": {
+    "name": "dsh-mnemon",
+    "version": "0.5.17",
+    "status": "unreleased PR candidate",
+    "sha256": "e9445d4950d8f3a3cc4c02803d3903b6ef992d0f48b0ec9ea0cbeb1fb1f5273f"
+  },
+  "officialWebUI": {
+    "dsh": "0.1.7-rc.2",
+    "node": "24.20.0",
+    "initialState": "fresh profile without Mnemon",
+    "installFlow": "Add plugin -> Install -> Enable now",
+    "hostPidAtLaunch": 76815,
+    "hostPidAfterAcceptance": 76815,
+    "hostAlive": true,
+    "hostLaunchCount": 1,
+    "processStartedAt": "Mon Sep 28 20:23:30 2026",
+    "dependencyLayout": "pnpm isolated; root tarball installed through official WebUI"
+  },
+  "electron": {
+    "desktopBundledDSH": "0.1.7-rc.2",
+    "desktopPackage": "0.10.0",
+    "electron": "44.0.0",
+    "node": "24.18.1",
+    "processType": "browser",
+    "ELECTRON_RUN_AS_NODE": null,
+    "acceptance": "Enable previously unselected bundle; Status healthy; create Native store using real CLI subprocess"
+  },
+  "nativeCLI": {
+    "version": "0.2.9",
+    "rememberAction": "added",
+    "memoryId": "5b4caa9f-2334-4474-8c35-aab634006f12",
+    "content": "LIVE_INSTALL_ACCEPTANCE: Native CLI and official WebUI share durable memory immediately after installation.",
+    "cliRecallMatches": true,
+    "officialWebUIBasicRecallMatches": true
+  },
+  "observedViaRealUI": {
+    "runtimeCreateAndRead": true,
+    "documentCreateAndRead": true,
+    "nativeSpaceCreateAndActivate": true,
+    "cliMemoryRecall": true,
+    "bundleDisableAndReenable": true,
+    "runtimeDocumentAndNativeMemoryRetained": true
+  },
+  "checks": {
+    "pnpm run verify": "passed",
+    "rootTestsPassed": 1513,
+    "rootTestsSkipped": 6,
+    "pnpm run verify:plugins": "passed",
+    "independentPluginPackages": 17,
+    "packedArtifacts": 18,
+    "headlessTools": 37,
+    "representativeMnemonTools": 8
+  },
+  "scope": "Isolated profiles and synthetic data; unmodified published DSH and Desktop host files; no user profile updates or release publishing."
+}

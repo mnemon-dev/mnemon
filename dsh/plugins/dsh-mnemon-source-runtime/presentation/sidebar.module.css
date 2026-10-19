@@ -1,0 +1,28 @@
+.shell .modal form[class*='runtimeComposer'] {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.shell .modal form[class*='runtimeComposer'] > [class*='runtimeComposerHeading'] { display: none; }
+
+/* Runtime metadata reads as DSH Tags; the target is the one informational tone. */
+.shell [class*='runtimeEntryBadges'] > span {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 17px;
+}
+.shell [class*='runtimeEntryBadges'] > [class*='runtimeEntryTarget'] {
+  color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
+  font-family: var(--dsw-font-family);
+}
+.shell [class*='runtimeEntry'][data-importance='critical'] [class*='runtimeEntryBadges'] > span:last-child {
+  color: var(--dsw-alias-state-warn-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, transparent);
+}

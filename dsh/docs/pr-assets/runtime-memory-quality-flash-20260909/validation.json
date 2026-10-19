@@ -1,0 +1,50 @@
+{
+  "verifiedAtUtc": "2026-09-09T09:44:36.633703+00:00",
+  "liveExperimentProductionCommit": "fce3873e9669c9a9eefb902b76ca8d0ddbf68700",
+  "integrationVerifiedCommit": "0017102989747e5ecc55ee7adf4eacf811826c2f",
+  "mergedMainCommit": "a1c500a27fbdb334c7205936f4ef823fe1edb406",
+  "committedHarnessSha256": {
+    "tests/runtime-memory-flash-quality.spec.ts": "81c0423831a504581843658b05fc5698816bcdccb78b0aa6f64aad63cc80f4e5",
+    "tests/fixtures/flash-quality/workload.ts": "536ba45bdd691bacb819744a5c8666f121cf4ad83a4103011a1c0300d1f74de0",
+    "tests/fixtures/flash-quality/live.ts": "a5733d1cafedc0ad2eb56b743f4be4db17f012e9a5beb83b2ac006d2918cd3cf"
+  },
+  "commands": [
+    {
+      "command": "pnpm_config_verify_deps_before_run=false pnpm run verify",
+      "exitCode": 0,
+      "rootTests": {
+        "passed": 836,
+        "skippedOptInLive": 5
+      },
+      "includes": [
+        "bilingual documentation checks",
+        "TypeScript",
+        "deterministic double build",
+        "workspace plugin builds, types and tests",
+        "real isolated Headless activation",
+        "package contents and public imports",
+        "publint and attw"
+      ]
+    },
+    {
+      "command": "pnpm_config_verify_deps_before_run=false pnpm run verify:plugins --skip-build",
+      "exitCode": 0,
+      "independentPluginRepositories": 16,
+      "packedArtifacts": 17,
+      "includes": [
+        "public SDK external consumer",
+        "standalone plugin installs, types, tests and builds",
+        "packed Starter activation",
+        "three optional packed Strategies enabled together"
+      ]
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0
+    }
+  ],
+  "nonfatalWarning": "Published DSH UI package omits its sourcemap; verification exits successfully.",
+  "liveExperimentRerunAfterMainMerge": false,
+  "scope": "The live quality evidence applies to its recorded production revision. Main added UI ordering and Electron npm-launcher support; the merged integration was verified separately. No live score is reinterpreted as a measurement of the merged revision.",
+  "redactionAudit": "All new evidence and harness files checked for the actual credential, private local paths, emoji, and JSON syntax. Synthetic FAKE_CREDENTIAL_* canaries are intentionally retained as evidence."
+}

@@ -1,0 +1,10 @@
+{
+  "background": "linear-gradient(rgb(255, 255, 255), rgb(255, 255, 255)) repeat scroll 0% 0% / auto padding-box border-box, rgb(255, 255, 255) linear-gradient(rgb(233, 236, 242), rgb(233, 236, 242)) repeat scroll 0% 0% / auto padding-box border-box",
+  "bg": "#fff",
+  "installedSkin": true,
+  "mnemonStyleIndex": 61,
+  "skinStyleIndex": 0,
+  "stableRootCount": 0,
+  "surface": "sidebar",
+  "surfaceToken": "linear-gradient(#fff, #fff), linear-gradient(#e9ecf2, #e9ecf2) #fff"
+}

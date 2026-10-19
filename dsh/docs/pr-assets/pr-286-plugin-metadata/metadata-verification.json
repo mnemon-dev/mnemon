@@ -1,0 +1,20 @@
+{
+  "testedRevision": "84dc35aaa832e341a01add4b4e934a90a056c46b",
+  "dshAppBoot": "0.1.7-rc.2",
+  "packageName": "dsh-mnemon",
+  "packedChineseMetadata": {
+    "title": {
+      "en": "dsh-mnemon",
+      "zh": "三级记忆 (dsh-mnemon)"
+    },
+    "description": {
+      "en": "Composable three-tier memory control plane for DeepSeek Harness: persistent runtime context, searchable project documents, pluggable long-term memory, guarded strategies, WebUI, and headless tools.",
+      "zh": "三级记忆系统：召回 / 写入 / 记忆页签（策略配置在 profile patch 层）"
+    }
+  },
+  "baselineMetadata": {
+    "title": "dsh-mnemon",
+    "description": "Composable three-tier memory control plane for DeepSeek Harness: persistent runtime context, searchable project documents, pluggable long-term memory, guarded strategies, WebUI, and headless tools."
+  },
+  "englishFallbackUnchanged": true
+}

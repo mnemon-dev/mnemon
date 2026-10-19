@@ -1,0 +1,1140 @@
+{
+  "schemaVersion": 1,
+  "issue": 265,
+  "recordedDate": "2026-09-22",
+  "result": "pass",
+  "environment": {
+    "os": "macOS",
+    "architecture": "arm64",
+    "node": "v25.1.0",
+    "pnpm": "10.13.1 (invoked through npx for verification)",
+    "nativeMnemon": "0.2.8",
+    "model": "test-owned loopback fixture; no external model API"
+  },
+  "implementation": {
+    "file": "src/client/MnemonView.module.css",
+    "sha256": "58cbfc1985cddca9775d5c416bd27afecada9ef1f7862166f9fa048cd1392b52",
+    "rule": ":has(> [data-conversation-scroll] > [data-slot='conversation.session'] > * > [data-slot='conversation.view'] > .shell[data-mnemon-surface='builtin']) > [data-width-handle]",
+    "declarations": {
+      "visibility": "hidden",
+      "pointer-events": "none"
+    },
+    "builtinPosition": "static",
+    "builtinZIndex": "auto",
+    "scope": "Only direct width handles of the conversation that directly owns this Mnemon Builtin surface. Removing that surface restores native Chat handles."
+  },
+  "baseline": {
+    "mainCommit": "65c0e23ba410993e16c00c8b3adf92d59d853425",
+    "workingTreeCleanAtPack": true,
+    "capturedAt": "2026-09-22T10:21:48.369Z",
+    "run": "baseline-rc-pinned",
+    "dshVersion": "0.1.5-rc.2",
+    "installMode": "fixed",
+    "legacyPeers": false,
+    "artifactCount": 17,
+    "totalPackedBytes": 607285,
+    "rootArtifact": {
+      "name": "dsh-mnemon",
+      "version": "0.5.12",
+      "filename": "dsh-mnemon-0.5.12.tgz",
+      "integrity": "sha512-RWKR8SDTj9WOR/P59LJGbg0UP3I7Ult92aRFQZRoWdTiKMJProqxh+uPU+oJ/o/YNTK/kkq3nXMyP5MFD1O9EA==",
+      "sha256": "42889c4a556b9cb6ee4797f3f5cba98a59673c63d20c4cbe848d572c87546de2",
+      "bytes": 299145
+    },
+    "client": {
+      "file": "lib/client.js",
+      "bytes": 603148,
+      "sha256": "c5a352edc0d1dbab58f8bbddb73c60283906d5196ad125b28a1801ec1c524818"
+    },
+    "hover": [
+      {
+        "hitBuiltin": false,
+        "hitClass": "wSkVaW_widthHandle",
+        "hitHandle": "left",
+        "hover": true,
+        "markOpacity": "1",
+        "point": {
+          "x": 493.40625,
+          "y": 511.5
+        },
+        "side": "left",
+        "zIndex": "8"
+      },
+      {
+        "hitBuiltin": false,
+        "hitClass": "wSkVaW_widthHandle",
+        "hitHandle": "right",
+        "hover": false,
+        "markOpacity": "0",
+        "point": {
+          "x": 1496.59375,
+          "y": 511.5
+        },
+        "side": "right",
+        "zIndex": "8"
+      }
+    ],
+    "hoverRecord": {
+      "filename": "issue265-before-hit-test.json",
+      "sha256": "e2b45c91464e40e3b99495d6884360e8b170e58089bd1b6deb1b185c393a7680"
+    }
+  },
+  "fixedBuild": {
+    "baseCommit": "65c0e23ba410993e16c00c8b3adf92d59d853425",
+    "workingTreePatchAtPack": true,
+    "capturedAt": "2026-09-22T10:40:21.760Z",
+    "artifactSet": "fixed-scoped",
+    "artifactCount": 17,
+    "totalPackedBytes": 607358,
+    "unchangedCompanionCount": 16,
+    "artifacts": [
+      {
+        "name": "dsh-mnemon",
+        "version": "0.5.12",
+        "filename": "dsh-mnemon-0.5.12.tgz",
+        "integrity": "sha512-bdoOxdC6PaIBWxZjNDUcseelH+ZNyUv7GjjnvgnVS8zxQ2AD11dRN9pGtCxjrcLVfHZt/0XHqRqMlDIQc6fmdA==",
+        "sha256": "bd3a9c0815bbc077b42e05ad5f6a04a64301042525e7ba6d998d5c45c9cdeee5",
+        "bytes": 299218,
+        "identicalToBaseline": false
+      },
+      {
+        "name": "dsh-mnemon-provider-byterover",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-byterover-0.5.4.tgz",
+        "integrity": "sha512-0/ru18uVKNILv3Q2Dx7soOpm+9SrARnbxCsewmQKPy8fvj14zwd7TNLlI9/lV0/vN5SgjKq95PnOvsJZVD/krw==",
+        "sha256": "94677bb5a27261dd2051f67c9ae5bc41c17ea86a4ea95cbd0baee1728203633f",
+        "bytes": 6336,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-provider-hindsight",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-hindsight-0.5.4.tgz",
+        "integrity": "sha512-nQ3rQ83J2ugNLXDkG1eYPjpibFANoe3n9OkxfyPCxXkAHHKYdmIZ35mzCFG8sMWsDeSt8y1RezulWjima4ZAVw==",
+        "sha256": "bf527bc83d51bd7b2e510ed3be59665ae6b3ddbd4e1c3beee16c32235fa0afbb",
+        "bytes": 14797,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-provider-holographic",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-holographic-0.5.4.tgz",
+        "integrity": "sha512-ULO6MBVq8rmRMlMnDcqJ26XPsk1K5j3HPjtTXHoBlEy6GdYQ7/2vZLtDQZ9FNjMZ9VT/W6Qj+RAc1HfgIj3bZA==",
+        "sha256": "67f9cc593a7bcf33001e0817a4932e23cf9f0927e90b6bc2b2ccd5ef49b91259",
+        "bytes": 6940,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-provider-honcho",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-honcho-0.5.4.tgz",
+        "integrity": "sha512-xbbDeshwpiFZHlIUFveMbv6o6xTRY1sjNUvkcXKN/oInxCYdV4sC7Q6pBMRoSoSXYoAgUVExLLXxG+p9Z7uDZA==",
+        "sha256": "c102952aa1b9fdd953b25068663635a9ffad606bb39c68b56eafa538c8fab72d",
+        "bytes": 7451,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-provider-mem0",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-mem0-0.5.4.tgz",
+        "integrity": "sha512-jriF73KpQp6DoH0RbdfJx+6HzUGEGq1/zy1Y8DmyRaRF62OhBmySGSTHZHasVu1kw61NWzSqIBFWFVn6La0wYQ==",
+        "sha256": "42cd225bb376d387d8e7f5503d64b6a00ddae4f5aea26b495cb9d5aa44dab3b0",
+        "bytes": 8105,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-provider-mnemon-native",
+        "version": "0.5.5",
+        "filename": "dsh-mnemon-provider-mnemon-native-0.5.5.tgz",
+        "integrity": "sha512-M6v7W2MomcPaPEcf5vUVfJa0j1HUdEmHwdCYR+jmK05doyuP/Vfg/+S2ZnpySKWEGu7jDlgRQbd5hb8RANKahg==",
+        "sha256": "cb1532ec04e1bc2550456340b453717686c2bc399e742e61be529bdae5e6f812",
+        "bytes": 7330,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-provider-openviking",
+        "version": "0.5.5",
+        "filename": "dsh-mnemon-provider-openviking-0.5.5.tgz",
+        "integrity": "sha512-7XP4we0/Zl9QasILR5SvEGEONk7YSXj1X9PTpPZ7eS6IgCV3uauhTV5aqZ0d2VPgSR7MYaq1nWnc0MuEZfVbXA==",
+        "sha256": "da3505e93462a7860d331e830930a04d4e2406be5b540333f340f9351346920f",
+        "bytes": 14523,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-provider-retaindb",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-retaindb-0.5.4.tgz",
+        "integrity": "sha512-wztasXBFvV0M4xnJM0G0K819EMWLB0gVE0rvc4CY7XkmnqTAPoZ/26pZT9WY6ENHj84onkC2ck58xy7eqiX70A==",
+        "sha256": "a7b5f1efb4e68df2d7ccc7e6078cd8c3229c82cf14f0162a196c975cbe19727f",
+        "bytes": 5418,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-provider-supermemory",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-provider-supermemory-0.5.4.tgz",
+        "integrity": "sha512-hB6G2B5hu1ktMyqP5Al7b9uLVfV876Fs5zrgh5URlaE25e4s3VrJBkzebq5ZuhSocTDYFKMsZL4AWQGLFkb0Rg==",
+        "sha256": "d04b900f7f9e9359ba53b349bdbc4550fc19b350771e61df3aa451e8f67f9afd",
+        "bytes": 5655,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-source-documents",
+        "version": "0.5.6",
+        "filename": "dsh-mnemon-source-documents-0.5.6.tgz",
+        "integrity": "sha512-RFagCAtZTGtjgOJ2mEcGv4wDtszF7R2AMVAL3kcAgs86ey2YoAztbr5rpSX3ayYC8B+sShKmq6f385+fJkHZTQ==",
+        "sha256": "d3f92ffd05b35ace1af629bfb39dccd419aff17f9072530c5ec3bdadc037c397",
+        "bytes": 39697,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-source-memory-spaces",
+        "version": "0.5.8",
+        "filename": "dsh-mnemon-source-memory-spaces-0.5.8.tgz",
+        "integrity": "sha512-fLMyH0I778NKDZ5J1VfzeEss8vLC0wS1QTUaGPa67or/FTdmc3qSYLK+BpVsznN86nOvYeEuDkkovR79Myhq6g==",
+        "sha256": "fbebb9ad30242548746e01befbc62848cf690f99de0bcbbc98ff6b706d2e55b0",
+        "bytes": 138592,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-source-runtime",
+        "version": "0.5.8",
+        "filename": "dsh-mnemon-source-runtime-0.5.8.tgz",
+        "integrity": "sha512-QNn9Ld9PSJgp3VFolW4+fTOOetIw8od3CDx/9MvbnSC5FwjkwtyG53X/5ROPB9SDe0JNXPAGQcSVNTrfT0Q59A==",
+        "sha256": "791347aaf03679a8c47ac4db11433adf608aa8174c6e1423daf708e1d9c76f6b",
+        "bytes": 27502,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-strategy-auto-capture",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-strategy-auto-capture-0.5.4.tgz",
+        "integrity": "sha512-SYHrc0H2Pxgs5dqa48AgoYudnAlkB450H8dqAz7ILiFGEo4V2u6RQuBsF5A7QOJXwV9v3fd0YQ9eAcc5tFds9Q==",
+        "sha256": "3816601abd83f0c5c679f3e4c9ae96c8f697e8e15f6546e975a96fd7f86b8c02",
+        "bytes": 3767,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-strategy-default-three-tier",
+        "version": "0.5.5",
+        "filename": "dsh-mnemon-strategy-default-three-tier-0.5.5.tgz",
+        "integrity": "sha512-6cg2mz8QyYKYjdk0YnW+IYp2TEQQsZatj89CwsDXU50sN2D8dDal5TZwBl5+qRa5MZj11mIN5ZENWCDcBqTFxw==",
+        "sha256": "52af5caf635f2cf2b165feff1ff3d35d241e6d073771b7b92b3ea37b36ff589f",
+        "bytes": 15214,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-strategy-light-context",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-strategy-light-context-0.5.4.tgz",
+        "integrity": "sha512-7qbo0e9igj0x03ekcBbAunkldWOme07d/R+tI/U+0P6WsyiPGy8EX0UnqYAervd1oZ8G06+srJ0zDX6tcFX0JA==",
+        "sha256": "62947c3ff777fbb8d42724acf2a9c651d2b2302b387bb8579c59cd79f82a9e0d",
+        "bytes": 3191,
+        "identicalToBaseline": true
+      },
+      {
+        "name": "dsh-mnemon-strategy-scoped",
+        "version": "0.5.4",
+        "filename": "dsh-mnemon-strategy-scoped-0.5.4.tgz",
+        "integrity": "sha512-aWPYgkexWdmg8LWFddnlnX9HbFRA6E43pbQxMTnkC8YOFja/EAArpqa0McBlffYMZedvCg7FhGWuQV7Qy7nezw==",
+        "sha256": "f3f945add93d2d5f8f48f0e70f5de9360814499a552218af7fa93f574dd3457a",
+        "bytes": 3622,
+        "identicalToBaseline": true
+      }
+    ],
+    "finalWorktreeMatch": {
+      "result": "pass",
+      "comparedFileCount": 47,
+      "allMatch": true,
+      "record": {
+        "filename": "issue265-final-artifact-match.json",
+        "sha256": "e205609a2923d17307a529c7717fc29c16a9f18c074385bd2f649384bf2432ef"
+      },
+      "files": [
+        {
+          "path": "LICENSE",
+          "bytes": 1082,
+          "sha256": "0bc72d9f737802b30a7e43d1b59912e81698e75948759ba07c276732aba0c7a2",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/client.js",
+          "bytes": 603352,
+          "sha256": "77e53602fe48c33f01854453035be60dba03fca6abd7bfc7270a9201cf1d920c",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/contracts.js",
+          "bytes": 905,
+          "sha256": "91ae208755d7142112c7da0ee15226f86e028517e24678cea89b6f7652102b02",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/core.js",
+          "bytes": 380,
+          "sha256": "172d72135a12d9c030573c468d93cfa680b3c8e8c9a5b3ca7414f8ec313f7977",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/definitions-j0FLgE0-.js",
+          "bytes": 13849,
+          "sha256": "ac00484576915414cddb51ac588034a74b8d642c8e19482b34cd374138928d7e",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/extension-sdk.js",
+          "bytes": 1867,
+          "sha256": "15f4464c3efb9ce92abf529af8c81fd8be483492bcbc604b30c8138273236553",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/index.js",
+          "bytes": 401453,
+          "sha256": "a5f4774a2caf21d9950adbcadf9d2e6801af7820936b6a3a2d3baf37c8c30c76",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/runtime-AtIOTeP1.js",
+          "bytes": 64943,
+          "sha256": "9c69bfed94ec57222e4345c7ba1fa2ed1f896763ada5749b1f26dc399c40bd59",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/strategy-configuration-BTXIWooc.js",
+          "bytes": 8672,
+          "sha256": "5dea51c623f16e494c0a3756e4abce21111f5ddf0506748aada877a656801486",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/testing.js",
+          "bytes": 8235,
+          "sha256": "cb4fdc238b399a576d72b1e3d9ea19587bedb1b5b266d8cc9bfcefd19a5c7f7f",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "package.json",
+          "bytes": 8310,
+          "sha256": "2123cd53fb0b9a1c0488831b13570eee13a58e0d0a302db58396233866121ee3",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "README.md",
+          "bytes": 13365,
+          "sha256": "b17bac4bea0f0fc7e11cd4636134eb609ab84b23959f327df948caa5d037b36b",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "README.zh-CN.md",
+          "bytes": 12797,
+          "sha256": "3739843303083d7048a17d97ba56e8bebc9ee7c243edf21f0ad5f321c9bf440e",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "SECURITY.md",
+          "bytes": 6034,
+          "sha256": "c680c9d196d71368b08bfdfd91177dc4df9ffae29e0b3253f6023e1ec7317613",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "THIRD_PARTY_NOTICES.md",
+          "bytes": 1097,
+          "sha256": "32ebd32c67f4316e33e4214a0504ebe6dabeb1fef00106de05e457a97cb80926",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "bin/repair-legacy-session.mjs",
+          "bytes": 44022,
+          "sha256": "98a0b2cd1b007f6f92db177793c5aee7d852b1bdeefa01f1846fef6e14d6086c",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/host/config-values.d.ts",
+          "bytes": 1001,
+          "sha256": "00bc86ab887b27524f997afcb87874248b37fb2164e60385fa97acbec900731b",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/host/config.d.ts",
+          "bytes": 1525,
+          "sha256": "f823eba8c069a28cfb149fa67f53822aee57d8d1060af9b586bcde3dad19a490",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/core/definitions.d.ts",
+          "bytes": 1656,
+          "sha256": "c1426396948e63015b25a8e5aaccdf65c43ddf33055de833ae90a33cb76a2fec",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/host/display-mode.d.ts",
+          "bytes": 227,
+          "sha256": "9cfd641ad2162703dea794b613f98a6a42b3007c8aeb4e0f6b65b82ad5a4d678",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/client/extension-sdk.d.ts",
+          "bytes": 949,
+          "sha256": "079a1abcaf29b5007457de0cdb5415c2d10438b71cceea4ef63a09da6db0605a",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/client/index.d.ts",
+          "bytes": 223,
+          "sha256": "d43c82958f8bb83ef5cff5524813d65e3e0b25b688914b04283d238ce8e13f6f",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/core/contracts/index.d.ts",
+          "bytes": 1611,
+          "sha256": "fd893b6fabe17ac00e5847c481b1f1d85b44b73256651bb7838d9831c97b8275",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/index.d.ts",
+          "bytes": 127,
+          "sha256": "a30ee3bce8e37249b8461b925cc0e626942d4a0cf6233c13a3f0d010f6d5ad47",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/sdk/index.d.ts",
+          "bytes": 1689,
+          "sha256": "0814e66b41dc5d2391d1fa2d724bb766ba89153d1f8101c5b79c9c7987596ed2",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/sdk/input.d.ts",
+          "bytes": 1272,
+          "sha256": "3264d99270796e102939d3d412f4c38c220e8c4f79ac6d001bf5fb374248d246",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/sdk/install.d.ts",
+          "bytes": 432,
+          "sha256": "2b3e0903128d4b79861233772966fce157bd18bd8234beadcbdef4bcfc7ca93e",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/client/locales.d.ts",
+          "bytes": 75700,
+          "sha256": "405f4d8b68f88d70d2f17ae8af97e0b3a62885893a79f841ed653b0be1a45dc1",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/client/MnemonDialog.d.ts",
+          "bytes": 467,
+          "sha256": "cf9de6f80a98d6e527860d7077ce5cc5098b2beda55aecf25790403974bd1c34",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/client/MnemonLogo.d.ts",
+          "bytes": 246,
+          "sha256": "c1532a4f925703354772392d59b767cba82db7cfa0ede0ed2c0c4ad7f952a405",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/client/page-client.d.ts",
+          "bytes": 871,
+          "sha256": "8a39aabfe82b9127f1be2443c35d634ec665613c63464c27434142c5caa89f96",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/client/page-kit.d.ts",
+          "bytes": 1616,
+          "sha256": "ce40c66a2409f540adea88e82183bd17cbcbd20d7e0a3796d150283f34082b12",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/core/contracts/plugin.d.ts",
+          "bytes": 1216,
+          "sha256": "430b6c765482d75525a62c8515118e2926eb218704a1ebee73743d347f63e406",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/core/plugin.d.ts",
+          "bytes": 318,
+          "sha256": "73a8b54a714b0f680507a4c935a3fc9b17918e106bf901883d1226d69729d6a2",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/host/plugin.d.ts",
+          "bytes": 401,
+          "sha256": "7cdc0ce523adf64877709eee34f42155c2b6f8367ca8a9788d490a0d0644cefe",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/host/protocol.d.ts",
+          "bytes": 20250,
+          "sha256": "7369016112ee86640a0f175c2b7759f21bbef86a14c5ea63edf89aa16e3b675b",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/sdk/service.d.ts",
+          "bytes": 1400,
+          "sha256": "7ef3753a9dc3537e852c483bd00055de83c207d7cd2e327d05a9517787cac15d",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/client/source-contracts.d.ts",
+          "bytes": 2139,
+          "sha256": "b92fd9f5312c5861b932fde88daa215f534dcedf11efde3eb097e21b6178f788",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/client/source-pages.d.ts",
+          "bytes": 3332,
+          "sha256": "4272de97752579c469648a1a1ba223940bea27145209b1ea3e6e1ad5601bdb51",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/sdk/storage-lock.d.ts",
+          "bytes": 329,
+          "sha256": "9072c9369822413d48c46c929530e950cdc07cc03a05342e05a0730cea4e44f9",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/sdk/strategy-configuration.d.ts",
+          "bytes": 2043,
+          "sha256": "e87fea784b5b29bfcffaabe448fec056eaa3a0a64baf315b3a9f0a647d83308a",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/sdk/testing.d.ts",
+          "bytes": 3965,
+          "sha256": "a27d5ce27c21159ea0786078852a68faf214ba59d7f0a744aa44ce9acd238133",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/client/use-request-version.d.ts",
+          "bytes": 271,
+          "sha256": "65bb1a8eddc167bdd3c730024b589792e2fe0535a6f770b81585ff85653cd78e",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/host/view-protocol.d.ts",
+          "bytes": 3842,
+          "sha256": "528ecab3f74b2541598ef763a534d2ee7ed95028721779266b5f1f54d998aafe",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/client/view-styles.d.ts",
+          "bytes": 167,
+          "sha256": "cebd26c73d5ba1bf720d201402380e3c47767141436d6d06b09db29566298637",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "lib/types/src/core/contracts/view.d.ts",
+          "bytes": 15221,
+          "sha256": "848404392f44382804da5d03c36836076966b851c028b57e5e714a3d684f76e0",
+          "matchesFinalWorktree": true
+        },
+        {
+          "path": "cordis.patch.yml",
+          "bytes": 3698,
+          "sha256": "a5f6d790a84e628335b560c52fb669b0c9717513cf9f94575646e79655cb2964",
+          "matchesFinalWorktree": true
+        }
+      ]
+    }
+  },
+  "cohorts": [
+    {
+      "run": "fixed-scoped-rc",
+      "dshVersion": "0.1.5-rc.2",
+      "dshPackageCount": 234,
+      "allDshPackagesAtExactVersion": true,
+      "mnemonPackageCount": 17,
+      "resolutionCheckCount": 51,
+      "testClientPackageCount": 0,
+      "install": {
+        "mode": "fixed",
+        "legacyPeers": false,
+        "reusedExistingInstall": false,
+        "reason": "Normal npm peer resolution, no legacy-peer-deps."
+      },
+      "publicBytesChecked": [
+        {
+          "package": "@deepseek-ai/dsh-client-ui-slots",
+          "file": "lib/index.js",
+          "sha256": "5433ef2cb74699a59000052c4b1899808c83544f45ba6176f297efc68414c588"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-chat",
+          "file": "lib/client.js",
+          "sha256": "6527556d25c7b2a27f2e3bfb96cc2ae3d9244f1213147e245b17684ad8d9e396"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-renderer",
+          "file": "lib/client.js",
+          "sha256": "859d0a187e436d682c71d18f0266d588f923d7e1628157ad73000f99a377d151"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-conversation",
+          "file": "lib/client.js",
+          "sha256": "81314dfd95864f2522f8edb812e3f8e08b04a8ef2141913e6e8cbdaae1ffc37f"
+        }
+      ],
+      "runtimeGraphRecord": {
+        "filename": "runtime-graph.json",
+        "sha256": "c8ea4ce1800201a46da0a016be711d96ee413427da8a74c7ece55a7dc3a2c05f"
+      },
+      "headless": {
+        "run": "headless-scoped-rc",
+        "result": "pass",
+        "completedAt": "2026-09-22T10:44:51.084Z",
+        "nativeVersion": "mnemon version 0.2.8",
+        "enabledStrategyExtensions": [
+          "mnemon-strategy-scoped",
+          "mnemon-strategy-light-context",
+          "mnemon-strategy-auto-capture"
+        ],
+        "mnemonToolCounts": {
+          "enabled": 17,
+          "restart": 17,
+          "disabled": 0
+        },
+        "mnemonTools": [
+          "mnemon_document_create",
+          "mnemon_document_manage",
+          "mnemon_document_search",
+          "mnemon_forget",
+          "mnemon_link",
+          "mnemon_memory_bodies",
+          "mnemon_memory_body_create",
+          "mnemon_memory_body_merge",
+          "mnemon_memory_body_update",
+          "mnemon_recall",
+          "mnemon_related",
+          "mnemon_remember",
+          "mnemon_runtime_memory",
+          "mnemon_status",
+          "mnemon_subagent_result",
+          "mnemon_view_action",
+          "mnemon_view_route"
+        ],
+        "runtimePersistence": [
+          {
+            "file": "runtime/memories.json",
+            "sha256": "9164995f92a7406aec5292d86da60858e1939b96400de98a5c1c89c95b8b479a"
+          }
+        ],
+        "resultRecord": {
+          "filename": "result.json",
+          "sha256": "d217650edce6255d9c5d0d91a1e0eacf3bcfe10112cad74ec401c8c2bd20b343"
+        }
+      }
+    },
+    {
+      "run": "fixed-scoped-alpha",
+      "dshVersion": "0.1.6-alpha.2",
+      "dshPackageCount": 251,
+      "allDshPackagesAtExactVersion": true,
+      "mnemonPackageCount": 17,
+      "resolutionCheckCount": 51,
+      "testClientPackageCount": 0,
+      "install": {
+        "mode": "fixed",
+        "legacyPeers": false,
+        "reusedExistingInstall": false,
+        "reason": "Normal npm peer resolution, no legacy-peer-deps."
+      },
+      "publicBytesChecked": [
+        {
+          "package": "@deepseek-ai/dsh-client-ui-slots",
+          "file": "lib/index.js",
+          "sha256": "57e1314e31a2015f30231e1e7596da658f1bb5cb64c103c4cf13381647412c99"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-chat",
+          "file": "lib/client.js",
+          "sha256": "a022200a86e6ba0301c861f6114214ee5fe0a849401332d1962276f142641f9e"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-renderer",
+          "file": "lib/client.js",
+          "sha256": "ed156076ac2a5c26e6db40d8fab165a0ec8dd4f6d36f6cf0e595111bf4afea34"
+        },
+        {
+          "package": "@deepseek-ai/dsh-client-ui-conversation",
+          "file": "lib/client.js",
+          "sha256": "c02a68ebd98c7f32f70ab3302a6a6f5304c61717f28e87f616b070cbf105dabe"
+        }
+      ],
+      "runtimeGraphRecord": {
+        "filename": "runtime-graph.json",
+        "sha256": "33d83b6b281e5497d08ccc86631009b6cc2615f8d8c9e6c05d371b1164e74b8f"
+      },
+      "headless": {
+        "run": "headless-scoped-alpha",
+        "result": "pass",
+        "completedAt": "2026-09-22T10:44:50.907Z",
+        "nativeVersion": "mnemon version 0.2.8",
+        "enabledStrategyExtensions": [
+          "mnemon-strategy-scoped",
+          "mnemon-strategy-light-context",
+          "mnemon-strategy-auto-capture"
+        ],
+        "mnemonToolCounts": {
+          "enabled": 17,
+          "restart": 17,
+          "disabled": 0
+        },
+        "mnemonTools": [
+          "mnemon_document_create",
+          "mnemon_document_manage",
+          "mnemon_document_search",
+          "mnemon_forget",
+          "mnemon_link",
+          "mnemon_memory_bodies",
+          "mnemon_memory_body_create",
+          "mnemon_memory_body_merge",
+          "mnemon_memory_body_update",
+          "mnemon_recall",
+          "mnemon_related",
+          "mnemon_remember",
+          "mnemon_runtime_memory",
+          "mnemon_status",
+          "mnemon_subagent_result",
+          "mnemon_view_action",
+          "mnemon_view_route"
+        ],
+        "runtimePersistence": [
+          {
+            "file": "runtime/memories.json",
+            "sha256": "3b554457fa52c027e3dbf0ee9edb3ab738ae76f1fd5b32e69cf6cffbe9039d95"
+          }
+        ],
+        "resultRecord": {
+          "filename": "result.json",
+          "sha256": "e1c6d1f8400b319532ec794bfcd1345123d65579b0b1e64647221e876a20fac2"
+        }
+      }
+    }
+  ],
+  "browser": {
+    "driver": "actual browser interactions with installed public DSH WebUI and packed Mnemon",
+    "fixedRc": {
+      "observation": {
+        "builtin": {
+          "position": "static",
+          "zIndex": "auto"
+        },
+        "composers": [
+          {
+            "hitOwn": true,
+            "label": "发消息或创建任务, / 调用指令, @ 文件或对话",
+            "rect": {
+              "height": 36,
+              "width": 943.1953125,
+              "x": 516.3984375,
+              "y": 771
+            },
+            "visibility": "visible"
+          }
+        ],
+        "handles": [
+          {
+            "hitBuiltin": true,
+            "hitHandle": null,
+            "hover": false,
+            "markOpacity": "0",
+            "point": {
+              "x": 493.40625,
+              "y": 483.5
+            },
+            "pointerEvents": "none",
+            "side": "left",
+            "visibility": "hidden"
+          },
+          {
+            "hitBuiltin": true,
+            "hitHandle": null,
+            "hover": false,
+            "markOpacity": "0",
+            "point": {
+              "x": 1496.59375,
+              "y": 483.5
+            },
+            "pointerEvents": "none",
+            "side": "right",
+            "visibility": "hidden"
+          }
+        ]
+      },
+      "record": {
+        "filename": "issue265-final-rc2-hit-test.json",
+        "sha256": "7f1783906ff7e7c25f2f83a82a24112be04d8d3b97522574888ef46f98bfb218"
+      }
+    },
+    "fixedAlpha": {
+      "observation": {
+        "builtin": {
+          "position": "static",
+          "zIndex": "auto"
+        },
+        "composers": [
+          {
+            "hitOwn": true,
+            "label": "发消息或创建任务, / 调用指令, @ 文件或对话",
+            "rect": {
+              "height": 36,
+              "width": 943.1953125,
+              "x": 516.3984375,
+              "y": 771
+            },
+            "visibility": "visible"
+          }
+        ],
+        "handles": [
+          {
+            "hitBuiltin": true,
+            "hitHandle": null,
+            "hover": false,
+            "markOpacity": "0",
+            "point": {
+              "x": 508.40625,
+              "y": 483.5
+            },
+            "pointerEvents": "none",
+            "side": "left",
+            "visibility": "hidden"
+          },
+          {
+            "hitBuiltin": true,
+            "hitHandle": null,
+            "hover": false,
+            "markOpacity": "0",
+            "point": {
+              "x": 1481.59375,
+              "y": 483.5
+            },
+            "pointerEvents": "none",
+            "side": "right",
+            "visibility": "hidden"
+          }
+        ]
+      },
+      "record": {
+        "filename": "issue265-final-alpha2-hit-test.json",
+        "sha256": "6a8ff33e17f93db579c714427d2bb6543b8a073d629cad2a15e1ab1a23dea85a"
+      }
+    },
+    "chatDrag": {
+      "rc": {
+        "leftXBefore": 493.40625,
+        "leftXAfter": 553.40625,
+        "rightXBefore": 1496.59375,
+        "rightXAfter": 1436.59375,
+        "composerWidthBefore": 943.1953125,
+        "composerWidthAfter": 823.1953125,
+        "restoredThroughRealDrag": true,
+        "observation": {
+          "builtin": null,
+          "composers": [
+            {
+              "hitOwn": true,
+              "label": "发消息或创建任务, / 调用指令, @ 文件或对话",
+              "rect": {
+                "height": 36,
+                "width": 823.1953125,
+                "x": 576.3984375,
+                "y": 771
+              },
+              "visibility": "visible"
+            }
+          ],
+          "handles": [
+            {
+              "hitBuiltin": false,
+              "hitHandle": "left",
+              "hover": true,
+              "markOpacity": "1",
+              "point": {
+                "x": 553.40625,
+                "y": 483.5
+              },
+              "pointerEvents": "auto",
+              "side": "left",
+              "visibility": "visible"
+            },
+            {
+              "hitBuiltin": false,
+              "hitHandle": "right",
+              "hover": false,
+              "markOpacity": "0",
+              "point": {
+                "x": 1436.59375,
+                "y": 483.5
+              },
+              "pointerEvents": "auto",
+              "side": "right",
+              "visibility": "visible"
+            }
+          ]
+        },
+        "record": {
+          "filename": "issue265-rc2-chat-drag.json",
+          "sha256": "cd0e4b4c83e15836d5dad7011d0a795324f4017c8bded7b96c88dce20089bd6a"
+        }
+      },
+      "alpha": {
+        "leftXBefore": 508.40625,
+        "leftXAfter": 568.40625,
+        "rightXBefore": 1481.59375,
+        "rightXAfter": 1421.59375,
+        "composerWidthBefore": 943.1953125,
+        "composerWidthAfter": 823.1953125,
+        "observation": {
+          "builtin": null,
+          "composers": [
+            {
+              "hitOwn": true,
+              "label": "发消息或创建任务, / 调用指令, @ 文件或对话",
+              "rect": {
+                "height": 36,
+                "width": 823.1953125,
+                "x": 576.3984375,
+                "y": 771
+              },
+              "visibility": "visible"
+            }
+          ],
+          "handles": [
+            {
+              "hitBuiltin": false,
+              "hitHandle": "left",
+              "hover": true,
+              "markOpacity": "1",
+              "point": {
+                "x": 568.40625,
+                "y": 483.5
+              },
+              "pointerEvents": "auto",
+              "side": "left",
+              "visibility": "visible"
+            },
+            {
+              "hitBuiltin": false,
+              "hitHandle": "right",
+              "hover": false,
+              "markOpacity": "0",
+              "point": {
+                "x": 1421.59375,
+                "y": 483.5
+              },
+              "pointerEvents": "auto",
+              "side": "right",
+              "visibility": "visible"
+            }
+          ]
+        },
+        "record": {
+          "filename": "issue265-alpha2-chat-drag.json",
+          "sha256": "022e2b94d2cc3d25a225e982bb616cd3a481c6c9073abeee3a821eae6ffb0c6d"
+        }
+      }
+    },
+    "residentComposer": {
+      "cohort": "0.1.5-rc.2",
+      "sentWhileBuiltinOpen": "Issue 265: the resident composer works while Builtin memory is open.",
+      "chatShowsNewUserTurnAndCompletedModelReply": true,
+      "displayedRounds": 2,
+      "displayedSteps": 4
+    },
+    "runtimeSourceDialog": {
+      "cohort": "0.1.5-rc.2",
+      "openedBodyPortalDialog": true,
+      "submittedContent": "Issue 265 WebUI: Runtime Source 对话框写入成功，宽度手柄没有截获点击。",
+      "successReceiptVisible": true,
+      "entryCount": 2,
+      "browserReloadAndSessionReselectionPreservedBothEntries": true,
+      "postReloadHandleHitBuiltin": true,
+      "postReloadComposerHitOwn": true,
+      "storage": {
+        "file": "runtime/memories.json",
+        "sha256": "341c8c25d54b7812689ae1add3efc46742732ca01f70899c45ab577b9b7011ca",
+        "version": 1,
+        "entries": [
+          {
+            "content": "Issue 261 compatibility: the isolated published DSH cohort uses real Mnemon runtime memory.",
+            "created_at": "2026-09-22T10:46:18.897Z",
+            "updated_at": "2026-09-22T10:46:18.897Z",
+            "target": "memory",
+            "importance": "normal"
+          },
+          {
+            "content": "Issue 265 WebUI: Runtime Source 对话框写入成功，宽度手柄没有截获点击。",
+            "created_at": "2026-09-22T10:51:21.954Z",
+            "updated_at": "2026-09-22T10:51:21.954Z",
+            "target": "memory",
+            "importance": "normal"
+          }
+        ]
+      }
+    }
+  },
+  "validation": {
+    "fullVerify": {
+      "command": "MNEMON_NATIVE_TEST_CLI=<verified-native-cli> npx --yes pnpm@10.13.1 run verify",
+      "result": "pass",
+      "exitCode": 0,
+      "rootTests": {
+        "passed": 1189,
+        "skipped": 5
+      },
+      "pluginTests": {
+        "passed": 382,
+        "skipped": 2
+      },
+      "combinedTests": {
+        "passed": 1571,
+        "skipped": 7
+      },
+      "skipReasons": [
+        "Five opt-in real DeepSeek V4 Flash pressure/quality cases were not enabled.",
+        "One opt-in Windows Native smoke case was not enabled on macOS.",
+        "One OpenViking integration case requires an explicitly configured endpoint."
+      ],
+      "typecheck": "pass",
+      "deterministicBuild": "pass",
+      "headlessProfile": "pass",
+      "package": {
+        "files": 47,
+        "packedBytes": 299218,
+        "unpackedBytes": 1338567,
+        "nodeEntries": 12,
+        "publicTypeDependencies": 27,
+        "executableHelpEntries": 1,
+        "publint": "pass",
+        "attw": "pass"
+      },
+      "record": {
+        "filename": "issue265-final-verify.log",
+        "sha256": "aab15ac40f0c1dc43b128d19686c3770ffd73791dc26ded128aa2e2cd2516510"
+      }
+    },
+    "independentPluginVerification": {
+      "command": "npx --yes pnpm@10.13.1 run verify:plugins --skip-build",
+      "result": "pass",
+      "exitCode": 0,
+      "independentRepositories": 16,
+      "packedArtifacts": 17,
+      "publicSdkOnlyComposition": true,
+      "clientTests": true,
+      "optionalStrategiesActivateTogether": 3,
+      "rootOnlyInstallAndActivation": "pass",
+      "record": {
+        "filename": "issue265-final-verify-plugins.log",
+        "sha256": "0659f833b6cc77c60c7a8834983aa825436bb8a4d63b58aa899700b3cefab918"
+      }
+    },
+    "selectorContract": {
+      "file": "tests/client-builtin-width-handles.spec.ts",
+      "sha256": "0de16669dbf11a5600cc87499de256d483a65442995cbf5ad2b5625c035a57af",
+      "fixed": {
+        "passed": 6,
+        "failed": 0,
+        "record": {
+          "filename": "issue265-selector-final-docs.log",
+          "sha256": "cae864b0170b90307b2566de172ceefeb53569effdfa95783febb974925de7cc"
+        }
+      },
+      "baseline": {
+        "passed": 3,
+        "failed": 3,
+        "exitCode": 1,
+        "cssSha256": "c26e2b0cf5e31f2216c8d0dcc42838214dab7cd465d7d802943fc862e20fc6bf",
+        "record": {
+          "filename": "baseline-failure.log",
+          "sha256": "e7455840965b04294cb70220c1063e8392af47e825beab5fdcf7cabcc1385d8a"
+        }
+      },
+      "coverage": [
+        "owning handles and resident composer",
+        "Sidebar and peer/foreign surfaces",
+        "nested and sibling conversations in both directions",
+        "surface removal, remount, and replacement"
+      ],
+      "method": "JSDOM 26 adapter reads the authored CSS rule and resolves its relative selector with :scope because native JSDOM rejects this multi-combinator :has expression. Native browser hit testing is recorded separately."
+    },
+    "nativeCliIntegration": {
+      "version": "0.2.8",
+      "enabledBy": "MNEMON_NATIVE_TEST_CLI",
+      "sourceComposition": {
+        "file": "plugins/dsh-mnemon-source-memory-spaces/tests/native-integration.spec.ts",
+        "result": "pass",
+        "operations": [
+          "create space",
+          "write through View",
+          "list",
+          "recall",
+          "forget"
+        ]
+      },
+      "capacityWorkflow": {
+        "file": "tests/runtime-capacity-workflow.spec.ts",
+        "result": "pass",
+        "operations": [
+          "archive exact checkpoints to two Native namespaces through Host tools"
+        ]
+      },
+      "scope": "Isolated test-owned storage; these are real CLI operations separate from the WebUI Runtime Source checks."
+    }
+  },
+  "screenshots": [
+    {
+      "file": "after-alpha2.png",
+      "bytes": 87252,
+      "sha256": "9ae6ab1154825e302a0e7a4181e583610b96c28f438ba647bbf3d519bd49a365"
+    },
+    {
+      "file": "after-rc2.png",
+      "bytes": 85739,
+      "sha256": "5ed6d11403e79cd203242a050b4ca34217d6a3b85c97ce1ef8196017f4744631"
+    },
+    {
+      "file": "before-rc2.png",
+      "bytes": 89585,
+      "sha256": "cf384464e7bd0e31965c18234139f1fff8e13e52fcc8b8d38f8ffa32c3dd35e9"
+    },
+    {
+      "file": "chat-restored-rc2.png",
+      "bytes": 60440,
+      "sha256": "5f5ddc61aa942edb51fbc1a1541ba2141fbf22465e7fcbdce2b613b05b793d67"
+    },
+    {
+      "file": "runtime-dialog-rc2.png",
+      "bytes": 74047,
+      "sha256": "e4143303614bdb6a107ed2359bc31d6603dacbabea886be167916a71114bedbd"
+    },
+    {
+      "file": "runtime-write-rc2.png",
+      "bytes": 90408,
+      "sha256": "553587951eeb541649c29dd2b9470a9943a3b10c199183e6ea512e0711501de5"
+    }
+  ],
+  "reproduction": {
+    "harness": "docs/pr-assets/issue-261-dsh-slots/harness",
+    "baselineArtifactSet": "baseline",
+    "fixedArtifactSet": "fixed-scoped",
+    "initialRuns": [
+      "baseline-rc-pinned",
+      "fixed-scoped-rc",
+      "fixed-scoped-alpha"
+    ],
+    "headlessRuns": [
+      "headless-scoped-rc",
+      "headless-scoped-alpha"
+    ],
+    "exactFrameworkPins": true,
+    "npmPeerResolution": "normal; no legacy-peer-deps",
+    "frameworkSetupNote": "Fresh unpinned RC2 resolution encountered an incomplete upstream RC3 transitive release, missing @deepseek-ai/dsh-client-ui-sidebar-documentpreview@^0.1.5-rc.3. Exact physically installed public framework/supporting-peer pins were used for both cohorts. No public package metadata or bytes were changed."
+  },
+  "limits": [
+    "The screenshots retain the reusable harness session title Issue 261 compatibility.",
+    "The alpha screenshot terminal-recovery toast comes from the deliberately disabled terminal fixture; terminal shell operation was not certified.",
+    "This evidence exercises public npm WebUI on macOS arm64, not the native desktop executable or Windows.",
+    "Peer/nested/sibling isolation is covered by selector contract tests; the final browser runs did not load the optional peer fixture.",
+    "The WebUI checks exercise Runtime Source add/status and persistence; real Native backend operations are verified separately by the enabled CLI integration and capacity tests.",
+    "No intermediate stacking-layer prototype artifact or run is counted as passing evidence."
+  ]
+}

@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc" lang="en">
+  <title id="title">dsh-mnemon execution flow from click to receipt</title>
+  <desc id="desc">Separates deterministic reads, Agent Query, supervised writes, and maintenance/archive paths, including concurrency, isolation, and progressive feedback.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#7e8ba0"/></marker>
+    <marker id="agentArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#6558d9"/></marker>
+  </defs>
+  <style>
+    text{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#172033}.bg{fill:#f7f9fc}.lane{fill:#fff;stroke:#d7deea;stroke-width:1.4}.readLane{stroke:#83a7df}.agentLane{stroke:#9a8ee8}.writeLane{stroke:#34a27b}.maintLane{stroke:#d99238}.card{fill:#f8fafc;stroke:#d7deea;stroke-width:1.2}.agent{fill:#f4f0ff;stroke:#9a8ee8}.result{fill:#edf9f3;stroke:#79bfa6}.title{font-size:36px;font-weight:760}.sub{font-size:16px;fill:#647086}.laneTitle{font-size:17px;font-weight:730}.num{font-size:13px;font-weight:780;fill:#6558d9}.h{font-size:18px;font-weight:700}.copy{font-size:14px;fill:#647086}.small{font-size:12.5px;fill:#647086}.line{fill:none;stroke:#7e8ba0;stroke-width:2.2;marker-end:url(#arrow)}.agentLine{fill:none;stroke:#6558d9;stroke-width:2.2;stroke-dasharray:8 6;marker-end:url(#agentArrow)}.badge{fill:#ebf8ef}.badgeText{font-size:12px;font-weight:700;fill:#238352}
+  </style>
+  <rect class="bg" width="1600" height="900" rx="24"/>
+  <text class="title" x="48" y="56">From one click to verifiable data and receipts</text>
+  <text class="sub" x="48" y="84">Deterministic work passes through the Host; judgment starts clean task Agents; every page is concurrent, progressive, and failure-isolated.</text>
+  <rect class="badge" x="1432" y="34" width="120" height="28" rx="14"/><text class="badgeText" x="1492" y="53" text-anchor="middle">v0.2.0 live paths</text>
+
+  <g aria-label="Deterministic reads">
+    <rect class="lane readLane" x="32" y="112" width="1536" height="148" rx="20"/>
+    <text class="num" x="58" y="140">01</text><text class="laneTitle" x="92" y="140">Deterministic reads · render as results arrive</text>
+    <rect class="card" x="58" y="158" width="300" height="78" rx="14"/><text class="h" x="78" y="188">Status / Search / Content / Entities</text><text class="copy" x="78" y="214">Starts immediately, read-only, cancellable</text>
+    <rect class="card" x="446" y="158" width="300" height="78" rx="14"/><text class="h" x="466" y="188">Concurrent Host dispatch</text><text class="copy" x="466" y="214">Timeout, schema, cache, error isolation</text>
+    <rect class="card" x="834" y="158" width="300" height="78" rx="14"/><text class="h" x="854" y="188">Fastest provider-native read</text><text class="copy" x="854" y="214">Every active instance returns independently</text>
+    <rect class="card result" x="1222" y="158" width="300" height="78" rx="14"/><text class="h" x="1242" y="188">Progressive page update</text><text class="copy" x="1242" y="214">One spinner · local status · no page block</text>
+    <path class="line" d="M358 197h88M746 197h88M1134 197h88"/>
+  </g>
+
+  <g aria-label="Agent Query">
+    <rect class="lane agentLane" x="32" y="280" width="1536" height="148" rx="20"/>
+    <text class="num" x="58" y="308">02</text><text class="laneTitle" x="92" y="308">Agent Query · evidence first, answer second</text>
+    <rect class="card" x="58" y="326" width="300" height="78" rx="14"/><text class="h" x="78" y="356">Click Agent Query</text><text class="copy" x="78" y="382">Focused question + optional scope</text>
+    <rect class="card" x="446" y="326" width="300" height="78" rx="14"/><text class="h" x="466" y="356">Recall bounded evidence</text><text class="copy" x="466" y="382">Rank fusion retains Provider source</text>
+    <rect class="card agent" x="834" y="326" width="300" height="78" rx="14"/><text class="h" x="854" y="356">Independent top-level task Agent</text><text class="copy" x="854" y="382">No session history, no Mnemon tools</text>
+    <rect class="card result" x="1222" y="326" width="300" height="78" rx="14"/><text class="h" x="1242" y="356">Answer beside evidence</text><text class="copy" x="1242" y="382">Read-only; raw recall survives failure</text>
+    <path class="line" d="M358 365h88M746 365h88"/><path class="agentLine" d="M1134 365h88"/>
+  </g>
+
+  <g aria-label="Supervised writes">
+    <rect class="lane writeLane" x="32" y="448" width="1536" height="164" rx="20"/>
+    <text class="num" x="58" y="476">03</text><text class="laneTitle" x="92" y="476">Supervised writes · user confirms, Agent judges, Host commits</text>
+    <rect class="card" x="58" y="496" width="300" height="88" rx="14"/><text class="h" x="78" y="528">Remember / Save to memory</text><text class="copy" x="78" y="554">Edit candidate; no write before confirmation</text>
+    <rect class="card agent" x="446" y="496" width="300" height="88" rx="14"/><text class="h" x="466" y="528">Qualify · dedupe · distill · route</text><text class="copy" x="466" y="554">Hard rules first, model only if needed</text>
+    <rect class="card" x="834" y="496" width="300" height="88" rx="14"/><text class="h" x="854" y="528">Host permission boundary</text><text class="copy" x="854" y="554">Tool allowlist · path · lock · revision</text>
+    <rect class="card result" x="1222" y="496" width="300" height="88" rx="14"/><text class="h" x="1242" y="528">Target Provider + receipt</text><text class="copy" x="1242" y="554">Write, skip, and failure are all explicit</text>
+    <path class="agentLine" d="M358 540h88"/><path class="line" d="M746 540h88M1134 540h88"/>
+  </g>
+
+  <g aria-label="Maintenance and archive">
+    <rect class="lane maintLane" x="32" y="632" width="1536" height="170" rx="20"/>
+    <text class="num" x="58" y="660">04</text><text class="laneTitle" x="92" y="660">Maintenance and archive · isolate by object, never share failure</text>
+    <rect class="card" x="58" y="680" width="300" height="94" rx="14"/><text class="h" x="78" y="711">AI metadata / Archive</text><text class="copy" x="78" y="737">Select spaces or confirm one Document</text><text class="small" x="78" y="758">No dependency on a main session</text>
+    <rect class="card agent" x="446" y="680" width="300" height="94" rx="14"/><text class="h" x="466" y="711">One isolated task per object</text><text class="copy" x="466" y="737">Fast sample, or cold-reference first</text><text class="small" x="466" y="758">Async state never overlaps</text>
+    <rect class="card" x="834" y="680" width="300" height="94" rx="14"/><text class="h" x="854" y="711">Host verifies the result</text><text class="copy" x="854" y="737">Metadata stays in the local catalog</text><text class="small" x="854" y="758">Archive passes a revision fence</text>
+    <rect class="card result" x="1222" y="680" width="300" height="94" rx="14"/><text class="h" x="1242" y="711">Card updates in place</text><text class="copy" x="1242" y="737">Animation, success, or local error</text><text class="small" x="1242" y="758">Failure keeps dialog and layout stable</text>
+    <path class="agentLine" d="M358 727h88"/><path class="line" d="M746 727h88M1134 727h88"/>
+  </g>
+
+  <line x1="48" y1="850" x2="92" y2="850" stroke="#7e8ba0" stroke-width="2.2"/><text class="small" x="104" y="855">Deterministic Host path</text>
+  <line x1="272" y1="850" x2="316" y2="850" stroke="#6558d9" stroke-width="2.2" stroke-dasharray="8 6"/><text class="small" x="328" y="855">Independent task Agent path</text>
+  <text class="small" x="1552" y="855" text-anchor="end">One full sync on first visit · then reconnect by Provider + ID on demand</text>
+</svg>

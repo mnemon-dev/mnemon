@@ -1,0 +1,175 @@
+{
+  "date": "2026-09-16",
+  "baselineRevision": "1363ebffaf19c9ab4badf0137f6fe87acacaf989",
+  "contributorRevision": "bf83a4240f505e22713f20393d9b5cfa97fda05f",
+  "contributorMergeRevision": "2c5de91f0c9864de2d1f1918c4377dba7ea35a80",
+  "testedRevision": "11c5534cb916351f6f2ad22cd6d0dc22b8237e1b",
+  "environment": {
+    "platform": "macOS arm64",
+    "node": "25.1.0",
+    "pnpm": "11.19.0",
+    "dsh": "0.1.5-rc.1",
+    "mnemonNative": "0.2.8",
+    "python": "3.12.13",
+    "openviking": "0.4.20",
+    "openvikingSourceRevision": "b54001e2e5c974ffd7a09ba543813fa104a99561"
+  },
+  "controlledProtocol": {
+    "endpoint": "http://127.0.0.1:19335",
+    "isRealOpenViking": false,
+    "before": {
+      "storedFileCount": 0,
+      "sessionCreates": 1,
+      "sessionCommits": 1,
+      "contentWrites": 0,
+      "reportedAction": "stored",
+      "reportedMemoryUpdates": 1
+    },
+    "after": {
+      "storedFileCount": 1,
+      "sessionCreates": 0,
+      "sessionCommits": 0,
+      "contentWrites": 1,
+      "writeMode": "create",
+      "wait": true,
+      "utf8Bytes": 117,
+      "otherOwnerWrites": 0,
+      "canary": "Issue 233 canary: release approval requires a completed staged rollout.\n合成回归资料：保留原文与换行。"
+    }
+  },
+  "realOpenVikingIntegration": {
+    "endpoint": "http://127.0.0.1:19333",
+    "canary": "OpenViking integration 27cd9a6a-0d57-4b8c-9998-d132e2e071b9: release approval requires a completed canary.\n保留完整中文和换行。",
+    "receipt": {
+      "action": "stored",
+      "provider": "openviking",
+      "id": "viking://user/default/memories/experiences/20260916042919-openviking-integration-27cd9a6a-0d57-4b8c-9998-d-73e8e735-6f16-4e52-957f-5b41a342537a.md",
+      "uri": "viking://user/default/memories/experiences/20260916042919-openviking-integration-27cd9a6a-0d57-4b8c-9998-d-73e8e735-6f16-4e52-957f-5b41a342537a.md",
+      "externalUri": "viking://user/default/memories/experiences/20260916042919-openviking-integration-27cd9a6a-0d57-4b8c-9998-d-73e8e735-6f16-4e52-957f-5b41a342537a.md",
+      "summary": "OpenViking stored the memory at viking://user/default/memories/experiences/20260916042919-openviking-integration-27cd9a6a-0d57-4b8c-9998-d-73e8e735-6f16-4e52-957f-5b41a342537a.md (category decision).",
+      "writtenBytes": 137,
+      "vectorStatus": "complete"
+    },
+    "removed": {
+      "action": "deleted",
+      "provider": "openviking",
+      "id": "viking://user/default/memories/experiences/20260916042919-openviking-integration-27cd9a6a-0d57-4b8c-9998-d-73e8e735-6f16-4e52-957f-5b41a342537a.md",
+      "uri": "viking://user/default/memories/experiences/20260916042919-openviking-integration-27cd9a6a-0d57-4b8c-9998-d-73e8e735-6f16-4e52-957f-5b41a342537a.md",
+      "estimatedDeletedCount": 1
+    },
+    "exactReadback": true,
+    "recalled": true,
+    "browsed": true,
+    "deleted": true,
+    "requests": [
+      {
+        "method": "POST",
+        "path": "/api/v1/content/write"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/content/read"
+      },
+      {
+        "method": "POST",
+        "path": "/api/v1/search/find"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/content/read"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/fs/ls"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/content/read"
+      },
+      {
+        "method": "DELETE",
+        "path": "/api/v1/fs"
+      },
+      {
+        "method": "GET",
+        "path": "/api/v1/fs/ls"
+      }
+    ],
+    "embedding": "Local deterministic 128-dimensional token-hash embeddings; no live LLM",
+    "auth": "Disposable account-admin key, omitted from evidence"
+  },
+  "automated": {
+    "verify": "passed",
+    "root": {
+      "passed": 1134,
+      "skipped": 5,
+      "filesPassed": 87,
+      "filesSkipped": 2
+    },
+    "openvikingProvider": {
+      "passed": 49,
+      "skipped": 1
+    },
+    "memorySpacesSource": {
+      "passed": 169,
+      "skipped": 1
+    },
+    "plugins": {
+      "independentPlugins": 16,
+      "packedArtifacts": 17,
+      "result": "passed"
+    }
+  },
+  "sha256": {
+    "main-red.log": "cb6eda625f9fe69d1ea374e69e7026fd1477c20843e2056574f01b97baf33400",
+    "draft-red.log": "969941eef21f38bd5ceb0efcac02758dbfa340755149c0ef527ed884b4ea32d8",
+    "real-openviking-auth-report.json": "a32d20b20721854859f0bb32b720731687187b21c57e59e381a0ed0545de6ddc",
+    "verify.log": "698d1afa8b9ee302b3ff5641a30989427d7026d39371fb036ea165a5b15005b1",
+    "verify-plugins.log": "cacc1fcc62733a3d8ad311465b4b459985b83c5f3df57a2c4aa5910c774b4283",
+    "before-stored-receipt.png": "7b08526fffa8e5e5dca673ad1412395412966db3904652ebd161288e14f5f9c0",
+    "before-empty-content.png": "2170fa5d59b9abdc4fd38a705caaaaaf173009030561c1216b30c3fa7280a836",
+    "after-protocol-content.png": "b3e7827b1f47669e1f2db85a20b16038cdc0608d05e639c5f04c376fa2081db3",
+    "after-real-content.png": "44d2532c1ef5e206f582df78121e9af6ef0dfd3a1e4893df0db606d4e873ced7",
+    "after-real-search.png": "8b62620e4a1b5deca59fd3005beb96c1fd621854989f2bb7a7e06202a8fa7f1b",
+    "after-real-forget.png": "242466dd915c856c69729ff3e13b35735f244c4496f82518c529e578db0ce0bd",
+    "real-webui-readback.json": "3019b81883c7737637883e3c186167813300d9f903ab0d27aa646cf950d8d99b"
+  },
+  "realOpenVikingWebUI": {
+    "backend": "OpenViking 0.4.20",
+    "scope": "isolated default/default",
+    "model": "scripted tool decisions, synthetic embeddings, no live LLM",
+    "receipt": {
+      "action": "stored",
+      "provider": "openviking",
+      "id": "viking://user/default/memories/experiences/20260916043728-issue-233-canary-release-approval-requires-a-com-0f28a6e3-d100-43df-ad23-bb99623cbb61.md",
+      "uri": "viking://user/default/memories/experiences/20260916043728-issue-233-canary-release-approval-requires-a-com-0f28a6e3-d100-43df-ad23-bb99623cbb61.md",
+      "externalUri": "viking://user/default/memories/experiences/20260916043728-issue-233-canary-release-approval-requires-a-com-0f28a6e3-d100-43df-ad23-bb99623cbb61.md",
+      "summary": "OpenViking stored the memory at viking://user/default/memories/experiences/20260916043728-issue-233-canary-release-approval-requires-a-com-0f28a6e3-d100-43df-ad23-bb99623cbb61.md (category decision).",
+      "writtenBytes": 117,
+      "vectorStatus": "complete",
+      "memoryBodyId": "openviking-265db573b8e128c231453ecc",
+      "memoryBodyName": "default",
+      "memoryProviderId": "openviking",
+      "memoryProviderLabel": "OpenViking",
+      "memoryReceipt": {
+        "status": "succeeded",
+        "completion": "committed",
+        "committedAt": "2026-09-16T04:37:29.197Z"
+      }
+    },
+    "readback": "Issue 233 canary: release approval requires a completed staged rollout.\n合成回归资料：保留原文与换行。",
+    "utf8Bytes": 117,
+    "byteExact": true,
+    "forget": {
+      "trigger": "real WebUI confirmation",
+      "readAfterDeleteHttpStatus": 404,
+      "backendCode": "NOT_FOUND"
+    },
+    "search": {
+      "query": "release approval staged rollout",
+      "resultCount": 1,
+      "fullOriginalVisible": true,
+      "syntheticEmbeddingScore": 0.707
+    }
+  }
+}

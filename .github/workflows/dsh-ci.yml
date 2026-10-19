@@ -1,0 +1,149 @@
+name: DSH plugins CI
+
+# Verifies the DeepSeek Harness plugin workspace in dsh/. The jobs match the
+# workspace's former CI in omdsh-dev/dsh-mnemon; every command runs from dsh/.
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'dsh/**'
+      - '.github/workflows/dsh-ci.yml'
+  pull_request:
+    branches: [master]
+    paths:
+      - 'dsh/**'
+      - '.github/workflows/dsh-ci.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    working-directory: dsh
+
+jobs:
+  verify-windows-workspace:
+    name: Verify Windows workspace paths (Node ${{ matrix.node }})
+    runs-on: windows-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.19.0', '24']
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+
+      - name: Install pnpm
+        run: npm install --global pnpm@10.13.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test workspace identities and platform paths
+        run: pnpm exec vitest run tests/workspace-storage.spec.ts tests/client-platform-boundary.spec.ts tests/async-subagent-memory.spec.ts
+
+      - name: Test desktop CLI process ownership and hidden native launches
+        run: >-
+          pnpm exec vitest run tests/host-process.spec.ts tests/version-updates.spec.ts
+          plugins/dsh-mnemon-source-memory-spaces/tests/npm-native-cli.spec.ts
+          plugins/dsh-mnemon-source-memory-spaces/tests/runner.spec.ts
+          plugins/dsh-mnemon-source-memory-spaces/tests/process.spec.ts
+
+  verify-source:
+    name: Verify source (Node 22.19)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 2
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22.19.0
+          package-manager-cache: false
+
+      - name: Install pnpm
+        run: npm install --global pnpm@10.13.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate release intent
+        if: github.event_name == 'pull_request'
+        env:
+          CHANGESET_BASE_REVISION: ${{ github.event.pull_request.base.sha }}
+          CHANGESET_REVISION: ${{ github.sha }}
+        run: pnpm run release:intent
+
+      - name: Type-check integrated source
+        run: pnpm run typecheck
+
+      - name: Check documentation links and public plugin catalog
+        run: pnpm run verify:docs
+
+      - name: Verify deterministic root build
+        run: pnpm run verify:build
+
+      - name: Build public plugin SDK entries
+        run: >-
+          pnpm --workspace-concurrency=2
+          --filter dsh-mnemon-source-memory-spaces
+          --filter dsh-mnemon-source-documents
+          --filter dsh-mnemon-source-runtime
+          --filter dsh-mnemon-strategy-default-three-tier
+          --parallel run build
+
+      - name: Test integrated source
+        run: pnpm run test
+
+      - name: Verify root package
+        run: pnpm run verify:package
+
+      - name: Set up Node.js 20 for runtime compatibility
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          package-manager-cache: false
+
+      - name: Import every public entry on Node.js 20
+        run: node scripts/verify-public-entries.mjs
+
+  verify-artifacts:
+    name: Verify packed plugins (Node 24)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install pnpm
+        run: npm install --global pnpm@10.13.1
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify packed and independently installed plugins
+        env:
+          MNEMON_PLUGIN_VERIFY_CONCURRENCY: '4'
+        run: pnpm run verify:plugins

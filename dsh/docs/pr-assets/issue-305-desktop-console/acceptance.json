@@ -1,0 +1,108 @@
+{
+  "issue": 305,
+  "baseline": "42640337f06f4a9ba8fa6bcf18c6ed2cef871182",
+  "fixCommit": "809ad5b6",
+  "platform": "darwin-arm64",
+  "dsh": "0.1.7-rc.2",
+  "mnemonNpm": "0.2.9",
+  "electron": {
+    "version": "44.0.0",
+    "node": "24.18.1",
+    "processType": "browser",
+    "runAsNode": null
+  },
+  "beforeCli": {
+    "nativeProcesses": 2,
+    "windowsHideTrue": 0,
+    "operations": {
+      "--version": 1,
+      "status": 1
+    }
+  },
+  "afterCli": {
+    "nativeProcesses": 2,
+    "windowsHideTrue": 2,
+    "operations": {
+      "--version": 1,
+      "status": 1
+    }
+  },
+  "electronSpaceCreation": {
+    "nativeProcesses": 9,
+    "windowsHideTrue": 9,
+    "operations": {
+      "store": 1,
+      "status": 4,
+      "--version": 2,
+      "viz": 1,
+      "recall": 1
+    }
+  },
+  "electronLiveAcceptance": {
+    "nativeProcesses": 15,
+    "windowsHideTrue": 15,
+    "operations": {
+      "status": 4,
+      "--version": 3,
+      "viz": 2,
+      "recall": 4,
+      "other": 1,
+      "remember": 1
+    }
+  },
+  "liveModelRequests": [
+    {
+      "model": "deepseek-flash",
+      "httpStatus": 200,
+      "tools": [
+        "mnemon_memory_bodies"
+      ]
+    },
+    {
+      "model": "deepseek-flash",
+      "httpStatus": 200,
+      "tools": [
+        "mnemon_recall"
+      ]
+    },
+    {
+      "model": "deepseek-flash",
+      "httpStatus": 200,
+      "tools": [
+        "mnemon_remember"
+      ]
+    },
+    {
+      "model": "deepseek-flash",
+      "httpStatus": 200,
+      "tools": [
+        "mnemon_subagent_result"
+      ]
+    }
+  ],
+  "writeReceipt": {
+    "action": "added",
+    "id": "81fb0c4d-cdf8-4189-98ff-ea8e613260b3",
+    "content": "Issue 305 desktop regression project decision: the synthetic launch verification code is SILENT-BRAIN-305, to be used in subsequent acceptance checks.",
+    "category": "decision"
+  },
+  "webuiRecall": {
+    "query": "SILENT-BRAIN-305",
+    "resultCount": 1
+  },
+  "artifactSha256": {
+    "before": {
+      "dsh-mnemon-0.5.17.tgz": "d082377285bdf28e14959a96cbfc8789c61395b5b2ba1b3adb0ed16cfa03d772",
+      "dsh-mnemon-source-memory-spaces-0.5.11.tgz": "84b5c1d702d7308280e71b7c38d154d311353a2efb223f83bbc97fe0c0b8d72c"
+    },
+    "after": {
+      "dsh-mnemon-0.5.17.tgz": "bb0e5910a5df43849e6db15f37a8b2db36d5169610c77c19d20e4c25476e2b64",
+      "dsh-mnemon-source-memory-spaces-0.5.11.tgz": "906cde9f7261a68b323f9441765da15587481ba7fe15586fc64dc4a9913d6163"
+    }
+  },
+  "limits": [
+    "No interactive Windows desktop recording; Windows process tests run on Node 22.19 and 24 in CI.",
+    "Screenshots show functional acceptance on macOS, not Windows console visibility.",
+    "The npm update launcher and downstream installer behavior remain unchanged."
+  ]
+}

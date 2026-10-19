@@ -1,0 +1,145 @@
+{
+  "verifiedAt": "2026-10-03T19:59:27Z",
+  "revision": {
+    "base": "b2481b0427bd1070de6538502451fb6150a2faf6",
+    "tested": "549503ae59ef79ba304eff684abeaa78ce1a9d84",
+    "note": "the release pull request working tree: main with #332, after pnpm release:version"
+  },
+  "packages": {
+    "dsh-mnemon": {
+      "version": "0.5.24",
+      "sha256": "069a1a1d87ba75824def50a4e1f0aa286500a33dc8232ceb17c87c3643fb1ca5"
+    },
+    "dsh-mnemon-source-memory-spaces": {
+      "version": "0.5.16",
+      "sha256": "40c479929969b0c90b361039b2709c01f3ffa723b254bf3aaacbf6dbaa28a8bc"
+    },
+    "components": "the other 16 pinned component packages from npm, unchanged since 0.5.23"
+  },
+  "registry": "a loopback registry with npm's real metadata plus the two new versions, published 168 hours earlier; a pnpm wrapper sends the npm and npmmirror registries DSH asks to it",
+  "hosts": {
+    "0.2.0-rc.2": {
+      "home": "fresh HOME, DSH home and pnpm store",
+      "flow": "Plugins -> Add plugin -> dsh-mnemon -> Install -> Enable now",
+      "installSource": "chosen by DSH (mainland China mirror)",
+      "installedVersions": {
+        "dsh-mnemon": "0.5.24",
+        "dsh-mnemon-source-runtime": "0.5.12",
+        "dsh-mnemon-source-documents": "0.5.9",
+        "dsh-mnemon-source-memory-spaces": "0.5.16",
+        "dsh-mnemon-provider-mnemon-native": "0.5.8"
+      },
+      "status": {
+        "starter": "0.5.24",
+        "nominal": true,
+        "nativeCli": "0.2.9"
+      },
+      "runtimeWriteAndReadAfterReload": true,
+      "nativeSpaceActive": "1 / 1",
+      "cliRememberAndRecall": true,
+      "webDirectRecallFindsCliFact": true,
+      "entities": {
+        "written": "3 CLI memories carrying Atlas, 1 that only mentions it",
+        "railCount": 3,
+        "listed": 3,
+        "listedCarryTheEntity": true,
+        "footer": [
+          "当前显示 3 / 3"
+        ],
+        "relatedBeforeAsking": {
+          "button": "查找相关记忆",
+          "expanded": false,
+          "recallShown": null
+        },
+        "findRelated": {
+          "related": 1,
+          "mentionFound": true,
+          "button": "收起"
+        }
+      },
+      "checkVersions": {
+        "installed": "0.5.24",
+        "npmLatestBeforePublication": "0.5.23",
+        "state": "local version",
+        "updateRoute": "DSH plugin installer",
+        "dshMnemonUpdateOffered": false,
+        "otherRows": "Mnemon CLI 0.2.9 offers its own npm update to 0.2.10"
+      },
+      "restartNoticeAfterEnableNow": false,
+      "hostLaunches": 1,
+      "hostWarnings": [],
+      "consoleErrors": []
+    },
+    "0.1.7-rc.2": {
+      "home": "fresh HOME, DSH home and pnpm store",
+      "flow": "Plugins -> Add plugin -> dsh-mnemon -> Install -> Enable now",
+      "installSource": "chosen by DSH (mainland China mirror)",
+      "installedVersions": {
+        "dsh-mnemon": "0.5.24",
+        "dsh-mnemon-source-runtime": "0.5.12",
+        "dsh-mnemon-source-documents": "0.5.9",
+        "dsh-mnemon-source-memory-spaces": "0.5.16",
+        "dsh-mnemon-provider-mnemon-native": "0.5.8"
+      },
+      "status": {
+        "starter": "0.5.24",
+        "nominal": true,
+        "nativeCli": "0.2.9"
+      },
+      "runtimeWriteAndReadAfterReload": true,
+      "nativeSpaceActive": "1 / 1",
+      "cliRememberAndRecall": true,
+      "webDirectRecallFindsCliFact": true,
+      "entities": {
+        "written": "3 CLI memories carrying Atlas, 1 that only mentions it",
+        "railCount": 3,
+        "listed": 3,
+        "listedCarryTheEntity": true,
+        "footer": [
+          "当前显示 3 / 3"
+        ],
+        "relatedBeforeAsking": {
+          "button": "查找相关记忆",
+          "expanded": false,
+          "recallShown": null
+        },
+        "findRelated": {
+          "related": 1,
+          "mentionFound": true,
+          "button": "收起"
+        }
+      },
+      "checkVersions": {
+        "installed": "0.5.24",
+        "npmLatestBeforePublication": "0.5.23",
+        "state": "local version",
+        "updateRoute": "DSH plugin installer",
+        "dshMnemonUpdateOffered": false,
+        "otherRows": "Mnemon CLI 0.2.9 offers its own npm update to 0.2.10"
+      },
+      "restartNoticeAfterEnableNow": false,
+      "hostLaunches": 1,
+      "hostWarnings": [],
+      "consoleErrors": []
+    }
+  },
+  "moreEvidence": [
+    "../entities-complete-index/verification.json"
+  ],
+  "environment": {
+    "os": "macOS",
+    "node": "24.19.0",
+    "pnpm": "11.25.0",
+    "mnemonCli": "0.2.9",
+    "browser": "headless Google Chrome over the DevTools protocol",
+    "dshModified": false
+  },
+  "screenshots": {
+    "status.png": "6d46331a9bcfc55f318484094154148c7599e79ef583c5f0efc4a9f644ad2ca5",
+    "runtime.png": "c16c0580f013c90e6a030d9530100a522de61bd21e9905eddcad79e85745184a",
+    "spaces.png": "d0e077e5455d4043c5bbf1910b0aaafe87642393a2fb2b9723974a24c5c12436",
+    "recall.png": "a7f91697d01367070d8af13b18c578c4f1c74c5948409a830702ded79860fd82",
+    "entities.png": "9b97f580516b9f38e9beb908b08c25dbbef7483a277970bbca60c1eeff4ad144",
+    "entities-related.png": "a1d277ce158120148649675791cda0958e9e571cae17db24c0440c38e723908c"
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "name": "dsh-mnemon-source-memory-spaces",
+  "version": "0.5.16",
+  "description": "Memory Spaces Source and its private Provider SDK.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./provider-sdk": {
+      "types": "./lib/provider-sdk.d.ts",
+      "default": "./lib/provider-sdk.js"
+    },
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json",
+    "./testing": {
+      "types": "./lib/testing.d.ts",
+      "default": "./lib/testing.js"
+    },
+    "./client": {
+      "types": "./lib/types/client.d.ts",
+      "default": "./lib/client.js"
+    },
+    "./contracts": {
+      "types": "./lib/contracts.d.ts",
+      "default": "./lib/contracts.js"
+    },
+    "./presentation/locales.json": "./presentation/locales.json",
+    "./presentation/page.module.css": "./presentation/page.module.css",
+    "./presentation/sidebar.module.css": "./presentation/sidebar.module.css",
+    "./native-cli": {
+      "types": "./lib/native-cli.d.ts",
+      "default": "./lib/native-cli.js"
+    }
+  },
+  "files": [
+    "lib",
+    "locale",
+    "README.md",
+    "presentation"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsdown && tsc -p tsconfig.client-types.json",
+    "test": "vitest run",
+    "verify": "pnpm typecheck && pnpm test && pnpm build"
+  },
+  "dependencies": {
+    "@deepseek-ai/schemastery": "^3.18.4"
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/dsh-client-ui-primitives": "^0.1.7-rc.2 || ^0.2.0-rc.1",
+    "dsh-mnemon": "^0.5.19",
+    "react": "^18.2.0"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-client-ui-primitives": "0.1.7-rc.2",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "dsh-mnemon": "^0.5.24",
+    "dsh-mnemon-provider-byterover": "^0.5.5",
+    "dsh-mnemon-provider-hindsight": "^0.5.5",
+    "dsh-mnemon-provider-holographic": "^0.5.6",
+    "dsh-mnemon-provider-honcho": "^0.5.5",
+    "dsh-mnemon-provider-mem0": "^0.5.5",
+    "dsh-mnemon-provider-mnemon-native": "^0.5.8",
+    "dsh-mnemon-provider-openviking": "^0.5.7",
+    "dsh-mnemon-provider-retaindb": "^0.5.5",
+    "dsh-mnemon-provider-supermemory": "^0.5.5",
+    "jsdom": "^26.0.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "tsdown": "^0.22.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0",
+    "lightningcss": "^1.33.0",
+    "clsx": "^2.1.1",
+    "@shikijs/langs": "^4.3.1",
+    "anser": "^2.3.5",
+    "katex": "^0.16.47",
+    "mdast-util-from-markdown": "^2.0.3",
+    "mdast-util-gfm": "^3.1.0",
+    "mdast-util-math": "^3.0.0",
+    "micromark-core-commonmark": "^2.0.3",
+    "micromark-extension-gfm": "^3.0.0",
+    "micromark-extension-math": "^3.1.0",
+    "micromark-factory-space": "^2.0.1",
+    "micromark-util-character": "^2.1.1",
+    "micromark-util-classify-character": "^2.0.1",
+    "micromark-util-sanitize-uri": "^2.0.1",
+    "micromark-util-symbol": "^2.0.1",
+    "shiki": "^4.3.1",
+    "@deepseek-ai/dsh-client-store": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-util-code-language": "0.1.7-rc.2",
+    "@deepseek-ai/dsh-util-workspace-path": "0.1.7-rc.2",
+    "diff": "^9.0.0",
+    "immer": "^10.1.1",
+    "simple-icons": "16.31.0",
+    "zustand": "~4.4.7"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "external": [
+        "dsh-mnemon/client"
+      ]
+    }
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mnemon-dev/mnemon.git",
+    "directory": "dsh/plugins/dsh-mnemon-source-memory-spaces"
+  },
+  "homepage": "https://github.com/mnemon-dev/mnemon/tree/master/dsh/plugins/dsh-mnemon-source-memory-spaces#readme",
+  "bugs": {
+    "url": "https://github.com/mnemon-dev/mnemon/issues"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "issue261-turn-tail-peers",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "exports": { ".": "./index.js", "./client": "./client.js", "./package.json": "./package.json" },
+  "files": ["index.js", "client.js", "cordis.patch.yml"],
+  "peerDependencies": { "@deepseek-ai/cordis": "^4.0.2", "react": "^18.2.0" },
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": { "inject": ["@deepseek-ai/dsh-client-ui-renderer", "@deepseek-ai/dsh-client-ui-chat"], "platform": "web" }
+  }
+}

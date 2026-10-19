@@ -1,0 +1,122 @@
+{
+  "base": "6d79c663262f71c4309cd6db5bd70b204abb143d",
+  "implementation": "8d3a16ec",
+  "dsh": "0.1.7-rc.2",
+  "node": "24.20.0",
+  "mnemonCli": "0.2.9",
+  "model": "local scripted choice; real native mnemon_status tool; no external model API",
+  "optionalStrategies": [
+    "scoped",
+    "light-context",
+    "auto-capture"
+  ],
+  "officialDshRuntimeUnmodified": true,
+  "artifacts": [
+    {
+      "file": "dsh-mnemon-0.5.15.tgz",
+      "sha256": "68f44f5d41e4bfb7f65ab934dc8777f93f3aea256e0bc45cbd41f57671b4f935"
+    },
+    {
+      "file": "dsh-mnemon-provider-byterover-0.5.4.tgz",
+      "sha256": "17dcd57cb35c0c81af2b93c92be66c2e6b7e8180d5d1cf634c589281003dddc1"
+    },
+    {
+      "file": "dsh-mnemon-provider-hindsight-0.5.4.tgz",
+      "sha256": "739dec0d42689fdbdb8183ba75f7b6afc4be899b585c03c2a85842e0e998a170"
+    },
+    {
+      "file": "dsh-mnemon-provider-holographic-0.5.4.tgz",
+      "sha256": "700fa0f94387ee04f5202dbbe0d410afb7114ba2486b25c32d64d7b059245f8c"
+    },
+    {
+      "file": "dsh-mnemon-provider-honcho-0.5.4.tgz",
+      "sha256": "db8ffcbbc1df42555295a1ff818e2059b5c09776a0dc4cc9c311779355b06fd7"
+    },
+    {
+      "file": "dsh-mnemon-provider-mem0-0.5.4.tgz",
+      "sha256": "ccd61716ead4d9462e15a662edb59c9850d812e8660bc33c4cc574601b816255"
+    },
+    {
+      "file": "dsh-mnemon-provider-mnemon-native-0.5.5.tgz",
+      "sha256": "8b839950e17b086578490b9eb3ef438331afa96a85ccd588ddaf7af9649f1f32"
+    },
+    {
+      "file": "dsh-mnemon-provider-openviking-0.5.6.tgz",
+      "sha256": "e5b3f9c80c6c450e5cb0e0103f30f8df39550dd980aac70dc4d44e069e2bc570"
+    },
+    {
+      "file": "dsh-mnemon-provider-retaindb-0.5.4.tgz",
+      "sha256": "8962cfc5b8e777a86c8816dfd47f32943aa6a1f1973bc8882727b4b430579e3a"
+    },
+    {
+      "file": "dsh-mnemon-provider-supermemory-0.5.4.tgz",
+      "sha256": "c117f467d0eb66954ab5b27a8ae08722770699e0f9113fa4bdc9f0724485b508"
+    },
+    {
+      "file": "dsh-mnemon-source-documents-0.5.6.tgz",
+      "sha256": "6ff72097bfcf0f02520a8599e9d6c5937e3ee317547fb60209b4188272de2728"
+    },
+    {
+      "file": "dsh-mnemon-source-memory-spaces-0.5.9.tgz",
+      "sha256": "42c308d133563a72c946086fd0c2d713eb32528ab30264de6785ab415a8377c7"
+    },
+    {
+      "file": "dsh-mnemon-source-runtime-0.5.9.tgz",
+      "sha256": "e17f1b35c3c57063e26783223ddc3164173aa10f01756bc71004191245346bbc"
+    },
+    {
+      "file": "dsh-mnemon-strategy-auto-capture-0.5.4.tgz",
+      "sha256": "a653c1ebec85da0fe2c878e42a0eea84e20da877682fa1c9c97f5d8f8f70c074"
+    },
+    {
+      "file": "dsh-mnemon-strategy-default-three-tier-0.5.6.tgz",
+      "sha256": "4506f6a025832395ea0fbefeb58c4ddaa34ee0af369f258000619ba9a5f9efd4"
+    },
+    {
+      "file": "dsh-mnemon-strategy-light-context-0.5.4.tgz",
+      "sha256": "eac6b61e9652ed54d03dd013bec285afe8714547a27c33ace286439e5958250b"
+    },
+    {
+      "file": "dsh-mnemon-strategy-scoped-0.5.4.tgz",
+      "sha256": "c751c30b61f5ae60eca489cda936ed17a5b86dadaae538d9657dd76fe8467843"
+    }
+  ],
+  "checks": {
+    "verify": {
+      "rootPassed": 1390,
+      "rootSkipped": 8,
+      "skipReason": "opt-in unrelated integration/live suites"
+    },
+    "independentArtifacts": 17,
+    "independentPluginRepositories": 16,
+    "nativeCliIntegration": true,
+    "nativeTwoNamespaceArchive": true,
+    "bundlePublishedFloorAndRc": true,
+    "uiRuntimeCreateEditPersist": true,
+    "uiDocumentsCreateSearchRead": true,
+    "cliWriteWebUiRecall": true,
+    "nativeNavigationReturnNewSessionCollapsed": true,
+    "finalInstalledRuntimeFilesMatchAllArtifacts": true,
+    "finalMaidHeaderAndPanelSwitch": true
+  },
+  "upstreamCandidate": {
+    "commit": "c754b50f2da36f9465dd43af7a6d06963af180f3",
+    "tarballSha256": "bf06f067cf056d71e20a422d3d40957f88d26bbc02a3714cc738c94361ef8513",
+    "separateDisposableProfile": true,
+    "published": false,
+    "unitTests": 88,
+    "owningFileTests": 81,
+    "owningFileCoveragePercent": 100,
+    "docsChecks": 42,
+    "uiComponents": 8,
+    "uiDocumentsOffOn": true,
+    "uiBundleOffOn": true,
+    "strictLifecycleRegression": true
+  },
+  "package": {
+    "files": 50,
+    "packedBytes": 305158,
+    "unpackedBytes": 1344131,
+    "unchangedBudgetBytes": 1376000
+  }
+}

@@ -1,0 +1,169 @@
+{
+  "date": "2026-09-10",
+  "sourceRevision": "595e197670574f6a731e445b896dbc5c78271027",
+  "baseRevision": "1790251919ec731f9dd49b43da78f78b37890a00",
+  "dsh": "0.1.5-rc.1",
+  "dshNpmLatestRechecked": true,
+  "node": "25.1.0",
+  "pnpm": "11.19.0",
+  "playwright": "1.63.0",
+  "chromium": "153",
+  "platform": "macOS arm64",
+  "nativeCli": "0.2.8",
+  "tests": {
+    "passed": 1194,
+    "skipped": 7,
+    "rootPassed": 871,
+    "pluginPassed": 323,
+    "repairPassed": 17,
+    "nativeOptInPassed": 1,
+    "independentPluginRepositories": 16,
+    "packedArtifacts": 17,
+    "npmExecutableSymlinkPassed": true
+  },
+  "headless": {
+    "current": {
+      "version": "0.1.5-rc.1",
+      "totalTools": 38,
+      "representativeMnemonTools": 8
+    },
+    "previous": {
+      "version": "0.1.2-rc.1",
+      "totalTools": 39,
+      "representativeMnemonTools": 8
+    }
+  },
+  "browser": {
+    "status": "passed",
+    "runtimeCreateEditFilterDelete": true,
+    "documentCreateSearchReadAndRestart": true,
+    "nativeSpaceCreatedAndActivatedInUi": true,
+    "nativeFactSeededBy": "real CLI; no LLM",
+    "nativeRecallContentEntitiesRestartAndSoftDelete": true,
+    "sidebarBuiltinSwitchBothDirections": true,
+    "englishChineseSettings": true,
+    "readOnlyMutationControlsDisabled": true,
+    "unauthenticatedStatus": 401,
+    "backupExport": {
+      "bytes": 5369,
+      "sha256": "21696dc1f68aa0048a612dc387b27cc2f94c7146e36e2a7589902115ea0270e0"
+    },
+    "coldReopenPageErrors": []
+  },
+  "legacyRepair": {
+    "mode": "copy",
+    "format": 0,
+    "encoding": "zstd",
+    "repairedMessages": 2,
+    "inputSha256": "09da22890e09eb0ddde51bfd4c87ab878d30fe35a1231148320a286f996e7102",
+    "outputSha256": "7222c6379e7c28296bb93d636c163169130293c5bdc46745588796349bded511",
+    "originalPreserved": true
+  },
+  "legacyFinal": {
+    "migratedV3": true,
+    "coldRead": true,
+    "totalEvents": 30,
+    "userMessages": 6,
+    "validMnemonContextMessages": 3,
+    "originalBackupSha256": "09da22890e09eb0ddde51bfd4c87ab878d30fe35a1231148320a286f996e7102",
+    "originalBackupPreserved": true
+  },
+  "screenshots": [
+    {
+      "path": "00-before-http-405.png",
+      "bytes": 94134,
+      "width": 1440,
+      "height": 1050,
+      "sha256": "b5237d132a43bfb7b0b57ae9377e419e37fe0a0721015dfbe6cc2af92fe2203a",
+      "sourceRevision": "1790251919ec731f9dd49b43da78f78b37890a00"
+    },
+    {
+      "path": "01-status-connected.png",
+      "bytes": 135775,
+      "width": 1440,
+      "height": 1050,
+      "sha256": "ad81cc354c8189b9d08f00e9c1b0a5d204b8eccd7acfc824df70d1282b346bc6",
+      "sourceRevision": "595e197670574f6a731e445b896dbc5c78271027"
+    },
+    {
+      "path": "02-runtime-crud.png",
+      "bytes": 168690,
+      "width": 1440,
+      "height": 1050,
+      "sha256": "c5ce922ee0944efed6a10091bf3b816bda45a94c59336428bcefb9ad28b3257c",
+      "sourceRevision": "595e197670574f6a731e445b896dbc5c78271027"
+    },
+    {
+      "path": "03-documents-search.png",
+      "bytes": 142984,
+      "width": 1440,
+      "height": 1050,
+      "sha256": "aa6dd99cfa5ccf89a6aa67e1d871e09ee486ba3254c4258df25902d3fd90cafc",
+      "sourceRevision": "595e197670574f6a731e445b896dbc5c78271027"
+    },
+    {
+      "path": "04-native-recall.png",
+      "bytes": 127348,
+      "width": 1440,
+      "height": 1050,
+      "sha256": "df9d09e0cb41fa22f27ef39b305849f28ddcffcaa159940808113999bd1c8f6c",
+      "sourceRevision": "595e197670574f6a731e445b896dbc5c78271027"
+    },
+    {
+      "path": "05-settings-connected.png",
+      "bytes": 180477,
+      "width": 1440,
+      "height": 1050,
+      "sha256": "9b323d36a34940afda04754652e949af29ab72ac4b83f4c0ec87dafbe2bf1a46",
+      "sourceRevision": "595e197670574f6a731e445b896dbc5c78271027"
+    },
+    {
+      "path": "06-builtin-runtime.png",
+      "bytes": 187648,
+      "width": 1440,
+      "height": 1050,
+      "sha256": "8e162983e877352cc4c0d9c27718c0488dbf0453c403a43d2a639d09b4385d04",
+      "sourceRevision": "595e197670574f6a731e445b896dbc5c78271027"
+    },
+    {
+      "path": "07-readonly-restart.png",
+      "bytes": 205441,
+      "width": 1440,
+      "height": 1050,
+      "sha256": "87fc47d985056ab286ddd591c325125c0dd9b5767392063144c8bef9f03f8a5e",
+      "sourceRevision": "595e197670574f6a731e445b896dbc5c78271027"
+    },
+    {
+      "path": "10-chinese-settings.png",
+      "bytes": 195658,
+      "width": 1440,
+      "height": 1050,
+      "sha256": "e8a11e10499dd8b5e51c0ee5f697856b8daa0d2529e17e0ccea68184028a8705",
+      "sourceRevision": "595e197670574f6a731e445b896dbc5c78271027"
+    },
+    {
+      "path": "11-legacy-cold-reopen.png",
+      "bytes": 87157,
+      "width": 1440,
+      "height": 1050,
+      "sha256": "80cbb93829da50544fe76de6187d91b246acf7b499c251dba8f02dd265445ce0",
+      "sourceRevision": "595e197670574f6a731e445b896dbc5c78271027"
+    },
+    {
+      "path": "12-content-after-restart.png",
+      "bytes": 134565,
+      "width": 1440,
+      "height": 1050,
+      "sha256": "8c6e54ae74d0df3a591a6419e7e71177b4591123a6503390fb587181e1f66769",
+      "sourceRevision": "595e197670574f6a731e445b896dbc5c78271027"
+    }
+  ],
+  "limits": [
+    "No Windows, Electron or physical-mobile retest",
+    "Loopback fixed model responses; no model-quality claim",
+    "No live third-party Provider accounts",
+    "DSH 0.1.2 Headless only; older releases retain historical evidence"
+  ],
+  "cliEntrypointRevision": "a389438a4e12a77f953c80ce79828e221653ee8f",
+  "finalLocalVerificationRevision": "a389438a4e12a77f953c80ce79828e221653ee8f"
+}
