@@ -28,8 +28,6 @@ type WriteRequest struct {
 	Scope       string `json:"scope,omitempty"`
 	WorkspaceID string `json:"workspaceId,omitempty"`
 	SessionID   string `json:"sessionId,omitempty"`
-	Thread      string `json:"thread,omitempty"`
-	Position    *int64 `json:"position,omitempty"`
 }
 
 type Reference struct {
@@ -38,10 +36,9 @@ type Reference struct {
 }
 
 type WriteResult struct {
-	Revision  string        `json:"revision"`
-	Document  Reference     `json:"document"`
-	Records   []Reference   `json:"records"`
-	Relations *RelateResult `json:"relations,omitempty"`
+	Revision string      `json:"revision"`
+	Document Reference   `json:"document"`
+	Records  []Reference `json:"records"`
 }
 
 type recordValue struct {
@@ -107,9 +104,6 @@ func Write(ctx context.Context, store *records.Store, req WriteRequest) (WriteRe
 	}
 	if req.Scope == "" {
 		req.Scope = "global"
-	}
-	if (req.Thread == "") != (req.Position == nil) || len(req.Thread) > 256 || req.Position != nil && (*req.Position < 0 || *req.Position > 1<<53-1) {
-		return WriteResult{}, errors.New("thread and position must be supplied together; position must be an exact nonnegative integer")
 	}
 	if err := validateScope(req); err != nil {
 		return WriteResult{}, err
@@ -186,9 +180,6 @@ func documentRecords(req WriteRequest, at time.Time) ([]records.Upsert, WriteRes
 		value.Kind, value.Title, value.Content = "memory-record", "Original record", req.Text[start:end]
 		value.State = "active"
 		value.Data = map[string]any{"source": req.Source, "eventAt": at.Format(time.RFC3339Nano), "documentID": req.ID, "start": start, "end": end}
-		if req.Thread != "" {
-			value.Data["thread"], value.Data["position"] = req.Thread, *req.Position
-		}
 		upsert := encodeRecord(value, value.Content)
 		upserts = append(upserts, upsert)
 		result.Records = append(result.Records, reference(value.ID, upsert.RecordJSON))

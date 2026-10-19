@@ -61,13 +61,6 @@ func Open(store *records.Store, directory string, config Config, readonly bool) 
 	}
 	agent.budget = budget
 	agent.indexError = indexError
-	if config.Relations.enabled() {
-		path := filepath.Join(directory, "memory-relations.db")
-		_, statErr := os.Stat(path)
-		if !readonly || statErr == nil {
-			agent.relations, agent.relationError = openRelations(path, readonly)
-		}
-	}
 	ok = true
 	return agent, nil
 }

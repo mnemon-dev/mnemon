@@ -49,8 +49,3 @@ later requests. Cold build time and warm lookup time must be measured separately
 All features are opt-in. See the workspace experiment report for measured
 single-feature and combined effects; an enabled route is not evidence that a
 particular corpus benefits from it.
-
-For automatic, version-bound relation construction scored by a decision model,
-use the memory strategy's optional `relations` configuration and `memory.relate`.
-It is independent of these explicit-link query flags; see
-[the memory service](memory-service.md#optional-decision-scored-relations).
