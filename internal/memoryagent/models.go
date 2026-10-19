@@ -37,6 +37,8 @@ type Decider interface {
 type Models struct {
 	Planner Completer
 	Judge   Decider
+	// Consolidator folds timelines consolidation batches; nil uses Planner.
+	Consolidator Completer
 }
 
 func (u *Usage) add(other Usage) {

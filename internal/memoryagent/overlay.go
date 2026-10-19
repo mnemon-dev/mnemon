@@ -64,6 +64,9 @@ func OpenOverlay(path string, readonly bool) (*Overlay, error) {
 	db.SetMaxOpenConns(1)
 	if !readonly {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS overlays(scope TEXT PRIMARY KEY,token TEXT NOT NULL,payload TEXT NOT NULL)`)
+		if err == nil {
+			_, err = db.Exec(timelinesSchema)
+		}
 	} else {
 		err = db.Ping()
 	}

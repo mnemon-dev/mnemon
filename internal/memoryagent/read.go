@@ -40,6 +40,24 @@ type Config struct {
 	Strategy string `json:"strategy,omitempty"`
 	// View bounds the simple strategy's View; New fills its defaults.
 	View *ViewConfig `json:"view,omitempty"`
+	// Consolidation selects the consolidation job: unset or mode "" is the
+	// memory-agent/v1 fold, "timelines" the reference system's (timelines.go).
+	Consolidation *ConsolidationConfig `json:"consolidation,omitempty"`
+	// Consolidator is the timelines folding model. Unset, the planner folds;
+	// either way every fold asks for at most 8192 output tokens.
+	Consolidator *ModelConfig `json:"consolidator,omitempty"`
+}
+
+const consolidationTimelines = "timelines"
+
+// ConsolidationConfig sets the timelines consolidation. Zero fields take the
+// reference system's defaults: batches of 10000 characters of readable text,
+// 240 characters of an assistant message, 16 batches per job.
+type ConsolidationConfig struct {
+	Mode                string `json:"mode,omitempty"`
+	BatchCharacters     int    `json:"batchCharacters,omitempty"`
+	AssistantCharacters int    `json:"assistantCharacters,omitempty"`
+	MaxBatches          int    `json:"maxBatches,omitempty"`
 }
 
 // ViewConfig bounds what a simple read returns. Zero fields take the
@@ -106,6 +124,9 @@ type Agent struct {
 	overlay    *Overlay
 	indexError error
 	budget     *Budget
+	// timelineLocks holds one lock per scope key (a chan struct{} of
+	// capacity 1): a timelines job reads, folds and writes its state alone.
+	timelineLocks sync.Map
 }
 
 func New(store *records.Store, config Config, models Models, overlay *Overlay) (*Agent, error) {
@@ -138,6 +159,9 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	default:
 		return nil, fmt.Errorf("unknown memory strategy %q", config.Strategy)
 	}
+	if config.Consolidator != nil && (config.Consolidation == nil || config.Consolidation.Mode != consolidationTimelines) {
+		return nil, errors.New("a consolidator model requires consolidation mode \"timelines\"")
+	}
 	// Config and its nested pointers belong to this service, never its caller.
 	raw, _ := json.Marshal(config)
 	var own Config
@@ -149,6 +173,11 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 			own.View = &ViewConfig{}
 		}
 		if err := own.View.normalize(); err != nil {
+			return nil, err
+		}
+	}
+	if own.Consolidation != nil {
+		if err := own.Consolidation.normalize(); err != nil {
 			return nil, err
 		}
 	}
@@ -165,6 +194,34 @@ func (v *ViewConfig) normalize() error {
 	}
 	if v.MaxItems < 1 || v.MaxItems > 200 || v.MaxCharacters < 1 || v.MaxCharacters > 1000000 || v.Fusion != "" && v.Fusion != "rrf" {
 		return errors.New("memory view requires maxItems 1–200, maxCharacters 1–1000000 and fusion \"\" or \"rrf\"")
+	}
+	return nil
+}
+
+// normalize fills the timelines defaults and checks the bounds. Mode "" is
+// the v1 fold, which takes no settings.
+func (c *ConsolidationConfig) normalize() error {
+	switch c.Mode {
+	case "":
+		if *c != (ConsolidationConfig{}) {
+			return errors.New("consolidation settings require mode \"timelines\"")
+		}
+		return nil
+	case consolidationTimelines:
+	default:
+		return fmt.Errorf("unknown consolidation mode %q", c.Mode)
+	}
+	if c.BatchCharacters == 0 {
+		c.BatchCharacters = 10000
+	}
+	if c.AssistantCharacters == 0 {
+		c.AssistantCharacters = 240
+	}
+	if c.MaxBatches == 0 {
+		c.MaxBatches = 16
+	}
+	if c.BatchCharacters < 100 || c.BatchCharacters > 50000 || c.AssistantCharacters < 0 || c.AssistantCharacters > 4000 || c.MaxBatches < 1 || c.MaxBatches > 64 {
+		return errors.New("timelines consolidation requires batchCharacters 100–50000, assistantCharacters 0–4000 and maxBatches 1–64")
 	}
 	return nil
 }

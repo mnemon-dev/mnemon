@@ -36,6 +36,9 @@ func (a *Agent) Consolidate(ctx context.Context, req ConsolidateRequest) (Consol
 	if a.indexError != nil {
 		return ConsolidateResult{}, fmt.Errorf("derived index is unavailable: %w", a.indexError)
 	}
+	if a.config.Consolidation != nil && a.config.Consolidation.Mode == consolidationTimelines {
+		return a.consolidateTimelines(ctx, req)
+	}
 	if a.overlay == nil || a.models.Planner == nil {
 		return ConsolidateResult{}, errors.New("consolidation requires an overlay store and a completion model")
 	}

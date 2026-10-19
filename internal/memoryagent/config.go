@@ -44,6 +44,12 @@ func Open(store *records.Store, directory string, config Config, readonly bool) 
 			return nil, err
 		}
 	}
+	if config.Consolidator != nil {
+		models.Consolidator, err = NewProvider(*config.Consolidator, budget)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if config.Policy == nil || config.Policy.Consolidation {
 		path := filepath.Join(directory, "memory-index.db")
 		_, statErr := os.Stat(path)
