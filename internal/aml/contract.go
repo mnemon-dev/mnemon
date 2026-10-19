@@ -258,8 +258,9 @@ func (r *SearchRequest) UnmarshalJSON(raw []byte) error {
 
 // SearchItem is one piece of stored evidence, best first. Only Content is
 // sure to reach the answering model, so dates live inside it. Score is
-// 1/(rank+1) by the item's rank in the response (0 for the first), so any
-// sort by score keeps the order; CreatedAt is omitted when unknown.
+// 1/(rank+1) by the item's 0-based rank in the response (1 for the first,
+// then 0.5, …), so any sort by score keeps the order; CreatedAt is omitted
+// when unknown.
 type SearchItem struct {
 	ID        string  `json:"id"`
 	Content   string  `json:"content"`
