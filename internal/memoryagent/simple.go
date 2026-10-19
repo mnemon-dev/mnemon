@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 )
@@ -28,7 +29,11 @@ type simpleRun struct {
 	order    []string // item ids in the order they were first pooled
 	searches []*cueSearch
 	tried    []string // every search text run, for rewrites
-	stats    ReadStats
+	// rows is the need table: the ids of tabled items (Row set), in the
+	// order they entered it.
+	rows   []string
+	rounds int // loop rounds that acted
+	stats  ReadStats
 	// pageReads counts search pages read, first pages included, against
 	// simplePageBudget.
 	pageReads int
@@ -41,7 +46,7 @@ type simpleItem struct {
 	Evidence  Evidence
 	Screen    float64 // JEV's "needed?" screen
 	HasScreen bool
-	Row       []float64 // per need: does this item give it?
+	Row       []float64 // per need: does this item give it? nil until tabled
 	Needed    float64
 	// Superseded is JEV's "no longer current" answer.
 	Superseded float64
@@ -70,10 +75,20 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if err != nil {
 		return View{}, err
 	}
-	if _, err = r.admit(ctx, mixCues(pages, simplePoolSize)); err != nil {
+	pool, err := r.admit(ctx, mixCues(pages, simplePoolSize))
+	if err != nil {
 		return View{}, err
 	}
-	return r.poolView(), nil
+	// JEV screens the bounded pool (N:928), then the loop reads on for the
+	// needs. A spent JEV budget is not an error: the loop then stops.
+	if err = r.scan(ctx, pool); err != nil && !errors.Is(err, errCallBudget) {
+		return View{}, err
+	}
+	stop, err := r.loop(ctx)
+	if err != nil {
+		return View{}, err
+	}
+	return r.poolView(stop), nil
 }
 
 // complete runs one planner call with the author's output limit for it; a
@@ -102,11 +117,15 @@ func (r *simpleRun) policy() string {
 	return "memory-agent/simple/" + reference("policy", string(config)).Hash
 }
 
-// poolView returns the pooled records in pool order within the View bounds.
-func (r *simpleRun) poolView() View {
-	view := View{Revision: r.revision, Policy: r.policy(), Records: []Evidence{}, Needs: r.needs, StopReason: "pool"}
+// poolView returns the pooled records, the loop's finds included, by screen
+// (best first, then pool order) within the View bounds. It is a placeholder
+// until the shortlist is judged and composed.
+func (r *simpleRun) poolView(stop string) View {
+	view := View{Revision: r.revision, Policy: r.policy(), Records: []Evidence{}, Needs: r.needs, StopReason: stop}
+	order := slices.Clone(r.order)
+	slices.SortStableFunc(order, func(a, b string) int { return probabilityOrder(r.items[a].Screen, r.items[b].Screen) })
 	used := 0
-	for _, id := range r.order {
+	for _, id := range order {
 		item := r.items[id].Evidence
 		size := jsLen(item.Text)
 		if len(view.Records) == r.req.MaxItems || used+size > r.agent.config.View.MaxCharacters {

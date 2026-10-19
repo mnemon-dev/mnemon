@@ -439,6 +439,10 @@ func TestReadSimplePool(t *testing.T) {
 	if !slices.Equal(view.Needs, []Need{{Text: "the codename"}}) || view.Stats.PlannerCalls != 2 || view.Stats.Searches != 3 || view.Stats.Candidates < 1 {
 		t.Fatal(view.Needs, view.Stats)
 	}
+	// JEV screened the pool and the loop met the one need.
+	if view.StopReason != "covered" || view.Stats.DecisionCalls < 1 {
+		t.Fatal(view.StopReason, view.Stats)
+	}
 	view, err = a.Read(context.Background(), ReadRequest{Question: "What is the codename?", MaxItems: 1})
 	if err != nil || len(view.Records) != 1 {
 		t.Fatal(view, err)
