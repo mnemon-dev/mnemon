@@ -199,3 +199,32 @@ func (b *Budget) release(ctx context.Context, id string) error {
 	}
 	return tx.Commit()
 }
+
+// BudgetAccount is one paid account of a budget file: the cap this process
+// enforces, what calls spent and what unresolved calls hold.
+type BudgetAccount struct {
+	Kind  string  `json:"kind"`
+	Cap   float64 `json:"cap"`
+	Spent float64 `json:"spent"`
+	Held  float64 `json:"held"`
+}
+
+// Accounts reads the accounts calls have reserved on, by kind; it changes
+// nothing.
+func (b *Budget) Accounts(ctx context.Context) ([]BudgetAccount, error) {
+	rows, err := b.db.QueryContext(ctx, `SELECT kind,spent,held FROM accounts ORDER BY kind`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []BudgetAccount{}
+	for rows.Next() {
+		var account BudgetAccount
+		if err := rows.Scan(&account.Kind, &account.Spent, &account.Held); err != nil {
+			return nil, err
+		}
+		account.Cap = b.caps[account.Kind]
+		out = append(out, account)
+	}
+	return out, rows.Err()
+}

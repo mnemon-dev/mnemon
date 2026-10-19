@@ -849,13 +849,14 @@ func TestLayerNearest(t *testing.T) {
 	server.mu.Unlock()
 	r = testRun(a, user("beta?"))
 	nearThreads, nearValues, lexical = r.nearest(context.Background(), "beta new?", []string{"alpha one", "beta two", "beta beta"}, []string{"nothing here"})
-	if !lexical || !slices.Equal(nearThreads, []int{2, 1}) || len(nearValues) != 0 {
-		t.Fatal(nearThreads, nearValues, lexical)
+	if !lexical || !slices.Equal(nearThreads, []int{2, 1}) || len(nearValues) != 0 || !slices.Equal(r.stats.Degraded, []string{"layer-lexical"}) {
+		t.Fatal(nearThreads, nearValues, lexical, r.stats.Degraded)
 	}
-	// Without an embedder, shared words too.
+	// Without an embedder, shared words too; that is no fallback.
 	a = simpleAgent(t, s, completeFunc(nil))
-	nearThreads, _, lexical = testRun(a, user("x")).nearest(context.Background(), "beta", []string{"alpha", "beta"}, nil)
-	if !lexical || !slices.Equal(nearThreads, []int{1}) {
-		t.Fatal(nearThreads, lexical)
+	r = testRun(a, user("x"))
+	nearThreads, _, lexical = r.nearest(context.Background(), "beta", []string{"alpha", "beta"}, nil)
+	if !lexical || !slices.Equal(nearThreads, []int{1}) || r.stats.Degraded != nil {
+		t.Fatal(nearThreads, lexical, r.stats.Degraded)
 	}
 }

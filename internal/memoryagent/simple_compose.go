@@ -332,7 +332,7 @@ func (r *simpleRun) compose(ctx context.Context, stop string, scored []*simpleIt
 	if err != nil {
 		return View{}, err
 	}
-	return View{Revision: r.revision, Policy: r.policy(), Records: records, Needs: r.viewNeeds(records), StopReason: stop, Truncated: v.cut(candidates), Stats: r.stats}, nil
+	return View{Revision: r.revision, Policy: r.policy(), Records: records, Needs: r.viewNeeds(records), StopReason: stop, Truncated: v.cut(candidates), Stats: r.statsNow()}, nil
 }
 
 // viewNeeds is the plan's needs as a View of records reports them: covered

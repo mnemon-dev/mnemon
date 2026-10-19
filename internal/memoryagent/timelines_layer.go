@@ -355,15 +355,20 @@ func (a *Agent) layerOn() bool {
 // one that would pass the characters is dropped. Then linked records may
 // join (expand). A block's Records name the linked records the View shows.
 // The layer degrades and never fails the read (a state that will not load,
-// an embedder that fails, a judgement that fails or finds the budget spent),
-// unless the read is canceled.
+// an embedder that fails, a judgement that fails or finds the budget spent;
+// each named in ReadStats.Degraded), unless the read is canceled.
 func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 	state, _, err := r.agent.overlay.loadTimelines(ctx, r.req.Scope)
 	if ctx.Err() != nil {
 		return View{}, ctx.Err()
 	}
+	if err != nil {
+		r.degrade("layer-state")
+		view.Stats = r.statsNow()
+		return view, nil
+	}
 	m := state.Memory
-	if err != nil || len(m.Events) == 0 && len(m.Directives) == 0 && len(m.Facts) == 0 {
+	if len(m.Events) == 0 && len(m.Directives) == 0 && len(m.Facts) == 0 {
 		return view, nil
 	}
 	anchors := map[string]bool{}
@@ -401,8 +406,11 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 		candidates = append(candidates, judgeCandidate{Source: "value", Text: valueTexts[key]})
 	}
 	scores, err := r.judgeNeeded(ctx, candidates)
-	if err != nil && ctx.Err() != nil {
-		return View{}, ctx.Err()
+	if err != nil {
+		if ctx.Err() != nil {
+			return View{}, ctx.Err()
+		}
+		r.degrade("layer")
 	}
 	threadScore, valueScore := map[string]float64{}, map[string]float64{}
 	for i, id := range topics {
@@ -444,7 +452,7 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 	view.Index, view.Records = blocks, kept
 	view.Truncated = view.Truncated || cut
 	view.Needs = r.viewNeeds(kept)
-	view.Stats = r.stats
+	view.Stats = r.statsNow()
 	return view, nil
 }
 
@@ -475,6 +483,9 @@ func (r *simpleRun) expand(ctx context.Context, blocks []IndexItem, kept []Evide
 	}
 	values, err := evidence(ctx, r.agent.store, r.revision, r.req.Scope, linked)
 	if err != nil {
+		if ctx.Err() == nil {
+			r.degrade("expand")
+		}
 		return kept, ctx.Err()
 	}
 	byID := map[string]Evidence{}
@@ -489,8 +500,11 @@ func (r *simpleRun) expand(ctx context.Context, blocks []IndexItem, kept []Evide
 		}
 	}
 	scores, err := r.judgeNeeded(ctx, candidates)
-	if err != nil && ctx.Err() != nil {
-		return nil, ctx.Err()
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		r.degrade("expand")
 	}
 	order := []int{}
 	for i := range found {
@@ -544,12 +558,16 @@ func (r *simpleRun) judgeNeeded(ctx context.Context, candidates []judgeCandidate
 // author's nearest, C:269-277, as N:1143-1150 calls it): by meaning when an
 // embedder is configured, the dot product of each text's document vector
 // with the message's query vector (texts and message cut to 1500 units),
-// best first, ties in order; else, or when embedding fails, by shared words
-// (BM25, positive scores only). It returns the best 12 topics and 16 values
-// as indexes, and whether shared words ranked them.
+// best first, ties in order; else, or when embedding fails (a degraded
+// stage, layer-lexical), by shared words (BM25, positive scores only). It
+// returns the best 12 topics and 16 values as indexes, and whether shared
+// words ranked them.
 func (r *simpleRun) nearest(ctx context.Context, message string, threadTexts, valueTexts []string) (threads, values []int, lexical bool) {
 	if query, threadVectors, valueVectors, ok := r.layerVectors(ctx, message, threadTexts, valueTexts); ok {
 		return byDot(query, threadVectors, layerNearThreads), byDot(query, valueVectors, layerNearValues), false
+	}
+	if r.agent.config.Embedding != nil && ctx.Err() == nil {
+		r.degrade("layer-lexical")
 	}
 	return bm25Top(threadTexts, message, layerNearThreads), bm25Top(valueTexts, message, layerNearValues), true
 }

@@ -116,6 +116,7 @@ func (r *simpleRun) loop(ctx context.Context) (string, error) {
 	stop := stopRounds
 	ended := func(err error) (string, error) {
 		if errors.Is(err, errCallBudget) {
+			r.degrade("loop-budget")
 			return stop, nil
 		}
 		return "", err

@@ -1019,3 +1019,48 @@ func TestModelTimeoutSeconds(t *testing.T) {
 		t.Fatal(string(raw))
 	}
 }
+
+func TestBudgetAccountsReport(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "budget.db")
+	b, err := OpenBudgetWithCaps(path, map[string]float64{"deepseek": 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	ctx := context.Background()
+	if accounts, err := b.Accounts(ctx); err != nil || len(accounts) != 0 {
+		t.Fatal(accounts, err)
+	}
+	id, err := b.reserve(ctx, "deepseek", "h")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = b.settle(ctx, id, Usage{InputTokens: 1, CNY: 0.1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.reserve(ctx, "deepseek", "h"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.reserve(ctx, "jev", "h"); err != nil {
+		t.Fatal(err)
+	}
+	accounts, err := b.Accounts(ctx)
+	if err != nil || len(accounts) != 2 || accounts[0].Kind != "deepseek" || accounts[1].Kind != "jev" {
+		t.Fatal(accounts, err)
+	}
+	if a := accounts[0]; a.Cap != 200 || !near(a.Spent, 0.1) || !near(a.Held, 0.25) {
+		t.Fatal(a)
+	}
+	if a := accounts[1]; a.Cap != 10 || a.Spent != 0 || !near(a.Held, 0.01) {
+		t.Fatal(a)
+	}
+	// Another process's cap is not this one's: the configured cap reports.
+	other, err := OpenBudgetWithCaps(path, map[string]float64{"deepseek": 300})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	if accounts, err = other.Accounts(ctx); err != nil || accounts[0].Cap != 300 {
+		t.Fatal(accounts, err)
+	}
+}

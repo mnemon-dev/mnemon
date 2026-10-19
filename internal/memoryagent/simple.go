@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"sync"
 	"time"
 )
@@ -82,9 +83,8 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		return View{}, err
 	}
 	// JEV screens the bounded pool (N:928), then the loop reads on for the
-	// needs. A spent JEV budget is not an error: the loop then stops. (The
-	// pool scan cannot spend 128 calls today; this guards a shared budget.)
-	if err = r.scan(ctx, pool); err != nil && !errors.Is(err, errCallBudget) {
+	// needs.
+	if err = r.screen(ctx, pool); err != nil {
 		return View{}, err
 	}
 	stop, err := r.loop(ctx)
@@ -95,8 +95,11 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	// fails or finds the budget spent degrades the View to the screen; only
 	// a canceled read fails.
 	scored := shortlist(r.tableItems(), r.viewable(r.screened()), r.needs)
-	if err = r.judgeAll(ctx, scored); err != nil && ctx.Err() != nil {
-		return View{}, ctx.Err()
+	if err = r.judgeAll(ctx, scored); err != nil {
+		if ctx.Err() != nil {
+			return View{}, ctx.Err()
+		}
+		r.degrade("judge")
 	}
 	view, err := r.compose(ctx, stop, scored)
 	if err != nil || !a.layerOn() {
@@ -105,6 +108,37 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	// In timelines mode the consolidated layer goes before the records
 	// (timelines_layer.go).
 	return r.layer(ctx, view)
+}
+
+// screen gives the pool JEV's screen. A spent JEV budget is not an error:
+// the loop then stops, and the read is degraded (scan-budget). (The pool
+// scan cannot spend 128 calls today; this guards a shared budget.)
+func (r *simpleRun) screen(ctx context.Context, pool []*simpleItem) error {
+	err := r.scan(ctx, pool)
+	if errors.Is(err, errCallBudget) {
+		r.degrade("scan-budget")
+		return nil
+	}
+	return err
+}
+
+// degrade names a stage of the read that fell back (ReadStats.Degraded),
+// once.
+func (r *simpleRun) degrade(stage string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !slices.Contains(r.stats.Degraded, stage) {
+		r.stats.Degraded = append(r.stats.Degraded, stage)
+	}
+}
+
+// statsNow is a copy of the read's stats for a View.
+func (r *simpleRun) statsNow() ReadStats {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	stats := r.stats
+	stats.Degraded = slices.Clone(r.stats.Degraded)
+	return stats
 }
 
 // complete runs one planner call with the author's output limit for it; a

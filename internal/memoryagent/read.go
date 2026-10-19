@@ -103,6 +103,16 @@ type ReadStats struct {
 	ModelMS       float64 `json:"modelMs"`
 	Candidates    int     `json:"candidates"`
 	Usage         Usage   `json:"usage"`
+	// Degraded names the stages of a simple read that fell back instead of
+	// failing it, each once, in the order they did: scan-budget and
+	// loop-budget (the decision budget ran out: the loop stopped), judge
+	// (the judgement failed or found the budget spent: the screen stands
+	// in), layer-state (the consolidated state did not load: no layer),
+	// layer-lexical (the layer's embedding failed: shared words rank), layer
+	// (the layer's judgement failed or found the budget spent) and expand
+	// (linked records could not be read or judged). Empty for a read that
+	// fell back nowhere, and for memory-agent/v1.
+	Degraded []string `json:"degraded,omitempty"`
 }
 
 type View struct {
