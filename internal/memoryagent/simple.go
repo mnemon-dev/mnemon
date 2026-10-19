@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"slices"
 	"sync"
 	"time"
 )
@@ -33,7 +32,10 @@ type simpleRun struct {
 	// order they entered it.
 	rows   []string
 	rounds int // loop rounds that acted
-	stats  ReadStats
+	// needStates is the loop's state of each need (open, met, done or given
+	// up); nil when the loop ended before it began.
+	needStates []string
+	stats      ReadStats
 	// pageReads counts search pages read, first pages included, against
 	// simplePageBudget.
 	pageReads int
@@ -89,7 +91,14 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if err != nil {
 		return View{}, err
 	}
-	return r.poolView(stop), nil
+	// JEV judges the shortlist (N:1002-1009). From here a judgement that
+	// fails or finds the budget spent degrades the View to the screen; only
+	// a canceled read fails.
+	scored := shortlist(r.tableItems(), r.viewable(r.screened()), r.needs)
+	if err = r.judgeAll(ctx, scored); err != nil && ctx.Err() != nil {
+		return View{}, ctx.Err()
+	}
+	return r.compose(ctx, stop, scored)
 }
 
 // complete runs one planner call with the author's output limit for it; a
@@ -116,26 +125,4 @@ func (r *simpleRun) complete(ctx context.Context, system, prompt string, maxToke
 func (r *simpleRun) policy() string {
 	config, _ := json.Marshal(r.agent.config)
 	return "memory-agent/simple/" + reference("policy", string(config)).Hash
-}
-
-// poolView returns the pooled records, the loop's finds included, by screen
-// (best first, then pool order) within the View bounds. It is a placeholder
-// until the shortlist is judged and composed.
-func (r *simpleRun) poolView(stop string) View {
-	view := View{Revision: r.revision, Policy: r.policy(), Records: []Evidence{}, Needs: r.needs, StopReason: stop}
-	order := slices.Clone(r.order)
-	slices.SortStableFunc(order, func(a, b string) int { return probabilityOrder(r.items[a].Screen, r.items[b].Screen) })
-	used := 0
-	for _, id := range order {
-		item := r.items[id].Evidence
-		size := jsLen(item.Text)
-		if len(view.Records) == r.req.MaxItems || used+size > r.agent.config.View.MaxCharacters {
-			view.Truncated = true
-			continue
-		}
-		used += size
-		view.Records = append(view.Records, item)
-	}
-	view.Stats = r.stats
-	return view
 }

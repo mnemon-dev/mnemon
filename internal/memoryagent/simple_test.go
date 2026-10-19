@@ -436,7 +436,8 @@ func TestReadSimplePool(t *testing.T) {
 	if err != nil || !strings.HasPrefix(view.Policy, "memory-agent/simple/") || len(view.Records) == 0 || view.Records[0].Reference != ref {
 		t.Fatal(view, err)
 	}
-	if !slices.Equal(view.Needs, []Need{{Text: "the codename"}}) || view.Stats.PlannerCalls != 2 || view.Stats.Searches != 3 || view.Stats.Candidates < 1 {
+	// One single need is untabled: the loop met it, and a shown record gives it.
+	if !slices.Equal(view.Needs, []Need{{Text: "the codename", Covered: true, HasEvidence: true}}) || view.Stats.PlannerCalls != 2 || view.Stats.Searches != 3 || view.Stats.Candidates < 1 {
 		t.Fatal(view.Needs, view.Stats)
 	}
 	// JEV screened the pool and the loop met the one need.

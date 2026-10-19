@@ -26,13 +26,16 @@ type judgeCall struct {
 	Questions map[string]Question
 }
 
-// scriptedJudge answers the screen (n<i>, need -1) and the need table
-// (c<i>q<k>, need k) by the candidate texts it is shown, and records every call.
+// scriptedJudge answers the screen and the judgement's needed question (n<i>,
+// need -1), the need table (c<i>q<k>, need k) and the judgement's superseded
+// question (s<i>; 0 without superseded) by the candidate texts it is shown,
+// and records every call.
 type scriptedJudge struct {
-	mu     sync.Mutex
-	calls  []judgeCall
-	answer func(text string, need int) float64
-	wait   func() error // runs before answering, for barriers
+	mu         sync.Mutex
+	calls      []judgeCall
+	answer     func(text string, need int) float64
+	superseded func(text string) float64
+	wait       func() error // runs before answering, for barriers
 }
 
 func (j *scriptedJudge) Decide(_ context.Context, state any, questions map[string]Question) (map[string]float64, Usage, error) {
@@ -57,6 +60,13 @@ func (j *scriptedJudge) Decide(_ context.Context, state any, questions map[strin
 		var i, k int
 		if _, err := fmt.Sscanf(key, "c%dq%d", &i, &k); err == nil {
 			out[key] = j.answer(call.State.Candidates[i].Text, k)
+			continue
+		}
+		if _, err := fmt.Sscanf(key, "s%d", &i); err == nil {
+			out[key] = 0
+			if j.superseded != nil {
+				out[key] = j.superseded(call.State.Candidates[i].Text)
+			}
 			continue
 		}
 		if _, err := fmt.Sscanf(key, "n%d", &i); err != nil {

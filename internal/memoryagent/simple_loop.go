@@ -146,6 +146,7 @@ func (r *simpleRun) loop(ctx context.Context) (string, error) {
 	for k, need := range needs {
 		every[k], state[k] = need.All, needOpen
 	}
+	r.needStates = state // the View's coverage reads the final states
 	// The planner is required by the simple strategy, so a need can always be
 	// searched for (the author's `searchable`).
 	last := map[string]bool{}
