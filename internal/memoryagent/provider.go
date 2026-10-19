@@ -112,15 +112,20 @@ func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
 	return p, nil
 }
 
-func (p *Provider) post(ctx context.Context, body any) ([]byte, string, error) {
-	limit := 48000
-	if p.config.Kind == "jev" {
-		limit = 96000 // 40 candidates of 600 CJK runes plus 80 questions stay below this.
-	}
-	raw, err := json.Marshal(body)
-	if err != nil || len(raw) > limit {
-		return nil, "", fmt.Errorf("model request exceeds %d bytes or contains invalid JSON", limit)
-	}
+const (
+	// maxRequestBytes bounds a completion request body.
+	maxRequestBytes = 48000
+	// maxJEVRequest bounds a JEV decision request as the reference system's
+	// client does (dsh-mnemon-agent-loop-jev agent.ts:122-123):
+	// JSON.stringify({state, questions}).length, in UTF-16 code units. The
+	// simple strategy's judgement batch (40 candidates and six messages of
+	// 600 units, 80 questions with criteria) stays below it even in CJK,
+	// although its body is then over 96,000 bytes.
+	maxJEVRequest = 96000
+)
+
+// post sends one encoded request body; the caller has bounded it.
+func (p *Provider) post(ctx context.Context, raw []byte) ([]byte, string, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint, bytes.NewReader(raw))
 	if err != nil {
 		return nil, "", err
@@ -208,7 +213,11 @@ func (p *Provider) complete(ctx context.Context, system, prompt string, jsonOnly
 	default: // openai rejects unknown request fields
 		body["temperature"] = 0
 	}
-	raw, id, err := p.post(ctx, body)
+	encoded, err := json.Marshal(body)
+	if err != nil || len(encoded) > maxRequestBytes {
+		return "", Usage{}, fmt.Errorf("model request exceeds %d bytes or contains invalid JSON", maxRequestBytes)
+	}
+	raw, id, err := p.post(ctx, encoded)
 	if err != nil {
 		return "", Usage{}, err
 	}
@@ -271,7 +280,17 @@ func (p *Provider) Decide(ctx context.Context, state any, questions map[string]Q
 		}
 		return answers, usage, validateAnswers(answers, questions)
 	}
-	raw, id, err := p.post(ctx, map[string]any{"model": p.config.Model, "state": state, "questions": questions})
+	// The request is measured as the author measures it, then sent with the
+	// model first: {"model":…,"state":…,"questions":…}.
+	request, err := stringifyJSON(struct {
+		State     any                 `json:"state"`
+		Questions map[string]Question `json:"questions"`
+	}{state, questions})
+	if err != nil || jsLen(request) > maxJEVRequest {
+		return nil, Usage{}, fmt.Errorf("JEV request exceeds %d UTF-16 code units or contains invalid JSON", maxJEVRequest)
+	}
+	model, _ := stringifyJSON(p.config.Model)
+	raw, id, err := p.post(ctx, []byte(`{"model":`+model+`,`+request[1:]))
 	if err != nil {
 		return nil, Usage{}, err
 	}

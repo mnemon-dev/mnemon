@@ -580,50 +580,107 @@ func binaryQuestions(count int) map[string]Question {
 	return questions
 }
 
-func TestJEVBodyLimitCJK(t *testing.T) {
+// jevServer is an httptest JEV endpoint that answers every question 0.5 and
+// keeps the request bodies it received.
+type jevServer struct {
+	mu     sync.Mutex
+	bodies []string
+}
+
+func (s *jevServer) received() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]string{}, s.bodies...)
+}
+
+// jevTestProvider is a metered JEV provider whose requests go to a jevServer.
+func jevTestProvider(t *testing.T) (*Provider, *jevServer) {
+	t.Helper()
 	budget, err := OpenBudget(filepath.Join(t.TempDir(), "budget.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer budget.Close()
+	t.Cleanup(func() { budget.Close() })
 	t.Setenv("UNIT_JEV_CREDENTIAL", "test-only-placeholder")
 	p, err := NewProvider(ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CREDENTIAL"}, budget)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var calls atomic.Int32
-	var size int
-	p.client.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
-		calls.Add(1)
-		raw, _ := io.ReadAll(req.Body)
-		size = len(raw)
+	server := &jevServer{}
+	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		server.mu.Lock()
+		server.bodies = append(server.bodies, string(raw))
+		server.mu.Unlock()
 		var request struct{ Questions map[string]json.RawMessage }
 		json.Unmarshal(raw, &request)
 		answers := []string{}
 		for key := range request.Questions {
 			answers = append(answers, fmt.Sprintf(`%q:{"type":"noul","noul":0.5}`, key))
 		}
-		return mockResponse(`{"model":"jev-1.13.0","answers":{` + strings.Join(answers, ",") + `},"usage":{"input_tokens":1000,"output_tokens":1}}`), nil
-	})
-	answers, _, err := p.Decide(context.Background(), cjkCandidates(40, 600), binaryQuestions(80))
-	if err != nil || len(answers) != 80 || size <= 48000 || size > 96000 {
-		t.Fatal("JEV batch of 40 CJK candidates and 80 questions was refused", size, len(answers), err)
+		io.WriteString(w, `{"model":"jev-1.13.0","answers":{`+strings.Join(answers, ",")+`},"usage":{"input_tokens":1000,"output_tokens":1}}`)
+	}))
+	t.Cleanup(endpoint.Close)
+	p.endpoint = endpoint.URL
+	return p, server
+}
+
+func TestJEVRequestLimitIsUTF16Units(t *testing.T) {
+	p, server := jevTestProvider(t)
+	// The simple strategy's full judgement batch: six messages and 40
+	// candidates of 600 CJK units, with the needed and superseded questions
+	// and their criteria. It is over 96,000 bytes but under 96,000 units.
+	cjk := strings.Repeat("记", 600)
+	dialogue, candidates := []Message{}, []judgeCandidate{}
+	for i := range 6 {
+		dialogue = append(dialogue, Message{Role: []string{"user", "assistant"}[i%2], Text: cjk})
 	}
+	for range 40 {
+		candidates = append(candidates, judgeCandidate{Source: judgeSource, Text: cjk})
+	}
+	state, questions := batchRequest(dialogue, candidates)
+	answers, _, err := p.Decide(context.Background(), state, questions)
+	if err != nil || len(answers) != 80 || len(server.received()) != 1 {
+		t.Fatal("the judgement batch was refused", len(answers), err)
+	}
+	if body := server.received()[0]; len(body) <= 96000 || jsLen(body) > 96000 {
+		t.Fatal("unexpected batch size", len(body), jsLen(body))
+	}
+
+	// The limit is the author's JSON.stringify({state, questions}).length:
+	// UTF-16 units of the request without the model, where <, >, & and the
+	// line separators U+2028 and U+2029 stay unescaped (1 unit each). A state
+	// that brings it to exactly 96,000 units (an emoji counts 2) reaches the
+	// server as those bytes, the model first; one unit more is refused before
+	// the network.
+	one := map[string]Question{"q0": binary("Is it current?")}
+	head, tail := `{"state":"`, `","questions":{"q0":{"type":"noul","instructions":"Is it current?"}}}`
+	text := "<&>  "
+	room := 96000 - jsLen(head+text+tail)
+	text += strings.Repeat("😀", room/2) + strings.Repeat("记", room%2)
+	if _, _, err = p.Decide(context.Background(), text, one); err != nil || len(server.received()) != 2 {
+		t.Fatal("a request of exactly 96000 units was refused", err)
+	}
+	if body := server.received()[1]; body != `{"model":"jev-1.13.0",`+(head + text + tail)[1:] {
+		t.Fatalf("JEV body is not the author's JSON: %.160q", body)
+	}
+	if _, _, err = p.Decide(context.Background(), text+"记", one); err == nil || !strings.Contains(err.Error(), "96000") || len(server.received()) != 2 {
+		t.Fatal("a request of 96001 units was accepted", err)
+	}
+
+	// The question count stays 1–128.
 	if answers, _, err = p.Decide(context.Background(), "evidence", binaryQuestions(128)); err != nil || len(answers) != 128 {
 		t.Fatal("128 JEV questions were refused", len(answers), err)
 	}
-	before := calls.Load()
+	before := len(server.received())
 	if _, _, err = p.Decide(context.Background(), "evidence", binaryQuestions(129)); err == nil {
 		t.Fatal("129 JEV questions were accepted")
 	}
 	if _, _, err = p.Decide(context.Background(), "evidence", map[string]Question{}); err == nil {
 		t.Fatal("zero JEV questions were accepted")
 	}
-	if _, _, err = p.Decide(context.Background(), cjkCandidates(40, 800), binaryQuestions(80)); err == nil || !strings.Contains(err.Error(), "96000") {
-		t.Fatal("JEV body above 96000 bytes was accepted", err)
-	}
-	if calls.Load() != before {
-		t.Fatal("rejected JEV request reached the network or budget")
+	if len(server.received()) != before {
+		t.Fatal("a refused JEV request reached the network")
 	}
 }
 

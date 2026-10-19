@@ -232,10 +232,20 @@ func encodeRecord(value recordValue, text string) records.Upsert {
 func recordJSON(value recordValue) string {
 	// records-v1 revisions use JSON.stringify bytes. Go's default HTML and
 	// line-separator escaping would break the next SDK mutation's digest.
+	raw, _ := stringifyJSON(value) // All values originate from the typed writer.
+	return raw
+}
+
+// stringifyJSON encodes v as JavaScript's JSON.stringify does for the values
+// this package sends: no HTML escaping of <, > and &, and the line
+// separators U+2028 and U+2029 left as they are.
+func stringifyJSON(v any) (string, error) {
 	var buffer bytes.Buffer
 	encoder := json.NewEncoder(&buffer)
 	encoder.SetEscapeHTML(false)
-	_ = encoder.Encode(value) // All values originate from the typed writer.
+	if err := encoder.Encode(v); err != nil {
+		return "", err
+	}
 	raw := strings.TrimSuffix(buffer.String(), "\n")
 	var out strings.Builder
 	out.Grow(len(raw))
@@ -260,7 +270,7 @@ func recordJSON(value recordValue) string {
 			out.WriteByte(raw[i])
 		}
 	}
-	return out.String()
+	return out.String(), nil
 }
 
 func reference(id, raw string) Reference {
