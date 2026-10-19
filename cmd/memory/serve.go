@@ -106,7 +106,7 @@ func runMemoryServe(cmd *cobra.Command, _ []string) error {
 }
 
 func dispatchMemory(ctx context.Context, raw *records.Store, agent *memoryagent.Agent, operation string, request []byte) (any, error) {
-	if readOnly && (operation == "memory.write" || operation == "memory.consolidate") {
+	if readOnly && (operation == "memory.write" || operation == "memory.writeConversation" || operation == "memory.consolidate") {
 		return nil, readOnlyWriteError(operation)
 	}
 	if operation == "memory.write" {
@@ -115,6 +115,13 @@ func dispatchMemory(ctx context.Context, raw *records.Store, agent *memoryagent.
 			return nil, err
 		}
 		return memoryagent.Write(ctx, raw, req)
+	}
+	if operation == "memory.writeConversation" {
+		var req memoryagent.ConversationRequest
+		if err := json.Unmarshal(request, &req); err != nil {
+			return nil, err
+		}
+		return memoryagent.WriteConversation(ctx, raw, req)
 	}
 	if agent == nil {
 		return nil, errors.New("memory strategy requires --memory-config or --config")

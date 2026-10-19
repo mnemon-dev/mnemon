@@ -98,21 +98,16 @@ type Evidence struct {
 
 var documentID = regexp.MustCompile(`^[A-Za-z0-9-]{1,75}$`)
 
+// ErrDocumentExists is returned when a document, or one of its chunk ids, is
+// already stored. Originals are append-only: a correction is a new document.
+var ErrDocumentExists = errors.New("document id already exists; append a new document for a correction")
+
 func Write(ctx context.Context, store *records.Store, req WriteRequest) (WriteResult, error) {
 	if len(req.Text) == 0 || len(req.Text) > 100000 || !utf8.ValidString(req.Text) || len(req.Source) > 2048 {
 		return WriteResult{}, errors.New("write requires valid UTF-8 text of 1–100000 bytes and a bounded source")
 	}
-	if req.Scope == "" {
-		req.Scope = "global"
-	}
-	if err := validateScope(req); err != nil {
+	if err := prepareWrite(&req); err != nil {
 		return WriteResult{}, err
-	}
-	if req.ID == "" {
-		req.ID = uuid.NewString()
-	}
-	if !documentID.MatchString(req.ID) {
-		return WriteResult{}, errors.New("invalid document id")
 	}
 	at := time.Now().UTC()
 	if req.At != "" {
@@ -123,6 +118,30 @@ func Write(ctx context.Context, store *records.Store, req WriteRequest) (WriteRe
 		}
 	}
 	upserts, result := documentRecords(req, at)
+	return putDocument(ctx, store, upserts, result)
+}
+
+// prepareWrite applies the scope default, validates the scope and settles the
+// document id, in the order every original write is checked.
+func prepareWrite(req *WriteRequest) error {
+	if req.Scope == "" {
+		req.Scope = "global"
+	}
+	if err := validateScope(*req); err != nil {
+		return err
+	}
+	if req.ID == "" {
+		req.ID = uuid.NewString()
+	}
+	if !documentID.MatchString(req.ID) {
+		return errors.New("invalid document id")
+	}
+	return nil
+}
+
+// putDocument stores a document and its chunks in one revision-checked put. It
+// refuses to touch any id that already exists.
+func putDocument(ctx context.Context, store *records.Store, upserts []records.Upsert, result WriteResult) (WriteResult, error) {
 	ids := make([]string, 0, len(upserts))
 	for _, upsert := range upserts {
 		var value recordValue
@@ -134,7 +153,7 @@ func Write(ctx context.Context, store *records.Store, req WriteRequest) (WriteRe
 		return WriteResult{}, err
 	}
 	if len(snapshot.Records) != 0 {
-		return WriteResult{}, errors.New("document id already exists; append a new document for a correction")
+		return WriteResult{}, ErrDocumentExists
 	}
 	result.Revision, err = store.Put(ctx, records.PutRequest{ExpectedRevision: &snapshot.Revision, Upsert: upserts})
 	return result, err
@@ -161,9 +180,22 @@ func validateScope(req WriteRequest) error {
 }
 
 func documentRecords(req WriteRequest, at time.Time) ([]records.Upsert, WriteResult) {
+	var spans [][2]int
+	for start := 0; start < len(req.Text); {
+		end := runeEnd(req.Text, start, 600)
+		spans = append(spans, [2]int{start, end})
+		start = end
+	}
+	return buildDocument(req, at, req.Text, spans, nil)
+}
+
+// buildDocument makes the archived parent holding content and one active
+// memory-record per span, a [start,end) byte range of content that verifyParent
+// can check. extra is added to every chunk's data.
+func buildDocument(req WriteRequest, at time.Time, content string, spans [][2]int, extra map[string]any) ([]records.Upsert, WriteResult) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	day := at.UTC().Format("2006-01-02")
-	value := recordValue{ID: req.ID, Kind: "memory-document", Title: "Original document", Content: req.Text, Scope: req.Scope, Date: &day, State: "active", Signals: 1, Version: 1, CreatedAt: now, UpdatedAt: now, History: []any{}, Data: map[string]any{"source": req.Source, "eventAt": at.Format(time.RFC3339Nano)}}
+	value := recordValue{ID: req.ID, Kind: "memory-document", Title: "Original document", Content: content, Scope: req.Scope, Date: &day, State: "active", Signals: 1, Version: 1, CreatedAt: now, UpdatedAt: now, History: []any{}, Data: map[string]any{"source": req.Source, "eventAt": at.Format(time.RFC3339Nano)}}
 	if req.WorkspaceID != "" {
 		value.WorkspaceID = &req.WorkspaceID
 	}
@@ -174,16 +206,18 @@ func documentRecords(req WriteRequest, at time.Time) ([]records.Upsert, WriteRes
 	parent := encodeRecord(value, "")
 	upserts := []records.Upsert{parent}
 	result := WriteResult{Document: reference(req.ID, parent.RecordJSON), Records: []Reference{}}
-	for start, ordinal := 0, 0; start < len(req.Text); ordinal++ {
-		end := runeEnd(req.Text, start, 600)
+	for ordinal, span := range spans {
+		start, end := span[0], span[1]
 		value.ID = fmt.Sprintf("%s-%05d", req.ID, ordinal)
-		value.Kind, value.Title, value.Content = "memory-record", "Original record", req.Text[start:end]
+		value.Kind, value.Title, value.Content = "memory-record", "Original record", content[start:end]
 		value.State = "active"
 		value.Data = map[string]any{"source": req.Source, "eventAt": at.Format(time.RFC3339Nano), "documentID": req.ID, "start": start, "end": end}
+		for key, item := range extra {
+			value.Data[key] = item
+		}
 		upsert := encodeRecord(value, value.Content)
 		upserts = append(upserts, upsert)
 		result.Records = append(result.Records, reference(value.ID, upsert.RecordJSON))
-		start = end
 	}
 	return upserts, result
 }

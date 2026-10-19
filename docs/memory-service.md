@@ -12,6 +12,7 @@ while the service runs. No old data needs conversion.
 | `native.recall` | `query`, optional `limit`, `intent`, `basic`, `category`, `source` | Existing full recall response, or basic recall results. Smart recall retains existing category/source behavior. |
 | `native.show` | `id` | Full existing insight. |
 | `memory.write` | `text`, optional `id`, `source`, `at`, `scope`, `workspaceId`, `sessionId` | Committed revision, original-document reference and block references. |
+| `memory.writeConversation` | `messages` (`role`, `content`, optional RFC 3339 `at`), `sessionId`, optional `id`, `source`, `scope`, `workspaceId` | Same as `memory.write`. |
 | `memory.read` | `question`, optional `recent`, `scope`, `revision` | Original-evidence View, index hints, needs, stop reason and resource use. |
 | `memory.consolidate` | Optional `scope`, `maxBatches` (1–4), `reset` | Background job progress and usage. |
 
@@ -31,6 +32,17 @@ The parent is retained for direct reads and original-text proof, rather than
 entering the candidate pool. Whitespace, Unicode, dates and source are preserved.
 Document and block IDs must all be unused. One records CAS commits the complete
 document and blocks or none of them. Corrections append another document.
+
+`memory.writeConversation` stores chat messages with the same guarantees, packed
+the way the reference system packed conversations. Each message becomes a
+`role: text` line (whitespace runs collapsed, lines over 540 UTF-16 units wrapped
+at a space), and lines are grouped into chunks of about 600 UTF-16 units, each
+headed `Conversation <sessionId> on YYYY/MM/DD (Mon) HH:MM:` (UTC, from the first
+message that has a timestamp) or `Conversation <sessionId>:` without one. The
+parent holds the chunks joined by a blank line and every `memory-record` is one
+chunk, so its `start`/`end` locate it in the parent. `data.session` names the
+conversation and `data.eventAt` is the first timestamp, else the write time. A
+duplicate document id fails with `document id already exists`.
 
 A View reference contains an ID and SHA-256 of the pinned original record JSON.
 Each displayed text span is a literal substring of the record. New memory blocks
