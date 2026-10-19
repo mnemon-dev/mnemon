@@ -140,20 +140,31 @@ index. No scheduler/plugin framework or DSH process is needed.
 
 Local models use a loopback OpenAI-compatible HTTP endpoint. A local completer can
 also answer the finite decision questions. Paid JEV versions and DeepSeek Flash
-use pinned official endpoints, with redirects and implicit retries disabled.
-Structured completions explicitly request JSON mode. Free-text planning is
-limited to 1,024 output tokens, structured output to 2,048; a token-length finish
-rejects the response. Calls time out after 90 seconds and a memory CLI/RPC request
-has a five-minute deadline. An invalid consolidation batch is never published.
-Credentials come from environment variables and never enter request arguments,
-configuration files, logs or the metering database.
+use pinned official endpoints, with redirects and implicit retries disabled. An
+`openai` model uses the configured `baseURL` (HTTPS, or HTTP on loopback) plus
+`/chat/completions`, requires `keyEnv`, and is priced in USD from a built-in table
+(`gpt-4.1-mini`, `gpt-4o-mini`) or from `priceIn`/`priceOut` (USD per 1M tokens),
+which are required for any other model. Structured completions explicitly request
+JSON mode. By default free-text planning is limited to 1,024 output tokens,
+structured output to 2,048; `maxTokens` overrides both (DeepSeek at most 16,384),
+and DeepSeek `thinking: true` enables high-effort reasoning without a temperature.
+A token-length finish rejects the response. A JEV decision accepts 1–128 questions and a 96,000-byte
+request; every other kind keeps 1–80 questions and 48,000 bytes. Calls time out
+after 90 seconds and a memory CLI/RPC request has a five-minute deadline. An
+invalid consolidation batch is never published. Credentials come from environment
+variables and never enter request arguments, configuration files, logs or the
+metering database.
 
 Paid requests require one persistent private budget file shared across profiles
-and processes. The hard caps are USD 10 for JEV and CNY 50 for DeepSeek. Code
-reserves USD 0.01 or CNY 0.25 before each bounded request. Successful metered calls
-settle usage; failed/ambiguous calls retain their reservation. Missing probabilities
-and missing paid metering fail explicitly. DeepSeek usage is conservatively
-accounted at peak non-cache rates, rather than claiming an exact invoice amount.
+and processes. The default hard caps are USD 10 for JEV, CNY 50 for DeepSeek and
+USD 5 for OpenAI; `"budgets": {"jev": 10, "deepseek": 60, "openai": 5}` in the
+memory configuration replaces them, and the configured value wins over the stored
+one. Code reserves USD 0.01 (JEV, OpenAI) or CNY 0.25 (DeepSeek) before each
+bounded request. Successful metered calls settle usage (an OpenAI call that costs
+more than its reservation is recorded at its metered price); failed/ambiguous calls
+retain their reservation. Missing probabilities and missing paid metering fail
+explicitly. DeepSeek usage is conservatively accounted at peak non-cache rates,
+rather than claiming an exact invoice amount.
 
 Interfaces and prices were checked against the [JEV API](https://docs.typesafe.ai/api),
 [JEV models](https://docs.typesafe.ai/models) and

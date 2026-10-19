@@ -465,3 +465,21 @@ func TestConsolidationResumesVectorsWithoutRepeatingModelWork(t *testing.T) {
 		t.Fatal("readonly consolidation reached the model", err, calls.Load())
 	}
 }
+
+func TestOpenPassesConfiguredBudgetCaps(t *testing.T) {
+	s, dir := agentStore(t)
+	budgetFile := filepath.Join(t.TempDir(), "budget.db")
+	config := Config{Version: 1, Policy: &ReadPolicy{}, BudgetFile: budgetFile, Budgets: map[string]float64{"deepseek": 60}}
+	a, err := Open(s, dir, config, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer a.Close()
+	if _, err = a.budget.reserve(context.Background(), "deepseek", "request-hash"); err != nil {
+		t.Fatal(err)
+	}
+	var cap float64
+	if err = a.budget.db.QueryRow("SELECT cap FROM accounts WHERE kind='deepseek'").Scan(&cap); err != nil || cap != 60 {
+		t.Fatal("configured budget cap did not reach the budget file", cap, err)
+	}
+}

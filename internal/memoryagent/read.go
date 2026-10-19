@@ -31,6 +31,9 @@ type Config struct {
 	Planner    *ModelConfig             `json:"planner,omitempty"`
 	Judge      *ModelConfig             `json:"judge,omitempty"`
 	BudgetFile string                   `json:"budgetFile,omitempty"`
+	// Budgets sets per-account spending caps by provider kind: jev USD,
+	// deepseek CNY, openai USD. Missing kinds keep their defaults.
+	Budgets map[string]float64 `json:"budgets,omitempty"`
 }
 
 type Message struct {

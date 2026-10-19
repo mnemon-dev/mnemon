@@ -20,6 +20,16 @@ type ModelConfig struct {
 	Model   string `json:"model"`
 	BaseURL string `json:"baseURL,omitempty"`
 	KeyEnv  string `json:"keyEnv,omitempty"`
+	// Thinking enables DeepSeek reasoning (deepseek kind only): no temperature,
+	// reasoning_effort high.
+	Thinking bool `json:"thinking,omitempty"`
+	// MaxTokens overrides the output limit of plain and JSON completions when
+	// positive. DeepSeek accepts at most 16384 so a call stays inside its reservation.
+	MaxTokens int `json:"maxTokens,omitempty"`
+	// PriceIn and PriceOut are USD per 1M tokens (openai kind only). They override
+	// the built-in table and are required for models outside it.
+	PriceIn  float64 `json:"priceIn,omitempty"`
+	PriceOut float64 `json:"priceOut,omitempty"`
 }
 
 type Provider struct {
@@ -27,12 +37,30 @@ type Provider struct {
 	endpoint string
 	budget   *Budget
 	client   *http.Client
+	// USD per 1M tokens, set for the openai kind.
+	priceIn, priceOut float64
+}
+
+// openAIPrices lists USD per 1M input and output tokens.
+var openAIPrices = map[string][2]float64{"gpt-4.1-mini": {0.40, 1.60}, "gpt-4o-mini": {0.15, 0.60}}
+
+// DeepSeek's CNY 0.25 reservation covers a 48000-byte request (<=CNY 0.096 as
+// input) plus this many output tokens (CNY 8 per million).
+const maxDeepSeekTokens = 16384
+
+func validPrice(price float64) bool { return !math.IsNaN(price) && !math.IsInf(price, 0) && price >= 0 }
+
+func isLoopbackHost(host string) bool {
+	return host == "127.0.0.1" || host == "localhost" || host == "::1"
 }
 
 func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
 	p := &Provider{config: config, budget: budget, client: &http.Client{Timeout: 90 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	if len(config.Model) == 0 || len(config.Model) > 120 {
 		return nil, errors.New("model name is required")
+	}
+	if config.MaxTokens < 0 {
+		return nil, errors.New("maxTokens must not be negative")
 	}
 	switch config.Kind {
 	case "jev":
@@ -44,15 +72,39 @@ func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
 		if config.Model != "deepseek-flash" || config.BaseURL != "" {
 			return nil, errors.New("DeepSeek requires deepseek-flash and the official endpoint")
 		}
+		if config.MaxTokens > maxDeepSeekTokens {
+			return nil, fmt.Errorf("DeepSeek maxTokens must not exceed %d", maxDeepSeekTokens)
+		}
 		p.endpoint = "https://api.deepseek.com/chat/completions"
 	case "local":
 		u, err := url.Parse(config.BaseURL)
-		if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Hostname() != "127.0.0.1" && u.Hostname() != "localhost" && u.Hostname() != "::1" {
+		if err != nil || u.Scheme != "http" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !isLoopbackHost(u.Hostname()) {
 			return nil, errors.New("local model requires a loopback HTTP baseURL")
 		}
 		p.endpoint = strings.TrimRight(config.BaseURL, "/") + "/chat/completions"
+	case "openai":
+		u, err := url.Parse(config.BaseURL)
+		if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Hostname() == "" || u.Scheme != "https" && (u.Scheme != "http" || !isLoopbackHost(u.Hostname())) {
+			return nil, errors.New("OpenAI model requires an https baseURL, or http on loopback")
+		}
+		p.priceIn, p.priceOut = config.PriceIn, config.PriceOut
+		if !validPrice(p.priceIn) || !validPrice(p.priceOut) {
+			return nil, errors.New("priceIn and priceOut must be finite nonnegative USD per 1M tokens")
+		}
+		if known, ok := openAIPrices[config.Model]; ok {
+			if p.priceIn == 0 {
+				p.priceIn = known[0]
+			}
+			if p.priceOut == 0 {
+				p.priceOut = known[1]
+			}
+		}
+		if p.priceIn == 0 || p.priceOut == 0 {
+			return nil, fmt.Errorf("OpenAI model %q has no built-in price: set priceIn and priceOut (USD per 1M tokens)", config.Model)
+		}
+		p.endpoint = strings.TrimRight(config.BaseURL, "/") + "/chat/completions"
 	default:
-		return nil, errors.New("model kind must be jev, deepseek or local")
+		return nil, errors.New("model kind must be jev, deepseek, openai or local")
 	}
 	if config.Kind != "local" && (budget == nil || config.KeyEnv == "" || os.Getenv(config.KeyEnv) == "") {
 		return nil, errors.New("paid model requires a budget and a nonempty credential environment variable")
@@ -61,9 +113,13 @@ func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
 }
 
 func (p *Provider) post(ctx context.Context, body any) ([]byte, string, error) {
+	limit := 48000
+	if p.config.Kind == "jev" {
+		limit = 96000 // 40 candidates of 600 CJK runes plus 80 questions stay below this.
+	}
 	raw, err := json.Marshal(body)
-	if err != nil || len(raw) > 48000 {
-		return nil, "", errors.New("model request exceeds 48000 bytes or contains invalid JSON")
+	if err != nil || len(raw) > limit {
+		return nil, "", fmt.Errorf("model request exceeds %d bytes or contains invalid JSON", limit)
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint, bytes.NewReader(raw))
 	if err != nil {
@@ -108,15 +164,30 @@ func (p *Provider) complete(ctx context.Context, system, prompt string, jsonOnly
 	if p.config.Kind == "jev" {
 		return "", Usage{}, errors.New("JEV is a decision model, not a completer")
 	}
-	body := map[string]any{"model": p.config.Model, "messages": []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": prompt}}, "temperature": 0, "max_tokens": 1024}
+	maxTokens := 1024
+	if jsonOnly {
+		maxTokens = 2048
+	}
+	if p.config.MaxTokens > 0 {
+		maxTokens = p.config.MaxTokens
+	}
+	body := map[string]any{"model": p.config.Model, "messages": []map[string]string{{"role": "system", "content": system}, {"role": "user", "content": prompt}}, "max_tokens": maxTokens}
 	if jsonOnly {
 		body["response_format"] = map[string]string{"type": "json_object"}
-		body["max_tokens"] = 2048
 	}
-	if p.config.Kind == "deepseek" {
+	switch {
+	case p.config.Kind == "deepseek" && p.config.Thinking:
+		// Reasoning models take no temperature; reasoning tokens bill as output.
+		body["thinking"] = map[string]string{"type": "enabled"}
+		body["reasoning_effort"] = "high"
+	case p.config.Kind == "deepseek":
+		body["temperature"] = 0
 		body["thinking"] = map[string]string{"type": "disabled"}
-	} else {
+	case p.config.Kind == "local":
+		body["temperature"] = 0
 		body["chat_template_kwargs"] = map[string]bool{"enable_thinking": false}
+	default: // openai rejects unknown request fields
+		body["temperature"] = 0
 	}
 	raw, id, err := p.post(ctx, body)
 	if err != nil {
@@ -139,8 +210,11 @@ func (p *Provider) complete(ctx context.Context, system, prompt string, jsonOnly
 	if result.Usage.Input != nil && result.Usage.Output != nil {
 		usage.InputTokens, usage.OutputTokens = *result.Usage.Input, *result.Usage.Output
 	}
-	if p.config.Kind == "deepseek" {
+	switch p.config.Kind {
+	case "deepseek":
 		usage.CNY = float64(usage.InputTokens)*2/1e6 + float64(usage.OutputTokens)*8/1e6
+	case "openai":
+		usage.USD = float64(usage.InputTokens)*p.priceIn/1e6 + float64(usage.OutputTokens)*p.priceOut/1e6
 	}
 	if err := p.budget.settle(ctx, id, usage); err != nil {
 		return "", usage, err
@@ -152,8 +226,12 @@ func (p *Provider) complete(ctx context.Context, system, prompt string, jsonOnly
 }
 
 func (p *Provider) Decide(ctx context.Context, state any, questions map[string]Question) (map[string]float64, Usage, error) {
-	if len(questions) < 1 || len(questions) > 80 {
-		return nil, Usage{}, errors.New("decision requires 1–80 binary questions")
+	maxQuestions := 80
+	if p.config.Kind == "jev" {
+		maxQuestions = 128
+	}
+	if len(questions) < 1 || len(questions) > maxQuestions {
+		return nil, Usage{}, fmt.Errorf("decision requires 1–%d binary questions", maxQuestions)
 	}
 	if p.config.Kind != "jev" {
 		prompt, _ := json.Marshal(map[string]any{"state": state, "questions": questions})

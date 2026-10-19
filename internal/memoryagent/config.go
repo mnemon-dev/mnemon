@@ -15,7 +15,7 @@ func Open(store *records.Store, directory string, config Config, readonly bool) 
 	var indexError error
 	var err error
 	if config.BudgetFile != "" {
-		budget, err = OpenBudget(config.BudgetFile)
+		budget, err = OpenBudgetWithCaps(config.BudgetFile, config.Budgets)
 		if err != nil {
 			return nil, err
 		}
