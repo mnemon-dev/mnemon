@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "strategy": "simple",
+  "view": {
+    "maxItems": 100,
+    "maxCharacters": 240000,
+    "fusion": "rrf"
+  },
+  "consolidation": {
+    "mode": "timelines"
+  },
+  "planner": {
+    "kind": "deepseek",
+    "model": "deepseek-flash",
+    "keyEnv": "DEEPSEEK_API_KEY"
+  },
+  "judge": {
+    "kind": "jev",
+    "model": "jev-1.13.0",
+    "keyEnv": "TYPESAFE_API_KEY"
+  },
+  "consolidator": {
+    "kind": "deepseek",
+    "model": "deepseek-flash",
+    "keyEnv": "DEEPSEEK_API_KEY"
+  },
+  "embedding": {
+    "url": "http://127.0.0.1:11434",
+    "model": "nomic-embed-text",
+    "queryPrefix": "search_query: ",
+    "documentPrefix": "search_document: "
+  },
+  "budgetFile": "/var/lib/mnemon-aml/model-budget.db",
+  "budgets": {
+    "jev": 20,
+    "deepseek": 200
+  }
+}

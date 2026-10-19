@@ -50,7 +50,7 @@ TESTDATA_PKGS := \
 	./testdata/mnemond/domainops/cmd/domainctl \
 	./testdata/mnemond/domainops/world
 
-.PHONY: deps build install uninstall test test-integration test-live
+.PHONY: deps build build-linux-amd64 install uninstall test test-integration test-live
 .PHONY: docker-build docker-run compose-up compose-down compose-dev release-snapshot clean help
 
 .DEFAULT_GOAL := help
@@ -61,6 +61,10 @@ deps: ## Download Go dependencies
 build: ## Build the mnemon product binary
 	@mkdir -p $(BIN_DIR)
 	go build -ldflags "$(MNEMON_LDFLAGS)" -o $(MNEMON) .
+
+build-linux-amd64: ## Cross-compile a static linux/amd64 binary (AML deployment kit)
+	@mkdir -p $(BIN_DIR)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags "-s -w -X github.com/mnemon-dev/mnemon/cmd.version=$(VERSION)" -o bin/mnemon-linux-amd64 .
 
 install: build ## Install mnemon to GOBIN
 	@mkdir -p $(GOBIN)
@@ -110,8 +114,9 @@ release-snapshot: ## Build local GoReleaser snapshot artifacts
 clean: ## Remove build artifacts and test data
 	rm -f mnemon
 	rm -f $(BIN_DIR)/mnemon
+	rm -f $(BIN_DIR)/mnemon-linux-amd64
 	rm -rf .testdata
 
 help: ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'

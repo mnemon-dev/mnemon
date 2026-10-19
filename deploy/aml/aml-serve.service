@@ -1,0 +1,37 @@
+# systemd unit for the AML Add/Search adapter. Install as
+# /etc/systemd/system/aml-serve.service; see docs/aml-adapter.md.
+#
+# One aml-serve process per data root: never point two services at the same
+# --data-root.
+[Unit]
+Description=Mnemon AML memory adapter (Add/Search)
+After=network-online.target ollama.service
+Wants=network-online.target ollama.service
+
+[Service]
+Type=simple
+User=mnemon
+Group=mnemon
+# AML_API_KEY, TYPESAFE_API_KEY and DEEPSEEK_API_KEY. Mode 0600; systemd reads
+# the file as root before it drops to User=mnemon.
+EnvironmentFile=/etc/mnemon-aml/env
+ExecStart=/usr/local/bin/mnemon memory-agent aml-serve --listen 127.0.0.1:8090 --data-root /var/lib/mnemon-aml/data --memory-config /etc/mnemon-aml/memory-config.json --consolidate-on-add --max-open-stores 16
+Restart=on-failure
+RestartSec=5
+# aml-serve lets requests in flight finish for 30 s on SIGTERM; the platform
+# retries a cut request with the same request_id, which is idempotent.
+TimeoutStopSec=45
+# Every open user store holds SQLite files and a reader pool.
+LimitNOFILE=65536
+
+# /var/lib/mnemon-aml holds the data root and the model budget file.
+StateDirectory=mnemon-aml
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

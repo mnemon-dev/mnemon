@@ -1,0 +1,37 @@
+# Caddy v2 reverse proxy for the AML adapter. Install as /etc/caddy/Caddyfile
+# and replace aml.example.com with the real domain; see docs/aml-adapter.md.
+#
+# The platform waits up to 31 minutes for an Add or a Search (its I/O timeout
+# is 1,800 s), so no proxy timeout may be shorter. aml-serve itself limits
+# bodies to 30 MiB and answers /health without a key.
+
+{
+	servers {
+		timeouts {
+			read_body   35m
+			read_header 30s
+			write       35m
+			idle        5m
+		}
+	}
+}
+
+aml.example.com {
+	# Certificates come from Let's Encrypt (ports 80 and 443 must reach this
+	# host). To use certificate files issued elsewhere, add:
+	#   tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
+
+	# The adapter's own limit is 30 MiB (31457280 bytes).
+	request_body {
+		max_size 30MiB
+	}
+
+	reverse_proxy 127.0.0.1:8090 {
+		transport http {
+			dial_timeout            5s
+			response_header_timeout 35m
+			read_timeout            35m
+			write_timeout           35m
+		}
+	}
+}
