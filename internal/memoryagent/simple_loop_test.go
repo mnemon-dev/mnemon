@@ -82,12 +82,11 @@ func judgedAgent(t *testing.T, s *records.Store, planner Completer, judge Decide
 	return a
 }
 
-// poolRun searches the cues and pools their first pages as readSimple does,
-// with the View's 16 items; the caller screens the pool.
+// poolRun searches the cues and pools their first pages as readSimple does;
+// the caller screens the pool.
 func poolRun(t *testing.T, a *Agent, needs []Need, cues ...cue) (*simpleRun, []*simpleItem) {
 	t.Helper()
 	r := testRun(a, user("What is the codename?"))
-	r.req.MaxItems = 16
 	r.needs = needs
 	for _, c := range cues {
 		r.tried = append(r.tried, c.Text)
@@ -423,7 +422,6 @@ func TestLoopPagesLeadThenRewrites(t *testing.T) {
 func manualRun(t *testing.T, a *Agent, needs []Need, lists ...[]string) *simpleRun {
 	t.Helper()
 	r := testRun(a, user("What is the codename?"))
-	r.req.MaxItems = 16
 	r.needs = needs
 	firsts := [][]string{}
 	for i, list := range lists {
@@ -548,19 +546,68 @@ func TestLoopHelpResetsFailures(t *testing.T) {
 }
 
 func TestViewable(t *testing.T) {
-	r := &simpleRun{items: map[string]*simpleItem{}, req: ReadRequest{MaxItems: 2}}
-	for i, screen := range []float64{0.1, 0.5, 0.9, 0.5, 0.2, 0.49, 0.95} {
-		id := string(rune('a' + i))
-		r.items[id] = &simpleItem{ID: id, Screen: screen, HasScreen: id != "g"}
+	// The author's judged View holds 16 items: the best 16 by screen, and
+	// every yes beyond them, whatever the read's or the config's MaxItems.
+	for _, maxItems := range []int{0, 1, 2, 100} {
+		for _, c := range []struct {
+			yes  int
+			want int
+		}{{4, 16}, {20, 20}} {
+			r := &simpleRun{items: map[string]*simpleItem{}, req: ReadRequest{MaxItems: maxItems}}
+			ids := []string{}
+			for i := 0; i < 40; i++ {
+				id := fmt.Sprintf("i%02d", i)
+				screen := 0.1
+				if i >= 40-c.yes {
+					screen = 0.5 + float64(i)/100 // yes, later in pool order
+				}
+				r.items[id] = &simpleItem{ID: id, Screen: screen, HasScreen: true}
+				ids = append(ids, id)
+			}
+			r.items["hidden"] = &simpleItem{ID: "hidden", Screen: 0.95} // unscreened
+			ids = append(ids, "hidden")
+			got := r.viewable(ids)
+			if len(got) != c.want || got[0].ID != "i39" {
+				t.Fatal(maxItems, c.yes, len(got), got[0].ID)
+			}
+			// Below the yes come the best low screens in pool order (stable).
+			if c.yes == 4 && (got[4].ID != "i00" || got[15].ID != "i11") {
+				t.Fatal(maxItems, got[4].ID, got[15].ID)
+			}
+		}
 	}
-	// By screen, stable: c b d f e a (g is unscreened); the best two, then
-	// every other yes.
-	got := []string{}
-	for _, item := range r.viewable([]string{"a", "b", "c", "d", "e", "f", "g"}) {
-		got = append(got, item.ID)
-	}
-	if !slices.Equal(got, []string{"c", "b", "d"}) {
-		t.Fatal(got)
+}
+
+func TestLoopTablesSixteenWhateverMaxItems(t *testing.T) {
+	// Two needs, each met by one pooled item: the loop tables the pool's best
+	// 16 of 40 in one JEV call and stops, for a one-item and a 100-item View.
+	for _, maxItems := range []int{1, 100} {
+		s, _ := agentStore(t)
+		seedNotes(t, s, "zebra", 30)
+		seedNotes(t, s, "yak", 30)
+		gives := map[string]int{}
+		judge := &scriptedJudge{answer: func(text string, need int) float64 {
+			k, ok := gives[text]
+			switch {
+			case ok && (need < 0 || need == k):
+				return 0.9
+			case need < 0:
+				return 0.2
+			}
+			return 0.1
+		}}
+		r, pool := poolRun(t, judgedAgent(t, s, replies("", "", "never asked"), judge), []Need{{Text: "the zebra"}, {Text: "the yak"}}, cue{"zebra", "search"}, cue{"yak", "search"})
+		r.req.MaxItems = maxItems
+		gives[r.items[r.searches[0].IDs[0]].Evidence.Text] = 0
+		gives[r.items[r.searches[1].IDs[0]].Evidence.Text] = 1
+		if err := r.scan(context.Background(), pool); err != nil || len(pool) != 40 {
+			t.Fatal(err, len(pool))
+		}
+		before := judge.count()
+		stop, err := r.loop(context.Background())
+		if err != nil || stop != "covered" || len(r.rows) != 16 || judge.count()-before != 1 || r.pageReads != 2 {
+			t.Fatal(maxItems, stop, err, len(r.rows), judge.count()-before, r.pageReads)
+		}
 	}
 }
 

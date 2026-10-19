@@ -8,9 +8,9 @@ import (
 
 // The simple loop (author simpleLoop, N:695-795): a judge-act loop whose only
 // numbers are its budgets (3 rounds, the pages and JEV calls of the read, the
-// View's items). JEV tables what could enter the View (the screen's yes and
-// its best MaxItems) against each need, and each open need takes at most one
-// step a round:
+// judged View's 16 items). JEV tables what could enter the judged View (the
+// screen's yes and its best 16) against each need, and each open need takes
+// at most one step a round:
 //   - a single need JEV answers yes for (0.5) is met;
 //   - a need for every instance (the plan's ALL, or two records that give it)
 //     reads the next page of each search that found new yes, and is done once
@@ -20,7 +20,10 @@ import (
 //     (no new yes, no lead among what the round read) the planner words a new
 //     search, and a need both failed for is given up.
 
-const simpleRounds = 3 // the author's `loop`
+const (
+	simpleRounds = 3  // the author's `loop`
+	simpleTabled = 16 // the author's judged-View maxItems
+)
 
 // Loop stop reasons; a spent budget ends the loop with the reason it had.
 const (
@@ -78,9 +81,10 @@ func (r *simpleRun) lead(k int) string {
 	return best
 }
 
-// viewable is what of ids could enter the View: screened items by screen,
-// best first (stable), those ranked under MaxItems or screened yes. MaxItems
-// is the read's View size (the author's config.maxItems, 16 by default).
+// viewable is what of ids could enter the judged View: screened items by
+// screen, best first (stable), those ranked under 16 or screened yes. The 16
+// is the author's fixed maxItems, whatever the read's or the config's
+// MaxItems; a larger View is filled after judgement.
 func (r *simpleRun) viewable(ids []string) []*simpleItem {
 	items := []*simpleItem{}
 	for _, id := range ids {
@@ -91,7 +95,7 @@ func (r *simpleRun) viewable(ids []string) []*simpleItem {
 	slices.SortStableFunc(items, func(a, b *simpleItem) int { return probabilityOrder(a.Screen, b.Screen) })
 	out := []*simpleItem{}
 	for rank, item := range items {
-		if rank < r.req.MaxItems || item.Screen >= 0.5 {
+		if rank < simpleTabled || item.Screen >= 0.5 {
 			out = append(out, item)
 		}
 	}
@@ -117,7 +121,9 @@ func (r *simpleRun) loop(ctx context.Context) (string, error) {
 		return "", err
 	}
 	// Each search's latest page, and for every item the search that ranked it
-	// highest; a tie keeps the search that ranked it first.
+	// highest; a tie keeps the search that ranked it first. Ranks count every
+	// id a page holds, while the author's pages hold only the records read
+	// with text: the same whenever every id has evidence.
 	latest, offset, place := [][]string{}, []int{}, map[string]placement{}
 	locate := func(at int, page []string) {
 		for i, id := range page {

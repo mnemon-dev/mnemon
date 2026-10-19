@@ -80,7 +80,8 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		return View{}, err
 	}
 	// JEV screens the bounded pool (N:928), then the loop reads on for the
-	// needs. A spent JEV budget is not an error: the loop then stops.
+	// needs. A spent JEV budget is not an error: the loop then stops. (The
+	// pool scan cannot spend 128 calls today; this guards a shared budget.)
 	if err = r.scan(ctx, pool); err != nil && !errors.Is(err, errCallBudget) {
 		return View{}, err
 	}
