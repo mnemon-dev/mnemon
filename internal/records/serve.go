@@ -40,8 +40,17 @@ func (s *Store) ServeUsing(ctx context.Context, path string, handler localrpc.Ha
 // that keeps the store open without a socket: the query cache, a pool of
 // read-only connections and the background lexical worker, which a put
 // wakes. Start it before the store is shared and call stop (idempotent) after
-// its last call, before Close. Ending ctx stops the worker only.
+// its last call, before Close. Ending ctx stops the worker only. A store runs
+// one runtime at a time: a start while one runs fails and changes nothing.
 func (s *Store) StartRuntime(ctx context.Context) (stop func(), err error) {
+	if !s.running.CompareAndSwap(false, true) {
+		return nil, errors.New("records runtime is already running")
+	}
+	defer func() {
+		if err != nil {
+			s.running.Store(false)
+		}
+	}()
 	s.cache = newQueryCache()
 	// Readers may run concurrently in WAL mode; CAS, vector writes and lexical
 	// batches keep the original single writer connection and immediate tx lock.
@@ -71,6 +80,7 @@ func (s *Store) StartRuntime(ctx context.Context) (stop func(), err error) {
 			readers.Close()
 			s.readers = nil
 			s.cache = nil
+			s.running.Store(false)
 		})
 	}, nil
 }

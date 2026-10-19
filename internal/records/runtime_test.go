@@ -117,3 +117,33 @@ func TestServeUsingStillRunsTheRuntime(t *testing.T) {
 		t.Fatal("ServeUsing left its runtime running")
 	}
 }
+
+// A store runs one query runtime at a time: a second start is refused and
+// leaves the first running; after stop it may start again.
+func TestStartRuntimeTwiceIsRefused(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	stop, err := s.StartRuntime(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache, readers := s.cache, s.readers
+	if again, err := s.StartRuntime(ctx); err == nil || again != nil {
+		t.Fatal("a second runtime started", err)
+	}
+	if s.cache != cache || s.readers != readers {
+		t.Fatal("the refused start replaced the running runtime")
+	}
+	if _, err := s.Put(ctx, PutRequest{Upsert: []Upsert{sample("a", "dog")}}); err != nil {
+		t.Fatal(err)
+	}
+	stop()
+	if s.cache != nil || s.readers != nil {
+		t.Fatal("runtime not stopped")
+	}
+	stop, err = s.StartRuntime(ctx)
+	if err != nil || s.cache == nil {
+		t.Fatal("the runtime did not start again after stop", err)
+	}
+	stop()
+}

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	_ "modernc.org/sqlite"
 )
@@ -93,6 +94,8 @@ type Store struct {
 	readonly bool
 	cache    *queryCache // enabled only for the lifetime of Serve
 	fts      bool
+	// running is set while a query runtime (StartRuntime) runs.
+	running atomic.Bool
 }
 
 func (s *Store) ReadOnly() bool { return s.readonly }
