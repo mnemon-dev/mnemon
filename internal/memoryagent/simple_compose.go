@@ -332,14 +332,21 @@ func (r *simpleRun) compose(ctx context.Context, stop string, scored []*simpleIt
 	if err != nil {
 		return View{}, err
 	}
-	view := View{Revision: r.revision, Policy: r.policy(), Records: records, Needs: []Need{}, StopReason: stop, Truncated: v.cut(candidates), Stats: r.stats}
+	return View{Revision: r.revision, Policy: r.policy(), Records: records, Needs: r.viewNeeds(records), StopReason: stop, Truncated: v.cut(candidates), Stats: r.stats}, nil
+}
+
+// viewNeeds is the plan's needs as a View of records reports them: covered
+// when the loop met or finished the need, with evidence when a shown record
+// gives it.
+func (r *simpleRun) viewNeeds(records []Evidence) []Need {
+	needs := []Need{}
 	for k, need := range r.needs {
 		need.Covered = k < len(r.needStates) && (r.needStates[k] == needMet || r.needStates[k] == needDone)
 		need.HasEvidence = slices.ContainsFunc(records, func(record Evidence) bool { return r.answer(record.ID, k) >= 0.5 })
 		need.Evaluated = r.tabled()
-		view.Needs = append(view.Needs, need)
+		needs = append(needs, need)
 	}
-	return view, nil
+	return needs
 }
 
 // records re-reads the shown items through evidence(), which proves each

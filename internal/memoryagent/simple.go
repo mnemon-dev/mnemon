@@ -98,7 +98,13 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if err = r.judgeAll(ctx, scored); err != nil && ctx.Err() != nil {
 		return View{}, ctx.Err()
 	}
-	return r.compose(ctx, stop, scored)
+	view, err := r.compose(ctx, stop, scored)
+	if err != nil || !a.layerOn() {
+		return view, err
+	}
+	// In timelines mode the consolidated layer goes before the records
+	// (timelines_layer.go).
+	return r.layer(ctx, view)
 }
 
 // complete runs one planner call with the author's output limit for it; a
