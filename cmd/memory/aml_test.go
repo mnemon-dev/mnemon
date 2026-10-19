@@ -17,7 +17,7 @@ func TestAMLServeIsAMemoryAgentSubcommand(t *testing.T) {
 	if err != nil || command.Name() != "aml-serve" || command.Parent().Name() != "memory-agent" {
 		t.Fatal(command, err)
 	}
-	for flag, value := range map[string]string{"listen": "127.0.0.1:8090", "data-root": "", "memory-config": "", "auth-key-env": "AML_API_KEY", "consolidate-on-add": "false", "max-open-stores": "64"} {
+	for flag, value := range map[string]string{"listen": "127.0.0.1:8090", "data-root": "", "memory-config": "", "auth-key-env": "AML_API_KEY", "consolidate-on-add": "false", "max-open-stores": "64", "search-timeout": "10m0s"} {
 		if f := command.Flags().Lookup(flag); f == nil || f.DefValue != value {
 			t.Fatal(flag, f)
 		}
@@ -42,6 +42,7 @@ func TestAMLServeRefusesBeforeListening(t *testing.T) {
 		// The configuration is checked by making an agent: no models.
 		{[]string{"--data-root", dir, "--memory-config", config, "--auth-key-env", "AML_TEST_SET"}, "requires planner and decision models"},
 		{[]string{"--data-root", dir, "--memory-config", config, "--auth-key-env", "AML_TEST_SET", "--max-open-stores", "0"}, "--max-open-stores"},
+		{[]string{"--data-root", dir, "--memory-config", config, "--auth-key-env", "AML_TEST_SET", "--search-timeout", "59s"}, "--search-timeout must be at least 1m"},
 	} {
 		command := newAMLServeCommand()
 		command.SetArgs(c.args)

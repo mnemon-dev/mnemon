@@ -69,8 +69,8 @@ func (r *AddRequest) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-// Message is one chat message; Timestamp is Unix milliseconds, and 0 counts
-// as none.
+// Message is one chat message; Timestamp is Unix milliseconds (read from
+// milliseconds, seconds or RFC 3339), and 0 counts as none.
 type Message struct {
 	Role      string `json:"role"`
 	Content   string `json:"content"`
@@ -79,9 +79,10 @@ type Message struct {
 
 // UnmarshalJSON reads a message without ever failing. The role may be a
 // string or a number. The content may be a string, a number, or multimodal
-// parts, whose text parts ({"type":"text","text":…} or plain strings) are
-// joined by newlines and whose other parts (images) are dropped. The
-// timestamp may be a number or a numeric string, cut to whole milliseconds;
+// parts, whose text parts (plain strings, or objects with a string "text"
+// whose "type" ends in "text": text, input_text, output_text) are joined by
+// newlines and whose other parts (images) are dropped. The timestamp may be
+// a number or a numeric string (timestampMS), or an RFC 3339 string;
 // anything else is no timestamp. A message that is not an object is empty.
 func (m *Message) UnmarshalJSON(raw []byte) error {
 	*m = Message{}
@@ -139,8 +140,9 @@ func contentText(raw json.RawMessage) string {
 	return scalarText(raw)
 }
 
-// partText is the text of one multimodal part: a string, or an object of
-// type "text" with a string "text"; "" for an image or anything else.
+// partText is the text of one multimodal part: a string, or an object with
+// a string "text" whose "type" ends in "text" (text, input_text,
+// output_text); "" for an image or anything else.
 func partText(raw json.RawMessage) string {
 	var text string
 	if json.Unmarshal(raw, &text) == nil {
@@ -150,25 +152,46 @@ func partText(raw json.RawMessage) string {
 		Type string  `json:"type"`
 		Text *string `json:"text"`
 	}
-	if json.Unmarshal(raw, &part) == nil && part.Type == "text" && part.Text != nil {
+	if json.Unmarshal(raw, &part) == nil && strings.HasSuffix(part.Type, "text") && part.Text != nil {
 		return *part.Text
 	}
 	return ""
 }
 
-// timestampMS reads a number or numeric string of Unix milliseconds; nil for
-// anything else, and for 0.
+// secondsBelow is where numeric timestamps change unit: a magnitude below
+// 1e11 is Unix seconds (1e11 s is the year 5138, 1e11 ms is 1973).
+const secondsBelow = 1e11
+
+// timestampMS reads a timestamp as Unix milliseconds: a number or numeric
+// string (seconds when its magnitude is below 1e11, else milliseconds, cut
+// to whole milliseconds) or an RFC 3339 string; nil for anything else, and
+// for 0.
 func timestampMS(raw json.RawMessage) *int64 {
 	var number json.Number
 	if json.Unmarshal(raw, &number) != nil || number == "" {
+		var text string
+		if json.Unmarshal(raw, &text) != nil {
+			return nil
+		}
+		at, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(text))
+		if err != nil {
+			return nil
+		}
+		ms := at.UnixMilli()
+		if ms == 0 {
+			return nil
+		}
+		return &ms
+	}
+	value, err := number.Float64()
+	if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || math.Abs(value) >= 1<<62 {
 		return nil
 	}
 	ms, err := number.Int64()
-	if err != nil {
-		value, err := number.Float64()
-		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || math.Abs(value) >= 1<<62 {
-			return nil
-		}
+	switch {
+	case math.Abs(value) < secondsBelow:
+		ms = int64(value * 1000)
+	case err != nil:
 		ms = int64(value)
 	}
 	if ms == 0 {
@@ -197,7 +220,7 @@ type SearchRequest struct {
 // UnmarshalJSON reads a Search leniently: the query, the options and the
 // user id may be strings or numbers, options that are not an array are none,
 // and top_k may be an integer, an integral float (100.0) or a numeric string;
-// a fraction is cut to its integer part.
+// a fraction is cut to its integer part, and anything else is no top_k (0).
 func (r *SearchRequest) UnmarshalJSON(raw []byte) error {
 	var fields struct {
 		Query   json.RawMessage `json:"query"`
@@ -217,18 +240,15 @@ func (r *SearchRequest) UnmarshalJSON(raw []byte) error {
 			}
 		}
 	}
-	if len(fields.TopK) == 0 || string(fields.TopK) == "null" {
-		return nil
-	}
 	var topK json.Number
-	if err := json.Unmarshal(fields.TopK, &topK); err != nil {
-		return errors.New("top_k must be a number")
+	if json.Unmarshal(fields.TopK, &topK) != nil || topK == "" {
+		return nil
 	}
 	n, err := topK.Int64()
 	if err != nil {
 		value, ferr := topK.Float64()
 		if ferr != nil || math.IsNaN(value) || math.IsInf(value, 0) {
-			return errors.New("top_k must be a number")
+			return nil
 		}
 		n = int64(max(min(value, 1e6), -1e6))
 	}
@@ -237,8 +257,9 @@ func (r *SearchRequest) UnmarshalJSON(raw []byte) error {
 }
 
 // SearchItem is one piece of stored evidence, best first. Only Content is
-// sure to reach the answering model, so dates live inside it; Score and
-// CreatedAt are omitted when unknown.
+// sure to reach the answering model, so dates live inside it. Score is
+// 1/(rank+1) by the item's rank in the response (0 for the first), so any
+// sort by score keeps the order; CreatedAt is omitted when unknown.
 type SearchItem struct {
 	ID        string  `json:"id"`
 	Content   string  `json:"content"`
@@ -417,14 +438,11 @@ func hexDigest(text string) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// validate checks what identifies a Search: its user. A blank query and a
+// missing top_k are answered, not refused.
 func (r SearchRequest) validate() error {
-	switch {
-	case strings.TrimSpace(r.Query) == "":
-		return errors.New("query is required")
-	case strings.TrimSpace(r.UserID) == "":
+	if strings.TrimSpace(r.UserID) == "" {
 		return errors.New("user_id is required")
-	case r.TopK < 1:
-		return errors.New("top_k must be at least 1")
 	}
 	return nil
 }

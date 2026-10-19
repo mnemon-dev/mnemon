@@ -30,8 +30,9 @@ func newAMLServeCommand() *cobra.Command {
 	flags.String("data-root", "", "Absolute directory holding one records store per user (required)")
 	flags.String("memory-config", "", "Absolute path of the memory-strategy JSON configuration (required)")
 	flags.String("auth-key-env", "AML_API_KEY", "Environment variable holding the API key clients must send")
-	flags.Bool("consolidate-on-add", false, "Consolidate until caught up before an Add returns")
+	flags.Bool("consolidate-on-add", false, "Consolidate during requests: full batches before an Add returns, the rest before the user's next Search")
 	flags.Int("max-open-stores", 64, "Most user stores kept open at once")
+	flags.Duration("search-timeout", 10*time.Minute, "Longest memory read of a Search before it answers the raw ranking (at least 1m)")
 	return command
 }
 
@@ -46,11 +47,15 @@ func runAMLServe(cmd *cobra.Command, _ []string) error {
 	keyEnv, _ := flags.GetString("auth-key-env")
 	consolidate, _ := flags.GetBool("consolidate-on-add")
 	maxOpen, _ := flags.GetInt("max-open-stores")
+	searchTimeout, _ := flags.GetDuration("search-timeout")
 	if !filepath.IsAbs(root) {
 		return errors.New("aml-serve requires an absolute --data-root")
 	}
 	if maxOpen < 1 {
 		return errors.New("--max-open-stores must be at least 1")
+	}
+	if searchTimeout < time.Minute {
+		return errors.New("--search-timeout must be at least 1m")
 	}
 	if keyEnv == "" {
 		return errors.New("--auth-key-env must name an environment variable")
@@ -63,7 +68,7 @@ func runAMLServe(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	server, err := aml.NewServer(aml.ServerConfig{DataRoot: root, MemoryConfig: config, AuthKey: key, ConsolidateOnAdd: consolidate, MaxOpenStores: maxOpen})
+	server, err := aml.NewServer(aml.ServerConfig{DataRoot: root, MemoryConfig: config, AuthKey: key, ConsolidateOnAdd: consolidate, MaxOpenStores: maxOpen, SearchTimeout: searchTimeout})
 	if err != nil {
 		return err
 	}
@@ -77,6 +82,8 @@ func runAMLServe(cmd *cobra.Command, _ []string) error {
 	defer cancel()
 	served := make(chan error, 1)
 	go func() { served <- httpServer.Serve(listener) }()
+	// Every 10 minutes: Adds, Searches, degraded Searches and the budget.
+	go server.LogStatus(ctx, 10*time.Minute)
 	fmt.Fprintf(cmd.ErrOrStderr(), "aml-serve listening on %s\n", listener.Addr())
 	select {
 	case err := <-served:

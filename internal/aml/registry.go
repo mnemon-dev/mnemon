@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
 	"github.com/mnemon-dev/mnemon/internal/records"
@@ -40,8 +41,11 @@ type userEntry struct {
 	agent *memoryagent.Agent
 	stop  func() // stops the store's query runtime
 	// writes serializes this user's Adds: a write reads the store's revision
-	// and fails if it moved, and an Add then consolidates alone.
-	writes sync.Mutex
+	// and fails if it moved, and an Add then consolidates alone. waiting
+	// counts the Adds waiting for it: an Add with another queued behind it
+	// leaves consolidation to that one.
+	writes  sync.Mutex
+	waiting atomic.Int32
 
 	// Guarded by registry.mu.
 	refs    int

@@ -28,13 +28,17 @@ import (
 const testKey = "k"
 
 // fakePlanner answers the simple strategy's cue plan, need plan and rewrite,
-// and records every prompt it reads.
+// and records every prompt it reads; it can be made to panic.
 type fakePlanner struct {
 	mu      sync.Mutex
 	prompts []string
+	panics  atomic.Bool
 }
 
 func (p *fakePlanner) Complete(_ context.Context, system, prompt string) (string, memoryagent.Usage, error) {
+	if p.panics.Load() {
+		panic("planner bug")
+	}
 	p.mu.Lock()
 	p.prompts = append(p.prompts, prompt)
 	p.mu.Unlock()
@@ -54,11 +58,25 @@ func (p *fakePlanner) seen() []string {
 	return slices.Clone(p.prompts)
 }
 
-// fakeJudge calls everything needed and nothing superseded, or fails.
-type fakeJudge struct{ fail atomic.Bool }
+// fakeJudge calls everything needed and nothing superseded, or fails: every
+// call (fail), the judgements alone (their questions ask s<i>; failJudgement),
+// or by waiting until its context ends (block; blocked counts the waits). It
+// panics when asked about the timelines layer's topics (panicOnLayer).
+type fakeJudge struct {
+	fail, failJudgement, block, panicOnLayer atomic.Bool
+	blocked                                  atomic.Int64
+}
 
-func (j *fakeJudge) Decide(_ context.Context, _ any, questions map[string]memoryagent.Question) (map[string]float64, memoryagent.Usage, error) {
-	if j.fail.Load() {
+func (j *fakeJudge) Decide(ctx context.Context, state any, questions map[string]memoryagent.Question) (map[string]float64, memoryagent.Usage, error) {
+	if j.block.Load() {
+		j.blocked.Add(1)
+		<-ctx.Done()
+		return nil, memoryagent.Usage{}, ctx.Err()
+	}
+	if raw, _ := json.Marshal(state); j.panicOnLayer.Load() && strings.Contains(string(raw), `"source":"topic"`) {
+		panic("layer judge bug")
+	}
+	if _, judgement := questions["s0"]; j.fail.Load() || judgement && j.failJudgement.Load() {
 		return nil, memoryagent.Usage{}, errors.New("judge unavailable")
 	}
 	out := map[string]float64{}
@@ -72,12 +90,24 @@ func (j *fakeJudge) Decide(_ context.Context, _ any, questions map[string]memory
 }
 
 // fakeConsolidator folds every batch into one event on one thread, linked
-// to the batch's first record.
-type fakeConsolidator struct{ calls atomic.Int64 }
+// to the batch's first record, unless a script answers instead.
+type fakeConsolidator struct {
+	calls  atomic.Int64
+	script atomic.Pointer[func(ctx context.Context, prompt string) (string, error)]
+}
 
-func (c *fakeConsolidator) Complete(context.Context, string, string) (string, memoryagent.Usage, error) {
+func (c *fakeConsolidator) Complete(ctx context.Context, _, prompt string) (string, memoryagent.Usage, error) {
 	c.calls.Add(1)
+	if script := c.script.Load(); script != nil {
+		reply, err := (*script)(ctx, prompt)
+		return reply, memoryagent.Usage{}, err
+	}
 	return `{"events":[{"thread":"new: Support group","date":"2023/05/08","text":"Caroline went to the LGBTQ support group.","records":["r0"]}]}`, memoryagent.Usage{}, nil
+}
+
+// answer makes reply answer every fold from now on.
+func (c *fakeConsolidator) answer(reply func(ctx context.Context, prompt string) (string, error)) {
+	c.script.Store(&reply)
 }
 
 // syncBuffer is a log destination the server and the test share.
@@ -313,14 +343,25 @@ func TestAddValidation(t *testing.T) {
 		t.Fatal(response.Code, response.Body.String())
 	}
 
+	// A Search needs only its user: any top_k reads (a missing or
+	// nonpositive one as the View's maximum), a blank query finds nothing.
 	for name, search := range map[string]string{
 		"top_k 0":       `{"query":"q","user_id":"u1","top_k":0}`,
 		"missing top_k": `{"query":"q","user_id":"u1"}`,
 		"negative":      `{"query":"q","user_id":"u1","top_k":-1}`,
 		"empty query":   `{"query":" ","user_id":"u1","top_k":5}`,
-		"empty user":    `{"query":"q","user_id":"","top_k":5}`,
 		"word top_k":    `{"query":"q","user_id":"u1","top_k":"many"}`,
 		"fraction":      `{"query":"q","user_id":"u1","top_k":0.5}`,
+	} {
+		if response := h.call("POST", "/search", search); response.Code != http.StatusOK {
+			t.Fatal(name, response.Code, response.Body.String())
+		}
+	}
+	for name, search := range map[string]string{
+		"empty user":   `{"query":"q","user_id":"","top_k":5}`,
+		"missing user": `{"query":"q","top_k":5}`,
+		"object user":  `{"query":"q","user_id":{"id":1},"top_k":5}`,
+		"not JSON":     `{"query":`,
 	} {
 		response := h.call("POST", "/search", search)
 		if response.Code != http.StatusBadRequest {
@@ -367,6 +408,8 @@ func TestAddContentShapes(t *testing.T) {
 		"not a message",
 		{"role":"user","content":[{"type":"text","text":"Caroline painted"},{"type":"image_url","image_url":{"url":"http://x"}},{"type":"text","text":"a sunset."}]},
 		{"role":"assistant","content":[{"type":"image_url","image_url":{"url":"http://x"}}]},
+		{"role":"user","content":[{"type":"input_text","text":"Typed in"},{"type":"input_image","image_url":"http://x"},{"type":"texture","text":"not a text part"}]},
+		{"role":"assistant","content":[{"type":"output_text","text":"Answered"},{"type":"text","text":42}]},
 		{"role":"user","content":"Real text","timestamp":"1683554160000"},
 		{"role":"user","content":"Later","timestamp":"soon"},
 		{"role":"user","content":"Again","timestamp":true},
@@ -391,7 +434,7 @@ func TestAddContentShapes(t *testing.T) {
 		t.Fatal("an Add without text created a store", err)
 	}
 	h.server.Close()
-	want := "Conversation s1 on 2023/05/08 (Mon) 13:56:\nuser: Caroline painted a sunset.\nuser: Real text\nuser: Later\nuser: Again\nunknown: no role\nassistant: 42"
+	want := "Conversation s1 on 2023/05/08 (Mon) 13:56:\nuser: Caroline painted a sunset.\nuser: Typed in\nassistant: Answered\nuser: Real text\nuser: Later\nuser: Again\nunknown: no role\nassistant: 42"
 	if parents := storedParents(t, h.root, "u1"); len(parents) != 1 || parents[documentID("r1")] != want {
 		t.Fatalf("%q", parents)
 	}
@@ -586,10 +629,11 @@ func TestAddThenSearch(t *testing.T) {
 	}
 	for _, item := range items {
 		if !strings.HasPrefix(item.Content, "Conversation s1 on 2023/05/08 (Mon) 13:56:\nuser: I went to the LGBTQ support group") ||
-			!strings.HasPrefix(item.ID, "aml-") || item.CreatedAt != "2023-05-08T13:56:00Z" || item.Score <= 0 {
+			!strings.HasPrefix(item.ID, "aml-") || item.CreatedAt != "2023-05-08T13:56:00Z" {
 			t.Fatal(item)
 		}
 	}
+	checkRankScores(t, items)
 	if h.server.DegradedSearches() != 0 {
 		t.Fatal(h.log.String())
 	}
@@ -676,17 +720,19 @@ func TestSearchTopKIncludesBlocks(t *testing.T) {
 	})
 	h.mustAdd(t, addRequest("r1", "u1"))
 	h.mustAdd(t, addRequest("r2", "u1"))
-	// Each Add folds until caught up: the short rest needs a second call.
-	if h.consolidator.calls.Load() == 0 {
-		t.Fatal("no consolidation")
+	// The Adds hold no full batch of 10,000 units: the Search folds them.
+	if h.consolidator.calls.Load() != 0 {
+		t.Fatal("an Add folded its short tail")
 	}
 	items := h.search(t, SearchRequest{Query: "When did Caroline go to the LGBTQ support group?", UserID: "u1", TopK: 3})
-	if len(items) != 3 || items[0].ID != "index:2-topics" || items[1].ID != "index:3-timelines" || strings.HasPrefix(items[2].ID, "index:") {
+	if len(items) != 3 || items[0].ID != "index:2-topics" || items[1].ID != "index:3-timelines" || strings.HasPrefix(items[2].ID, "index:") || h.consolidator.calls.Load() != 1 {
 		t.Fatal(items)
 	}
-	if !strings.Contains(items[1].Content, "Caroline went to the LGBTQ support group.") || items[0].Score != 0 || items[0].CreatedAt != "" || items[2].CreatedAt == "" {
+	// Scores are by rank, blocks included.
+	if !strings.Contains(items[1].Content, "Caroline went to the LGBTQ support group.") || items[0].CreatedAt != "" || items[2].CreatedAt == "" {
 		t.Fatal(items)
 	}
+	checkRankScores(t, items)
 	// Blocks count toward top_k.
 	if items = h.search(t, SearchRequest{Query: "When did Caroline go to the LGBTQ support group?", UserID: "u1", TopK: 1}); len(items) != 1 || items[0].ID != "index:2-topics" {
 		t.Fatal(items)
@@ -711,6 +757,7 @@ func TestSearchDegradesOnModelFailure(t *testing.T) {
 			t.Fatal(item)
 		}
 	}
+	checkRankScores(t, items)
 	logged := h.log.String()
 	if h.server.DegradedSearches() != 1 || !strings.Contains(logged, "degraded search 1") || strings.Contains(logged, "Caroline") {
 		t.Fatal(h.server.DegradedSearches(), logged)
@@ -881,10 +928,11 @@ func TestNewServerValidates(t *testing.T) {
 	}
 	root := t.TempDir()
 	for name, config := range map[string]ServerConfig{
-		"no key":        {DataRoot: root, MemoryConfig: simpleConfig(), Models: models},
-		"relative root": {DataRoot: "data", MemoryConfig: simpleConfig(), AuthKey: testKey, Models: models},
-		"bad config":    {DataRoot: root, MemoryConfig: memoryagent.Config{Version: 2}, AuthKey: testKey, Models: models},
-		"no models":     {DataRoot: root, MemoryConfig: simpleConfig(), AuthKey: testKey},
+		"no key":           {DataRoot: root, MemoryConfig: simpleConfig(), Models: models},
+		"relative root":    {DataRoot: "data", MemoryConfig: simpleConfig(), AuthKey: testKey, Models: models},
+		"bad config":       {DataRoot: root, MemoryConfig: memoryagent.Config{Version: 2}, AuthKey: testKey, Models: models},
+		"no models":        {DataRoot: root, MemoryConfig: simpleConfig(), AuthKey: testKey},
+		"negative timeout": {DataRoot: root, MemoryConfig: simpleConfig(), AuthKey: testKey, Models: models, SearchTimeout: -time.Second},
 		"model error": {DataRoot: root, MemoryConfig: simpleConfig(), AuthKey: testKey, Models: func(memoryagent.Config) (memoryagent.Models, error) {
 			return memoryagent.Models{}, errors.New("no credentials")
 		}},

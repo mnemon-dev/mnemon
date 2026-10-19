@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -25,10 +26,18 @@ const (
 	maxBody = 30 << 20
 	// defaultOpenStores is how many user stores stay open by default.
 	defaultOpenStores = 64
-	// An Add folds consolidation until it is caught up, within these bounds,
-	// so it returns well inside the platform's 1,800 s I/O timeout.
+	// maxConsolidateCalls bounds the consolidation jobs one request runs.
 	maxConsolidateCalls = 50
-	consolidateWindow   = 20 * time.Minute
+	// An Add consolidates until addWindow after it arrived, so it returns
+	// well inside the platform's 1,800 s I/O timeout.
+	addWindow = 25 * time.Minute
+	// A Search first folds what the user's Adds left pending, for at most
+	// flushWindow; its memory read then has SearchTimeout.
+	flushWindow          = 10 * time.Minute
+	defaultSearchTimeout = 10 * time.Minute
+	// defaultTopK is a Search's top_k when it gives none and the strategy
+	// has no View bound.
+	defaultTopK = 100
 	// embedBatch keeps a DerivedVectors call within its 512 texts and 2 MiB
 	// (a chunk is at most ~602 UTF-16 units, under 2.5 kB).
 	embedBatch = 256
@@ -42,9 +51,15 @@ type ServerConfig struct {
 	MemoryConfig memoryagent.Config
 	// AuthKey is the API key every Add and Search must carry.
 	AuthKey string
-	// ConsolidateOnAdd folds consolidation until caught up before an Add
-	// returns; its failures are logged, not returned.
+	// ConsolidateOnAdd consolidates during requests: in timelines mode an
+	// Add folds the full batches before it returns and a Search first folds
+	// the rest (the conversation's tail); otherwise an Add folds until
+	// caught up. Failures are logged, not returned.
 	ConsolidateOnAdd bool
+	// SearchTimeout bounds a Search's memory read (default 10 minutes);
+	// when it expires with the client still connected, the raw ranking
+	// answers.
+	SearchTimeout time.Duration
 	// MaxOpenStores bounds the cached open user stores (default 64).
 	MaxOpenStores int
 	// Models builds the models from MemoryConfig; nil builds its configured
@@ -62,11 +77,18 @@ type Server struct {
 	models   memoryagent.Models
 	budget   *memoryagent.Budget
 	maxItems int // the View's record bound; 0 for memory-agent/v1
-	users    *registry
-	log      *log.Logger
-	degraded atomic.Int64
-	handler  http.Handler
-	once     sync.Once
+	// timelines reports consolidation mode "timelines": Adds fold full
+	// batches and Searches flush the tail.
+	timelines bool
+	users     *registry
+	log       *log.Logger
+	// Served requests, and Searches answered by the raw ranking (degraded)
+	// or by a read with a stage that fell back (partial).
+	adds, searches, degraded, partial atomic.Int64
+	// The windows of an Add's consolidation, a Search's flush and its read.
+	addWindow, flushWindow, searchTimeout time.Duration
+	handler                               http.Handler
+	once                                  sync.Once
 }
 
 // NewServer checks the configuration, builds the shared models and checks
@@ -84,10 +106,19 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if config.MaxOpenStores < 1 {
 		return nil, errors.New("max open stores must be at least 1")
 	}
+	if config.SearchTimeout == 0 {
+		config.SearchTimeout = defaultSearchTimeout
+	}
+	if config.SearchTimeout < 0 {
+		return nil, errors.New("the search timeout must be positive")
+	}
 	if err := os.MkdirAll(config.DataRoot, 0o700); err != nil {
 		return nil, err
 	}
-	s := &Server{config: config, key: sha256.Sum256([]byte(config.AuthKey)), log: config.Logger}
+	consolidation := config.MemoryConfig.Consolidation
+	s := &Server{config: config, key: sha256.Sum256([]byte(config.AuthKey)), log: config.Logger,
+		timelines: consolidation != nil && consolidation.Mode == "timelines",
+		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout}
 	if s.log == nil {
 		s.log = log.New(os.Stderr, "aml: ", log.LstdFlags|log.LUTC)
 	}
@@ -170,6 +201,46 @@ func (s *Server) Close() error {
 // memory read failed.
 func (s *Server) DegradedSearches() int64 { return s.degraded.Load() }
 
+// PartialDegradedSearches counts the Searches answered by a memory read in
+// which a stage fell back (memoryagent.ReadStats.Degraded).
+func (s *Server) PartialDegradedSearches() int64 { return s.partial.Load() }
+
+// statusLine is the served Adds and Searches, the degraded and partially
+// degraded Searches and, with a budget file, each account's spent, held and
+// cap.
+func (s *Server) statusLine(ctx context.Context) string {
+	line := fmt.Sprintf("status: adds %d, searches %d, degraded %d, partially degraded %d", s.adds.Load(), s.searches.Load(), s.degraded.Load(), s.partial.Load())
+	if s.budget == nil {
+		return line
+	}
+	accounts, err := s.budget.Accounts(ctx)
+	if err != nil {
+		return line + "; budget unreadable: " + err.Error()
+	}
+	parts := []string{}
+	for _, account := range accounts {
+		parts = append(parts, fmt.Sprintf("%s spent %.4f held %.4f cap %g", account.Kind, account.Spent, account.Held, account.Cap))
+	}
+	if len(parts) > 0 {
+		line += "; budget " + strings.Join(parts, ", ")
+	}
+	return line
+}
+
+// LogStatus logs the status line every interval until ctx ends.
+func (s *Server) LogStatus(ctx context.Context, every time.Duration) {
+	ticker := time.NewTicker(every)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.log.Print(s.statusLine(ctx))
+		}
+	}
+}
+
 // Handler routes POST /add and POST /search (authenticated) and GET /health
 // and GET / (not); anything else is 404.
 func (s *Server) Handler() http.Handler { return s.handler }
@@ -195,8 +266,8 @@ func (s *Server) routes() http.Handler {
 	}
 	mux.HandleFunc("GET /{$}", health)
 	mux.HandleFunc("GET /health", health)
-	mux.Handle("POST /add", s.authorized(s.add))
-	mux.Handle("POST /search", s.authorized(s.search))
+	mux.Handle("POST /add", s.authorized(s.recovered("add", s.add)))
+	mux.Handle("POST /search", s.authorized(s.recovered("search", s.search)))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 	})
@@ -236,13 +307,37 @@ func (s *Server) validKey(r *http.Request) bool {
 	return valid
 }
 
+// recovered answers 500 when the handler panics before it answered, and
+// logs the panic with its stack, never the request.
+func (s *Server) recovered(operation string, next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writer := &statusWriter{ResponseWriter: w}
+		defer func() {
+			value := recover()
+			if value == nil {
+				return
+			}
+			if value == http.ErrAbortHandler {
+				panic(value)
+			}
+			s.log.Printf("%s panicked: %v\n%s", operation, value, debug.Stack())
+			if !writer.wrote {
+				writeError(writer, http.StatusInternalServerError, operation+" failed")
+			}
+		}()
+		next(writer, r)
+	}
+}
+
 // add stores one chunk of a conversation and returns once it is persisted and
 // searchable: written (in parts when it is longer than a document holds),
 // its new chunks embedded when the configuration embeds, and, with
-// ConsolidateOnAdd, consolidated. A retry of a stored request succeeds and
-// finishes what the earlier attempt may not have. Only a missing request_id,
-// user_id or session_id, or a request_id reused for other text, is a 400.
+// ConsolidateOnAdd, consolidated (consolidateAdd). A retry of a stored
+// request succeeds and finishes what the earlier attempt may not have. Only
+// a missing request_id, user_id or session_id, or a request_id reused for
+// other text, is a 400.
 func (s *Server) add(w http.ResponseWriter, r *http.Request) {
+	deadline := time.Now().Add(s.addWindow)
 	var req AddRequest
 	if !s.decode(w, r, &req) {
 		return
@@ -261,6 +356,7 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		s.log.Printf("add skipped %d of %d messages without text", skipped, len(req.Messages))
 	}
 	if len(parts) == 0 {
+		s.adds.Add(1)
 		writeJSON(w, http.StatusOK, done)
 		return
 	}
@@ -271,7 +367,9 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.users.release(user)
+	user.waiting.Add(1)
 	user.writes.Lock()
+	user.waiting.Add(-1)
 	defer user.writes.Unlock()
 	chunks := []string{}
 	for _, part := range parts {
@@ -294,8 +392,9 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if s.config.ConsolidateOnAdd {
-		s.consolidate(ctx, user)
+		s.consolidateAdd(ctx, user, deadline)
 	}
+	s.adds.Add(1)
 	writeJSON(w, http.StatusOK, done)
 }
 
@@ -362,35 +461,94 @@ func embedChunks(ctx context.Context, store *records.Store, config records.Embed
 	return nil
 }
 
-// consolidate folds until the user's consolidation has read everything (a
-// call folds full batches; the short rest is folded by a call that finds
-// nothing new), then stores the layer's embeddings for the next read.
-// Failures are logged: the records are searchable already, and the next Add
-// carries on where this one stopped.
-func (s *Server) consolidate(ctx context.Context, user *userEntry) {
-	ctx, cancel := context.WithTimeout(ctx, consolidateWindow)
+// consolidateAdd consolidates what an Add stored, until deadline (the Add's
+// arrival plus addWindow), then stores the layer's embeddings for the next
+// read. In timelines mode it folds only full batches until a job folds none;
+// the short rest waits for the user's next Search (flush), as the reference
+// system folds it once the conversation pauses. Otherwise it folds until
+// caught up. It gives way to an Add queued behind it for the same user,
+// which catches up, and is skipped when the deadline has passed. Failures
+// are logged: the records are searchable already.
+func (s *Server) consolidateAdd(ctx context.Context, user *userEntry, deadline time.Time) {
+	if user.waiting.Load() > 0 {
+		s.log.Printf("consolidation left to a queued Add (user %s)", user.key[:8])
+		return
+	}
+	if !time.Now().Before(deadline) {
+		s.log.Printf("consolidation skipped: the Add's window has passed (user %s)", user.key[:8])
+		return
+	}
+	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
-	for call := 1; call <= maxConsolidateCalls; call++ {
-		result, err := user.agent.Consolidate(ctx, memoryagent.ConsolidateRequest{})
-		if err != nil {
-			s.log.Printf("consolidation failed (user %s): %v", user.key[:8], err)
-			break
-		}
-		if result.Remaining == 0 {
-			break
-		}
-		if call == maxConsolidateCalls {
-			s.log.Printf("consolidation stopped with %d records pending (user %s)", result.Remaining, user.key[:8])
-		}
+	s.consolidate(ctx, user, s.timelines, "consolidation")
+	if err := user.agent.WarmLayer(ctx, records.Scope{}); err != nil {
+		s.log.Printf("layer embedding failed (user %s): %v", user.key[:8], err)
+	}
+}
+
+// flush folds what the user's Adds left pending, the tail of the
+// conversation, before a Search reads, for at most flushWindow; then it
+// stores the layer's embeddings when it folded anything. A failed or
+// unfinished flush is logged, and the Search reads what is consolidated.
+// With nothing pending it only loads the state.
+func (s *Server) flush(ctx context.Context, user *userEntry) {
+	ctx, cancel := context.WithTimeout(ctx, s.flushWindow)
+	defer cancel()
+	if s.consolidate(ctx, user, false, "flush") == 0 {
+		return
 	}
 	if err := user.agent.WarmLayer(ctx, records.Scope{}); err != nil {
 		s.log.Printf("layer embedding failed (user %s): %v", user.key[:8], err)
 	}
 }
 
-// search reads the user's memory for the question. When the read fails for
-// any reason but the client leaving (a model, a budget, the embedder), the
-// raw search ranking answers instead, and the degradation is counted.
+// consolidate runs the user's consolidation jobs: with hold, until a job
+// folds no full batch; without, until nothing remains (a job reads full
+// batches; one that finds nothing new folds the rest). It stops at the first
+// error, logged under label, or after maxConsolidateCalls jobs; it logs each
+// drop of records, and returns the batches folded.
+func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, label string) int {
+	folded := 0
+	for call := 1; call <= maxConsolidateCalls; call++ {
+		result, err := s.consolidateOnce(ctx, user, hold)
+		folded += result.Folded
+		for _, drop := range result.Drops {
+			s.log.Printf("consolidation dropped %d records (user %s): %s", drop.Records, user.key[:8], drop.Reason)
+		}
+		if err != nil {
+			s.log.Printf("%s failed (user %s): %v", label, user.key[:8], err)
+			break
+		}
+		if hold && result.Folded == 0 || !hold && result.Remaining == 0 {
+			break
+		}
+		if call == maxConsolidateCalls {
+			s.log.Printf("%s stopped with %d records pending (user %s)", label, result.Remaining, user.key[:8])
+		}
+	}
+	return folded
+}
+
+// consolidateOnce runs one job; a job that panics fails, its panic and stack
+// logged.
+func (s *Server) consolidateOnce(ctx context.Context, user *userEntry, hold bool) (result memoryagent.ConsolidateResult, err error) {
+	defer func() {
+		if value := recover(); value != nil {
+			s.log.Printf("consolidation panicked (user %s): %v\n%s", user.key[:8], value, debug.Stack())
+			result, err = memoryagent.ConsolidateResult{}, fmt.Errorf("panic: %v", value)
+		}
+	}()
+	return user.agent.Consolidate(ctx, memoryagent.ConsolidateRequest{Hold: hold})
+}
+
+// search reads the user's memory for the question, within SearchTimeout,
+// after flushing the user's consolidation (timelines with
+// ConsolidateOnAdd). When the read fails for any reason but the client
+// leaving (a model, a budget, the embedder, the timeout, a panic), the raw
+// search ranking answers instead, and the degradation is counted; a read in
+// which a stage fell back is logged and counted as partially degraded. A
+// blank query finds nothing; a missing or nonpositive top_k is the View's
+// maximum. Only a missing user_id is a 400.
 func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	var req SearchRequest
 	if !s.decode(w, r, &req) {
@@ -400,6 +558,11 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if strings.TrimSpace(req.Query) == "" {
+		s.answer(w, []SearchItem{})
+		return
+	}
+	topK := s.topK(req.TopK)
 	ctx := r.Context()
 	user, err := s.users.acquire(ctx, req.UserID, false)
 	if err != nil {
@@ -407,19 +570,26 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if user == nil {
-		writeJSON(w, http.StatusOK, SearchResponse{Data: []SearchItem{}})
+		s.answer(w, []SearchItem{})
 		return
 	}
 	defer s.users.release(user)
+	if s.config.ConsolidateOnAdd && s.timelines {
+		s.flush(ctx, user)
+	}
 	// The platform asks a fixed top_k; a View bound below it gives fewer
 	// records rather than an error.
 	maxItems := 0
 	if s.maxItems > 0 {
-		maxItems = min(req.TopK, s.maxItems)
+		maxItems = min(topK, s.maxItems)
 	}
-	view, err := user.agent.Read(ctx, memoryagent.ReadRequest{Question: req.question(), MaxItems: maxItems})
+	view, err := s.read(ctx, user, memoryagent.ReadRequest{Question: req.question(), MaxItems: maxItems})
 	if err == nil {
-		writeJSON(w, http.StatusOK, SearchResponse{Data: searchItems(view, req.TopK)})
+		if stages := view.Stats.Degraded; len(stages) > 0 {
+			n := s.partial.Add(1)
+			s.log.Printf("partially degraded search %d (user %s): %s", n, user.key[:8], strings.Join(stages, ", "))
+		}
+		s.answer(w, searchItems(view, topK))
 		return
 	}
 	if ctx.Err() != nil {
@@ -428,11 +598,47 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	}
 	n := s.degraded.Add(1)
 	s.log.Printf("degraded search %d (user %s): %v", n, user.key[:8], err)
-	items, err := s.rawSearch(ctx, user, req.Query, req.TopK)
+	items, err := s.rawSearch(ctx, user, req.Query, topK)
 	if err != nil {
 		s.fail(w, "degraded search", user.key, err)
 		return
 	}
+	s.answer(w, items)
+}
+
+// topK is a Search's top_k: a missing or nonpositive one is the View's
+// record bound, or defaultTopK without one.
+func (s *Server) topK(requested int) int {
+	switch {
+	case requested > 0:
+		return requested
+	case s.maxItems > 0:
+		return s.maxItems
+	}
+	return defaultTopK
+}
+
+// read is the user's memory read within searchTimeout; a read that panics
+// fails, its panic and stack logged.
+func (s *Server) read(ctx context.Context, user *userEntry, req memoryagent.ReadRequest) (view memoryagent.View, err error) {
+	ctx, cancel := context.WithTimeout(ctx, s.searchTimeout)
+	defer cancel()
+	defer func() {
+		if value := recover(); value != nil {
+			s.log.Printf("memory read panicked (user %s): %v\n%s", user.key[:8], value, debug.Stack())
+			view, err = memoryagent.View{}, fmt.Errorf("panic: %v", value)
+		}
+	}()
+	return user.agent.Read(ctx, req)
+}
+
+// answer writes a Search's items, scored by rank (1/(rank+1), best first),
+// and counts the Search.
+func (s *Server) answer(w http.ResponseWriter, items []SearchItem) {
+	for i := range items {
+		items[i].Score = 1 / float64(i+1)
+	}
+	s.searches.Add(1)
 	writeJSON(w, http.StatusOK, SearchResponse{Data: items})
 }
 
@@ -525,14 +731,22 @@ func (s *Server) logged(next http.Handler) http.Handler {
 	})
 }
 
+// statusWriter records a response's status and whether anything was
+// written.
 type statusWriter struct {
 	http.ResponseWriter
 	status int
+	wrote  bool
 }
 
 func (w *statusWriter) WriteHeader(status int) {
-	w.status = status
+	w.status, w.wrote = status, true
 	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *statusWriter) Write(data []byte) (int, error) {
+	w.wrote = true
+	return w.ResponseWriter.Write(data)
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
