@@ -124,6 +124,11 @@ const (
 	maxJEVRequest = 96000
 )
 
+// ErrRequestTooLarge wraps the error of a request refused before the network
+// because its body exceeds maxRequestBytes (completions) or maxJEVRequest
+// (JEV decisions). Nothing was reserved or sent.
+var ErrRequestTooLarge = errors.New("request too large")
+
 // post sends one encoded request body; the caller has bounded it.
 func (p *Provider) post(ctx context.Context, raw []byte) ([]byte, string, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint, bytes.NewReader(raw))
@@ -214,8 +219,11 @@ func (p *Provider) complete(ctx context.Context, system, prompt string, jsonOnly
 		body["temperature"] = 0
 	}
 	encoded, err := json.Marshal(body)
-	if err != nil || len(encoded) > maxRequestBytes {
-		return "", Usage{}, fmt.Errorf("model request exceeds %d bytes or contains invalid JSON", maxRequestBytes)
+	if err != nil {
+		return "", Usage{}, errors.New("model request contains invalid JSON")
+	}
+	if len(encoded) > maxRequestBytes {
+		return "", Usage{}, fmt.Errorf("%w: model request exceeds %d bytes", ErrRequestTooLarge, maxRequestBytes)
 	}
 	raw, id, err := p.post(ctx, encoded)
 	if err != nil {
@@ -286,8 +294,11 @@ func (p *Provider) Decide(ctx context.Context, state any, questions map[string]Q
 		State     any                 `json:"state"`
 		Questions map[string]Question `json:"questions"`
 	}{state, questions})
-	if err != nil || jsLen(request) > maxJEVRequest {
-		return nil, Usage{}, fmt.Errorf("JEV request exceeds %d UTF-16 code units or contains invalid JSON", maxJEVRequest)
+	if err != nil {
+		return nil, Usage{}, errors.New("JEV request contains invalid JSON")
+	}
+	if jsLen(request) > maxJEVRequest {
+		return nil, Usage{}, fmt.Errorf("%w: JEV request exceeds %d UTF-16 code units", ErrRequestTooLarge, maxJEVRequest)
 	}
 	model, _ := stringifyJSON(p.config.Model)
 	raw, id, err := p.post(ctx, []byte(`{"model":`+model+`,`+request[1:]))

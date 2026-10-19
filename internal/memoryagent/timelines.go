@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/mnemon-dev/mnemon/internal/records"
 )
@@ -207,15 +208,31 @@ const timelineSystem = `You keep a structured memory of a long conversation betw
 Use only what the records say. Dates are the session dates shown with the records. Reply with JSON only, in this form:
 {"events":[{"thread":"T3","date":"YYYY/MM/DD","text":"...","records":["r12"]}],"facts":[{"key":"...","value":"...","date":"YYYY/MM/DD","records":["r15"],"conflict":false}],"directives":[{"text":"...","date":"YYYY/MM/DD","records":["r20"]}]}`
 
-// timelinePrompt is the user message of one fold: the whole index so far, then
-// the batch's records under batch-local ids (C:98-115 without an index limit).
+// indexLimit caps how many threads, keys and directives a fold's prompt
+// lists (the author's IndexLimit, C:88).
+type indexLimit struct{ Threads, Values, Directives int }
+
+// timelineIndexLimit is the author's limit for very long memories
+// (scripts/lib/jev-runtime.ts:237). Every prompt applies it; a memory within it
+// is listed whole, word for word as without a limit.
+var timelineIndexLimit = indexLimit{Threads: 120, Values: 240, Directives: 60}
+
+// timelinePrompt is the user message of one fold: the index so far within
+// timelineIndexLimit, then the batch's records under batch-local ids.
 func timelinePrompt(m timelineMemory, batch []pendingRecord) string {
+	return renderTimelinePrompt(m, batch, &timelineIndexLimit)
+}
+
+// renderTimelinePrompt is the author's consolidationPrompt (C:98-115); a nil
+// limit lists the whole index.
+func renderTimelinePrompt(m timelineMemory, batch []pendingRecord, limit *indexLimit) string {
 	type count struct {
 		n    int
 		last string
 	}
 	counts := map[string]*count{}
-	for _, e := range m.Events {
+	lastEvent := map[string]int{}
+	for i, e := range m.Events {
 		c := counts[e.Thread]
 		if c == nil {
 			c = &count{}
@@ -223,9 +240,38 @@ func timelinePrompt(m timelineMemory, batch []pendingRecord) string {
 		}
 		c.n++
 		c.last = e.Date
+		lastEvent[e.Thread] = i
 	}
+	keys := []string{}
+	for _, key := range m.FactOrder {
+		if len(m.Facts[key]) > 0 {
+			keys = append(keys, key)
+		}
+	}
+	latest := func(key string) factValue { values := m.Facts[key]; return values[len(values)-1] }
+	// Without a limit every list is shown (limit -1) and no query is needed.
+	query, threadLimit, valueLimit, directiveLimit := "", -1, -1, -1
+	if limit != nil {
+		texts := make([]string, len(batch))
+		for i, record := range batch {
+			texts[i] = record.Text
+		}
+		query, threadLimit, valueLimit, directiveLimit = strings.Join(texts, "\n"), limit.Threads, limit.Values, limit.Directives
+	}
+	// Threads are recent by their latest event, keys by the date of their
+	// latest value, directives by order; every list keeps the memory's order.
+	threadSet := shownItems(len(m.Threads), threadLimit, func(i int) string { return m.Threads[i].Title }, func(a, b int) int {
+		return cmp.Compare(recentEvent(lastEvent, m.Threads[a].ID), recentEvent(lastEvent, m.Threads[b].ID))
+	}, query)
+	keySet := shownItems(len(keys), valueLimit, func(i int) string { return keys[i] + " " + latest(keys[i]).Value }, func(a, b int) int {
+		return jsCompare(latest(keys[a]).Date, latest(keys[b]).Date)
+	}, query)
+	directiveSet := shownItems(len(m.Directives), directiveLimit, func(i int) string { return m.Directives[i].Text }, cmp.Compare[int], query)
 	threads := []string{}
-	for _, t := range m.Threads {
+	for i, t := range m.Threads {
+		if !threadSet[i] {
+			continue
+		}
 		n, last := 0, "-"
 		if c := counts[t.ID]; c != nil {
 			n, last = c.n, c.last
@@ -233,23 +279,185 @@ func timelinePrompt(m timelineMemory, batch []pendingRecord) string {
 		threads = append(threads, fmt.Sprintf("%s %s (%d events, last %s)", t.ID, t.Title, n, last))
 	}
 	facts := []string{}
-	for _, key := range m.FactOrder {
-		if values := m.Facts[key]; len(values) > 0 {
-			facts = append(facts, "- "+key+": "+values[len(values)-1].Value)
+	for i, key := range keys {
+		if keySet[i] {
+			facts = append(facts, "- "+key+": "+latest(key).Value)
 		}
 	}
 	directives := []string{}
-	for _, d := range m.Directives {
-		directives = append(directives, "- "+d.Text)
+	for i, d := range m.Directives {
+		if directiveSet[i] {
+			directives = append(directives, "- "+d.Text)
+		}
 	}
 	shown := []string{}
 	for i, record := range batch {
 		shown = append(shown, fmt.Sprintf("[r%d] %s\n%s", i, record.Header, record.Text))
 	}
-	return "Threads so far:\n" + linesOrNone(threads) +
-		"\n\nState keys so far, with the latest value:\n" + linesOrNone(facts) +
-		"\n\nDirectives so far:\n" + linesOrNone(directives) +
+	return "Threads so far" + shownOf(len(threads), len(m.Threads)) + ":\n" + linesOrNone(threads) +
+		"\n\nState keys so far, with the latest value" + shownOf(len(facts), len(keys)) + ":\n" + linesOrNone(facts) +
+		"\n\nDirectives so far" + shownOf(len(directives), len(m.Directives)) + ":\n" + linesOrNone(directives) +
 		"\n\nNew records:\n\n" + strings.Join(shown, "\n\n")
+}
+
+// shownOf names a cut list (C:112).
+func shownOf(shown, total int) string {
+	if shown < total {
+		return fmt.Sprintf(" (the %d of %d most related to these records or most recent; the rest keep their ids and keys)", shown, total)
+	}
+	return ""
+}
+
+// recentEvent is the index of a thread's latest event, -1 when it has none.
+func recentEvent(last map[string]int, id string) int {
+	if i, ok := last[id]; ok {
+		return i
+	}
+	return -1
+}
+
+// shownItems is the author's shown() (C:91-97): which of n items a prompt
+// lists. All of them when they fit the limit (or limit < 0); else up to
+// ceil(limit/2) that share the most words with query by BM25, then the most
+// recent by a stable descending sort on recency (ties keep the memory's order)
+// until limit are kept.
+func shownItems(n, limit int, text func(int) string, recency func(a, b int) int, query string) []bool {
+	keep := make([]bool, n)
+	if limit < 0 || n <= limit {
+		for i := range keep {
+			keep[i] = true
+		}
+		return keep
+	}
+	texts := make([]string, n)
+	for i := range texts {
+		texts[i] = text(i)
+	}
+	size := 0
+	for _, i := range bm25Top(texts, query, (limit+1)/2) {
+		keep[i] = true
+		size++
+	}
+	order := make([]int, n)
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortStableFunc(order, func(a, b int) int { return recency(b, a) })
+	for _, i := range order {
+		if size >= limit {
+			break
+		}
+		if !keep[i] {
+			keep[i] = true
+			size++
+		}
+	}
+	return keep
+}
+
+var (
+	lexicalLatin = regexp.MustCompile(`[a-z0-9]+(?:[-_:][a-z0-9]+)*`)
+	lexicalHan   = regexp.MustCompile(`\p{Han}+`)
+)
+
+// lexicalTokens is the author's lexicalTokens (src/sdk/source/lexical.ts):
+// lowercase Latin words and codes, then each run of Han characters as UTF-16
+// unit bigrams, or the unit itself when the run is one unit long. A bigram
+// that splits a surrogate pair cannot be a Go string; it gets a key of its
+// two units that no other token can equal.
+func lexicalTokens(text string) []string {
+	out := lexicalLatin.FindAllString(strings.ToLower(strings.ReplaceAll(text, "\u0130", "i\u0307")), -1)
+	if out == nil {
+		out = []string{}
+	}
+	for _, run := range lexicalHan.FindAllString(text, -1) {
+		units := utf16.Encode([]rune(run))
+		if len(units) == 1 {
+			out = append(out, run)
+		}
+		for i := 0; i+1 < len(units); i++ {
+			pair := units[i : i+2]
+			if utf16.IsSurrogate(rune(pair[0])) != utf16.IsSurrogate(rune(pair[1])) || utf16.IsSurrogate(rune(pair[0])) && (pair[0] >= 0xdc00 || pair[1] < 0xdc00) {
+				out = append(out, fmt.Sprintf("\x00%04x%04x", pair[0], pair[1]))
+			} else {
+				out = append(out, string(utf16.Decode(pair)))
+			}
+		}
+	}
+	return out
+}
+
+// bm25Top is the author's LexicalIndex.search over texts with ids String(i)
+// and one query of weight 1: BM25 (k1 1.2, b 0.75) with
+// idf ln(1+(N-df+0.5)/(df+0.5)), positive scores only, the best limit by
+// score, then id as a string. The arithmetic rounds as JavaScript's does.
+func bm25Top(texts []string, query string, limit int) []int {
+	if len(texts) == 0 {
+		return []int{}
+	}
+	type doc struct {
+		tf     map[string]int
+		length int
+	}
+	docs, df, total := make([]doc, len(texts)), map[string]int{}, 0
+	for i, text := range texts {
+		tokens := lexicalTokens(text)
+		docs[i] = doc{tf: map[string]int{}, length: len(tokens)}
+		for _, token := range tokens {
+			if docs[i].tf[token] == 0 {
+				df[token]++
+			}
+			docs[i].tf[token]++
+		}
+		total += len(tokens)
+	}
+	terms, seen := []string{}, map[string]bool{}
+	for _, token := range lexicalTokens(query) {
+		if !seen[token] {
+			terms, seen[token] = append(terms, token), true
+		}
+	}
+	n := float64(len(docs))
+	average := float64(total) / n
+	type hit struct {
+		i     int
+		id    string
+		score float64
+	}
+	hits := []hit{}
+	for i, d := range docs {
+		score := 0.0
+		for _, token := range terms {
+			tf := float64(d.tf[token])
+			if tf == 0 {
+				continue
+			}
+			count := float64(df[token])
+			idf := records.JSLog(1 + (n-count+0.5)/(count+0.5))
+			// The conversions keep Go from fusing operations JavaScript rounds.
+			scaled := float64(1.2 * (0.25 + 0.75*float64(d.length)/average))
+			score += float64(1*idf) * float64(tf*2.2) / (tf + scaled)
+		}
+		if score > 0 {
+			hits = append(hits, hit{i, strconv.Itoa(i), score})
+		}
+	}
+	slices.SortFunc(hits, func(a, b hit) int {
+		if a.score != b.score {
+			return cmp.Compare(b.score, a.score)
+		}
+		return strings.Compare(a.id, b.id)
+	})
+	out := []int{}
+	for _, h := range hits[:min(limit, len(hits))] {
+		out = append(out, h.i)
+	}
+	return out
+}
+
+// jsCompare orders strings as JavaScript's < does: by UTF-16 code units.
+func jsCompare(a, b string) int {
+	return slices.Compare(utf16.Encode([]rune(a)), utf16.Encode([]rune(b)))
 }
 
 func linesOrNone(lines []string) string {
@@ -575,10 +783,15 @@ func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *
 }
 
 // foldTimelines folds one batch (N:1095-1105): two attempts, then, when split
-// is allowed, each half with two attempts of its own.
+// is allowed, each half with two attempts of its own. A request the provider
+// refuses as too large counts as a reply that did not parse, so a long batch
+// splits instead of stopping every later job.
 func (a *Agent) foldTimelines(ctx context.Context, model Completer, state *timelineState, batch []pendingRecord, split bool, result *ConsolidateResult) error {
 	for attempt := 0; attempt < 2; attempt++ {
 		reply, err := a.completeFold(ctx, model, timelinePrompt(state.Memory, batch), state, result)
+		if errors.Is(err, ErrRequestTooLarge) {
+			continue
+		}
 		if err != nil {
 			return err
 		}

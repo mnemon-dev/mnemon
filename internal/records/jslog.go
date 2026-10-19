@@ -88,3 +88,6 @@ func jsLog(x float64) float64 {
 	p := math.FMA(s, f-r, -dk*ln2Lo)
 	return math.FMA(dk, ln2Hi, -(p - f))
 }
+
+// JSLog is the reference runtime's Math.log, for other ports of its BM25.
+func JSLog(x float64) float64 { return jsLog(x) }

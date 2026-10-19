@@ -587,3 +587,129 @@ func TestConsolidationConfig(t *testing.T) {
 		t.Fatal("timelines consolidation without an overlay store", err)
 	}
 }
+
+// kayakMemory is the author's index-limit fixture (consolidation.spec.ts):
+// twelve topics and values, one of each about a kayak, and a directive.
+func kayakMemory() (timelineMemory, []pendingRecord) {
+	memory := emptyTimelineState().Memory
+	for i := 1; i <= 12; i++ {
+		title, value := fmt.Sprintf("Topic number %d", i), fmt.Sprintf("value %d", i)
+		if i == 3 {
+			title = "Kayak trip to the lake"
+		}
+		if i == 5 {
+			value = "kayak rented"
+		}
+		date := fmt.Sprintf("2024/01/%02d", i)
+		memory.Threads = append(memory.Threads, thread{ID: fmt.Sprintf("T%d", i), Title: title})
+		memory.Events = append(memory.Events, event{Thread: fmt.Sprintf("T%d", i), Date: date, Text: fmt.Sprintf("event %d", i), Records: []string{}})
+		key := fmt.Sprintf("thing %d · status", i)
+		memory.Facts[key] = []factValue{{Value: value, Date: date, Records: []string{}}}
+		memory.FactOrder = append(memory.FactOrder, key)
+	}
+	memory.Directives = append(memory.Directives, directive{Text: "Answer briefly.", Date: "2024/01/01", Records: []string{}})
+	return memory, []pendingRecord{{ID: "r", Header: "2024/02/01 (session 9)", Text: "user: We booked the kayak for the lake next week."}}
+}
+
+func TestTimelinePromptShownUnderLimit(t *testing.T) {
+	memory, batch := kayakMemory()
+	whole := renderTimelinePrompt(memory, batch, nil)
+	if got := renderTimelinePrompt(memory, batch, &indexLimit{Threads: 12, Values: 12, Directives: 5}); got != whole {
+		t.Fatalf("a memory within its limit changed the prompt:\n%s\nwant:\n%s", got, whole)
+	}
+	if got := timelinePrompt(memory, batch); got != whole || strings.Contains(got, "most related") {
+		t.Fatal("the default limits changed a small memory's prompt")
+	}
+}
+
+func TestTimelinePromptShownCut(t *testing.T) {
+	memory, batch := kayakMemory()
+	small := renderTimelinePrompt(memory, batch, &indexLimit{Threads: 4, Values: 4, Directives: 5})
+	of := " (the 4 of 12 most related to these records or most recent; the rest keep their ids and keys)"
+	want := "Threads so far" + of + ":\nT3 Kayak trip to the lake (1 events, last 2024/01/03)\nT10 Topic number 10 (1 events, last 2024/01/10)\nT11 Topic number 11 (1 events, last 2024/01/11)\nT12 Topic number 12 (1 events, last 2024/01/12)" +
+		"\n\nState keys so far, with the latest value" + of + ":\n- thing 5 · status: kayak rented\n- thing 10 · status: value 10\n- thing 11 · status: value 11\n- thing 12 · status: value 12" +
+		"\n\nDirectives so far:\n- Answer briefly." +
+		"\n\nNew records:\n\n[r0] 2024/02/01 (session 9)\nuser: We booked the kayak for the lake next week."
+	if small != want {
+		t.Fatalf("cut prompt:\n%s\nwant:\n%s", small, want)
+	}
+	// The default limits are the author's long-memory limits 120/240/60.
+	for i := 13; i <= 121; i++ {
+		memory.Threads = append(memory.Threads, thread{ID: fmt.Sprintf("T%d", i), Title: fmt.Sprintf("Topic number %d", i)})
+	}
+	if got := timelinePrompt(memory, batch); !strings.HasPrefix(got, "Threads so far (the 120 of 121 most related") || strings.Count(strings.Split(got, "\n\n")[0], "\n") != 120 {
+		t.Fatal("default thread limit", strings.Split(got, "\n\n")[0][:80])
+	}
+	if !strings.Contains(timelinePrompt(memory, batch), "State keys so far, with the latest value:\n") {
+		t.Fatal("values under their limit were cut")
+	}
+}
+
+func TestShownLexicalAndRecency(t *testing.T) {
+	tokens := lexicalTokens("Hello WORLD-wide a_b:c x- 2024/03 İstanbul 记忆力 记 𠀀")
+	want := []string{"hello", "world-wide", "a_b:c", "x", "2024", "03", "i", "stanbul", "记忆", "忆力", "记", "𠀀"}
+	if !reflect.DeepEqual(tokens, want) {
+		t.Fatalf("tokens %q", tokens)
+	}
+	// A run of two characters outside the BMP is four UTF-16 units: the
+	// author's bigrams are both characters and the pair across them.
+	if got := lexicalTokens("𠀀𠀁"); len(got) != 3 || got[0] != "𠀀" || got[2] != "𠀁" || got[1] == "��" {
+		t.Fatalf("supplementary Han tokens %q", got)
+	}
+	// Equal scores rank by id as a string: "0", "1", "10" before "2".
+	texts := make([]string, 12)
+	for i := range texts {
+		texts[i] = "kayak"
+	}
+	if got := bm25Top(texts, "the kayak", 3); !reflect.DeepEqual(got, []int{0, 1, 10}) {
+		t.Fatal("tie order", got)
+	}
+	// Only positive scores count; BM25 favors the shorter of two matches.
+	if got := bm25Top([]string{"a kayak on a long lake trip", "kayak", "lake"}, "kayak", 5); !reflect.DeepEqual(got, []int{1, 0}) {
+		t.Fatal("bm25 order", got)
+	}
+	// Half the room by words, then the newest; equal recency keeps the
+	// memory's order (a stable descending sort).
+	dates := []string{"2024/01/02", "2024/01/05", "2024/01/05", "2024/01/01", "2024/01/05"}
+	keep := shownItems(len(dates), 3, func(i int) string { return []string{"kayak", "x", "y", "z", "w"}[i] },
+		func(a, b int) int { return jsCompare(dates[a], dates[b]) }, "kayak")
+	if !reflect.DeepEqual(keep, []bool{true, true, true, false, false}) {
+		t.Fatal("shown", keep)
+	}
+	if !reflect.DeepEqual(shownItems(2, 2, nil, nil, ""), []bool{true, true}) {
+		t.Fatal("a list within its limit is shown whole")
+	}
+	// JavaScript compares strings by UTF-16 units: U+FF5E sorts after an
+	// emoji's surrogate pair start, unlike code point order.
+	if jsCompare("～", "😀") <= 0 || jsCompare("a", "ab") >= 0 {
+		t.Fatal("jsCompare is not UTF-16 order")
+	}
+}
+
+func TestConsolidateTimelinesTooLargeSplits(t *testing.T) {
+	s, dir := agentStore(t)
+	notes := []string{"alpha note number one here...", "bravo note number two here....", "charlie note number three.....", "delta note number four here..."}
+	for i, text := range notes {
+		seedNote(t, s, fmt.Sprintf("n%d", i), text)
+	}
+	// The provider refuses the whole batch and the half holding delta before
+	// the network: like replies that do not parse, they split, then drop.
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) {
+		if strings.Contains(prompt, "[r3]") || strings.Contains(prompt, "delta") {
+			return "", fmt.Errorf("%w: model request exceeds 48000 bytes", ErrRequestTooLarge)
+		}
+		return eventsReply(prompt), nil
+	}}
+	a, overlay := timelinesAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, Models{Consolidator: model})
+	result, err := a.Consolidate(context.Background(), ConsolidateRequest{})
+	if err != nil || result.Visited != 4 || result.Added != 2 || result.Remaining != 0 {
+		t.Fatalf("result %+v %v", result, err)
+	}
+	state := loadState(t, overlay)
+	if state.Batches != 1 || state.Failed != 1 || state.Calls != 1 || len(state.Pending) != 0 || len(model.calls) != 5 {
+		t.Fatalf("state batches %d failed %d calls %d pending %d attempts %d", state.Batches, state.Failed, state.Calls, len(state.Pending), len(model.calls))
+	}
+	if got := eventTexts(state); !reflect.DeepEqual(got, []string{notes[0] + "@n0", notes[1] + "@n1"}) {
+		t.Fatal("events", got)
+	}
+}

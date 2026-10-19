@@ -3,6 +3,7 @@ package memoryagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -702,6 +703,36 @@ func TestNonJEVKeepsSmallerLimits(t *testing.T) {
 	}
 	if calls.Load() != 0 {
 		t.Fatal("rejected request reached the network")
+	}
+}
+
+func TestRequestTooLargeIsTyped(t *testing.T) {
+	p, err := NewProvider(ModelConfig{Kind: "local", Model: "local-test", BaseURL: "http://127.0.0.1:1/v1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	p.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return mockResponse(`{"choices":[{"message":{"content":"{}"}}]}`), nil
+	})
+	big := strings.Repeat("x", maxRequestBytes)
+	if _, _, err = p.CompleteWith(context.Background(), "system", big, 8192); !errors.Is(err, ErrRequestTooLarge) || !strings.Contains(err.Error(), "48000") {
+		t.Fatal("oversize completion error is not ErrRequestTooLarge", err)
+	}
+	if _, _, err = p.Complete(context.Background(), "system", big); !errors.Is(err, ErrRequestTooLarge) {
+		t.Fatal("oversize completion error is not ErrRequestTooLarge", err)
+	}
+	if _, _, err = p.Decide(context.Background(), cjkCandidates(40, 600), binaryQuestions(80)); !errors.Is(err, ErrRequestTooLarge) {
+		t.Fatal("oversize non-JEV decision error is not ErrRequestTooLarge", err)
+	}
+	if _, _, err = p.CompleteWith(context.Background(), "system", "small", 8192); err != nil || errors.Is(err, ErrRequestTooLarge) || calls.Load() != 1 {
+		t.Fatal("a small completion failed or oversize requests reached the network", err, calls.Load())
+	}
+	jev, server := jevTestProvider(t)
+	one := map[string]Question{"q0": binary("Is it current?")}
+	if _, _, err = jev.Decide(context.Background(), strings.Repeat("记", maxJEVRequest), one); !errors.Is(err, ErrRequestTooLarge) || !strings.Contains(err.Error(), "96000") || len(server.received()) != 0 {
+		t.Fatal("oversize JEV error is not ErrRequestTooLarge", err)
 	}
 }
 
