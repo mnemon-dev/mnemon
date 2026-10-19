@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type transportFunc func(*http.Request) (*http.Response, error)
@@ -698,8 +700,8 @@ func TestNonJEVKeepsSmallerLimits(t *testing.T) {
 	if _, _, err = p.Decide(context.Background(), "evidence", binaryQuestions(81)); err == nil {
 		t.Fatal("81 non-JEV questions were accepted")
 	}
-	if _, _, err = p.Decide(context.Background(), cjkCandidates(40, 600), binaryQuestions(80)); err == nil || !strings.Contains(err.Error(), "48000") {
-		t.Fatal("non-JEV body above 48000 bytes was accepted", err)
+	if _, _, err = p.Decide(context.Background(), cjkCandidates(80, 700), binaryQuestions(80)); err == nil || !strings.Contains(err.Error(), "160000") {
+		t.Fatal("non-JEV body above 160000 bytes was accepted", err)
 	}
 	if calls.Load() != 0 {
 		t.Fatal("rejected request reached the network")
@@ -717,13 +719,13 @@ func TestRequestTooLargeIsTyped(t *testing.T) {
 		return mockResponse(`{"choices":[{"message":{"content":"{}"}}]}`), nil
 	})
 	big := strings.Repeat("x", maxRequestBytes)
-	if _, _, err = p.CompleteWith(context.Background(), "system", big, 8192); !errors.Is(err, ErrRequestTooLarge) || !strings.Contains(err.Error(), "48000") {
+	if _, _, err = p.CompleteWith(context.Background(), "system", big, 8192); !errors.Is(err, ErrRequestTooLarge) || !strings.Contains(err.Error(), "160000") {
 		t.Fatal("oversize completion error is not ErrRequestTooLarge", err)
 	}
 	if _, _, err = p.Complete(context.Background(), "system", big); !errors.Is(err, ErrRequestTooLarge) {
 		t.Fatal("oversize completion error is not ErrRequestTooLarge", err)
 	}
-	if _, _, err = p.Decide(context.Background(), cjkCandidates(40, 600), binaryQuestions(80)); !errors.Is(err, ErrRequestTooLarge) {
+	if _, _, err = p.Decide(context.Background(), cjkCandidates(80, 700), binaryQuestions(80)); !errors.Is(err, ErrRequestTooLarge) {
 		t.Fatal("oversize non-JEV decision error is not ErrRequestTooLarge", err)
 	}
 	if _, _, err = p.CompleteWith(context.Background(), "system", "small", 8192); err != nil || errors.Is(err, ErrRequestTooLarge) || calls.Load() != 1 {
@@ -742,5 +744,278 @@ func TestExistingConfigJSONIsUnchanged(t *testing.T) {
 	want := `{"version":1,"planner":{"kind":"local","model":"m","baseURL":"http://127.0.0.1:1/v1"},"judge":{"kind":"jev","model":"jev-1.13.0","keyEnv":"K"},"budgetFile":"/b.db"}`
 	if err != nil || string(raw) != want {
 		t.Fatal(string(raw), err)
+	}
+}
+
+// attempt is one budget attempt row: what it reserved and what it settled
+// at (nil while held).
+type attempt struct {
+	reserved float64
+	actual   *float64
+}
+
+func budgetAttempts(t *testing.T, b *Budget) []attempt {
+	t.Helper()
+	rows, err := b.db.Query(`SELECT reserved,actual FROM attempts ORDER BY rowid`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	out := []attempt{}
+	for rows.Next() {
+		var a attempt
+		if err := rows.Scan(&a.reserved, &a.actual); err != nil {
+			t.Fatal(err)
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+func accountHeld(t *testing.T, b *Budget, kind string) (held, spent float64) {
+	t.Helper()
+	b.db.QueryRow("SELECT held,spent FROM accounts WHERE kind=?", kind).Scan(&held, &spent)
+	return held, spent
+}
+
+func near(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
+
+func TestCompletionBodyIsNotHTMLEscaped(t *testing.T) {
+	p, err := NewProvider(ModelConfig{Kind: "local", Model: "local-test", BaseURL: "http://127.0.0.1:1/v1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw []byte
+	p.client.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		raw, _ = io.ReadAll(req.Body)
+		return mockResponse(`{"choices":[{"message":{"content":"ok"}}]}`), nil
+	})
+	if _, _, err = p.CompleteWith(context.Background(), "a <b> & c", "x > y && <tag>", 100); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"a <b> & c"`) || !strings.Contains(string(raw), `"x > y && <tag>"`) || strings.Contains(string(raw), `\`) || strings.HasSuffix(string(raw), "\n") {
+		t.Fatalf("%q", raw)
+	}
+	var decoded struct {
+		Messages []struct{ Content string }
+	}
+	if json.Unmarshal(raw, &decoded) != nil || len(decoded.Messages) != 2 || decoded.Messages[1].Content != "x > y && <tag>" {
+		t.Fatalf("%q", raw)
+	}
+}
+
+func TestCompletionCapIs160000Bytes(t *testing.T) {
+	p, err := NewProvider(ModelConfig{Kind: "local", Model: "local-test", BaseURL: "http://127.0.0.1:1/v1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var sizes []int
+	p.client.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		raw, _ := io.ReadAll(req.Body)
+		sizes = append(sizes, len(raw))
+		return mockResponse(`{"choices":[{"message":{"content":"ok"}}]}`), nil
+	})
+	// A body past the old 48,000 bytes now goes out.
+	if _, _, err = p.CompleteWith(context.Background(), "system", strings.Repeat("<", 100000), 8192); err != nil || len(sizes) != 1 || sizes[0] < 100000 || sizes[0] > 100300 {
+		t.Fatal(sizes, err)
+	}
+	if _, _, err = p.CompleteWith(context.Background(), "system", strings.Repeat("x", 160000), 8192); !errors.Is(err, ErrRequestTooLarge) || !strings.Contains(err.Error(), "160000") || len(sizes) != 1 {
+		t.Fatal(sizes, err)
+	}
+}
+
+func TestCompletionReservationScalesWithBody(t *testing.T) {
+	budget, err := OpenBudgetWithCaps(filepath.Join(t.TempDir(), "budget.db"), map[string]float64{"deepseek": 100, "openai": 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer budget.Close()
+	t.Setenv("UNIT_DEEPSEEK_CREDENTIAL", "test-only-placeholder")
+	t.Setenv("UNIT_OPENAI_CREDENTIAL", "test-only-placeholder")
+	deepseek, err := NewProvider(ModelConfig{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "UNIT_DEEPSEEK_CREDENTIAL"}, budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	openai, err := NewProvider(ModelConfig{Kind: "openai", Model: "gpt-4.1-mini", BaseURL: "https://openai.example/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL"}, budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var size int
+	reply := `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":10,"completion_tokens":10}}`
+	for _, p := range []*Provider{deepseek, openai} {
+		p.client.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+			raw, _ := io.ReadAll(req.Body)
+			size = len(raw)
+			return mockResponse(reply), nil
+		})
+	}
+	ctx := context.Background()
+	prompt := strings.Repeat("x", 47500) // a body just under 48,000 bytes
+	// Bodies of at most 48,000 bytes with the default limits reserve the
+	// flat amount, as before.
+	for _, call := range []func() error{
+		func() error { _, _, err := deepseek.Complete(ctx, "s", prompt); return err },
+		func() error { _, _, err := deepseek.CompleteJSON(ctx, "s", prompt); return err },
+		func() error { _, _, err := deepseek.CompleteWith(ctx, "s", prompt, timelineMaxTokens); return err },
+		func() error { _, _, err := openai.Complete(ctx, "s", prompt); return err },
+		func() error { _, _, err := openai.CompleteJSON(ctx, "s", prompt); return err },
+	} {
+		if err := call(); err != nil || size > 48000 {
+			t.Fatal(size, err)
+		}
+	}
+	attempts := budgetAttempts(t, budget)
+	if len(attempts) != 5 {
+		t.Fatal(attempts)
+	}
+	for i, want := range []float64{0.25, 0.25, 0.25, 0.01, 0.01} {
+		if !near(attempts[i].reserved, want) {
+			t.Fatal(i, attempts[i].reserved, want)
+		}
+	}
+	// A larger body reserves what its input and output limit could cost,
+	// with a 20% margin.
+	big := strings.Repeat("x", 150000)
+	if _, _, err = deepseek.CompleteWith(ctx, "s", big, timelineMaxTokens); err != nil {
+		t.Fatal(err)
+	}
+	if want := (float64(size)*2e-6 + timelineMaxTokens*8e-6) * 1.2; !near(budgetAttempts(t, budget)[5].reserved, want) || want <= 0.25 {
+		t.Fatal(budgetAttempts(t, budget)[5].reserved, want)
+	}
+	if _, _, err = openai.CompleteWith(ctx, "s", big, timelineMaxTokens); err != nil {
+		t.Fatal(err)
+	}
+	if want := (float64(size)/4*0.40/1e6 + timelineMaxTokens*1.60/1e6) * 1.2; !near(budgetAttempts(t, budget)[6].reserved, want) || want <= 0.01 {
+		t.Fatal(budgetAttempts(t, budget)[6].reserved, want)
+	}
+	// A large call may be metered above the flat amount, within its own
+	// reservation.
+	reply = `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":150000,"completion_tokens":8192}}`
+	if _, usage, err := deepseek.CompleteWith(ctx, "s", big, timelineMaxTokens); err != nil || usage.CNY <= 0.25 {
+		t.Fatal(usage, err)
+	}
+	if held, _ := accountHeld(t, budget, "deepseek"); !near(held, 0) {
+		t.Fatal("held", held)
+	}
+}
+
+func TestFailedModelRequestReleasesOnlyUnsentOrRefused(t *testing.T) {
+	budget, err := OpenBudget(filepath.Join(t.TempDir(), "budget.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer budget.Close()
+	t.Setenv("UNIT_OPENAI_CREDENTIAL", "test-only-placeholder")
+	status := http.StatusInternalServerError
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":10,"completion_tokens":10}}`)
+	}))
+	defer server.Close()
+	p, err := NewProvider(ModelConfig{Kind: "openai", Model: "gpt-4.1-mini", BaseURL: server.URL + "/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL"}, budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// A non-2xx answer was not a completed call: released, recorded at 0.
+	for _, code := range []int{http.StatusInternalServerError, http.StatusTooManyRequests, http.StatusBadRequest} {
+		status = code
+		if _, _, err = p.Complete(ctx, "s", "p"); err == nil || !strings.Contains(err.Error(), fmt.Sprint(code)) {
+			t.Fatal(code, err)
+		}
+	}
+	if held, spent := accountHeld(t, budget, "openai"); !near(held, 0) || spent != 0 {
+		t.Fatal("a refused call kept its reservation", held, spent)
+	}
+	for _, a := range budgetAttempts(t, budget) {
+		if a.actual == nil || *a.actual != 0 {
+			t.Fatal("a released attempt is not recorded at 0", a)
+		}
+	}
+	// A request that never connected is released too.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := listener.Addr().String()
+	listener.Close()
+	unreachable, err := NewProvider(ModelConfig{Kind: "openai", Model: "gpt-4.1-mini", BaseURL: "http://" + closed + "/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL"}, budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err = unreachable.Complete(ctx, "s", "p"); err == nil {
+		t.Fatal("a refused connection succeeded")
+	}
+	if held, _ := accountHeld(t, budget, "openai"); !near(held, 0) {
+		t.Fatal("an unsent call kept its reservation", held)
+	}
+	// A failure after the request may have been sent, or a malformed 2xx
+	// reply, keeps the reservation held.
+	p.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+		return nil, &net.OpError{Op: "read", Net: "tcp", Err: errors.New("connection reset by peer")}
+	})
+	if _, _, err = p.Complete(ctx, "s", "p"); err == nil {
+		t.Fatal("a reset succeeded")
+	}
+	p.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) { return mockResponse(`{"choices":[]}`), nil })
+	if _, _, err = p.Complete(ctx, "s", "p"); err == nil {
+		t.Fatal("a malformed reply succeeded")
+	}
+	if held, _ := accountHeld(t, budget, "openai"); !near(held, 0.02) {
+		t.Fatal("an ambiguous call released its reservation", held)
+	}
+	// A dial failure reported by the transport is recognized as unsent.
+	p.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+		return nil, &net.OpError{Op: "dial", Net: "tcp", Err: &net.DNSError{Err: "no such host", Name: "openai.example", IsNotFound: true}}
+	})
+	if _, _, err = p.Complete(ctx, "s", "p"); err == nil {
+		t.Fatal("a failed dial succeeded")
+	}
+	if held, _ := accountHeld(t, budget, "openai"); !near(held, 0.02) {
+		t.Fatal("a failed dial kept its reservation", held)
+	}
+	// A canceled caller's error says so.
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	p.client.Transport = transportFunc(func(r *http.Request) (*http.Response, error) { return nil, r.Context().Err() })
+	if _, _, err = p.Complete(canceled, "s", "p"); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+}
+
+func TestBudgetCapErrorIsTyped(t *testing.T) {
+	b, err := OpenBudgetWithCaps(filepath.Join(t.TempDir(), "budget.db"), map[string]float64{"deepseek": 0.3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	if _, err = b.reserve(context.Background(), "deepseek", "h"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = b.reserve(context.Background(), "deepseek", "h"); !errors.Is(err, ErrBudgetCap) || !strings.Contains(err.Error(), "model spending cap reached") {
+		t.Fatal(err)
+	}
+}
+
+func TestModelTimeoutSeconds(t *testing.T) {
+	base := ModelConfig{Kind: "local", Model: "local-test", BaseURL: "http://127.0.0.1:1/v1"}
+	for seconds, want := range map[int]time.Duration{0: 90 * time.Second, 1: time.Second, 600: 10 * time.Minute, 1800: 30 * time.Minute} {
+		config := base
+		config.TimeoutSeconds = seconds
+		p, err := NewProvider(config, nil)
+		if err != nil || p.client.Timeout != want {
+			t.Fatal(seconds, err)
+		}
+	}
+	for _, seconds := range []int{-1, 1801} {
+		config := base
+		config.TimeoutSeconds = seconds
+		if _, err := NewProvider(config, nil); err == nil {
+			t.Fatal("timeoutSeconds accepted", seconds)
+		}
+	}
+	raw, _ := json.Marshal(ModelConfig{Kind: "deepseek", Model: "deepseek-flash", TimeoutSeconds: 600})
+	if string(raw) != `{"kind":"deepseek","model":"deepseek-flash","timeoutSeconds":600}` {
+		t.Fatal(string(raw))
 	}
 }

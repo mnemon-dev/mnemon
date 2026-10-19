@@ -22,7 +22,8 @@
   "consolidator": {
     "kind": "deepseek",
     "model": "deepseek-flash",
-    "keyEnv": "DEEPSEEK_API_KEY"
+    "keyEnv": "DEEPSEEK_API_KEY",
+    "timeoutSeconds": 600
   },
   "embedding": {
     "url": "http://127.0.0.1:11434",

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,6 +31,9 @@ type ModelConfig struct {
 	// the built-in table and are required for models outside it.
 	PriceIn  float64 `json:"priceIn,omitempty"`
 	PriceOut float64 `json:"priceOut,omitempty"`
+	// TimeoutSeconds bounds one call, from sending the request to reading
+	// the whole reply: 1–1800, 0 for the default of 90.
+	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
 }
 
 type Provider struct {
@@ -44,9 +48,11 @@ type Provider struct {
 // openAIPrices lists USD per 1M input and output tokens.
 var openAIPrices = map[string][2]float64{"gpt-4.1-mini": {0.40, 1.60}, "gpt-4o-mini": {0.15, 0.60}}
 
-// DeepSeek's CNY 0.25 reservation covers a 48000-byte request (<=CNY 0.096 as
-// input) plus this many output tokens (CNY 8 per million).
+// maxDeepSeekTokens bounds a DeepSeek call's output limit.
 const maxDeepSeekTokens = 16384
+
+// defaultModelTimeout bounds a call when the model sets no timeoutSeconds.
+const defaultModelTimeout = 90 * time.Second
 
 func validPrice(price float64) bool { return !math.IsNaN(price) && !math.IsInf(price, 0) && price >= 0 }
 
@@ -55,7 +61,14 @@ func isLoopbackHost(host string) bool {
 }
 
 func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
-	p := &Provider{config: config, budget: budget, client: &http.Client{Timeout: 90 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	timeout := defaultModelTimeout
+	if config.TimeoutSeconds != 0 {
+		if config.TimeoutSeconds < 1 || config.TimeoutSeconds > 1800 {
+			return nil, errors.New("timeoutSeconds must be 1–1800")
+		}
+		timeout = time.Duration(config.TimeoutSeconds) * time.Second
+	}
+	p := &Provider{config: config, budget: budget, client: &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	if len(config.Model) == 0 || len(config.Model) > 120 {
 		return nil, errors.New("model name is required")
 	}
@@ -113,8 +126,9 @@ func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
 }
 
 const (
-	// maxRequestBytes bounds a completion request body.
-	maxRequestBytes = 48000
+	// maxRequestBytes bounds a completion request body. A fold of a full
+	// batch with its index prompt fits, CJK text included.
+	maxRequestBytes = 160000
 	// maxJEVRequest bounds a JEV decision request as the reference system's
 	// client does (dsh-mnemon-agent-loop-jev agent.ts:122-123):
 	// JSON.stringify({state, questions}).length, in UTF-16 code units. The
@@ -129,8 +143,15 @@ const (
 // (JEV decisions). Nothing was reserved or sent.
 var ErrRequestTooLarge = errors.New("request too large")
 
-// post sends one encoded request body; the caller has bounded it.
-func (p *Provider) post(ctx context.Context, raw []byte) ([]byte, string, error) {
+// post sends one encoded request body; the caller has bounded it. It holds
+// at least amount (at least the kind's flat reservation) while the call
+// runs. A call that never reached the endpoint (it failed to connect) or
+// that the endpoint refused (a status outside 2xx) cost nothing: its
+// reservation is released, recorded at 0. A call that may have been
+// processed (it failed after sending, or the reply is unreadable) keeps its
+// reservation held. When the caller's context ended, the error wraps its
+// error.
+func (p *Provider) post(ctx context.Context, raw []byte, amount float64) ([]byte, string, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint, bytes.NewReader(raw))
 	if err != nil {
 		return nil, "", err
@@ -143,15 +164,24 @@ func (p *Provider) post(ctx context.Context, raw []byte) ([]byte, string, error)
 		}
 		request.Header.Set("Authorization", "Bearer "+key)
 	}
-	id, err := p.budget.reserve(ctx, p.config.Kind, reference("request", string(raw)).Hash)
+	id, err := p.budget.reserveAmount(ctx, p.config.Kind, reference("request", string(raw)).Hash, amount)
 	if err != nil {
 		return nil, "", err
 	}
 	response, err := p.client.Do(request)
 	if err != nil {
+		if unsent(err) {
+			return nil, "", p.release(ctx, id, errors.New("model endpoint unreachable"))
+		}
+		if ctx.Err() != nil {
+			return nil, id, fmt.Errorf("model request failed; any reservation remains held: %w", ctx.Err())
+		}
 		return nil, id, errors.New("model request failed; any reservation remains held")
 	}
 	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		return nil, "", p.release(ctx, id, fmt.Errorf("model HTTP %d", response.StatusCode))
+	}
 	if response.StatusCode != http.StatusOK {
 		return nil, id, fmt.Errorf("model HTTP %d; any reservation remains held", response.StatusCode)
 	}
@@ -160,6 +190,54 @@ func (p *Provider) post(ctx context.Context, raw []byte) ([]byte, string, error)
 		return nil, id, errors.New("invalid or oversized model response")
 	}
 	return data, id, nil
+}
+
+// release frees the reservation of a call that cost nothing and returns
+// cause, saying whether the reservation was released. It runs even when the
+// caller's context has ended.
+func (p *Provider) release(ctx context.Context, id string, cause error) error {
+	if err := p.budget.release(context.WithoutCancel(ctx), id); err != nil {
+		return fmt.Errorf("%w; any reservation remains held (release failed: %v)", cause, err)
+	}
+	return fmt.Errorf("%w; reservation released", cause)
+}
+
+// unsent reports whether a request failed while connecting, before any of it
+// was sent: a failed dial or name lookup. Anything later may have reached the
+// model.
+func unsent(err error) bool {
+	var op *net.OpError
+	var dns *net.DNSError
+	return errors.As(err, &op) && op.Op == "dial" || errors.As(err, &dns)
+}
+
+// reservation is what a completion holds while it runs: the kind's flat
+// amount, or what the body and the output limit could cost when that is
+// more, with a 20% margin. DeepSeek bills CNY 2 per 1M input tokens (a byte
+// is at most a token) and CNY 8 per 1M output tokens; OpenAI its prices, a
+// token taken as four bytes. A body of at most 48,000 bytes with the default
+// output limits reserves the flat amount.
+func (p *Provider) reservation(bodyBytes, maxTokens int) float64 {
+	estimate := 0.0
+	switch p.config.Kind {
+	case "deepseek":
+		estimate = (float64(bodyBytes)*2/1e6 + float64(maxTokens)*8/1e6) * 1.2
+	case "openai":
+		estimate = (float64(bodyBytes)/4*p.priceIn/1e6 + float64(maxTokens)*p.priceOut/1e6) * 1.2
+	}
+	return max(reservations[p.config.Kind], estimate)
+}
+
+// encodeRequest is a request body as JSON without HTML escaping (as
+// JavaScript's JSON.stringify writes it) and without a trailing newline.
+func encodeRequest(body any) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(body); err != nil {
+		return nil, err
+	}
+	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }
 
 func (p *Provider) Complete(ctx context.Context, system, prompt string) (string, Usage, error) {
@@ -218,14 +296,14 @@ func (p *Provider) complete(ctx context.Context, system, prompt string, jsonOnly
 	default: // openai rejects unknown request fields
 		body["temperature"] = 0
 	}
-	encoded, err := json.Marshal(body)
+	encoded, err := encodeRequest(body)
 	if err != nil {
 		return "", Usage{}, errors.New("model request contains invalid JSON")
 	}
 	if len(encoded) > maxRequestBytes {
 		return "", Usage{}, fmt.Errorf("%w: model request exceeds %d bytes", ErrRequestTooLarge, maxRequestBytes)
 	}
-	raw, id, err := p.post(ctx, encoded)
+	raw, id, err := p.post(ctx, encoded, p.reservation(len(encoded), maxTokens))
 	if err != nil {
 		return "", Usage{}, err
 	}
@@ -301,7 +379,7 @@ func (p *Provider) Decide(ctx context.Context, state any, questions map[string]Q
 		return nil, Usage{}, fmt.Errorf("%w: JEV request exceeds %d UTF-16 code units", ErrRequestTooLarge, maxJEVRequest)
 	}
 	model, _ := stringifyJSON(p.config.Model)
-	raw, id, err := p.post(ctx, []byte(`{"model":`+model+`,`+request[1:]))
+	raw, id, err := p.post(ctx, []byte(`{"model":`+model+`,`+request[1:]), 0)
 	if err != nil {
 		return nil, Usage{}, err
 	}

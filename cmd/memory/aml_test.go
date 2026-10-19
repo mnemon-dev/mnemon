@@ -77,9 +77,11 @@ func TestIndustrialConfigLoadsAndStarts(t *testing.T) {
 		Consolidation: &memoryagent.ConsolidationConfig{Mode: "timelines"},
 		// DeepSeek without thinking: a thinking planner can return empty plans
 		// under the 200/400-token planning caps.
-		Planner:      &memoryagent.ModelConfig{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "DEEPSEEK_API_KEY"},
-		Judge:        &memoryagent.ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "TYPESAFE_API_KEY"},
-		Consolidator: &memoryagent.ModelConfig{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "DEEPSEEK_API_KEY"},
+		Planner: &memoryagent.ModelConfig{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "DEEPSEEK_API_KEY"},
+		Judge:   &memoryagent.ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "TYPESAFE_API_KEY"},
+		// A fold of a full batch may take minutes; the default 90 s would
+		// cut it off.
+		Consolidator: &memoryagent.ModelConfig{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "DEEPSEEK_API_KEY", TimeoutSeconds: 600},
 		Embedding: &records.EmbeddingConfig{
 			URL: "http://127.0.0.1:11434", Model: "nomic-embed-text",
 			QueryPrefix: "search_query: ", DocumentPrefix: "search_document: ",

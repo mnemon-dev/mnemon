@@ -14,15 +14,20 @@ import (
 )
 
 // Budget is a durable prepare/call/settle boundary, shared across processes.
-// Ambiguous or failed calls retain their reservation; no automatic retry occurs.
-// It stores metering and request hashes, never prompts or credentials.
+// Ambiguous calls retain their reservation; calls that provably cost nothing
+// (never sent, or refused by the endpoint) release it; no automatic retry
+// occurs. It stores metering and request hashes, never prompts or credentials.
 type Budget struct {
 	db   *sql.DB
 	caps map[string]float64
 }
 
+// ErrBudgetCap is the error of a reservation the account's cap refuses.
+var ErrBudgetCap = errors.New("model spending cap reached, including unresolved reservations")
+
 // Paid accounts by provider kind. Caps are USD for jev and openai, CNY for
-// deepseek. A reservation is the flat amount held for one bounded request.
+// deepseek. A reservation is at least the flat amount held for one bounded
+// request; larger completions hold more (Provider.reservation).
 var (
 	defaultCaps  = map[string]float64{"jev": 10, "deepseek": 50, "openai": 5}
 	reservations = map[string]float64{"jev": 0.01, "deepseek": 0.25, "openai": 0.01}
@@ -87,20 +92,30 @@ CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY,kind TEXT NOT NULL,reque
 func (b *Budget) Close() error { return b.db.Close() }
 
 func (b *Budget) reserve(ctx context.Context, kind, hash string) (string, error) {
+	return b.reserveAmount(ctx, kind, hash, 0)
+}
+
+// reserveAmount holds amount for one call, at least the kind's flat
+// reservation, and returns the attempt's id; "" for a local model.
+func (b *Budget) reserveAmount(ctx context.Context, kind, hash string, amount float64) (string, error) {
 	if kind == "local" {
 		return "", nil
 	}
 	if b == nil {
 		return "", errors.New("paid model requires a durable budget file")
 	}
-	// Reservations cover a bounded request: JEV bodies <=96k bytes (output is
-	// free), DeepSeek <=48k bytes plus <=16384 output tokens, OpenAI a typical
-	// call (settle records larger metered calls at their real price).
+	// Flat reservations cover a bounded request: JEV bodies <=96k units
+	// (output is free), DeepSeek <=48k bytes plus its default output limits,
+	// OpenAI a typical call (settle records larger metered calls at their
+	// real price). Larger completions pass the amount they could cost.
 	cap, ok := b.caps[kind]
 	if !ok {
 		return "", errors.New("unknown paid model kind")
 	}
-	reservation := reservations[kind]
+	if math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 0 {
+		return "", errors.New("invalid reservation amount")
+	}
+	reservation := max(reservations[kind], amount)
 	tx, err := b.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
@@ -116,7 +131,7 @@ func (b *Budget) reserve(ctx context.Context, kind, hash string) (string, error)
 	}
 	n, err := result.RowsAffected()
 	if err != nil || n != 1 {
-		return "", errors.New("model spending cap reached, including unresolved reservations")
+		return "", ErrBudgetCap
 	}
 	id := uuid.NewString()
 	if _, err = tx.ExecContext(ctx, `INSERT INTO attempts(id,kind,request_hash,reserved) VALUES(?,?,?,?)`, id, kind, hash, reservation); err != nil {
@@ -155,6 +170,31 @@ func (b *Budget) settle(ctx context.Context, id string, usage Usage) error {
 		return errors.New("model settlement changed concurrently")
 	}
 	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET held=held-?,spent=spent+? WHERE kind=?`, held, cost, kind); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// release ends an attempt that cost nothing: the request was never sent, or
+// the endpoint refused it. Its reservation is freed and it is recorded at 0.
+func (b *Budget) release(ctx context.Context, id string) error {
+	if id == "" {
+		return nil
+	}
+	tx, err := b.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var kind string
+	var held float64
+	if err = tx.QueryRowContext(ctx, `SELECT kind,reserved FROM attempts WHERE id=? AND actual IS NULL`, id).Scan(&kind, &held); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE attempts SET actual=0,input_tokens=0,output_tokens=0 WHERE id=? AND actual IS NULL`, id); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET held=held-? WHERE kind=?`, held, kind); err != nil {
 		return err
 	}
 	return tx.Commit()
