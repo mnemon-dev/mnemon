@@ -20,14 +20,29 @@ AML platform ──HTTPS──▶ Caddy :443 ──HTTP──▶ aml-serve 127.0
 ```
 
 - **Add** packs the messages into raw records (no model on the write path), embeds the new
-  chunks through Ollama, and, with `--consolidate-on-add`, folds the user's history into the
-  timelines index before answering 200. A retry with the same `request_id` is idempotent.
-- **Search** runs the planner, the cue searches, the JEV need loop and the RRF fusion of the
-  raw search rank with the JEV rank, then returns stored records (and the consolidation
-  blocks) in rank order. It never returns generated answers. If a model, a budget or the
-  embedder fails, it falls back to the raw hybrid ranking with HTTP 200 and logs the fact.
+  chunks through Ollama, and, with `--consolidate-on-add`, folds every full batch (10,000
+  characters) of the user's new records into the timelines index with DeepSeek before
+  answering 200. The rest, the tail of the conversation so far, is folded before that user's
+  next Search, as the reference system folds a conversation once it pauses. A retry with the
+  same `request_id` is idempotent.
+- **Search** (with `--consolidate-on-add`) first folds the user's tail, then runs the planner,
+  the cue searches, the JEV need loop and the RRF fusion of the raw search rank with the JEV
+  rank, and returns stored records (and the consolidation blocks) in rank order. It never
+  returns generated answers. If a model, a budget or the embedder fails, or the read runs past
+  `--search-timeout`, it falls back to the raw hybrid ranking with HTTP 200 and logs the fact.
 - Each `user_id` has its own store: `<data-root>/users/<hex(sha256(user_id))[:32]>`. One user
   can never reach another's records.
+
+### Contract details
+
+- Add reads a message `timestamp` as Unix milliseconds, as Unix seconds when the number is
+  below 10^11, or as an RFC 3339 string (`2023-05-08T13:56:00Z`); numbers may come as strings,
+  and anything else is no timestamp. Multimodal `content` keeps its plain strings and the
+  `text` of parts whose `type` ends in `text` (`text`, `input_text`, `output_text`).
+- Search needs only a `user_id`. A missing, zero or negative `top_k` means the View maximum
+  (100 with the shipped configuration); a blank `query` answers `{"data":[]}`.
+- Each Search item's `score` is `1/(rank+1)` by its position in `data` (1, 0.5, 0.333…), layer
+  blocks included, so a client that sorts by score keeps the order.
 
 ## Prerequisites
 
@@ -84,9 +99,13 @@ in both places. A paid model whose variable is empty makes `aml-serve` fail at s
    sudo useradd --system --no-create-home --shell /usr/sbin/nologin mnemon
    sudo install -d -m 0750 -o root -g mnemon /etc/mnemon-aml
    sudo install -m 0640 -o root -g mnemon /tmp/memory-config.industrial.json /etc/mnemon-aml/memory-config.json
+   sudoedit /etc/mnemon-aml/memory-config.json   # set "budgets": the shipped caps are placeholders
    sudoedit /etc/mnemon-aml/env            # the variables above
    sudo chmod 0600 /etc/mnemon-aml/env && sudo chown root:root /etc/mnemon-aml/env
    ```
+
+   Set `budgets` (the spending caps, see Configuration) before the first start: they are
+   placeholders, and the service enforces whatever the file says.
 
    The systemd unit creates `/var/lib/mnemon-aml` (mode 0700, owner `mnemon`) when it starts.
    The data root is `/var/lib/mnemon-aml/data` and the model budget file is
@@ -152,17 +171,19 @@ here:
 |---|---|---|
 | `strategy` | `"simple"` | The read strategy of the paper. `""` would be the older memory-agent/v1 reads. |
 | `view` | `maxItems 100`, `maxCharacters 240000`, `fusion "rrf"` | `top_k` above `maxItems` is clamped to it, never an error. The platform's formal `top_k` is 100. |
-| `consolidation` | `{"mode": "timelines"}` | Other fields keep the author's defaults (10,000-character batches, at most 16 batches per job). |
-| `planner` | DeepSeek Flash, **no thinking** | Do not add `"thinking": true`. Cue and need planning are capped at 200 and 400 output tokens; a reasoning model can spend them on reasoning and return an empty plan, which makes Search degrade. |
+| `consolidation` | `{"mode": "timelines"}` | Other fields keep the author's defaults (10,000-character batches, at most 16 batches per job). A user's records waiting to be folded are bounded by 16 × 10,000 characters; later records wait unread, losing nothing. |
+| `planner` | DeepSeek Flash, **no thinking** | Do not add `"thinking": true`. Cue planning is capped at 400 output tokens and need planning at 200; a reasoning model can spend them on reasoning and return an empty plan, which makes Search degrade. |
 | `judge` | `jev` / `jev-1.13.0` | The version is pinned; the endpoint is JEV's official one. |
-| `consolidator` | DeepSeek Flash, no thinking | Each fold asks for at most 8,192 output tokens whatever `maxTokens` says. Unset, the planner would fold. |
+| `consolidator` | DeepSeek Flash, no thinking, `timeoutSeconds` 600 | Each fold asks for at most 8,192 output tokens whatever `maxTokens` says. A fold of a full batch can take minutes, so its calls may run 600 s (`timeoutSeconds`, 1–1,800; models without it time out after 90 s). Unset, the planner would fold. |
 | `embedding` | Ollama at `http://127.0.0.1:11434`, `nomic-embed-text` | Prefixes `search_query: ` and `search_document: ` (note the trailing spaces). Changing the model or prefixes after data exists means new vectors: use a fresh data root. |
 | `budgetFile` | `/var/lib/mnemon-aml/model-budget.db` | Absolute, private (0600), shared by all users of the process. Keep one budget file per deployment: two profiles with different caps would overwrite each other's stored cap. |
-| `budgets` | `{"jev": 20, "deepseek": 200}` | **Placeholders: set them before the job.** They are hard caps on spending, in USD for `jev` and `openai` and CNY for `deepseek`. When a cap is reached the model calls stop (see Troubleshooting). Failed or ambiguous calls keep their reservation (USD 0.01 for JEV, CNY 0.25 for DeepSeek), so the usable headroom is a little below the cap. The configured value replaces the stored cap on every start; the amount already spent is kept. The `openai` cap is a soft one: a call that costs more than its reservation is recorded at its real price. |
+| `budgets` | `{"jev": 20, "deepseek": 200}` | **Placeholders: set them before the job.** They are hard caps on spending, in USD for `jev` and `openai` and CNY for `deepseek`. When a cap is reached the model calls stop (see Troubleshooting). Every call holds a reservation while it runs: USD 0.01 for JEV, CNY 0.25 for DeepSeek, more for a large fold (up to about CNY 0.46 for the largest request). A call that never connected or got a non-2xx answer releases it; a call that failed after sending, returned an unreadable reply or was cut by a restart keeps it held, so the usable headroom is a little below the cap. The configured value replaces the stored cap when the service starts (builds before configurable budgets kept the lower of the two); the amount already spent is kept. The `openai` cap is a soft one: a call that costs more than its reservation is recorded at its real price. |
 
-A Search can make several planner calls and up to 128 JEV decision calls (the read budget),
-and each Add with `--consolidate-on-add` makes one or more DeepSeek calls per fold batch. Estimate the
-job's spend from a trial run (read the budget file, below) before choosing the caps.
+A Search can make several planner calls and up to 128 JEV decision calls (the read budget).
+Consolidation makes one DeepSeek call per fold (more when a reply must be asked again or
+split): during the Add that completes a batch, and before the next Search for the rest.
+Estimate the job's spend from a trial run (read the budget file, below) before choosing the
+caps.
 
 ## Operating notes
 
@@ -178,34 +199,37 @@ job's spend from a trial run (read the budget file, below) before choosing the c
   that is in use is never closed, so more distinct users in flight than the limit use more
   memory for a while. Too low a limit makes stores reopen with a cold cache, which slows the
   next Search of that user.
-- **`--consolidate-on-add`.** With it, an Add folds the user's new records into the topics,
-  timelines and values index (at most 50 folds or 20 minutes per Add), and stores the index
-  embeddings, before it returns. Adds are slower and spend DeepSeek budget, but Search finds
-  the index ready, so no Search pays for it. Consolidation failures never fail the Add: the
-  records are already searchable, the failure is logged, and the next Add of that user carries
-  on. Without the flag the adapter never consolidates (there is no other trigger), and Search
-  returns evidence records only.
+- **`--consolidate-on-add`.** With it, consolidation runs during requests. An Add folds every
+  full batch (10,000 characters) of the user's new records into the topics, timelines and
+  values index, and stores the index embeddings, before it returns; it consolidates until 25
+  minutes after it arrived at most, and leaves the work to an Add of the same user queued
+  behind it, which catches up. The short rest, the conversation's tail, is folded before that
+  user's next Search, for at most 10 minutes; a user with nothing pending pays only a state
+  read. Consolidation failures never fail the Add or the Search: the records are already
+  searchable, the failure is logged, and the next request of that user carries on. When the
+  provider fails three times on the same batch over at least ten minutes (not counting a
+  spent budget), the next attempt splits it once and leaves a half that fails again out of
+  the index (`consolidation dropped …` in the log; the records stay searchable). Without the
+  flag the adapter never consolidates (there is no other trigger), and Search returns
+  evidence records only.
+- **`--search-timeout`** (default `10m`, at least `1m`) bounds a Search's memory read. When it
+  expires the Search answers the raw ranking (HTTP 200, counted as degraded). With the tail
+  fold's own 10 minutes before it, a Search answers within the platform's 30 minutes.
 - **Restarts and retries.** On SIGTERM the server lets requests finish for 30 seconds. A longer
   request is cut, and the platform retries it with the same `request_id`; the retry completes
-  the missing steps (write, embedding, consolidation) without duplicating the document. Avoid
-  replacing the binary while a job runs.
+  the missing steps (write, embedding, consolidation) without duplicating the document. A
+  model call cut by a stop keeps its reservation held for good (one reservation per call in
+  flight); check `held` in the budget file (Logs and monitoring) and raise the cap by that
+  much if the headroom gets tight. Avoid replacing the binary while a job runs.
 - **Limits that match the platform.** The server accepts 30 MiB bodies, sets the write timeout to
   31 minutes, and answers `GET /health` without a key (any 2xx is healthy).
 
 ## Capacity declaration
 
-Fill these in from measurements on the target VM (the capacity runs of the parity task, or the
-recipe below) before the submission. Do not submit the placeholders.
-
-| Field | Value |
-|---|---|
-| VM | `<vCPU> vCPU, <RAM> GB RAM, <disk> GB, Ubuntu <version> amd64` |
-| Add concurrency (requests in flight) | `<TBD: measured>` |
-| Search concurrency (requests in flight) | `<TBD: measured>` |
-| Add latency, 20 messages, p50 / p95 | `<TBD>` / `<TBD>` (with `--consolidate-on-add`) |
-| Search latency, `top_k` 100, p50 / p95 | `<TBD>` / `<TBD>` |
-| Rate limit | `<TBD>` requests per minute |
-| `--max-open-stores` | 16 (change only with a measured reason) |
+The capacity table to submit is "Capacity, timeouts and limits" in
+[`deploy/aml/README.md`](../deploy/aml/README.md). Fill it in from measurements on the target
+VM, with the recipe below, before the submission; do not submit the placeholders. Keep
+`--max-open-stores` at 16 unless a measurement says otherwise.
 
 To measure Search latency at concurrency `C` over `N` users that already hold data:
 
@@ -250,8 +274,11 @@ curl -sS -X POST "$BASE/search" -H "Authorization: Bearer $KEY" -d '{"query":"x"
 curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$BASE/search" -d '{}'   # 401 without a key
 ```
 
-The Search calls the paid models. The smoke user lives in the real data root: **delete it
-before the job** (see "User deletion" below), or the platform's own users are mixed with it.
+The Search calls the paid models. With `--consolidate-on-add` the smoke test also spends
+DeepSeek on consolidation: the smoke Add is short of a full batch, so the Search folds it
+before it reads. Each item's `score` is its rank score (1 for the first, then 0.5, …). The
+smoke user lives in the real data root: **delete it before the job** (see "User deletion"
+below), or the platform's own users are mixed with it.
 
 ## Logs and monitoring
 
@@ -261,10 +288,17 @@ logged; a user appears as the first eight hex digits of its store hash.
 
 | Line | Meaning |
 |---|---|
-| `degraded search N (user xxxxxxxx): <error>` | Search could not use the models and answered with the raw hybrid ranking (HTTP 200). `N` counts degraded searches since the process started. |
+| `degraded search N (user xxxxxxxx): <error>` | Search could not use the models and answered with the raw hybrid ranking (HTTP 200). `N` counts degraded searches since the process started. `context deadline exceeded` means the read ran past `--search-timeout`. |
+| `partially degraded search N (user …): judge, layer` | The read answered, but the named stages fell back: `judge` (JEV's final judgement failed; its screen stood in), `scan-budget` or `loop-budget` (the read's JEV budget ran out), `layer-state`, `layer-lexical`, `layer` or `expand` (the consolidation layer was left out, ranked by words, or not judged). |
+| `status: adds A, searches S, degraded D, partially degraded P; budget deepseek spent … held … cap …, jev …` | Every 10 minutes: the Adds and Searches answered since the start, the degraded ones, and each budget account in use. |
 | `hybrid search failed, searching words (user …)` | The embedder was down during a degraded search. |
-| `consolidation failed (user …): <error>` | Consolidation stopped; the Add still succeeded and the next Add retries. |
-| `consolidation stopped with N records pending (user …)` | The 50-fold cap was reached; the next Add continues. |
+| `consolidation failed (user …): <error>` | Consolidation stopped during an Add; the Add still succeeded and the next request of the user retries. |
+| `flush failed (user …): <error>` | Folding the tail before a Search failed or ran past 10 minutes; the Search read what was consolidated. |
+| `consolidation dropped N records (user …): <reason>` | The index leaves out N records the provider failed on repeatedly, whose fold request was too large, or whose reply never parsed. The records stay searchable. |
+| `consolidation left to a queued Add (user …)` | Another Add of the user was waiting; it consolidates instead. |
+| `consolidation skipped: the Add's window has passed (user …)` | The Add waited 25 minutes for its user; the next request consolidates. |
+| `consolidation stopped with N records pending (user …)`, `flush stopped …` | The 50-job cap of one request was reached; the next request continues. |
+| `… panicked …` with a stack trace | A bug: an Add answered 500, a Search the raw ranking, a consolidation was skipped. Report it with the trace. |
 | `layer embedding failed (user …)` | The index embeddings were not stored; the first Search embeds them. |
 | `embedding failed (user …)` | Ollama failed during an Add (the Add got a 503 and will be retried). |
 | `add skipped N of M messages without text` | Messages with empty or image-only content were skipped. |
@@ -276,16 +310,20 @@ sudo -u mnemon sqlite3 -readonly /var/lib/mnemon-aml/model-budget.db \
   'select kind, cap, spent, held from accounts;'
 ```
 
+`held` is what calls in flight reserve, plus calls that failed after sending or were cut by
+a stop; it counts against the cap like `spent`. The status line shows the same numbers with
+the cap the running process enforces.
+
 ## Troubleshooting
 
 | Symptom | Cause and action |
 |---|---|
 | **503** on `/add` or `/search` | Retryable: the platform retries 5xx with the same `request_id`. Causes: the embedder (Ollama) is down or slow (`embedding failed` in the log), a store is busy (`database is locked`), too many open files, or the server is shutting down. Check `systemctl status ollama`, the journal, and `LimitNOFILE`. |
-| **400** | A contract error, not retried by the platform. Add: `request_id`, `user_id` or `session_id` missing or blank, a body that is not a JSON object, or `request_id was already used for a different payload`. Search: a blank `query` or `user_id`, or `top_k` below 1. The message is in the `error` field. Content shape never causes a 400: empty messages are skipped, and an Add with no text returns 200 without writing. |
+| **400** | A contract error, not retried by the platform. Add: `request_id`, `user_id` or `session_id` missing or blank, a body that is not a JSON object, or `request_id was already used for a different payload`. Search: a missing or blank `user_id`, or a body that is not a JSON object. The message is in the `error` field. Content shape never causes a 400: empty messages are skipped, and an Add with no text returns 200 without writing; a blank query returns `{"data":[]}` and a missing `top_k` means the View maximum. |
 | **401** | The key is wrong or missing. Compare `AML_API_KEY` in `/etc/mnemon-aml/env` with the platform's; restart the service after changing it. |
 | **413** | The body is over 30 MiB (the platform splits at 20 messages or 2,000 words, so this means a client bug). |
-| `degraded search …` in the log | The planner, JEV, a budget or the embedder failed for that question. The platform still got a 200 with the raw ranking. Read the error after the colon: `model HTTP 401` (a wrong or expired key), `model HTTP 429` (provider rate limit), `request failed` (network), `spending cap reached` (below). |
-| `model spending cap reached, including unresolved reservations` | A budget is exhausted. Searches degrade to the raw ranking and consolidation stops. Raise `budgets` in `/etc/mnemon-aml/memory-config.json` and `sudo systemctl restart aml-serve`; spent amounts are kept and the new cap applies at once. Check `spent` and `held` in the budget file first: held reservations from failed calls count against the cap. |
+| `degraded search …` in the log | The planner, JEV, a budget or the embedder failed for that question, or the read ran past `--search-timeout`. The platform still got a 200 with the raw ranking. Read the error after the colon: `model HTTP 401` (a wrong or expired key), `model HTTP 429` (provider rate limit), `model endpoint unreachable` (network or DNS; nothing was sent), `request failed` (network, after sending), `context deadline exceeded` (the timeout), `spending cap reached` (below). |
+| `model spending cap reached, including unresolved reservations` | A budget is exhausted. Searches degrade to the raw ranking and consolidation stops (a spent budget never drops records from the index). Raise `budgets` in `/etc/mnemon-aml/memory-config.json` and `sudo systemctl restart aml-serve`; spent amounts are kept and the new cap applies at once. Check `spent` and `held` in the budget file first: reservations held by calls that failed after sending, or were cut by a restart, count against the cap. |
 | Empty or poor plans, many degraded searches with a DeepSeek planner | The planner has `thinking` on. Remove it (`deepseek-flash` without thinking). |
 | `model credential is unavailable` or a startup error naming a credential environment variable | A `keyEnv` variable is empty or absent in `/etc/mnemon-aml/env`. |
 | Service restarts in a loop | `journalctl -u aml-serve`: a relative path, an unreadable config (`memory-config.json` must be readable by group `mnemon`), `aml-serve requires a nonempty API key in $AML_API_KEY`, or the port 8090 already in use (a second process on the same VM). |
@@ -295,13 +333,17 @@ sudo -u mnemon sqlite3 -readonly /var/lib/mnemon-aml/model-budget.db \
 ## Data deletion
 
 The job's data must be deleted within 30 days after the job ends. All user data is under the
-data root (records, vectors and the consolidation index); the budget file holds only metering
-and request hashes.
+data root (records, vectors and the consolidation index). The budget file holds metering and
+the SHA-256 hashes of the model requests (no text); delete it with the data, after noting the
+final spend.
 
 ```sh
 sudo systemctl stop aml-serve
+sudo -u mnemon sqlite3 -readonly /var/lib/mnemon-aml/model-budget.db \
+  'select kind, spent, held from accounts;'       # note the final spend
 sudo rm -rf /var/lib/mnemon-aml/data               # every user's records, vectors and indexes
-sudo find /var/lib/mnemon-aml -type f              # only model-budget.db may remain
+sudo rm -f /var/lib/mnemon-aml/model-budget.db*    # metering and request hashes
+sudo find /var/lib/mnemon-aml -type f              # prints nothing
 ```
 
 The journal holds no request bodies and no user ids (only eight-digit hash prefixes), so it needs

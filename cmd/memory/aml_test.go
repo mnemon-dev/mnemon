@@ -161,7 +161,8 @@ func TestDeployKitMatchesTheCommand(t *testing.T) {
 	}
 	// Compare with the column alignment collapsed.
 	normalized := strings.Join(strings.Fields(string(caddy)), " ")
-	for _, want := range []string{"reverse_proxy 127.0.0.1:8090 {", "max_size 30MiB", "read_timeout 35m", "write_timeout 35m"} {
+	// Upstream keep-alive stays below aml-serve's 2-minute idle timeout.
+	for _, want := range []string{"reverse_proxy 127.0.0.1:8090 {", "max_size 30MiB", "read_timeout 35m", "write_timeout 35m", "keepalive 60s"} {
 		if !strings.Contains(normalized, want) {
 			t.Fatalf("Caddyfile lacks %q", want)
 		}

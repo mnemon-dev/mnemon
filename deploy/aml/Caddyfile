@@ -28,6 +28,9 @@ aml.example.com {
 
 	reverse_proxy 127.0.0.1:8090 {
 		transport http {
+			# Idle upstream connections close before aml-serve's own 2-minute
+			# idle timeout, so Caddy never reuses one the server is closing.
+			keepalive               60s
 			dial_timeout            5s
 			response_header_timeout 35m
 			read_timeout            35m

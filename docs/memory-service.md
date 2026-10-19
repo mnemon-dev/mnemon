@@ -13,8 +13,37 @@ while the service runs. No old data needs conversion.
 | `native.show` | `id` | Full existing insight. |
 | `memory.write` | `text`, optional `id`, `source`, `at`, `scope`, `workspaceId`, `sessionId` | Committed revision, original-document reference and block references. |
 | `memory.writeConversation` | `messages` (`role`, `content`, optional RFC 3339 `at`), `sessionId`, optional `id`, `source`, `scope`, `workspaceId` | Same as `memory.write`. |
-| `memory.read` | `question`, optional `recent`, `scope`, `revision` | Original-evidence View, index hints, needs, stop reason and resource use. |
-| `memory.consolidate` | Optional `scope`, `maxBatches` (1–4), `reset` | Background job progress and usage. |
+| `memory.read` | `question`, optional `recent`, `scope`, `revision`, `maxItems` | Original-evidence View, index hints, needs, stop reason and resource use. |
+| `memory.consolidate` | Optional `scope`, `maxBatches` (1–4 for memory-agent/v1, 1–64 for timelines), `reset`, `hold` (timelines) | Background job progress and usage. |
+
+`maxItems` caps the records of a `"strategy": "simple"` View: 0 or absent takes the
+configured `view.maxItems`, and more than it is an error. memory-agent/v1 reads have no
+View setting and reject a nonzero `maxItems`. A simple read's `stats.degraded` lists the
+stages that fell back instead of failing the read, each once and in order: `scan-budget`
+and `loop-budget` (the decision budget ran out and the need loop stopped), `judge` (the
+final judgement failed or found the budget spent; JEV's screen stands in), `layer-state`
+(the consolidated state did not load; no layer), `layer-lexical` (the layer's embedding
+failed; shared words rank the topics), `layer` (the layer's judgement failed) and `expand`
+(linked records could not be read or judged). It is absent when nothing fell back, and
+always for memory-agent/v1.
+
+With `"consolidation": {"mode": "timelines"}` a job reads the records written since the
+last one into a pending list, folds every full batch of `batchCharacters`, and folds the
+short rest only when it reads nothing new and nothing is left unread. `hold: true` folds
+full batches only, even then, and leaves the rest for a later job without `hold` (for
+example once the conversation pauses). The pending text, headers included, stays within
+`maxBatches × batchCharacters` UTF-16 units: records past it stay unread until the pending
+list drains (when that leaves no full batch, the pending records fold as one, since more
+follow), and `remaining` counts them with the pending ones. The result also reports
+`folded` (batches taken off the pending list), `dropped` (records given up on) and
+`drops` (each drop's record count and reason). A batch whose reply does not parse is
+asked twice and then in halves; a half that still fails is dropped. A request too large
+to send is split down to single records; a single record still too large is dropped. A
+model error keeps the batch pending and ends the job. After three such errors on the
+batch at the head of the pending list, the first at least ten minutes earlier (the
+caller's cancellation and a spent budget do not count), the next job splits that batch
+once and drops a half whose call fails again. Dropped records stay searchable; the
+consolidated index does not cover them.
 
 Native search/show/recall retain their access-count and operation-log effects.
 The new service returns the full typed search/recall structures; existing CLI
@@ -160,22 +189,32 @@ which are required for any other model. Structured completions explicitly reques
 JSON mode. By default free-text planning is limited to 1,024 output tokens,
 structured output to 2,048; `maxTokens` overrides both (DeepSeek at most 16,384),
 and DeepSeek `thinking: true` enables high-effort reasoning without a temperature.
-A token-length finish rejects the response. A JEV decision accepts 1–128 questions and a 96,000-byte
-request; every other kind keeps 1–80 questions and 48,000 bytes. Calls time out
-after 90 seconds and a memory CLI/RPC request has a five-minute deadline. An
-invalid consolidation batch is never published. Credentials come from environment
+A token-length finish rejects the response. A JEV decision accepts 1–128 questions and a
+request of 96,000 UTF-16 code units of JSON (as the reference client measures it); every
+other kind accepts 1–80 questions, and every completion request at most 160,000 bytes,
+encoded without HTML escaping. A call times out after the model's `timeoutSeconds`
+(1–1,800; 90 when unset), counted from sending the request to reading the whole reply, and
+a memory CLI/RPC request has a five-minute deadline. An invalid consolidation batch is
+never published. Credentials come from environment
 variables and never enter request arguments, configuration files, logs or the
 metering database.
 
 Paid requests require one persistent private budget file shared across profiles
 and processes. The default hard caps are USD 10 for JEV, CNY 50 for DeepSeek and
 USD 5 for OpenAI; `"budgets": {"jev": 10, "deepseek": 60, "openai": 5}` in the
-memory configuration replaces them, and the configured value wins over the stored
-one. Code reserves USD 0.01 (JEV, OpenAI) or CNY 0.25 (DeepSeek) before each
-bounded request. Successful metered calls settle usage (an OpenAI call that costs
-more than its reservation is recorded at its metered price); failed/ambiguous calls
-retain their reservation. Missing probabilities and missing paid metering fail
-explicitly. DeepSeek usage is conservatively accounted at peak non-cache rates,
+memory configuration replaces them. A process enforces its configured cap from the
+start and writes it over the stored one; the amount spent is kept. (Builds before
+configurable `budgets` kept the lower of the built-in and the stored cap.) Code reserves
+USD 0.01 (JEV, OpenAI) or CNY 0.25 (DeepSeek) before each bounded request; a DeepSeek
+or OpenAI completion whose body and output limit could cost more reserves that instead,
+with a 20% margin (DeepSeek: CNY 2 per million body bytes plus CNY 8 per million output
+tokens; OpenAI: its prices, four body bytes a token), so a body of at most 48,000 bytes
+with the default limits reserves the flat amount. Successful metered calls settle usage
+(an OpenAI call that costs more than its reservation is recorded at its metered price).
+A call that never connected, or that the endpoint refused with a non-2xx status, cost
+nothing: its reservation is released and recorded at 0. A call that failed after sending,
+or whose reply is unreadable, may have been billed and retains its reservation. Missing
+probabilities and missing paid metering fail explicitly. DeepSeek usage is conservatively accounted at peak non-cache rates,
 rather than claiming an exact invoice amount.
 
 Interfaces and prices were checked against the [JEV API](https://docs.typesafe.ai/api),
