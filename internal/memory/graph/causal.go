@@ -8,6 +8,7 @@ import (
 	"github.com/mnemon-dev/mnemon/internal/memory/model"
 	"github.com/mnemon-dev/mnemon/internal/memory/search"
 	"github.com/mnemon-dev/mnemon/internal/memory/store"
+	"github.com/mnemon-dev/mnemon/internal/retrieval"
 )
 
 // Minimum token overlap ratio to create a causal edge.
@@ -16,14 +17,9 @@ const minCausalOverlap = 0.15
 // Number of recent insights to check for causal links.
 const causalLookback = 10
 
-var causalPattern = regexp.MustCompile(
-	`(?i)\b(because|therefore|due to|caused by|as a result|decided to|` +
-		`chosen because|so that|in order to|leads to|results in)\b|` +
-		`(因为|所以|由于|导致|因此|决定|为了|以便)`)
-
 // HasCausalSignal returns true if the text contains causal keywords.
 func HasCausalSignal(text string) bool {
-	return causalPattern.MatchString(text)
+	return retrieval.HasCausalSignal(text)
 }
 
 // CreateCausalEdges creates causal edges when either the new insight or a recent
@@ -96,25 +92,7 @@ func CreateCausalEdges(db *store.DB, insight *model.Insight) int {
 
 // tokenOverlap computes |intersection| / max(|a|, |b|).
 func tokenOverlap(a, b map[string]bool) float64 {
-	if len(a) == 0 || len(b) == 0 {
-		return 0
-	}
-	// Iterate the smaller set for efficiency.
-	small, big := a, b
-	if len(a) > len(b) {
-		small, big = b, a
-	}
-	intersection := 0
-	for k := range small {
-		if big[k] {
-			intersection++
-		}
-	}
-	maxLen := len(a)
-	if len(b) > maxLen {
-		maxLen = len(b)
-	}
-	return float64(intersection) / float64(maxLen)
+	return retrieval.TokenOverlap(a, b)
 }
 
 func formatFloat(f float64) string {
@@ -158,7 +136,7 @@ func suggestSubType(text string) string {
 
 // findCausalSignal returns the first matching causal keyword in the text.
 func findCausalSignal(text string) string {
-	return causalPattern.FindString(text)
+	return retrieval.CausalSignal(text)
 }
 
 // NeighborNode represents a node discovered by BFS neighborhood traversal.
