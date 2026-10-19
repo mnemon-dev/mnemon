@@ -2,6 +2,7 @@ package aml
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
@@ -28,6 +29,9 @@ const (
 	// so it returns well inside the platform's 1,800 s I/O timeout.
 	maxConsolidateCalls = 50
 	consolidateWindow   = 20 * time.Minute
+	// embedBatch keeps a DerivedVectors call within its 512 texts and 2 MiB
+	// (a chunk is at most ~602 UTF-16 units, under 2.5 kB).
+	embedBatch = 256
 )
 
 // ServerConfig configures a Server.
@@ -54,7 +58,7 @@ type ServerConfig struct {
 // Server serves the AML contract. Every user's agent shares the models.
 type Server struct {
 	config   ServerConfig
-	key      []byte
+	key      [sha256.Size]byte // digest of the API key
 	models   memoryagent.Models
 	budget   *memoryagent.Budget
 	maxItems int // the View's record bound; 0 for memory-agent/v1
@@ -83,7 +87,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if err := os.MkdirAll(config.DataRoot, 0o700); err != nil {
 		return nil, err
 	}
-	s := &Server{config: config, key: []byte(config.AuthKey), log: config.Logger}
+	s := &Server{config: config, key: sha256.Sum256([]byte(config.AuthKey)), log: config.Logger}
 	if s.log == nil {
 		s.log = log.New(os.Stderr, "aml: ", log.LstdFlags|log.LUTC)
 	}
@@ -129,17 +133,25 @@ func (s *Server) probe() (int, error) {
 	return agent.MaxItems(), nil
 }
 
-func (s *Server) openUser(dir string) (*records.Store, *memoryagent.Agent, error) {
+// openUser opens a user's store with the query runtime records serve runs
+// (query cache, reader pool, background lexical index), and its agent.
+func (s *Server) openUser(dir string) (*records.Store, *memoryagent.Agent, func(), error) {
 	store, err := records.Open(dir, false)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+	stop, err := store.StartRuntime(context.Background())
+	if err != nil {
+		store.Close()
+		return nil, nil, nil, err
 	}
 	agent, err := memoryagent.OpenWithModels(store, dir, s.config.MemoryConfig, false, s.models)
 	if err != nil {
+		stop()
 		store.Close()
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return store, agent, nil
+	return store, agent, stop, nil
 }
 
 // Close closes the user stores (held ones when their request ends) and the
@@ -192,7 +204,9 @@ func (s *Server) routes() http.Handler {
 }
 
 // authorized accepts `Authorization: Bearer <key>`, `Authorization: Token
-// <key>` or `X-Api-Key: <key>`, compared in constant time.
+// <key>` or `X-Api-Key: <key>`. The SHA-256 digests of the presented and the
+// configured key are compared in constant time, so neither the key nor its
+// length leaks through timing.
 func (s *Server) authorized(next http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.validKey(r) {
@@ -214,7 +228,8 @@ func (s *Server) validKey(r *http.Request) bool {
 	}
 	valid := false
 	for _, key := range keys {
-		if subtle.ConstantTimeCompare([]byte(key), s.key) == 1 {
+		digest := sha256.Sum256([]byte(key))
+		if subtle.ConstantTimeCompare(digest[:], s.key[:]) == 1 {
 			valid = true
 		}
 	}
@@ -222,9 +237,11 @@ func (s *Server) validKey(r *http.Request) bool {
 }
 
 // add stores one chunk of a conversation and returns once it is persisted and
-// searchable: written, embedded when the configuration embeds, and, with
+// searchable: written (in parts when it is longer than a document holds),
+// its new chunks embedded when the configuration embeds, and, with
 // ConsolidateOnAdd, consolidated. A retry of a stored request succeeds and
-// finishes what the earlier attempt may not have.
+// finishes what the earlier attempt may not have. Only a missing request_id,
+// user_id or session_id, or a request_id reused for other text, is a 400.
 func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	var req AddRequest
 	if !s.decode(w, r, &req) {
@@ -234,10 +251,17 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	conversation := req.conversation()
-	parent, _, err := memoryagent.PackConversation(conversation)
+	parts, skipped, err := req.parts()
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		s.fail(w, "pack", "", err)
+		return
+	}
+	done := AddResponse{Success: true, RequestID: req.RequestID, UserID: req.UserID, SessionID: req.SessionID}
+	if skipped > 0 {
+		s.log.Printf("add skipped %d of %d messages without text", skipped, len(req.Messages))
+	}
+	if len(parts) == 0 {
+		writeJSON(w, http.StatusOK, done)
 		return
 	}
 	ctx := r.Context()
@@ -249,17 +273,21 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	defer s.users.release(user)
 	user.writes.Lock()
 	defer user.writes.Unlock()
-	revision, err := s.write(ctx, user, conversation, parent)
-	if errors.Is(err, errRequestReused) {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err != nil {
-		s.fail(w, "write", user.key, err)
-		return
+	chunks := []string{}
+	for _, part := range parts {
+		err := s.write(ctx, user, part)
+		if errors.Is(err, errRequestReused) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err != nil {
+			s.fail(w, "write", user.key, err)
+			return
+		}
+		chunks = append(chunks, part.chunks...)
 	}
 	if embedding := s.config.MemoryConfig.Embedding; embedding != nil {
-		if _, err := user.store.Embed(ctx, records.EmbedRequest{Revision: revision, Embedding: *embedding}, false); err != nil {
+		if err := embedChunks(ctx, user.store, *embedding, chunks); err != nil {
 			s.log.Printf("embedding failed (user %s): %v", user.key[:8], err)
 			writeError(w, http.StatusServiceUnavailable, "embedding is unavailable; retry the same request")
 			return
@@ -268,43 +296,46 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	if s.config.ConsolidateOnAdd {
 		s.consolidate(ctx, user)
 	}
-	writeJSON(w, http.StatusOK, AddResponse{Success: true, RequestID: req.RequestID, UserID: req.UserID, SessionID: req.SessionID})
+	writeJSON(w, http.StatusOK, done)
 }
 
 var errRequestReused = errors.New("request_id was already used for a different payload")
 
-// write stores the conversation and returns its revision. A document stored
-// under the same id with the same packed content is this request's earlier
-// attempt: success, at the current revision (""). A changed revision is
-// retried once.
-func (s *Server) write(ctx context.Context, user *userEntry, conversation memoryagent.ConversationRequest, parent string) (string, error) {
+// write stores one part. A document stored under the part's id with the same
+// content is an earlier attempt of this request: success. A changed revision
+// is retried once.
+func (s *Server) write(ctx context.Context, user *userEntry, part addPart) error {
 	for attempt := 0; ; attempt++ {
-		result, err := memoryagent.WriteConversation(ctx, user.store, conversation)
+		_, err := memoryagent.WriteConversation(ctx, user.store, part.conversation)
 		switch {
 		case err == nil:
-			return result.Revision, nil
+			return nil
 		case errors.Is(err, memoryagent.ErrDocumentExists):
-			same, err := sameDocument(ctx, user.store, conversation.ID, parent)
+			same, err := sameDocument(ctx, user.store, part.conversation.ID, part.parent)
 			if err != nil {
-				return "", err
+				return err
 			}
 			if !same {
-				return "", errRequestReused
+				return errRequestReused
 			}
-			return "", nil
+			return nil
 		case attempt == 0 && errors.Is(err, records.ErrConflict):
 			continue
 		default:
-			return "", err
+			return err
 		}
 	}
 }
 
-// sameDocument reports whether the stored document id holds content.
+// sameDocument reports whether the stored document id holds content. Records
+// of the document without the document itself are a damaged store, an error.
 func sameDocument(ctx context.Context, store *records.Store, id, content string) (bool, error) {
 	snapshot, err := store.Get(ctx, records.GetRequest{IDs: []string{id}})
-	if err != nil || len(snapshot.Records) != 1 {
+	if err != nil {
 		return false, err
+	}
+	if len(snapshot.Records) != 1 {
+		return false, fmt.Errorf("records of document %s exist without the document", id)
 	}
 	var stored struct {
 		Kind    string `json:"kind"`
@@ -313,7 +344,22 @@ func sameDocument(ctx context.Context, store *records.Store, id, content string)
 	if err := json.Unmarshal([]byte(snapshot.Records[0]), &stored); err != nil {
 		return false, err
 	}
-	return stored.Kind == "memory-document" && stored.Content == content, nil
+	if stored.Kind != "memory-document" {
+		return false, fmt.Errorf("record %s is not a conversation document", id)
+	}
+	return stored.Content == content, nil
+}
+
+// embedChunks stores the document vectors of the new chunks: the texts their
+// records are embedded by, under the document prefix, so a query finds them
+// cached. Stored vectors are reused.
+func embedChunks(ctx context.Context, store *records.Store, config records.EmbeddingConfig, chunks []string) error {
+	for start := 0; start < len(chunks); start += embedBatch {
+		if _, err := store.DerivedVectors(ctx, chunks[start:min(start+embedBatch, len(chunks))], config, true); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // consolidate folds until the user's consolidation has read everything (a

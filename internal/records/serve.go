@@ -25,34 +25,54 @@ func (s *Store) ServeUsing(ctx context.Context, path string, handler localrpc.Ha
 		return err
 	}
 	defer server.Close()
+	stop, err := s.StartRuntime(ctx)
+	if err != nil {
+		return err
+	}
+	defer stop()
+	if handler == nil {
+		handler = s.Dispatch
+	}
+	return server.Serve(ctx, handler)
+}
+
+// StartRuntime gives the store the query runtime Serve runs, for a process
+// that keeps the store open without a socket: the query cache, a pool of
+// read-only connections and the background lexical worker, which a put
+// wakes. Start it before the store is shared and call stop (idempotent) after
+// its last call, before Close. Ending ctx stops the worker only.
+func (s *Store) StartRuntime(ctx context.Context) (stop func(), err error) {
 	s.cache = newQueryCache()
-	defer func() { s.cache = nil }()
 	// Readers may run concurrently in WAL mode; CAS, vector writes and lexical
 	// batches keep the original single writer connection and immediate tx lock.
 	readers, err := sql.Open("sqlite", sqliteDSN(s.path, true))
 	if err != nil {
-		return err
+		s.cache = nil
+		return nil, err
 	}
 	readers.SetMaxOpenConns(4)
 	readers.SetMaxIdleConns(4)
 	if err := readers.PingContext(ctx); err != nil {
 		readers.Close()
-		return err
+		s.cache = nil
+		return nil, err
 	}
 	s.readers = readers
-	defer func() { readers.Close(); s.readers = nil }()
-
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	var worker sync.WaitGroup
 	worker.Add(1)
 	go func() { defer worker.Done(); s.runLexicalWorker(ctx) }()
-	defer func() { cancel(); worker.Wait() }()
 	s.wakeLexical()
-	if handler == nil {
-		handler = s.Dispatch
-	}
-	return server.Serve(ctx, handler)
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancel()
+			worker.Wait()
+			readers.Close()
+			s.readers = nil
+			s.cache = nil
+		})
+	}, nil
 }
 
 func (s *Store) Dispatch(ctx context.Context, raw []byte) (any, error) {

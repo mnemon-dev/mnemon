@@ -3,6 +3,8 @@ package aml
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,6 +19,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
 	"github.com/mnemon-dev/mnemon/internal/records"
@@ -274,22 +277,14 @@ func TestAddValidation(t *testing.T) {
 	valid := func() map[string]any {
 		return map[string]any{"request_id": "r1", "user_id": "u1", "session_id": "s1", "messages": []any{map[string]any{"role": "user", "content": "hello", "timestamp": 1683554160000}}}
 	}
+	// Only what identifies and isolates the Add is required.
 	cases := map[string]func(map[string]any){
 		"missing request_id": func(m map[string]any) { delete(m, "request_id") },
-		"empty messages":     func(m map[string]any) { m["messages"] = []any{} },
-		"missing messages":   func(m map[string]any) { delete(m, "messages") },
-		"empty content":      func(m map[string]any) { m["messages"] = []any{map[string]any{"role": "user", "content": ""}} },
-		"missing content":    func(m map[string]any) { m["messages"] = []any{map[string]any{"role": "user"}} },
-		"empty role":         func(m map[string]any) { m["messages"] = []any{map[string]any{"role": "", "content": "x"}} },
+		"blank request_id":   func(m map[string]any) { m["request_id"] = "  " },
+		"object request_id":  func(m map[string]any) { m["request_id"] = map[string]any{"id": 1} },
 		"empty user_id":      func(m map[string]any) { m["user_id"] = "" },
+		"missing user_id":    func(m map[string]any) { delete(m, "user_id") },
 		"empty session_id":   func(m map[string]any) { m["session_id"] = "" },
-		"multimodal content": func(m map[string]any) {
-			m["messages"] = []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": "hi"}}}}
-		},
-		"string timestamp": func(m map[string]any) {
-			m["messages"] = []any{map[string]any{"role": "user", "content": "x", "timestamp": "yesterday"}}
-		},
-		"multi-line session_id": func(m map[string]any) { m["session_id"] = "a\nb" },
 	}
 	for name, edit := range cases {
 		body := valid()
@@ -300,8 +295,10 @@ func TestAddValidation(t *testing.T) {
 		}
 		errorBody(t, response)
 	}
-	if response := h.call("POST", "/add", `{"request_id":`); response.Code != http.StatusBadRequest {
-		t.Fatal("malformed JSON", response.Code)
+	for _, malformed := range []string{`{"request_id":`, `[]`, `"text"`} {
+		if response := h.call("POST", "/add", malformed); response.Code != http.StatusBadRequest {
+			t.Fatal("malformed JSON", malformed, response.Code)
+		}
 	}
 	if response := h.call("POST", "/add", `{"request_id":"r","user_id":"u","session_id":"s","messages":[{"role":"user","content":"`+strings.Repeat("x", 30<<20)+`"}]}`); response.Code != http.StatusRequestEntityTooLarge {
 		t.Fatal("over 30 MiB", response.Code)
@@ -331,6 +328,246 @@ func TestAddValidation(t *testing.T) {
 		}
 		errorBody(t, response)
 	}
+}
+
+// storedParents lists the conversation documents of userID, id to content.
+func storedParents(t *testing.T, root, userID string) map[string]string {
+	t.Helper()
+	store, err := records.Open(filepath.Join(root, "users", userKey(userID)), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	snapshot, err := store.Get(context.Background(), records.GetRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := map[string]string{}
+	for _, raw := range snapshot.Records {
+		var value struct{ ID, Kind, Content string }
+		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+			t.Fatal(err)
+		}
+		if value.Kind == "memory-document" {
+			out[value.ID] = value.Content
+		}
+	}
+	return out
+}
+
+func TestAddContentShapes(t *testing.T) {
+	h := newHarness(t, nil)
+	// Empty and whitespace-only messages are skipped, multimodal parts give
+	// their text, timestamps that are not numbers are ignored, a missing role
+	// is "unknown"; nothing about the content is a 400.
+	body := `{"request_id":"r1","user_id":"u1","session_id":"s1","messages":[
+		{"role":"user","content":"   "},
+		{"role":"assistant","content":""},
+		{"role":"user"},
+		"not a message",
+		{"role":"user","content":[{"type":"text","text":"Caroline painted"},{"type":"image_url","image_url":{"url":"http://x"}},{"type":"text","text":"a sunset."}]},
+		{"role":"assistant","content":[{"type":"image_url","image_url":{"url":"http://x"}}]},
+		{"role":"user","content":"Real text","timestamp":"1683554160000"},
+		{"role":"user","content":"Later","timestamp":"soon"},
+		{"role":"user","content":"Again","timestamp":true},
+		{"role":"","content":"no role"},
+		{"role":"assistant","content":42}]}`
+	if response := h.call("POST", "/add", body); response.Code != http.StatusOK {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	// Nothing left to store: success without a store, also on retry.
+	for _, empty := range []string{
+		`{"request_id":"r2","user_id":"u2","session_id":"s1","messages":[{"role":"user","content":" \n "},{"role":"user","content":[{"type":"image_url","image_url":{"url":"x"}}]}]}`,
+		`{"request_id":"r3","user_id":"u2","session_id":"s1","messages":[]}`,
+		`{"request_id":"r4","user_id":"u2","session_id":"s1"}`,
+		`{"request_id":"r2","user_id":"u2","session_id":"s1","messages":[{"role":"user","content":""}]}`,
+	} {
+		response := h.call("POST", "/add", empty)
+		if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"success":true`) {
+			t.Fatal(empty, response.Code, response.Body.String())
+		}
+	}
+	if _, err := os.Stat(filepath.Join(h.root, "users", userKey("u2"))); !os.IsNotExist(err) {
+		t.Fatal("an Add without text created a store", err)
+	}
+	h.server.Close()
+	want := "Conversation s1 on 2023/05/08 (Mon) 13:56:\nuser: Caroline painted a sunset.\nuser: Real text\nuser: Later\nuser: Again\nunknown: no role\nassistant: 42"
+	if parents := storedParents(t, h.root, "u1"); len(parents) != 1 || parents[documentID("r1")] != want {
+		t.Fatalf("%q", parents)
+	}
+}
+
+func TestAddCoercesNumericIDs(t *testing.T) {
+	h := newHarness(t, nil)
+	response := h.call("POST", "/add", `{"request_id":12345,"user_id":42,"session_id":7,"messages":[{"role":"user","content":"Caroline went to the LGBTQ support group."}]}`)
+	if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != `{"success":true,"request_id":"12345","user_id":"42","session_id":"7"}` {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	for _, search := range []string{`{"query":"Caroline support group","user_id":42,"top_k":5}`, `{"query":"Caroline support group","user_id":"42","top_k":5}`} {
+		response := h.call("POST", "/search", search)
+		var body SearchResponse
+		json.Unmarshal(response.Body.Bytes(), &body)
+		if response.Code != http.StatusOK || len(body.Data) != 1 || !strings.HasPrefix(body.Data[0].Content, "Conversation 7:\nuser: Caroline") || !strings.HasPrefix(body.Data[0].ID, documentID("12345")) {
+			t.Fatal(search, response.Code, response.Body.String())
+		}
+	}
+}
+
+func TestAddSanitizesSessionID(t *testing.T) {
+	h := newHarness(t, nil)
+	session := "a b\nc\td" + strings.Repeat("é", 150) // 307 bytes
+	req := AddRequest{RequestID: "r1", UserID: "u1", SessionID: session, Messages: []Message{{Role: "user", Content: "hello"}}}
+	response := h.call("POST", "/add", req)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"session_id":"a b\nc\td`) {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	h.mustAdd(t, req) // the same sanitized document: a retry
+	h.server.Close()
+	// Whitespace and controls become "_", then 200 bytes at a rune boundary.
+	want := "Conversation a_b_c_d" + strings.Repeat("é", 96) + ":\nuser: hello"
+	if parents := storedParents(t, h.root, "u1"); len(parents) != 1 || parents[documentID("r1")] != want {
+		t.Fatalf("%q", parents)
+	}
+}
+
+func hexSHA256(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
+}
+
+// words is n distinct words "<prefix><5 digits>" joined by spaces.
+func words(prefix string, n int) string {
+	out := make([]string, n)
+	for i := range out {
+		out[i] = fmt.Sprintf("%s%05d", prefix, i)
+	}
+	return strings.Join(out, " ")
+}
+
+// storedWords counts the words of the stored documents that start with
+// prefix, and fails on any that was cut.
+func storedWords(t *testing.T, parents map[string]string, prefix string) int {
+	t.Helper()
+	seen := map[string]bool{}
+	for _, content := range parents {
+		for _, word := range strings.Fields(content) {
+			if !strings.HasPrefix(word, prefix) {
+				continue
+			}
+			if len(word) != len(prefix)+5 || seen[word] {
+				t.Fatalf("word %q cut or repeated", word)
+			}
+			seen[word] = true
+		}
+	}
+	return len(seen)
+}
+
+func TestAddSplitsOverLimit(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	// 3 × 40 kB of text: more than one document holds (100 kB), so parts of
+	// at most 90 kB in message order: [m1 m2] and [m3].
+	req := AddRequest{RequestID: "big", UserID: "u1", SessionID: "s1", Messages: []Message{
+		{Role: "user", Content: words("ka", 5000), Timestamp: at(0)},
+		{Role: "assistant", Content: words("kb", 5000), Timestamp: at(1)},
+		{Role: "user", Content: words("kc", 5000), Timestamp: at(2)},
+	}}
+	h.mustAdd(t, req)
+	h.mustAdd(t, req) // retry: every part exists and is equal
+	second := partID("big", 1)
+	if second == documentID("big") || second != "aml-"+hexSHA256("big\x001")[:40] {
+		t.Fatal(second)
+	}
+	// A retry writes the parts an earlier attempt did not.
+	user, err := h.server.users.acquire(ctx, "u1", false)
+	if err != nil || user == nil {
+		t.Fatal(err)
+	}
+	snapshot, err := user.store.Get(ctx, records.GetRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gone := []string{}
+	for _, raw := range snapshot.Records {
+		var value struct{ ID string }
+		json.Unmarshal([]byte(raw), &value)
+		if strings.HasPrefix(value.ID, second) {
+			gone = append(gone, value.ID)
+		}
+	}
+	if _, err := user.store.Put(ctx, records.PutRequest{Delete: gone}); err != nil || len(gone) < 2 {
+		t.Fatal(gone, err)
+	}
+	h.server.users.release(user)
+	h.mustAdd(t, req)
+	// Another payload in any part is a reused request_id.
+	changed := req
+	changed.Messages = slices.Clone(req.Messages)
+	changed.Messages[2].Content = words("kd", 5000)
+	if response := h.call("POST", "/add", changed); response.Code != http.StatusBadRequest || !strings.Contains(errorBody(t, response), "request_id") {
+		t.Fatal(response.Code, response.Body.String())
+	}
+
+	// One message longer than a part: cut at whitespace into same-role,
+	// same-time messages, 90 kB at most each. ("z " moves the words off the
+	// 90 kB boundary, so a cut there would split one.)
+	huge := AddRequest{RequestID: "huge", UserID: "u2", SessionID: "s1", Messages: []Message{{Role: "user", Content: "z " + words("kw", 30000), Timestamp: at(0)}}}
+	h.mustAdd(t, huge)
+	// Text without whitespace is cut at a UTF-8 boundary.
+	cjk := AddRequest{RequestID: "cjk", UserID: "u3", SessionID: "s1", Messages: []Message{{Role: "user", Content: strings.Repeat("汉", 40000)}}}
+	h.mustAdd(t, cjk)
+	h.server.Close()
+
+	parents := storedParents(t, h.root, "u1")
+	if len(parents) != 2 || !strings.HasPrefix(parents[documentID("big")], "Conversation s1 on 2023/05/08 (Mon) 13:56:\nuser: ka00000 ") ||
+		!strings.HasPrefix(parents[second], "Conversation s1 on 2023/05/08 (Mon) 13:58:\nuser: kc00000 ") || strings.Contains(parents[second], "kb04999") {
+		t.Fatal(len(parents))
+	}
+	if storedWords(t, parents, "ka") != 5000 || storedWords(t, parents, "kb") != 5000 || storedWords(t, parents, "kc") != 5000 {
+		t.Fatal("words lost")
+	}
+	parents = storedParents(t, h.root, "u2")
+	if len(parents) != 3 || storedWords(t, parents, "kw") != 30000 {
+		t.Fatal(len(parents))
+	}
+	for id, content := range parents {
+		if len(content) > 110000 || !strings.HasPrefix(content, "Conversation s1 on 2023/05/08 (Mon) 13:56:\nuser: ") {
+			t.Fatal(id, len(content))
+		}
+	}
+	parents = storedParents(t, h.root, "u3")
+	total := 0
+	for _, content := range parents {
+		if !utf8.ValidString(content) {
+			t.Fatal("invalid UTF-8")
+		}
+		total += strings.Count(content, "汉")
+	}
+	if len(parents) != 2 || total != 40000 {
+		t.Fatal(len(parents), total)
+	}
+}
+
+func TestAddMissingParentIsInternal(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := context.Background()
+	h.mustAdd(t, addRequest("seed", "u1"))
+	user, err := h.server.users.acquire(ctx, "u1", false)
+	if err != nil || user == nil {
+		t.Fatal(err)
+	}
+	orphan := documentID("orphan") + "-00000"
+	raw := `{"id":"` + orphan + `","kind":"note","title":"x","content":"x","scope":"global","state":"active","createdAt":"2026-10-20T00:00:00Z"}`
+	if _, err := user.store.Put(ctx, records.PutRequest{Upsert: []records.Upsert{{RecordJSON: raw, SearchText: "x", VectorText: "x"}}}); err != nil {
+		t.Fatal(err)
+	}
+	h.server.users.release(user)
+	response := h.call("POST", "/add", addRequest("orphan", "u1"))
+	if response.Code != http.StatusInternalServerError {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	errorBody(t, response)
 }
 
 func TestAddThenSearch(t *testing.T) {
@@ -503,10 +740,18 @@ func TestSearchClampsTopKToView(t *testing.T) {
 	}
 }
 
-// embedder is a fake Ollama /api/embed endpoint that can fail.
+// embedder is a fake Ollama /api/embed endpoint that can fail; it records
+// every input it embeds.
 type embedder struct {
 	fail   atomic.Bool
-	inputs atomic.Int64
+	mu     sync.Mutex
+	inputs []string
+}
+
+func (e *embedder) seen() []string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return slices.Clone(e.inputs)
 }
 
 func (e *embedder) start(t *testing.T) string {
@@ -518,7 +763,9 @@ func (e *embedder) start(t *testing.T) string {
 		}
 		var body struct{ Input []string }
 		json.NewDecoder(r.Body).Decode(&body)
-		e.inputs.Add(int64(len(body.Input)))
+		e.mu.Lock()
+		e.inputs = append(e.inputs, body.Input...)
+		e.mu.Unlock()
 		out := [][]float64{}
 		for _, text := range body.Input {
 			out = append(out, []float64{1, float64(len(text) % 7)})
@@ -545,8 +792,19 @@ func TestAddEmbedsAndRetriesAfterEmbeddingFailure(t *testing.T) {
 	// embedded now.
 	embed.fail.Store(false)
 	h.mustAdd(t, addRequest("r1", "u1"))
-	if embed.inputs.Load() == 0 {
-		t.Fatal("nothing embedded")
+	// Only the new chunks are embedded, with the document prefix the
+	// query-time fill uses; the archived parent is not.
+	chunks := 0
+	for _, input := range embed.seen() {
+		if input == "search_document: " || strings.HasPrefix(input, "search_query: ") {
+			t.Fatalf("embedded %q", input)
+		}
+		if strings.HasPrefix(input, "search_document: Conversation s1 on 2023/05/08 (Mon) 13:56:\nuser: I went") {
+			chunks++
+		}
+	}
+	if chunks != 1 {
+		t.Fatal(embed.seen())
 	}
 	if items := h.search(t, SearchRequest{Query: "Caroline support group", UserID: "u1", TopK: 10}); len(items) == 0 || h.server.DegradedSearches() != 0 {
 		t.Fatal(items, h.log.String())
@@ -599,6 +857,9 @@ func TestOpenStoresAreBoundedAndSafe(t *testing.T) {
 	held, err := g.acquire(context.Background(), "a", false)
 	if err != nil || held == nil {
 		t.Fatal(err)
+	}
+	if held.stop == nil {
+		t.Fatal("the store's query runtime is not running")
 	}
 	other, err := g.acquire(context.Background(), "b", false)
 	if err != nil || other == nil {

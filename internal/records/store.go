@@ -295,7 +295,11 @@ func (s *Store) Put(ctx context.Context, req PutRequest) (string, error) {
 			return "", err
 		}
 	}
-	return hash, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return "", err
+	}
+	s.wakeLexical() // a running query runtime indexes the new versions
+	return hash, nil
 }
 
 func writeVersion(ctx context.Context, tx *sql.Tx, r record, rev int64, next *int64) error {

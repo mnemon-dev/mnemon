@@ -20,12 +20,17 @@ import (
 const (
 	dialogueLineLimit = 540
 	noteChunkLimit    = 600
-	// A conversation is bounded like Write's text; the id and the speaker end
-	// up in every chunk heading and line, so they stay short.
-	maxConversationBytes    = 100000
-	maxConversationMessages = 10000
-	maxSessionIDBytes       = 256
-	maxRoleBytes            = 64
+	maxSessionIDBytes = 256
+	maxRoleBytes      = 64
+)
+
+// A conversation is bounded like Write's text: at most MaxConversationBytes
+// of message text in at most MaxConversationMessages messages. The session
+// id and the speaker end up in every chunk heading and line, so they stay
+// short. A caller with longer conversations splits them into several.
+const (
+	MaxConversationBytes    = 100000
+	MaxConversationMessages = 10000
 )
 
 type ConversationMessage struct {
@@ -110,7 +115,7 @@ func conversationStart(req ConversationRequest) (at time.Time, dated bool) {
 }
 
 func validateConversation(req ConversationRequest) error {
-	if len(req.Messages) == 0 || len(req.Messages) > maxConversationMessages {
+	if len(req.Messages) == 0 || len(req.Messages) > MaxConversationMessages {
 		return errors.New("conversation requires 1–10000 messages")
 	}
 	if req.SessionID == "" || len(req.SessionID) > maxSessionIDBytes || !utf8.ValidString(req.SessionID) || strings.ContainsAny(req.SessionID, "\r\n") {
@@ -130,7 +135,7 @@ func validateConversation(req ConversationRequest) error {
 		}
 		total += len(message.Content)
 	}
-	if total > maxConversationBytes {
+	if total > MaxConversationBytes {
 		return errors.New("conversation exceeds 100000 bytes of message text")
 	}
 	return nil

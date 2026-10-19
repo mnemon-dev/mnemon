@@ -2,6 +2,11 @@
 // over one records store per user: Add stores a chunk of a conversation and
 // returns once it is persisted and searchable, Search returns ranked stored
 // evidence (records and consolidated layer blocks), never generated answers.
+//
+// AML publishes a run only if every task succeeds and does not retry a 4xx,
+// so the adapter reads requests leniently: only what identifies and isolates
+// an Add (request_id, user_id, session_id) or a Search can be refused. The
+// shape of the content never is.
 package aml
 
 import (
@@ -10,12 +15,24 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
+)
+
+const (
+	// partBytes bounds the message text of one stored part of an Add longer
+	// than one document holds (memoryagent.MaxConversationBytes).
+	partBytes = 90000
+	// maxSessionBytes and maxRoleBytes bound the sanitized session id and
+	// speaker, which every chunk heading and line repeats.
+	maxSessionBytes = 200
+	maxRoleBytes    = 64
 )
 
 // AddRequest is POST /add: one chunk of one user's conversation. The platform
@@ -27,63 +44,137 @@ type AddRequest struct {
 	SessionID string    `json:"session_id"`
 }
 
-// Message is one chat message of the textual track; Timestamp is Unix
-// milliseconds, and 0 counts as none.
+// UnmarshalJSON reads an Add leniently: ids given as JSON numbers keep their
+// decimal text, a message that is not an object is an empty message (skipped
+// later), and messages that are not an array are none. Only a body that is
+// not a JSON object fails.
+func (r *AddRequest) UnmarshalJSON(raw []byte) error {
+	var fields struct {
+		RequestID json.RawMessage `json:"request_id"`
+		Messages  json.RawMessage `json:"messages"`
+		UserID    json.RawMessage `json:"user_id"`
+		SessionID json.RawMessage `json:"session_id"`
+	}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	*r = AddRequest{RequestID: scalarText(fields.RequestID), UserID: scalarText(fields.UserID), SessionID: scalarText(fields.SessionID)}
+	var messages []json.RawMessage
+	if json.Unmarshal(fields.Messages, &messages) == nil {
+		r.Messages = make([]Message, len(messages))
+		for i, message := range messages {
+			r.Messages[i].UnmarshalJSON(message)
+		}
+	}
+	return nil
+}
+
+// Message is one chat message; Timestamp is Unix milliseconds, and 0 counts
+// as none.
 type Message struct {
 	Role      string `json:"role"`
 	Content   string `json:"content"`
 	Timestamp *int64 `json:"timestamp,omitempty"`
 }
 
-// UnmarshalJSON reads a message strictly enough to name what is wrong: the
-// role and content must be strings (multimodal content arrays are outside the
-// textual track) and the timestamp a number or null. A fractional timestamp
-// is cut to whole milliseconds.
+// UnmarshalJSON reads a message without ever failing. The role may be a
+// string or a number. The content may be a string, a number, or multimodal
+// parts, whose text parts ({"type":"text","text":…} or plain strings) are
+// joined by newlines and whose other parts (images) are dropped. The
+// timestamp may be a number or a numeric string, cut to whole milliseconds;
+// anything else is no timestamp. A message that is not an object is empty.
 func (m *Message) UnmarshalJSON(raw []byte) error {
+	*m = Message{}
 	var fields struct {
 		Role      json.RawMessage `json:"role"`
 		Content   json.RawMessage `json:"content"`
 		Timestamp json.RawMessage `json:"timestamp"`
 	}
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return err
-	}
-	*m = Message{}
-	if err := jsonString(fields.Role, &m.Role); err != nil {
-		return errors.New("message role must be a string")
-	}
-	if err := jsonString(fields.Content, &m.Content); err != nil {
-		if trimmed := bytes.TrimSpace(fields.Content); len(trimmed) > 0 && trimmed[0] == '[' {
-			return errors.New("message content must be a string: multimodal content is not supported on the text track")
-		}
-		return errors.New("message content must be a string")
-	}
-	if len(fields.Timestamp) == 0 || string(fields.Timestamp) == "null" {
+	if json.Unmarshal(raw, &fields) != nil {
 		return nil
 	}
-	var number json.Number
-	if err := json.Unmarshal(fields.Timestamp, &number); err != nil {
-		return errors.New("message timestamp must be a number of Unix milliseconds")
-	}
-	ms, err := number.Int64()
-	if err != nil {
-		value, ferr := number.Float64()
-		if ferr != nil || math.IsNaN(value) || math.IsInf(value, 0) || math.Abs(value) >= 1<<62 {
-			return errors.New("message timestamp must be a number of Unix milliseconds")
-		}
-		ms = int64(value)
-	}
-	m.Timestamp = &ms
+	m.Role, m.Content, m.Timestamp = scalarText(fields.Role), contentText(fields.Content), timestampMS(fields.Timestamp)
 	return nil
 }
 
-// jsonString decodes a JSON string; absent or null is "".
-func jsonString(raw json.RawMessage, into *string) error {
-	if len(raw) == 0 || string(raw) == "null" {
-		*into = ""
+// scalarText is a JSON string's value or a JSON number's decimal text; ""
+// for anything else.
+func scalarText(raw json.RawMessage) string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return ""
+	}
+	switch c := raw[0]; {
+	case c == '"':
+		var text string
+		if json.Unmarshal(raw, &text) == nil {
+			return text
+		}
+	case c == '-' || c >= '0' && c <= '9':
+		return string(raw)
+	}
+	return ""
+}
+
+// contentText is the text of a message's content.
+func contentText(raw json.RawMessage) string {
+	raw = bytes.TrimSpace(raw)
+	if len(raw) == 0 {
+		return ""
+	}
+	switch raw[0] {
+	case '[':
+		var parts []json.RawMessage
+		json.Unmarshal(raw, &parts)
+		texts := []string{}
+		for _, part := range parts {
+			if text := partText(part); strings.TrimSpace(text) != "" {
+				texts = append(texts, text)
+			}
+		}
+		return strings.Join(texts, "\n")
+	case '{':
+		return partText(raw)
+	}
+	return scalarText(raw)
+}
+
+// partText is the text of one multimodal part: a string, or an object of
+// type "text" with a string "text"; "" for an image or anything else.
+func partText(raw json.RawMessage) string {
+	var text string
+	if json.Unmarshal(raw, &text) == nil {
+		return text
+	}
+	var part struct {
+		Type string  `json:"type"`
+		Text *string `json:"text"`
+	}
+	if json.Unmarshal(raw, &part) == nil && part.Type == "text" && part.Text != nil {
+		return *part.Text
+	}
+	return ""
+}
+
+// timestampMS reads a number or numeric string of Unix milliseconds; nil for
+// anything else, and for 0.
+func timestampMS(raw json.RawMessage) *int64 {
+	var number json.Number
+	if json.Unmarshal(raw, &number) != nil || number == "" {
 		return nil
 	}
-	return json.Unmarshal(raw, into)
+	ms, err := number.Int64()
+	if err != nil {
+		value, err := number.Float64()
+		if err != nil || math.IsNaN(value) || math.IsInf(value, 0) || math.Abs(value) >= 1<<62 {
+			return nil
+		}
+		ms = int64(value)
+	}
+	if ms == 0 {
+		return nil
+	}
+	return &ms
 }
 
 // AddResponse echoes a stored Add.
@@ -103,6 +194,48 @@ type SearchRequest struct {
 	TopK    int      `json:"top_k"`
 }
 
+// UnmarshalJSON reads a Search leniently: the query, the options and the
+// user id may be strings or numbers, options that are not an array are none,
+// and top_k may be an integer, an integral float (100.0) or a numeric string;
+// a fraction is cut to its integer part.
+func (r *SearchRequest) UnmarshalJSON(raw []byte) error {
+	var fields struct {
+		Query   json.RawMessage `json:"query"`
+		Options json.RawMessage `json:"options"`
+		UserID  json.RawMessage `json:"user_id"`
+		TopK    json.RawMessage `json:"top_k"`
+	}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return err
+	}
+	*r = SearchRequest{Query: scalarText(fields.Query), UserID: scalarText(fields.UserID)}
+	var options []json.RawMessage
+	if json.Unmarshal(fields.Options, &options) == nil {
+		for _, option := range options {
+			if text := scalarText(option); text != "" {
+				r.Options = append(r.Options, text)
+			}
+		}
+	}
+	if len(fields.TopK) == 0 || string(fields.TopK) == "null" {
+		return nil
+	}
+	var topK json.Number
+	if err := json.Unmarshal(fields.TopK, &topK); err != nil {
+		return errors.New("top_k must be a number")
+	}
+	n, err := topK.Int64()
+	if err != nil {
+		value, ferr := topK.Float64()
+		if ferr != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+			return errors.New("top_k must be a number")
+		}
+		n = int64(max(min(value, 1e6), -1e6))
+	}
+	r.TopK = int(max(min(n, 1e6), -1e6))
+	return nil
+}
+
 // SearchItem is one piece of stored evidence, best first. Only Content is
 // sure to reach the answering model, so dates live inside it; Score and
 // CreatedAt are omitted when unknown.
@@ -111,33 +244,6 @@ type SearchItem struct {
 	Content   string  `json:"content"`
 	Score     float64 `json:"score,omitempty"`
 	CreatedAt string  `json:"created_at,omitempty"`
-}
-
-// UnmarshalJSON accepts top_k as an integer, an integral float (100.0) or a
-// numeric string; a fraction is cut to its integer part.
-func (r *SearchRequest) UnmarshalJSON(raw []byte) error {
-	type plain SearchRequest
-	var fields struct {
-		plain
-		TopK json.Number `json:"top_k"`
-	}
-	if err := json.Unmarshal(raw, &fields); err != nil {
-		return err
-	}
-	*r = SearchRequest(fields.plain)
-	if fields.TopK == "" {
-		return nil
-	}
-	n, err := fields.TopK.Int64()
-	if err != nil {
-		value, ferr := fields.TopK.Float64()
-		if ferr != nil || math.IsNaN(value) || math.IsInf(value, 0) {
-			return errors.New("top_k must be a number")
-		}
-		n = int64(max(min(value, 1e6), -1e6))
-	}
-	r.TopK = int(max(min(n, 1e6), -1e6))
-	return nil
 }
 
 // SearchResponse is the body of a Search: at most top_k items, possibly none.
@@ -149,8 +255,7 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
-// validate checks what the contract requires of an Add; the conversation
-// packer then checks sizes, roles and the session id.
+// validate checks what identifies and isolates an Add.
 func (r AddRequest) validate() error {
 	switch {
 	case strings.TrimSpace(r.RequestID) == "":
@@ -159,38 +264,157 @@ func (r AddRequest) validate() error {
 		return errors.New("user_id is required")
 	case strings.TrimSpace(r.SessionID) == "":
 		return errors.New("session_id is required")
-	case len(r.Messages) == 0:
-		return errors.New("messages must hold at least one message")
-	}
-	for i, message := range r.Messages {
-		if strings.TrimSpace(message.Role) == "" {
-			return fmt.Errorf("message %d needs a role", i)
-		}
-		if message.Content == "" {
-			return fmt.Errorf("message %d needs non-empty text content", i)
-		}
 	}
 	return nil
 }
 
-// conversation is the Add as memoryagent's conversational write. The document
-// id is derived from the request id, so a retried Add finds its document;
-// each user has their own store, so ids only need to be unique per user.
-func (r AddRequest) conversation() memoryagent.ConversationRequest {
-	messages := make([]memoryagent.ConversationMessage, len(r.Messages))
-	for i, message := range r.Messages {
-		messages[i] = memoryagent.ConversationMessage{Role: message.Role, Content: message.Content}
-		if message.Timestamp != nil && *message.Timestamp != 0 {
-			at := time.UnixMilli(*message.Timestamp).UTC()
-			messages[i].At = &at
-		}
-	}
-	return memoryagent.ConversationRequest{ID: documentID(r.RequestID), SessionID: r.SessionID, Messages: messages}
+// addPart is one stored document of an Add.
+type addPart struct {
+	conversation memoryagent.ConversationRequest
+	parent       string   // the document's content
+	chunks       []string // its searchable records' texts
 }
 
-func documentID(requestID string) string {
-	sum := sha256.Sum256([]byte(requestID))
-	return "aml-" + hex.EncodeToString(sum[:])[:40]
+// parts are the documents an Add stores, in order, and the number of
+// messages without text it skipped; no parts when no message has text.
+// The session id and speakers are made storable (sanitizeSession,
+// sanitizeRole). An Add with more text than one document holds is split
+// into parts of at most partBytes of message text, in message order; a
+// longer message is cut (splitText) into consecutive messages with its role
+// and timestamp. Part 0's id is derived from the request id alone, so an
+// Add that fits one document is stored as before.
+func (r AddRequest) parts() ([]addPart, int, error) {
+	session := sanitizeSession(r.SessionID)
+	messages := []memoryagent.ConversationMessage{}
+	skipped, total := 0, 0
+	for _, message := range r.Messages {
+		if strings.TrimSpace(message.Content) == "" {
+			skipped++
+			continue
+		}
+		stored := memoryagent.ConversationMessage{Role: sanitizeRole(message.Role), Content: message.Content}
+		if message.Timestamp != nil {
+			at := time.UnixMilli(*message.Timestamp).UTC()
+			stored.At = &at
+		}
+		messages = append(messages, stored)
+		total += len(message.Content)
+	}
+	if len(messages) == 0 {
+		return nil, skipped, nil
+	}
+	groups := [][]memoryagent.ConversationMessage{messages}
+	if total > memoryagent.MaxConversationBytes || len(messages) > memoryagent.MaxConversationMessages {
+		groups = splitMessages(messages)
+	}
+	parts := make([]addPart, len(groups))
+	for i, group := range groups {
+		conversation := memoryagent.ConversationRequest{ID: partID(r.RequestID, i), SessionID: session, Messages: group}
+		parent, chunks, err := memoryagent.PackConversation(conversation)
+		if err != nil {
+			return nil, skipped, err
+		}
+		parts[i] = addPart{conversation: conversation, parent: parent, chunks: chunks}
+	}
+	return parts, skipped, nil
+}
+
+// splitMessages groups messages into parts of at most partBytes of text and
+// memoryagent.MaxConversationMessages messages, cutting longer messages.
+func splitMessages(messages []memoryagent.ConversationMessage) [][]memoryagent.ConversationMessage {
+	var groups [][]memoryagent.ConversationMessage
+	var group []memoryagent.ConversationMessage
+	size := 0
+	for _, message := range messages {
+		for _, piece := range splitText(message.Content, partBytes) {
+			if len(group) > 0 && (size+len(piece) > partBytes || len(group) == memoryagent.MaxConversationMessages) {
+				groups, group, size = append(groups, group), nil, 0
+			}
+			cut := message
+			cut.Content = piece
+			group, size = append(group, cut), size+len(piece)
+		}
+	}
+	return append(groups, group)
+}
+
+// splitText cuts text into pieces of at most limit bytes at UTF-8
+// boundaries, each at the last whitespace of its second half when it has
+// one; pieces of only whitespace are dropped.
+func splitText(text string, limit int) []string {
+	pieces := []string{}
+	for len(text) > limit {
+		cut := limit
+		for !utf8.RuneStart(text[cut]) {
+			cut--
+		}
+		if space := strings.LastIndexFunc(text[:cut], unicode.IsSpace); space > limit/2 {
+			cut = space
+		}
+		if strings.TrimSpace(text[:cut]) != "" {
+			pieces = append(pieces, text[:cut])
+		}
+		text = text[cut:]
+	}
+	if strings.TrimSpace(text) != "" {
+		pieces = append(pieces, text)
+	}
+	return pieces
+}
+
+// sanitizeSession makes a session id storable in a chunk heading: every
+// whitespace or control character becomes "_" (the heading names the session
+// as one word), then at most maxSessionBytes at a rune boundary.
+func sanitizeSession(id string) string {
+	clean := strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return '_'
+		}
+		return r
+	}, id)
+	return capBytes(clean, maxSessionBytes)
+}
+
+// sanitizeRole makes a speaker storable as a line prefix: whitespace and
+// control runs become one space, at most maxRoleBytes; no speaker is
+// "unknown".
+func sanitizeRole(role string) string {
+	role = strings.Join(strings.FieldsFunc(role, func(r rune) bool {
+		return unicode.IsSpace(r) || unicode.IsControl(r) || r == '\uFEFF'
+	}), " ")
+	if role = strings.TrimSpace(capBytes(role, maxRoleBytes)); role == "" {
+		return "unknown"
+	}
+	return role
+}
+
+// capBytes is text cut to at most n bytes at a rune boundary.
+func capBytes(text string, n int) string {
+	if len(text) <= n {
+		return text
+	}
+	for n > 0 && !utf8.RuneStart(text[n]) {
+		n--
+	}
+	return text[:n]
+}
+
+// documentID derives an Add's document id from its request id, so a retried
+// Add finds its document; each user has their own store, so ids only need to
+// be unique per user.
+func documentID(requestID string) string { return "aml-" + hexDigest(requestID)[:40] }
+
+// partID is the document id of an Add's part: documentID for part 0.
+func partID(requestID string, part int) string {
+	if part == 0 {
+		return documentID(requestID)
+	}
+	return "aml-" + hexDigest(requestID + "\x00" + strconv.Itoa(part))[:40]
+}
+
+func hexDigest(text string) string {
+	sum := sha256.Sum256([]byte(text))
+	return hex.EncodeToString(sum[:])
 }
 
 func (r SearchRequest) validate() error {

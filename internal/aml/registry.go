@@ -38,6 +38,7 @@ type userEntry struct {
 	err   error
 	store *records.Store
 	agent *memoryagent.Agent
+	stop  func() // stops the store's query runtime
 	// writes serializes this user's Adds: a write reads the store's revision
 	// and fails if it moved, and an Add then consolidates alone.
 	writes sync.Mutex
@@ -52,8 +53,9 @@ type userEntry struct {
 type registry struct {
 	root  string
 	limit int
-	// openUser opens a user's store and agent in their directory.
-	openUser func(dir string) (*records.Store, *memoryagent.Agent, error)
+	// openUser opens a user's store, its query runtime and agent in their
+	// directory.
+	openUser func(dir string) (*records.Store, *memoryagent.Agent, func(), error)
 
 	mu      sync.Mutex
 	entries map[string]*userEntry
@@ -61,7 +63,7 @@ type registry struct {
 	closing bool
 }
 
-func newRegistry(root string, limit int, openUser func(string) (*records.Store, *memoryagent.Agent, error)) *registry {
+func newRegistry(root string, limit int, openUser func(string) (*records.Store, *memoryagent.Agent, func(), error)) *registry {
 	return &registry{root: root, limit: limit, openUser: openUser, entries: map[string]*userEntry{}, lru: list.New()}
 }
 
@@ -72,6 +74,16 @@ func (g *registry) dir(key string) string { return filepath.Join(g.root, "users"
 // nothing is created.
 func (g *registry) acquire(ctx context.Context, userID string, create bool) (*userEntry, error) {
 	key := userKey(userID)
+	if !create && !g.cached(key) {
+		// Look for the store without holding the lock: stores are never
+		// removed, and one created meanwhile is simply not seen yet.
+		if _, err := os.Stat(filepath.Join(g.dir(key), "records.db")); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return nil, nil
+			}
+			return nil, err
+		}
+	}
 	g.mu.Lock()
 	if g.closing {
 		g.mu.Unlock()
@@ -93,15 +105,6 @@ func (g *registry) acquire(ctx context.Context, userID string, create bool) (*us
 		}
 		return entry, nil
 	}
-	if !create {
-		if _, err := os.Stat(filepath.Join(g.dir(key), "records.db")); err != nil {
-			g.mu.Unlock()
-			if errors.Is(err, fs.ErrNotExist) {
-				return nil, nil
-			}
-			return nil, err
-		}
-	}
 	entry := &userEntry{key: key, ready: make(chan struct{}), refs: 1}
 	entry.elem = g.lru.PushFront(entry)
 	g.entries[key] = entry
@@ -109,7 +112,7 @@ func (g *registry) acquire(ctx context.Context, userID string, create bool) (*us
 	g.mu.Unlock()
 	closeEntries(victims)
 
-	entry.store, entry.agent, entry.err = g.openUser(g.dir(key))
+	entry.store, entry.agent, entry.stop, entry.err = g.openUser(g.dir(key))
 	if entry.err != nil {
 		g.mu.Lock()
 		g.removeLocked(entry) // the next request tries again
@@ -164,6 +167,13 @@ func (g *registry) removeLocked(entry *userEntry) {
 	g.lru.Remove(entry.elem)
 }
 
+// cached reports whether key has a cache entry.
+func (g *registry) cached(key string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.entries[key] != nil
+}
+
 // open is the number of cached entries.
 func (g *registry) open() int {
 	g.mu.Lock()
@@ -189,6 +199,9 @@ func (g *registry) close() {
 
 func closeEntries(entries []*userEntry) {
 	for _, entry := range entries {
+		if entry.stop != nil {
+			entry.stop()
+		}
 		if entry.agent != nil {
 			entry.agent.Close()
 		}
