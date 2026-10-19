@@ -26,11 +26,11 @@ func init() {
 	command.Flags().String("socket", "", "Unix socket path (required)")
 	command.Flags().String("memory-config", "", "Optional versioned memory-strategy JSON configuration")
 	rootCmd.AddCommand(command)
-	group := &cobra.Command{Use: "memory-agent", Short: "Write original text, read a Memory View, or run bounded background consolidation"}
-	for _, operation := range []string{"write", "read", "consolidate"} {
+	group := &cobra.Command{Use: "memory-agent", Short: "Write originals, read a Memory View, or build derived indexes"}
+	for _, operation := range []string{"write", "read", "consolidate", "relate"} {
 		operation := operation
 		child := &cobra.Command{Use: operation, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error { return runMemoryAgent(cmd, operation) }}
-		child.Flags().String("config", "", "Memory-strategy JSON configuration (required for read/consolidate)")
+		child.Flags().String("config", "", "Memory-strategy JSON configuration (required for read/consolidate/relate; optional for write)")
 		group.AddCommand(child)
 	}
 	rootCmd.AddCommand(group)
@@ -106,7 +106,7 @@ func runMemoryServe(cmd *cobra.Command, _ []string) error {
 }
 
 func dispatchMemory(ctx context.Context, raw *records.Store, agent *memoryagent.Agent, operation string, request []byte) (any, error) {
-	if readOnly && (operation == "memory.write" || operation == "memory.consolidate") {
+	if readOnly && (operation == "memory.write" || operation == "memory.consolidate" || operation == "memory.relate") {
 		return nil, readOnlyWriteError(operation)
 	}
 	if operation == "memory.write" {
@@ -114,12 +114,21 @@ func dispatchMemory(ctx context.Context, raw *records.Store, agent *memoryagent.
 		if err := json.Unmarshal(request, &req); err != nil {
 			return nil, err
 		}
+		if agent != nil {
+			return agent.Write(ctx, req)
+		}
 		return memoryagent.Write(ctx, raw, req)
 	}
 	if agent == nil {
 		return nil, errors.New("memory strategy requires --memory-config or --config")
 	}
 	switch operation {
+	case "memory.relate":
+		var req memoryagent.RelateRequest
+		if err := json.Unmarshal(request, &req); err != nil {
+			return nil, err
+		}
+		return agent.Relate(ctx, req)
 	case "memory.read":
 		var req memoryagent.ReadRequest
 		if err := json.Unmarshal(request, &req); err != nil {
@@ -158,8 +167,8 @@ func runMemoryAgent(cmd *cobra.Command, operation string) error {
 		return errors.New("memory request exceeds 1 MiB or cannot be read")
 	}
 	var agent *memoryagent.Agent
-	if operation != "write" {
-		path, _ := cmd.Flags().GetString("config")
+	path, _ := cmd.Flags().GetString("config")
+	if operation != "write" || path != "" {
 		config, err := readMemoryConfig(path)
 		if err != nil {
 			return err

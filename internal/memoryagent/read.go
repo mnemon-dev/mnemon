@@ -31,6 +31,7 @@ type Config struct {
 	Planner    *ModelConfig             `json:"planner,omitempty"`
 	Judge      *ModelConfig             `json:"judge,omitempty"`
 	BudgetFile string                   `json:"budgetFile,omitempty"`
+	Relations  *RelationConfig          `json:"relations,omitempty"`
 }
 
 type Message struct {
@@ -43,6 +44,7 @@ type ReadRequest struct {
 	Recent   []Message     `json:"recent,omitempty"`
 	Scope    records.Scope `json:"scope,omitempty"`
 	Revision string        `json:"revision,omitempty"`
+	Trace    bool          `json:"trace,omitempty"`
 }
 
 type Need struct {
@@ -64,24 +66,32 @@ type ReadStats struct {
 }
 
 type View struct {
-	Revision   string      `json:"revision"`
-	Policy     string      `json:"policy"`
-	Records    []Evidence  `json:"records"`
-	Index      []IndexItem `json:"index,omitempty"`
-	Needs      []Need      `json:"needs"`
-	StopReason string      `json:"stopReason"`
-	Truncated  bool        `json:"truncated"`
-	IndexStale bool        `json:"indexStale"`
-	Stats      ReadStats   `json:"stats"`
+	Revision   string             `json:"revision"`
+	Policy     string             `json:"policy"`
+	Records    []Evidence         `json:"records"`
+	Index      []IndexItem        `json:"index,omitempty"`
+	Needs      []Need             `json:"needs"`
+	StopReason string             `json:"stopReason"`
+	Truncated  bool               `json:"truncated"`
+	IndexStale bool               `json:"indexStale"`
+	Stats      ReadStats          `json:"stats"`
+	Relations  *RelationReadStats `json:"relations,omitempty"`
+	Trace      *ReadTrace         `json:"trace,omitempty"`
 }
 
 type Agent struct {
-	store      *records.Store
-	config     Config
-	models     Models
-	overlay    *Overlay
-	indexError error
-	budget     *Budget
+	store            *records.Store
+	config           Config
+	models           Models
+	overlay          *Overlay
+	indexError       error
+	budget           *Budget
+	relations        *relationStore
+	relationError    error
+	relationMu       sync.Mutex
+	relationCacheKey string
+	relationCached   *relationSnapshot
+	relationLoading  chan struct{}
 }
 
 func New(store *records.Store, config Config, models Models, overlay *Overlay) (*Agent, error) {
@@ -110,6 +120,9 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 }
 
 func (a *Agent) Close() error {
+	if a.relations != nil {
+		a.relations.db.Close()
+	}
 	if a.overlay != nil {
 		a.overlay.Close()
 	}
@@ -120,13 +133,14 @@ func (a *Agent) Close() error {
 }
 
 type candidate struct {
-	item       Evidence
-	screen     float64
-	needed     float64
-	superseded float64
-	coverage   []float64
-	judged     bool
-	order      int
+	item          Evidence
+	screen        float64
+	needed        float64
+	superseded    float64
+	coverage      []float64
+	judged        bool
+	order         int
+	contextScores map[string]float64
 }
 
 type searchPage struct {
@@ -135,23 +149,27 @@ type searchPage struct {
 	offset    int
 	last      []string
 	truncated bool
+	routes    map[string]int
 }
 
 type readRun struct {
-	agent      *Agent
-	request    ReadRequest
-	revision   string
-	dialogue   []Message
-	needs      []Need
-	queries    []*searchPage
-	tried      []string
-	items      map[string]*candidate
-	order      []string
-	paged      []bool
-	rewritten  []bool
-	indexItems []IndexItem
-	indexStale bool
-	stats      ReadStats
+	agent        *Agent
+	request      ReadRequest
+	revision     string
+	dialogue     []Message
+	needs        []Need
+	queries      []*searchPage
+	tried        []string
+	items        map[string]*candidate
+	order        []string
+	paged        []bool
+	rewritten    []bool
+	indexItems   []IndexItem
+	indexStale   bool
+	stats        ReadStats
+	related      *relationRead
+	needLeads    []string
+	needEvidence []map[string]bool
 }
 
 var errCallBudget = errors.New("memory model-call budget reached")
@@ -184,6 +202,7 @@ func (a *Agent) Read(ctx context.Context, req ReadRequest) (View, error) {
 		return View{}, err
 	}
 	r.paged, r.rewritten = make([]bool, len(r.needs)), make([]bool, len(r.needs))
+	r.needLeads, r.needEvidence = make([]string, len(r.needs)), make([]map[string]bool, len(r.needs))
 	lists := [][]string{}
 	for _, query := range queries {
 		page, err := r.search(ctx, query)
@@ -311,6 +330,9 @@ func (r *readRun) search(ctx context.Context, query string) ([]string, error) {
 		return nil, err
 	}
 	page := &searchPage{query: query, ids: result.IDs[:min(200, len(result.IDs))], truncated: len(result.IDs) > 200 || result.Index != nil && result.Index.Truncated}
+	if r.request.Trace && result.Index != nil {
+		page.routes = result.Index.Routes
+	}
 	r.queries = append(r.queries, page)
 	return page.next(), nil
 }
