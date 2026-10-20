@@ -23,8 +23,10 @@ stages that fell back instead of failing the read, each once and in order: `scan
 and `loop-budget` (the decision budget ran out and the need loop stopped), `judge` (the
 final judgement failed or found the budget spent; JEV's screen stands in), `layer-state`
 (the consolidated state did not load; no layer), `layer-lexical` (the layer's embedding
-failed; shared words rank the topics), `layer` (the layer's judgement failed), `expand`
-(records linked from the layer could not be read or judged), `expansion` (the
+failed; shared words rank the topics), `layer` (the layer's judgement failed),
+`layer-insights` (the insights' judgement of `consolidation.insights` failed or the
+decision budget could not pay for it; no insights), `expand` (records linked from the
+layer could not be read or judged), `expansion` (the
 `view.expand` candidates could not all be read or judged, the events' state did not
 load, or `gate` and `target` could not read the View whose coverage of the needs they
 check, so that nothing counts as covered; see below), `expansion-lexical` (the events'
@@ -134,7 +136,8 @@ every instance) and a record of the View compose would show without the expansio
 it in the need table (≥ 0.5; the screen for an untabled single need), as `needs[]`
 reports `hasEvidence`. That View is compose's selection (fusion's when set); with the
 timelines layer only its leading records within the View's characters less the most the
-layer's blocks can take (8,059) count, since the layer's character trim, which depends on
+layer's blocks can take (8,059; 9,593 with `consolidation.insights`) count, since the
+layer's character trim, which depends on
 its own model calls, can never drop those. It makes no model call. Under fusion it reads
 the evidence of the raw hits that were not pooled, as compose does, and counts that time
 in `queryMs`; when that read fails, `expansion` is named in `stats.degraded`, nothing
@@ -203,6 +206,63 @@ joined stored ones or started new ones), `conflicts` (joined keys JEV found cont
 `linkFallbacks` (batches linked without JEV) and `linkLexical` (batches whose candidates
 shared words found because the embedder failed). Extractions run in parallel, so
 `modelMs`, which sums the time of every model call, can exceed the job's wall time.
+
+With `"insights": true` (layered mode only; refused otherwise) a layered job also
+consolidates the consolidated memory one level up (L2), reading only the items L0 and L1
+wrote, never the records, and each item once. After the job's record batches (also in a
+job that folded none), L2 takes the items it has not read, in memory order: the events,
+then each key's values (keys in their order), then the directives, as lines
+`E<i> (<date>) [<thread title>] <text>`, `V<k>.<j> (<date>) <key>: <value>` (the j-th value
+of the k-th key) and `D<i> (<date>) <text>`, ids counted from 1 in the memory. It cuts them
+into batches of `batchCharacters` as records are cut (never inside an item) and folds up to
+`maxBatches` of them, in order, each saved before the next. A job with `hold` folds full L2
+batches only; a job without it folds the short rest too once no record is left to fold, as
+the AML adapter's flush before a Search does. For each batch the consolidating model, told
+to write the conclusions that only two or more of the items support together (a pattern
+that recurs, a change and what it led to, the reason behind a decision, the overall state
+of an effort, how preferences or a situation evolved), one sentence each, dated, citing
+the ids it rests on, answers in JSON; an insight citing fewer than two ids of its batch is
+left out, its records are those of the cited items (in order of first citation, each
+once), and its date is the model's when it is a day (YYYY/MM/DD), else the latest date of
+the cited items. The calls have L0's retries, splits and drops (a dropped part's items are
+read without conclusions), run up to `parallel` at once, and a model error stops L2, keeps
+its batch unread and counts toward a drop rule of L2's own, as for records. Then, in batch
+order, JEV links each new insight to the `linkCandidates` stored insights nearest to it
+(embeddings, else shared words), asking of each pair whether the two state the same
+conclusion: the best yes (at least 0.5) merges, the stored insight keeping its text and
+taking the later date and the records it lacks; otherwise the insight is added. When a JEV
+call fails or its budget is spent, every new insight of the batch is added. The state keeps
+the insights and L2's read position (`insightRead`); neither is written without the
+setting, and the records' native edges ignore the insights. `remaining` also counts the
+items L2 has not read, and the result adds `insightBatches` (L2 batches read),
+`insightsDropped` (their items given up on), `insightsNew` and `insightsMerged`,
+`insightFallbacks` (batches whose insights were added without JEV) and `insightLinkCalls`
+(JEV calls, part of `linkUsage`); their usage is part of `usage`. Turned on for a memory
+already consolidated, the next jobs read everything consolidated so far, `maxBatches` L2
+batches a job. Absent or false, jobs, states and reads are unchanged and the setting stays
+out of the policy hash. Cost: one consolidator call per L2 batch (more on retries and
+splits), each reading about `batchCharacters` of item lines, usually far fewer batches than
+the records gave; once insights are stored, JEV link calls (up to `linkCandidates`
+questions per new insight, packed 128 a call, about one per batch); and embeddings of the
+insight texts.
+
+With insights, a simple read's layer adds a fifth block, `5-insights`, after the values:
+`Conclusions drawn from the memory:`, then lines `- (<date>) <text>` while they fit 1,500
+characters (the header not counted). The candidates are the insights whose records include
+a record the View shows, most such records first (ties in memory order), then the 12
+insights nearest the last user message (the embedding of their texts, kept like the
+topics', else shared words, as the topics fell back), each once. JEV judges them in one
+call of their own (one per 40 candidates), asking only whether the reply needs each
+(`(<date>) <text>`), so the topics' and values' call is the same request with insights or
+without; the block shows the needed ones by their answer, then the other candidates the
+View's records light up, by their records. When that call fails, or the decision budget
+cannot pay for it whole, the block is left out and `layer-insights` is named in
+`stats.degraded`. The block counts toward `maxCharacters`, not toward `maxItems`; its
+`records` name the insights' records the View shows, and unlike the other blocks' they
+never join the View, so the View's records are those of a read without insights unless
+the block's characters cut one. `stats.layerInsights` counts the insights shown, and the
+AML adapter's warm-up embeds the insight texts with the layer's. Cost per read: one JEV
+call when insights are stored and any is a candidate.
 
 With `"nativeEdges": true` (timelines or layered mode) the consolidated state also
 feeds the records' native indexes ([records-indexes.md](records-indexes.md)): after
