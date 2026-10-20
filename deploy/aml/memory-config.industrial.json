@@ -4,11 +4,10 @@
   "view": {
     "maxItems": 100,
     "maxCharacters": 240000,
-    "fusion": "rrf",
     "order": "time"
   },
   "consolidation": {
-    "mode": "timelines"
+    "mode": "layered"
   },
   "planner": {
     "kind": "deepseek",

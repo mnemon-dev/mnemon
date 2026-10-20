@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -75,15 +76,21 @@ func TestIndustrialConfigLoadsAndStarts(t *testing.T) {
 	want := memoryagent.Config{
 		Version:  1,
 		Strategy: "simple",
-		// The reference system delivers its View in time order.
-		View:          &memoryagent.ViewConfig{MaxItems: 100, MaxCharacters: 240000, Fusion: "rrf", Order: "time"},
-		Consolidation: &memoryagent.ConsolidationConfig{Mode: "timelines"},
+		// The judged View: no fusion with the plain search ranking, so the
+		// View is the records JEV judged (maxItems and maxCharacters only
+		// cap it), delivered in the reference system's time order after
+		// the consolidation blocks.
+		View: &memoryagent.ViewConfig{MaxItems: 100, MaxCharacters: 240000, Order: "time"},
+		// Layered consolidation: DeepSeek extracts each batch alone, JEV
+		// links it into the memory. No native edges, no expansion, no index
+		// routes: Expand, Index and NativeEdges stay unset.
+		Consolidation: &memoryagent.ConsolidationConfig{Mode: "layered"},
 		// DeepSeek without thinking: a thinking planner can return empty plans
 		// under the 200/400-token planning caps.
 		Planner: &memoryagent.ModelConfig{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "DEEPSEEK_API_KEY"},
 		Judge:   &memoryagent.ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "TYPESAFE_API_KEY"},
-		// A fold of a full batch may take minutes; the default 90 s would
-		// cut it off.
+		// The extraction of a full batch may take minutes; the default 90 s
+		// would cut it off.
 		Consolidator: &memoryagent.ModelConfig{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "DEEPSEEK_API_KEY", TimeoutSeconds: 600},
 		Embedding: &records.EmbeddingConfig{
 			URL: "http://127.0.0.1:11434", Model: "nomic-embed-text",
@@ -93,7 +100,9 @@ func TestIndustrialConfigLoadsAndStarts(t *testing.T) {
 		Budgets:    map[string]float64{"jev": 20, "deepseek": 200},
 	}
 	if !reflect.DeepEqual(config, want) {
-		t.Fatalf("industrial config\n got %+v\nwant %+v", config, want)
+		got, _ := json.MarshalIndent(config, "", " ")
+		wanted, _ := json.MarshalIndent(want, "", " ")
+		t.Fatalf("industrial config\n got %s\nwant %s", got, wanted)
 	}
 
 	// The same file with a writable budget path: NewServer builds the real
