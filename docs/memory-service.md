@@ -14,7 +14,7 @@ while the service runs. No old data needs conversion.
 | `memory.write` | `text`, optional `id`, `source`, `at`, `scope`, `workspaceId`, `sessionId` | Committed revision, original-document reference and block references. |
 | `memory.writeConversation` | `messages` (`role`, `content`, optional RFC 3339 `at`), `sessionId`, optional `id`, `source`, `scope`, `workspaceId` | Same as `memory.write`. |
 | `memory.read` | `question`, optional `recent`, `scope`, `revision`, `maxItems` | Original-evidence View, index hints, needs, stop reason and resource use. |
-| `memory.consolidate` | Optional `scope`, `maxBatches` (1–4 for memory-agent/v1, 1–64 for timelines), `reset`, `hold` (timelines) | Background job progress and usage. |
+| `memory.consolidate` | Optional `scope`, `maxBatches` (1–4 for memory-agent/v1, 1–64 for timelines and layered), `reset`, `hold` (timelines and layered) | Background job progress and usage. |
 
 `maxItems` caps the records of a `"strategy": "simple"` View: 0 or absent takes the
 configured `view.maxItems`, and more than it is an error. memory-agent/v1 reads have no
@@ -44,6 +44,38 @@ batch at the head of the pending list, the first at least ten minutes earlier (t
 caller's cancellation and a spent budget do not count), the next job splits that batch
 once and drops a half whose call fails again. Dropped records stay searchable; the
 consolidated index does not cover them.
+
+With `"consolidation": {"mode": "layered"}` a job reads, holds, bounds, flushes and saves
+the pending records as in timelines mode, writes the same state (marked `"mode":
+"layered"`) and simple reads add the same layer, but each batch is folded in two steps.
+First a model extracts the batch alone (L0): the timelines prompt without its references
+to an index of the memory so far, plus one sentence asking for the entities each event
+and fact is about, and a request that holds only the batch's records, with the same
+retries, splits and drops. Up to `parallel` (default 4, 1–16) of a job's batches are
+extracted at once. Then, strictly in batch order, JEV links each batch into the stored
+memory (L1a): every new thread is compared with the `linkCandidates` (default 8, 1–32)
+stored threads nearest to it, every new key with the nearest stored keys (as
+`key: latest value`), nearest by the cosine of document embeddings when `embedding` is
+set, else by shared words. JEV answers whether the thread continues a candidate, whether
+the key is the same attribute of the same thing, and whether its value contradicts the
+candidate's latest without the records saying it changed. A thread joins its best yes
+(at least 0.5; ties go to the nearer candidate) or starts a thread; a key appends its
+values to its best yes or to the stored key of the same name, else starts a key, and a
+contradiction marks the appended values as conflicts. Directives are de-duplicated as in
+timelines mode. The questions are packed into as few JEV calls as fit 128 questions and
+96,000 UTF-16 units. When a JEV call fails or its budget is spent, the batch links nothing
+but its keys of the same name and the job goes on. A model error in a batch's extraction
+stops the job there: the batches before it stay linked, it and the later ones stay
+pending, and the error counts toward the drop rule as in timelines mode. Layered mode
+requires a decision model (`judge`) and a completion model (`consolidator`, else
+`planner`). It costs one extraction call per batch (more on retries and splits), whose
+request does not grow with the memory; once the memory holds anything, a few JEV calls per
+batch (up to `linkCandidates` questions per new thread and twice that per new key, at
+most 128 a call); and embeddings of the new and changed thread and key texts. The result
+adds `linkCalls` and `linkUsage` (the JEV calls and their part of `usage`),
+`threadsLinked`/`threadsNew` and `keysLinked`/`keysNew` (extracted threads and keys that
+joined stored ones or started new ones), `conflicts` (joined keys JEV found contradicted)
+and `linkFallbacks` (batches linked without JEV).
 
 Native search/show/recall retain their access-count and operation-log effects.
 The new service returns the full typed search/recall structures; existing CLI
