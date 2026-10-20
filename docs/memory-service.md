@@ -210,12 +210,17 @@ shared words found because the embedder failed). Extractions run in parallel, so
 With `"insights": true` (layered mode only; refused otherwise) a layered job also
 consolidates the consolidated memory one level up (L2), reading only the items L0 and L1
 wrote, never the records, and each item once. After the job's record batches (also in a
-job that folded none), L2 takes the items it has not read, in memory order: the events,
-then each key's values (keys in their order), then the directives, as lines
-`E<i> (<date>) [<thread title>] <text>`, `V<k>.<j> (<date>) <key>: <value>` (the j-th value
-of the k-th key) and `D<i> (<date>) <text>`, ids counted from 1 in the memory. It cuts them
-into batches of `batchCharacters` as records are cut (never inside an item) and folds up to
-`maxBatches` of them, in order, each saved before the next. A job with `hold` folds full L2
+job that folded none), L2 takes the items it has not read in date order: by their date
+(YYYY/MM/DD), earliest first, and on one date the events, then the values (keys in their
+order, each key's in its history's order), then the directives, each in the memory's order;
+items without such a date come after all dated ones, in the same order. So a batch holds
+the events, values and directives of a period, also when L2 first reads a memory already
+consolidated. The lines are `E<i> (<date>) [<thread title>] <text>`,
+`V<k>.<j> (<date>) <key>: <value>` (the j-th value of the k-th key) and
+`D<i> (<date>) <text>`, ids counted from 1 in the memory. It cuts them into batches of
+`batchCharacters` as records are cut (never inside an item) and folds up to `maxBatches` of
+them, in order, each saved before the next; an item is marked read when its batch is
+folded. A job with `hold` folds full L2
 batches only; a job without it folds the short rest too once no record is left to fold, as
 the AML adapter's flush before a Search does. For each batch the consolidating model, told
 to write the conclusions that only two or more of the items support together (a pattern
@@ -232,8 +237,10 @@ order, JEV links each new insight to the `linkCandidates` stored insights neares
 conclusion: the best yes (at least 0.5) merges, the stored insight keeping its text and
 taking the later date and the records it lacks; otherwise the insight is added. When a JEV
 call fails or its budget is spent, every new insight of the batch is added. The state keeps
-the insights and L2's read position (`insightRead`); neither is written without the
-setting, and the records' native edges ignore the insights. `remaining` also counts the
+the insights and L2's read position (`insightRead`: per list, the events, each key's values
+and the directives read from its start, and those read past an unread one, which date
+order can read first); neither is written without the setting, and the records' native
+edges ignore the insights. `remaining` also counts the
 items L2 has not read, and the result adds `insightBatches` (L2 batches read),
 `insightsDropped` (their items given up on), `insightsNew` and `insightsMerged`,
 `insightFallbacks` (batches whose insights were added without JEV) and `insightLinkCalls`
