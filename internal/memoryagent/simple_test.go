@@ -507,8 +507,9 @@ func TestReadSimpleQuestionIntent(t *testing.T) {
 		}
 		return "NEED: the outage time", Usage{}, nil
 	})
-	read := func(view *ViewConfig) View {
-		config := Config{Version: 1, Strategy: "simple", Index: &records.IndexPolicy{Version: 1, Lexical: true, Relations: true}, View: view}
+	relations := &records.IndexPolicy{Version: 1, Lexical: true, Relations: true}
+	read := func(view *ViewConfig, index *records.IndexPolicy) View {
+		config := Config{Version: 1, Strategy: "simple", Index: index, View: view}
 		a, err := New(s, config, Models{Planner: planner, Judge: decisionFunc(fixtureJudge)}, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -520,15 +521,24 @@ func TestReadSimpleQuestionIntent(t *testing.T) {
 		return got
 	}
 	// Each search detects its own intent: only the message's is WHEN.
-	view := read(nil)
+	view := read(nil, relations)
 	raw, _ := json.Marshal(view.Stats)
 	if view.Stats.Searches != 3 || !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"lexical": 3, "relations": 1}) || view.Stats.Intent != "" || strings.Contains(string(raw), `"intent"`) {
 		t.Fatal(string(raw))
 	}
 	// The question's intent goes with every search: the note and the search
 	// follow the temporal link too.
-	view = read(&ViewConfig{Intent: "question"})
+	view = read(&ViewConfig{Intent: "question"}, relations)
 	if view.Stats.Searches != 3 || !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"lexical": 3, "relations": 3}) || view.Stats.Intent != "WHEN" {
+		t.Fatal(view.Stats)
+	}
+	// The native recall routes are counted like the others.
+	view = read(&ViewConfig{Intent: "question"}, &records.IndexPolicy{Version: 1, Traversal: true})
+	if !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"traversal": 3}) {
+		t.Fatal(view.Stats)
+	}
+	view = read(nil, &records.IndexPolicy{Version: 1, Recency: true})
+	if !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"recency": 3}) {
 		t.Fatal(view.Stats)
 	}
 	// An unknown setting is refused; the default stays out of the config's
