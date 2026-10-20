@@ -43,7 +43,8 @@ type ConsolidateResult struct {
 	Dropped int               `json:"dropped,omitempty"`
 	Drops   []ConsolidateDrop `json:"drops,omitempty"`
 	// A layered job's linking: LinkCalls counts its JEV calls (LinkUsage
-	// is their part of Usage); of the threads it extracted and linked,
+	// is the part of Usage of every JEV call of the job, these and
+	// AliasCalls); of the threads it extracted and linked,
 	// ThreadsLinked continued a stored thread and ThreadsNew started one;
 	// of the keys, KeysLinked joined a stored key and KeysNew started one;
 	// Conflicts counts the joined keys whose new value JEV found contradicts

@@ -74,7 +74,7 @@ requires a decision model (`judge`) and a completion model (`consolidator`, else
 request does not grow with the memory; once the memory holds anything, a few JEV calls per
 batch (up to `linkCandidates` questions per new thread and twice that per new key, at
 most 128 a call); and embeddings of the new and changed thread and key texts. The result
-adds `linkCalls` and `linkUsage` (the JEV calls and their part of `usage`),
+adds `linkCalls` and `linkUsage` (the JEV calls, and the part of `usage` of every JEV call),
 `threadsLinked`/`threadsNew` and `keysLinked`/`keysNew` (extracted threads and keys that
 joined stored ones or started new ones), `conflicts` (joined keys JEV found contradicted),
 `linkFallbacks` (batches linked without JEV) and `linkLexical` (batches whose candidates
