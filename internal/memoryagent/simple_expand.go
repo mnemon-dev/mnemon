@@ -2,8 +2,10 @@ package memoryagent
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -33,7 +35,8 @@ type neighbor struct {
 
 // expansionCandidate is a proposed record. From the seeds: its best score
 // over them (seed needed × weight), the rank of the first seed that gave
-// that score and the shortest distance it gave it at. From either source:
+// that score, the shortest distance it gave it at, and the seeds a
+// correction (supersedes) links it to, its partners. From either source:
 // every kind that proposed it, in the order they did.
 type expansionCandidate struct {
 	id       string
@@ -41,6 +44,7 @@ type expansionCandidate struct {
 	seed     int
 	distance int
 	kinds    []string
+	partners []string
 }
 
 // expansionSeeds is the judged items whose needed answer is at least min
@@ -81,6 +85,9 @@ func rankExpansion(seeds []*simpleItem, neighbors map[string][]neighbor, known f
 			if !slices.Contains(c.kinds, n.kind) {
 				c.kinds = append(c.kinds, n.kind)
 			}
+			if n.kind == "supersedes" && !slices.Contains(c.partners, seed.ID) {
+				c.partners = append(c.partners, seed.ID)
+			}
 		}
 	}
 	slices.SortFunc(list, func(a, b *expansionCandidate) int {
@@ -105,14 +112,19 @@ func rankExpansion(seeds []*simpleItem, neighbors map[string][]neighbor, known f
 // alternate fills limit from the seed source and the events source by
 // turns, seed first: each turn takes the source's next record not picked
 // yet, and once a source has none left the other fills the rest. A record
-// both sources propose is picked once, with the kinds of both (the seed's
-// first). One source alone is that source cut to limit.
+// both sources propose is picked once, with the kinds (the seed's first)
+// and partners of both. One source alone is that source cut to limit.
 func alternate(seed, events []expansionCandidate, limit int) []expansionCandidate {
-	kinds := map[string][]string{}
+	kinds, partners := map[string][]string{}, map[string][]string{}
 	for _, c := range slices.Concat(seed, events) {
 		for _, kind := range c.kinds {
 			if !slices.Contains(kinds[c.id], kind) {
 				kinds[c.id] = append(kinds[c.id], kind)
+			}
+		}
+		for _, partner := range c.partners {
+			if !slices.Contains(partners[c.id], partner) {
+				partners[c.id] = append(partners[c.id], partner)
 			}
 		}
 	}
@@ -137,7 +149,7 @@ func alternate(seed, events []expansionCandidate, limit int) []expansionCandidat
 			}
 		}
 		picked[c.id] = true
-		c.kinds = kinds[c.id]
+		c.kinds, c.partners = kinds[c.id], partners[c.id]
 		out = append(out, c)
 		turn = 1 - turn
 	}
@@ -287,20 +299,33 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 	for _, value := range values {
 		found[value.ID] = value
 	}
-	items, kinds := []*simpleItem{}, [][]string{}
+	items, kinds, partners := []*simpleItem{}, [][]string{}, map[*simpleItem][]*simpleItem{}
 	for _, c := range candidates {
-		if item := r.items[c.id]; item != nil {
-			items, kinds = append(items, item), append(kinds, c.kinds)
-		} else if value, ok := found[c.id]; ok {
-			items, kinds = append(items, &simpleItem{ID: c.id, Evidence: value}), append(kinds, c.kinds)
+		item := r.items[c.id]
+		if item == nil {
+			value, ok := found[c.id]
+			if !ok {
+				continue
+			}
+			item = &simpleItem{ID: c.id, Evidence: value}
+		}
+		items, kinds = append(items, item), append(kinds, c.kinds)
+		for _, id := range c.partners {
+			if partner := r.items[id]; partner != nil {
+				partners[item] = append(partners[item], partner)
+			}
 		}
 	}
+	// The candidates are judged with context peers: the seeds and the
+	// current needed judged records (expansionPeers), and with each
+	// candidate the seeds a correction links it to.
+	batches := peerBatches(items, expansionPeers(scored, seeds), partners)
 	if config.Target == expandNeeds {
-		if err = r.target(ctx, items, covered); err != nil {
+		if err = r.target(ctx, items, covered, len(batches)); err != nil {
 			return nil, err
 		}
 	}
-	if err = r.judgeAll(ctx, items); err != nil {
+	if err = r.judgeExpansions(ctx, batches); err != nil {
 		if _, err = short(); err != nil {
 			return nil, err
 		}
@@ -369,7 +394,7 @@ func sufficient(stop string, covered []bool) bool {
 // the need table and the judgement both, or the need table fails, the
 // candidates go without rows and the read is degraded (expansion). Only a
 // canceled read is an error.
-func (r *simpleRun) target(ctx context.Context, items []*simpleItem, covered []bool) error {
+func (r *simpleRun) target(ctx context.Context, items []*simpleItem, covered []bool, judgeCalls int) error {
 	asked := []int{}
 	for k, done := range covered {
 		if !done {
@@ -379,7 +404,7 @@ func (r *simpleRun) target(ctx context.Context, items []*simpleItem, covered []b
 	if len(asked) == 0 || len(items) == 0 {
 		return nil
 	}
-	if calls := (len(items)+tableBatch-1)/tableBatch + (len(items)+judgeBatch-1)/judgeBatch; r.decisionsLeft() < calls {
+	if calls := (len(items)+tableBatch-1)/tableBatch + judgeCalls; r.decisionsLeft() < calls {
 		r.degrade("expansion")
 		return nil
 	}
@@ -410,5 +435,110 @@ func (r *simpleRun) target(ctx context.Context, items []*simpleItem, covered []b
 		return nil
 	}
 	r.targeted = true
+	return nil
+}
+
+// expandPeers bounds the context peers of an expansion judgement.
+const expandPeers = 8
+
+// expansionPeers is the context the expansion's candidates are judged with,
+// as judgeAll's shared batches give each item the others: the seeds and the
+// current judged items JEV calls needed (≥ 0.5), each once, best first
+// (ties in the judged list's order), at most expandPeers.
+func expansionPeers(scored, seeds []*simpleItem) []*simpleItem {
+	peers := []*simpleItem{}
+	for _, item := range judgedOrder(scored) {
+		if len(peers) < expandPeers && (slices.Contains(seeds, item) || item.Needed >= 0.5 && current(item)) {
+			peers = append(peers, item)
+		}
+	}
+	return peers
+}
+
+// peerBatch is one judgement call of the expansion: its peers, context
+// only, and its candidates.
+type peerBatch struct{ peers, items []*simpleItem }
+
+// peerBatches splits the candidates, in order, into judgement calls of at
+// most judgeBatch items in all: each carries the peers, the partners of its
+// candidates (the seeds a correction links them to) that are not peers
+// already, and as many candidates as fit.
+func peerBatches(items, peers []*simpleItem, partners map[*simpleItem][]*simpleItem) []peerBatch {
+	batches, b := []peerBatch{}, peerBatch{peers: slices.Clone(peers)}
+	extra := func(item *simpleItem) []*simpleItem {
+		out := []*simpleItem{}
+		for _, partner := range partners[item] {
+			if !slices.Contains(b.peers, partner) && !slices.Contains(out, partner) {
+				out = append(out, partner)
+			}
+		}
+		return out
+	}
+	for _, item := range items {
+		add := extra(item)
+		if len(b.items) > 0 && len(b.peers)+len(add)+len(b.items)+1 > judgeBatch {
+			batches, b = append(batches, b), peerBatch{peers: slices.Clone(peers)}
+			add = extra(item)
+		}
+		b.peers, b.items = append(b.peers, add...), append(b.items, item)
+	}
+	if len(b.items) > 0 {
+		batches = append(batches, b)
+	}
+	return batches
+}
+
+// judgeExpansions is judgeAll for the expansion's candidates with their
+// peers: each call shows the peers first, then the candidates, and asks the
+// needed and superseded questions (judgeAll's, J:45-62) of the candidates
+// alone; nothing about a peer is asked or changed. The calls run in
+// parallel; every candidate first takes Needed = Screen and Superseded = 0,
+// which stand where its call is not made (past a spent decision budget: the
+// first calls it can pay for run, and errCallBudget is returned) or fails
+// (its error is returned).
+func (r *simpleRun) judgeExpansions(ctx context.Context, batches []peerBatch) error {
+	for _, b := range batches {
+		for _, item := range b.items {
+			item.Needed, item.Superseded, item.Judged = item.Screen, 0, false
+		}
+	}
+	afford := min(len(batches), r.decisionsLeft())
+	errs := make([]error, afford)
+	var work sync.WaitGroup
+	for i, b := range batches[:afford] {
+		work.Add(1)
+		go func() {
+			defer work.Done()
+			errs[i] = recovered(func() error {
+				texts := []judgeCandidate{}
+				for _, item := range slices.Concat(b.peers, b.items) {
+					texts = append(texts, judgeCandidate{Source: judgeSource, Text: item.Evidence.Text})
+				}
+				state, questions := batchRequest(r.dialogue, texts)
+				for p := range b.peers {
+					delete(questions, fmt.Sprintf("n%d", p))
+					delete(questions, fmt.Sprintf("s%d", p))
+				}
+				answers, err := r.decide(ctx, state, questions)
+				if err != nil {
+					return err
+				}
+				for k, item := range b.items {
+					at := len(b.peers) + k
+					item.Needed, item.Superseded, item.Judged = answers[fmt.Sprintf("n%d", at)], answers[fmt.Sprintf("s%d", at)], true
+				}
+				return nil
+			})
+		}()
+	}
+	work.Wait()
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	if afford < len(batches) {
+		return errCallBudget
+	}
 	return nil
 }

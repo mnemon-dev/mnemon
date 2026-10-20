@@ -261,7 +261,8 @@ func TestRankExpansion(t *testing.T) {
 		{id: "x", score: 0.8, seed: 1, distance: 1, kinds: []string{"temporal", "semantic", "causal"}},
 		{id: "z", score: 0.8, seed: 1, distance: 1, kinds: []string{"entity"}},
 		{id: "v", score: 0.8, seed: 2, distance: 1, kinds: []string{"semantic"}},
-		{id: "w", score: 0.4, seed: 1, distance: 1, kinds: []string{"supersedes", "temporal"}},
+		// A correction's seed is the candidate's partner.
+		{id: "w", score: 0.4, seed: 1, distance: 1, kinds: []string{"supersedes", "temporal"}, partners: []string{"s1"}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v", got)
@@ -341,13 +342,16 @@ func TestReadSimpleExpandsFromNeededEvidence(t *testing.T) {
 	if view.Records[1].Score != 0.9 || view.Records[1].Parent != nil || view.Records[3].Parent == nil || view.Records[3].Parent.ID != "doc" {
 		t.Fatal(view.Records)
 	}
-	// The expansion is judged with judgeAll's questions, in candidate order.
+	// The expansion is judged with judgeAll's questions, in candidate
+	// order, after the seed, a peer that is asked nothing.
 	last := judge.calls[len(judge.calls)-1]
 	texts := []judgeCandidate{}
-	for _, text := range []string{"Melanie: launch window opens Friday at dawn", "Caroline: launch moved to Monday", "Notes: launch checklist signed"} {
+	for _, text := range []string{"Caroline: the codename is ORBIT", "Melanie: launch window opens Friday at dawn", "Caroline: launch moved to Monday", "Notes: launch checklist signed"} {
 		texts = append(texts, judgeCandidate{Source: judgeSource, Text: text})
 	}
 	state, questions := batchRequest([]Message{user("What is the codename?")}, texts)
+	delete(questions, "n0")
+	delete(questions, "s0")
 	if raw, _ := json.Marshal(state); last.Raw != string(raw) || !reflect.DeepEqual(last.Questions, questions) {
 		t.Fatal(last.Raw)
 	}
@@ -547,12 +551,13 @@ func TestExpansionWithinTheDecisionBudget(t *testing.T) {
 	if got[1].ID != "n00" || got[50].ID != "n49" || r.items["n49"] != got[50] || slices.Contains(r.order, "n00") {
 		t.Fatal(itemIDs(got))
 	}
-	// One call left judges the best 40; the rest are dropped.
+	// One call left judges the best 39 (the seed rides along as a peer);
+	// the rest are dropped.
 	judge = expandJudge()
 	r, scored = expansionRun(t, judge)
 	r.stats.DecisionCalls = simpleDecisionBudget - 1
 	got, err = r.expandEvidence(ctx, scored, stopRounds)
-	if err != nil || len(got) != 41 || got[40].ID != "n39" || judge.count() != 1 || r.stats.Expanded != 40 || r.items["n40"] != nil || !slices.Equal(r.stats.Degraded, []string{"expansion"}) {
+	if err != nil || len(got) != 40 || got[39].ID != "n38" || judge.count() != 1 || r.stats.Expanded != 39 || r.items["n39"] != nil || !slices.Equal(r.stats.Degraded, []string{"expansion"}) {
 		t.Fatal(len(got), err, judge.count(), r.stats)
 	}
 	// None left: nothing is read or judged.
@@ -590,7 +595,7 @@ func TestReadSimpleExpandsAdjacentWindow(t *testing.T) {
 	for _, candidate := range last.State.Candidates {
 		texts = append(texts, candidate.Text)
 	}
-	if !slices.Equal(texts, []string{"Melanie: launch window opens Friday at dawn", "Caroline: good morning, how was your weekend", "Caroline: sounds great, see you there"}) {
+	if !slices.Equal(texts, []string{"Caroline: the codename is ORBIT", "Melanie: launch window opens Friday at dawn", "Caroline: good morning, how was your weekend", "Caroline: sounds great, see you there"}) {
 		t.Fatal(texts)
 	}
 	// a0 and a4 (0.2) fill after the pooled records at the same answer.

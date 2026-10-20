@@ -2,6 +2,8 @@ package memoryagent
 
 import (
 	"context"
+	"fmt"
+	"maps"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -268,15 +270,20 @@ func TestReadSimpleExpandsEvents(t *testing.T) {
 		return view, judge
 	}
 	// The expansion's judgement is the second call with superseded
-	// questions (the first judges the shortlist).
+	// questions (the first judges the shortlist); its candidates are the
+	// items it asks about (its peers are asked nothing).
 	expansion := func(judge *scriptedJudge) []string {
-		calls := slices.DeleteFunc(slices.Clone(judge.calls), func(call judgeCall) bool { _, ok := call.Questions["s0"]; return !ok })
+		calls := slices.DeleteFunc(slices.Clone(judge.calls), func(call judgeCall) bool {
+			return !slices.ContainsFunc(slices.Collect(maps.Keys(call.Questions)), func(key string) bool { return strings.HasPrefix(key, "s") })
+		})
 		if len(calls) != 2 {
 			t.Fatal(len(calls))
 		}
 		texts := []string{}
-		for _, candidate := range calls[1].State.Candidates {
-			texts = append(texts, candidate.Text)
+		for i, candidate := range calls[1].State.Candidates {
+			if _, asked := calls[1].Questions[fmt.Sprintf("n%d", i)]; asked {
+				texts = append(texts, candidate.Text)
+			}
 		}
 		return texts
 	}
