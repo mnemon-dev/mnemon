@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/mnemon-dev/mnemon/internal/records"
 )
@@ -246,9 +248,19 @@ func buildEdges(states []timelineState, versions map[string]int64) map[string]re
 	out := map[string]records.DerivedMetadata{}
 	for id, r := range b.records {
 		item := records.DerivedMetadata{Version: versions[id], Entities: r.entities[:min(maxEdgeNames, len(r.entities))], EventAt: r.eventAt}
-		for _, alias := range r.aliases {
-			if len(item.Aliases) < maxEdgeNames && !slices.Contains(item.Entities, alias) && !slices.Contains(item.Aliases, alias) {
-				item.Aliases = append(item.Aliases, alias)
+		alias := func(name string) {
+			if len(item.Aliases) < maxEdgeNames && !slices.Contains(item.Entities, name) && !slices.Contains(item.Aliases, name) {
+				item.Aliases = append(item.Aliases, name)
+			}
+		}
+		// The other names of its clusters, then the words of its
+		// multi-word names, which the index can match in a query.
+		for _, name := range r.aliases {
+			alias(name)
+		}
+		for _, name := range append(slices.Clone(r.entities), r.aliases...) {
+			for _, word := range nameWords(name) {
+				alias(word)
 			}
 		}
 		slices.SortStableFunc(r.links, func(x, y rankedLink) int { return x.rank - y.rank })
@@ -380,6 +392,47 @@ func (b *edgeBuilder) link(source, target, kind string, weight float64, rank int
 	}
 	r.links = append(r.links, rankedLink{records.Link{ID: target, Version: version, Type: kind, Weight: weight}, rank})
 	return true
+}
+
+// aliasStopwords are the words, lowercase, that nameWords never gives:
+// common capitalized words, months and weekdays, roles and the first
+// person.
+var aliasStopwords = map[string]bool{}
+
+func init() {
+	for _, word := range strings.Fields(`the and for with from this that
+january february march april may june july august september october november december
+jan feb mar apr jun jul aug sep sept oct nov dec
+monday tuesday wednesday thursday friday saturday sunday mon tue tues wed thu thur thurs fri sat sun
+user assistant our ours ourselves mine myself`) {
+		aliasStopwords[word] = true
+	}
+}
+
+// nameWords is the words of a multi-word name by which a query can name it
+// (the records' entity route matches single words): each word, split at
+// anything but letters and digits, that starts with an uppercase letter,
+// has three letters or more and is no stopword (aliasStopwords). A
+// one-word name has none.
+func nameWords(name string) []string {
+	words := strings.FieldsFunc(name, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	if len(words) < 2 {
+		return nil
+	}
+	var out []string
+	for _, word := range words {
+		first, _ := utf8.DecodeRuneInString(word)
+		letters := 0
+		for _, r := range word {
+			if unicode.IsLetter(r) {
+				letters++
+			}
+		}
+		if unicode.IsUpper(first) && letters >= 3 && !aliasStopwords[strings.ToLower(word)] {
+			out = append(out, word)
+		}
+	}
+	return out
 }
 
 // nearest is the up to k positions other than p among n nearest to p,

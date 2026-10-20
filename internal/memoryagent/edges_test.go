@@ -68,10 +68,12 @@ func TestBuildEdgesFromState(t *testing.T) {
 		// of their clusters; links to the nearest events of its threads
 		// (entity) and to the previous and next (temporal); the earliest
 		// date citing it.
-		"r1": {Version: 1, Entities: []string{"Greg Hall", "Cabin Co"}, Aliases: []string{"Greg"}, EventAt: "2024-01-05",
+		// Then the capitalized words of its multi-word names ("Co" is too
+		// short).
+		"r1": {Version: 1, Entities: []string{"Greg Hall", "Cabin Co"}, Aliases: []string{"Greg", "Hall", "Cabin"}, EventAt: "2024-01-05",
 			Links: []records.Link{edgeLink("r3", 1, "entity", 0.6), edgeLink("r3", 1, "temporal", 0.5), edgeLink("r4", 3, "temporal", 0.5)}},
 		"r2": {Version: 1, Entities: []string{"Acme"}, EventAt: "2024-01-03", Links: []records.Link{edgeLink("r6", 1, "temporal", 0.5)}},
-		"r3": {Version: 1, Entities: []string{"Greg"}, Aliases: []string{"Greg Hall"}, EventAt: "2024-01-02", Links: []records.Link{edgeLink("r1", 1, "temporal", 0.5)}},
+		"r3": {Version: 1, Entities: []string{"Greg"}, Aliases: []string{"Greg Hall", "Hall"}, EventAt: "2024-01-02", Links: []records.Link{edgeLink("r1", 1, "temporal", 0.5)}},
 		// A later value supersedes the earlier one; its links bind the
 		// targets' versions and its own row its own.
 		"r4": {Version: 3, EventAt: "2024-01-09", Links: []records.Link{edgeLink("r1", 1, "supersedes", 1), edgeLink("r1", 1, "entity", 0.6), edgeLink("r1", 1, "temporal", 0.5), edgeLink("r3", 1, "entity", 0.6)}},
@@ -91,10 +93,11 @@ func TestBuildEdgesFromState(t *testing.T) {
 	if records != 6 || !reflect.DeepEqual(links, map[string]int{"entity": 4, "temporal": 6, "supersedes": 2}) {
 		t.Fatal(records, links)
 	}
-	// Without decisions every name is its own cluster: no aliases.
+	// Without decisions every name is its own cluster: word aliases only.
 	state.EntityClusters = nil
 	for id, item := range buildEdges([]timelineState{state}, edgeVersions()) {
-		if item.Aliases != nil || !slices.Equal(item.Entities, want[id].Entities) {
+		words := map[string][]string{"r1": {"Greg", "Hall", "Cabin"}}[id]
+		if !slices.Equal(item.Aliases, words) || !slices.Equal(item.Entities, want[id].Entities) {
 			t.Fatal(id, item)
 		}
 	}
@@ -488,7 +491,9 @@ func TestRebuildEdgesJEVFailureCounted(t *testing.T) {
 	if err != nil || result.AliasFallbacks != 2 || result.AliasMerges != 0 || result.EdgeRecords != 6 {
 		t.Fatal(result, err)
 	}
-	if got := queryIDs(t, s, "Greg", &records.IndexPolicy{Version: 1, Entities: true}, nil); slices.Contains(got, "r1") {
+	// Undecided, Greg is not Greg Hall: Greg's record has no "Hall"; Greg
+	// Hall's has its words.
+	if got := queryIDs(t, s, "Hall", &records.IndexPolicy{Version: 1, Entities: true}, nil); !slices.Equal(got, []string{"r1"}) {
 		t.Fatal("an undecided alias found a record", got)
 	}
 }
@@ -785,5 +790,25 @@ func TestNativeEdgesDeferred(t *testing.T) {
 	raw, _ := json.Marshal(ConsolidateRequest{DeferEdges: true})
 	if !strings.Contains(string(raw), `"deferEdges":true`) {
 		t.Fatal(string(raw))
+	}
+}
+
+func TestBuildEdgesWordAliases(t *testing.T) {
+	state := emptyTimelineState()
+	state.Memory.Threads = []thread{{ID: "T1", Title: "Names"}}
+	names := []string{"Lake Tahoe", "The Cabin Co", "User Profile", "May Day Parade", "Monday Meeting", "Assistant Manager", "cabin rental", "G. Hall", "Dr. Anne-Marie O'Brien", "Acme", "Greg's Bakery", "Our Garden"}
+	state.Memory.Events = []event{{Thread: "T1", Date: "2024/01/01", Text: "names", Records: []string{"r"}, Entities: names}}
+	got := buildEdges([]timelineState{state}, map[string]int64{"r": 1})["r"]
+	// The capitalized words of three letters or more of each multi-word
+	// name, but no stopword, month, weekday, role or first-person word;
+	// single-word names and lowercase words give none.
+	want := []string{"Lake", "Tahoe", "Cabin", "Profile", "Day", "Parade", "Meeting", "Manager", "Hall", "Anne", "Marie", "Brien", "Greg", "Bakery", "Garden"}
+	if !slices.Equal(got.Entities, names) || !slices.Equal(got.Aliases, want) {
+		t.Fatalf("aliases %q", got.Aliases)
+	}
+	// A word that is itself one of the record's names is no alias.
+	state.Memory.Events[0].Entities = []string{"Tahoe", "Lake Tahoe"}
+	if got := buildEdges([]timelineState{state}, map[string]int64{"r": 1})["r"]; !slices.Equal(got.Aliases, []string{"Lake"}) {
+		t.Fatalf("aliases %q", got.Aliases)
 	}
 }
