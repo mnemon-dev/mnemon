@@ -24,9 +24,10 @@ import (
 //
 //   - L1b entities: a record's entities are the names of the events and
 //     values citing it (layered extraction's; timelines names none), and its
-//     aliases the other names of their clusters. Each name is decided once,
-//     by JEV, into the cluster of a known name that names the same one, or
-//     into a cluster of its own (resolveAliases).
+//     aliases the other names of their clusters, then the words of its
+//     multi-word names (nameWords). Each name is decided once, by JEV, into
+//     the cluster of a known name that names the same one, or into a
+//     cluster of its own (resolveAliases).
 //   - L1c relations: in date order, the records of each event of a thread
 //     link (entity, relationWeight) to those of its relationNeighbors
 //     nearest events, and (temporal, temporalWeight) to those of the
@@ -38,9 +39,10 @@ import (
 //     event or value citing it; the index uses it only when the record's
 //     writer gave none.
 //
-// A job that changed the memory since the metadata was last built (or a
-// rebuildEdges request) rebuilds it whole from every stored scope state;
-// rows and links bind the records' current versions.
+// A job that changed the memory since the metadata was last built (or was
+// reset), unless it defers the step (deferEdges), and a rebuildEdges
+// request rebuild it from every stored scope state; the records write only
+// the rows that changed. Rows and links bind the records' current versions.
 
 // edgesSource is the consolidation's source of derived metadata.
 const edgesSource = "consolidation"
