@@ -27,7 +27,7 @@ func TestIndexIdentityKeepsExistingPolicies(t *testing.T) {
 		}
 	}
 	seen := map[string]bool{}
-	for _, p := range []*IndexPolicy{{Version: 1, Lexical: true}, {Version: 1, Lexical: true, Recency: true}, {Version: 1, Recency: true}} {
+	for _, p := range []*IndexPolicy{{Version: 1, Lexical: true}, {Version: 1, Lexical: true, Recency: true}, {Version: 1, Recency: true}, {Version: 1, Traversal: true}, {Version: 1, Recency: true, Traversal: true}} {
 		if seen[p.Identity()] {
 			t.Errorf("identity collision %+v", p)
 		}
@@ -36,13 +36,13 @@ func TestIndexIdentityKeepsExistingPolicies(t *testing.T) {
 			t.Errorf("policy %+v not enabled or invalid", p)
 		}
 	}
-	for _, p := range []*IndexPolicy{{Recency: true}} {
+	for _, p := range []*IndexPolicy{{Recency: true}, {Traversal: true}} {
 		if p.Validate() == nil {
 			t.Errorf("unversioned policy %+v accepted", p)
 		}
 	}
 	var decoded QueryRequest
-	if err := json.Unmarshal([]byte(`{"index":{"version":1,"recency":true}}`), &decoded); err != nil || !decoded.Index.Recency {
+	if err := json.Unmarshal([]byte(`{"index":{"version":1,"traversal":true,"recency":true}}`), &decoded); err != nil || !decoded.Index.Traversal || !decoded.Index.Recency {
 		t.Fatal(decoded.Index, err)
 	}
 }

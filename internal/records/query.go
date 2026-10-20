@@ -167,12 +167,20 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 }
 
 func (s *Store) rankSelection(ctx context.Context, hash string, req QueryRequest, selection *querySelection) (QueryResult, error) {
+	result, _, err := s.rankSelectionVector(ctx, hash, req, selection)
+	return result, err
+}
+
+// rankSelectionVector is rankSelection that also returns the query's vector
+// when a hybrid match embedded it, else nil.
+func (s *Store) rankSelectionVector(ctx context.Context, hash string, req QueryRequest, selection *querySelection) (QueryResult, []float32, error) {
 	query := stringValue(req.Input["query"])
 	term := lower(query)
 	match := stringValue(req.Input["match"])
 	words := (match == "words" || match == "hybrid") && term != ""
 	records := selection.docs
 	var err error
+	var vector []float32
 	result := QueryResult{IDs: []string{}}
 	if words {
 		index, precomputed, err := s.queryLexical(ctx, hash, req, selection, term)
@@ -180,7 +188,7 @@ func (s *Store) rankSelection(ctx context.Context, hash string, req QueryRequest
 			index, err = s.lexical(ctx, hash, req, records)
 		}
 		if err != nil {
-			return QueryResult{}, err
+			return QueryResult{}, nil, err
 		}
 		limit := index.n
 		if match == "hybrid" && req.Embedding != nil {
@@ -188,9 +196,12 @@ func (s *Store) rankSelection(ctx context.Context, hash string, req QueryRequest
 		}
 		result.IDs = index.searchN(term, limit)
 		if match == "hybrid" && req.Embedding != nil {
-			semantic, err := s.selectionVectorRank(ctx, query, selection, *req.Embedding)
+			if vector, err = s.queryVector(ctx, query, *req.Embedding); err != nil {
+				return QueryResult{}, nil, err
+			}
+			semantic, err := s.selectionVectorRankOf(ctx, vector, selection, *req.Embedding)
 			if err != nil {
-				return QueryResult{}, err
+				return QueryResult{}, nil, err
 			}
 			result.IDs = fuse(result.IDs, semantic)
 		}
@@ -202,7 +213,7 @@ func (s *Store) rankSelection(ctx context.Context, hash string, req QueryRequest
 			if precomputed {
 				index, err = s.selectionFeedback(ctx, selection, ids)
 				if err != nil {
-					return QueryResult{}, err
+					return QueryResult{}, nil, err
 				}
 			}
 			expansion := index.feedback(ids, term)
@@ -211,8 +222,8 @@ func (s *Store) rankSelection(ctx context.Context, hash string, req QueryRequest
 	} else {
 		result.IDs, err = selection.queryIDs(ctx, term, string(req.Input["recent"]) != "false")
 		if err != nil {
-			return QueryResult{}, err
+			return QueryResult{}, nil, err
 		}
 	}
-	return result, nil
+	return result, vector, nil
 }

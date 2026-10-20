@@ -81,6 +81,9 @@ func (s *Store) buildDerived(ctx context.Context, rev int64, all []record, req Q
 	}
 	docs := candidates(all, input, "", true)
 	index := &derivedIndex{meta: map[string]indexDocument{}, entities: map[string][]string{}, known: map[string]bool{}, words: map[string][]string{}, links: map[string][]Link{}, replacements: map[string][]Link{}}
+	if req.Index.Traversal {
+		index.position = map[string]int{}
+	}
 	metadata, generation, err := s.indexMetadata(ctx, rev, docs, req.derived)
 	if err != nil {
 		return nil, err
@@ -104,6 +107,9 @@ func (s *Store) buildDerived(ctx context.Context, rev int64, all []record, req Q
 		}
 		index.docs = append(index.docs, r)
 		index.meta[r.ID] = indexDocument{meta: meta, at: at}
+		if req.Index.Traversal {
+			index.position[r.ID] = len(index.docs) - 1
+		}
 		if req.Index.Entities {
 			entities := retrieval.MergeEntities(meta.Entities, meta.Aliases)
 			entities = retrieval.ResolveEntities(r.SearchText, entities, retrieval.EntityModeMerge)
@@ -123,7 +129,7 @@ func (s *Store) buildDerived(ctx context.Context, rev int64, all []record, req Q
 			}
 		}
 	}
-	if req.Index.Relations || req.Index.Supersedes {
+	if req.Index.Relations || req.Index.Supersedes || req.Index.Traversal {
 		index.buildLinks()
 	}
 	if req.Index.Recency {

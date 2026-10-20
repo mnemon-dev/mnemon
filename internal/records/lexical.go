@@ -330,6 +330,12 @@ func feedbackToken(token string, exclude map[string]bool) bool {
 }
 
 func fuse(rankings ...[]string) []string {
+	hits := fusedHits(rankings...)
+	return rank(hits, len(hits))
+}
+
+// fusedHits is fuse's reciprocal-rank score of each id, in first-seen order.
+func fusedHits(rankings ...[]string) []scored {
 	scores := map[string]float64{}
 	ids := []string{}
 	for _, ranking := range rankings {
@@ -347,5 +353,5 @@ func fuse(rankings ...[]string) []string {
 	for i, id := range ids {
 		hits[i] = scored{id, scores[id]}
 	}
-	return rank(hits, len(hits))
+	return hits
 }

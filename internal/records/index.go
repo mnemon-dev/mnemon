@@ -26,6 +26,9 @@ type IndexPolicy struct {
 	// Recency adds native Smart Recall's recency anchor signal: the
 	// selection's newest records by index time (recall.go).
 	Recency bool `json:"recency,omitempty"`
+	// Traversal adds native Smart Recall's beam search over the links from
+	// the fused seeds (recall.go).
+	Traversal bool `json:"traversal,omitempty"`
 }
 
 func (p *IndexPolicy) UnmarshalJSON(raw []byte) error {
@@ -36,7 +39,7 @@ func (p *IndexPolicy) UnmarshalJSON(raw []byte) error {
 }
 
 func (p *IndexPolicy) Enabled() bool {
-	return p != nil && (p.Lexical || p.Entities || p.Relations || p.Temporal || p.Supersedes || p.Recency)
+	return p != nil && (p.Lexical || p.Entities || p.Relations || p.Temporal || p.Supersedes || p.Recency || p.Traversal)
 }
 
 func (p *IndexPolicy) Validate() error {
@@ -99,8 +102,10 @@ type derivedIndex struct {
 	words        map[string][]string
 	links        map[string][]Link
 	replacements map[string][]Link
-	// recent is the recency route of an index with Recency (recall.go).
-	recent []string
+	// recent is the recency route of an index with Recency, and position
+	// each record's place in docs for one with Traversal (recall.go).
+	recent   []string
+	position map[string]int
 }
 
 func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult, error) {
@@ -121,7 +126,7 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 	}
 	// Later caches are keyed by the overlay the index was built from.
 	req.derived = index.generation
-	result, err := s.rankSelection(ctx, hash, req, selection)
+	result, vector, err := s.rankSelectionVector(ctx, hash, req, selection)
 	if err != nil {
 		return QueryResult{}, err
 	}
@@ -152,6 +157,10 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 		appendRoute("recency", index.recent)
 	}
 	seeds := fuse(lists...)
+	var anchors []scored
+	if req.Index.Traversal {
+		anchors = recallSeeds(seeds, lists)
+	}
 	intent := retrieval.DetectIntent(query)
 	if raw := stringValue(req.Input["intent"]); raw != "" {
 		intent, err = retrieval.IntentFromString(raw)
@@ -161,6 +170,19 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 	}
 	if req.Index.Relations {
 		appendRoute("relations", index.related(seeds, intent, false, limit))
+	}
+	if req.Index.Traversal {
+		// Semantic scores need the query's vector, which only a hybrid base
+		// route has, and read stored vectors only: traversal never embeds.
+		var similarity func([]string) (map[string]float64, error)
+		if vector != nil {
+			similarity = s.storedSimilarity(ctx, index, *req.Embedding, vector)
+		}
+		route, err := index.traverse(ctx, anchors, intent, similarity, limit)
+		if err != nil {
+			return QueryResult{}, err
+		}
+		appendRoute("traversal", route)
 	}
 	if req.Index.Supersedes && !trueValue(req.Input["history"]) && req.Input["until"] == nil {
 		appendRoute("supersedes", index.related(seeds, intent, true, limit))

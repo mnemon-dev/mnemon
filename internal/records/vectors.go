@@ -245,6 +245,11 @@ func (s *Store) selectionVectorRank(ctx context.Context, query string, v *queryS
 	if err != nil {
 		return nil, err
 	}
+	return s.selectionVectorRankOf(ctx, target, v, cfg)
+}
+
+// selectionVectorRankOf is selectionVectorRank for a query vector in hand.
+func (s *Store) selectionVectorRankOf(ctx context.Context, target []float32, v *querySelection, cfg EmbeddingConfig) ([]string, error) {
 	values, err := s.selectionVectors(ctx, v, cfg)
 	if err != nil {
 		return nil, err
