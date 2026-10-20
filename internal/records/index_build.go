@@ -126,6 +126,9 @@ func (s *Store) buildDerived(ctx context.Context, rev int64, all []record, req Q
 	if req.Index.Relations || req.Index.Supersedes {
 		index.buildLinks()
 	}
+	if req.Index.Recency {
+		index.recent = index.newest(recallAnchors)
+	}
 	return index, nil
 }
 

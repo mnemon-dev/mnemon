@@ -23,6 +23,9 @@ type IndexPolicy struct {
 	Relations  bool `json:"relations,omitempty"`
 	Temporal   bool `json:"temporal,omitempty"`
 	Supersedes bool `json:"supersedes,omitempty"`
+	// Recency adds native Smart Recall's recency anchor signal: the
+	// selection's newest records by index time (recall.go).
+	Recency bool `json:"recency,omitempty"`
 }
 
 func (p *IndexPolicy) UnmarshalJSON(raw []byte) error {
@@ -33,7 +36,7 @@ func (p *IndexPolicy) UnmarshalJSON(raw []byte) error {
 }
 
 func (p *IndexPolicy) Enabled() bool {
-	return p != nil && (p.Lexical || p.Entities || p.Relations || p.Temporal || p.Supersedes)
+	return p != nil && (p.Lexical || p.Entities || p.Relations || p.Temporal || p.Supersedes || p.Recency)
 }
 
 func (p *IndexPolicy) Validate() error {
@@ -96,6 +99,8 @@ type derivedIndex struct {
 	words        map[string][]string
 	links        map[string][]Link
 	replacements map[string][]Link
+	// recent is the recency route of an index with Recency (recall.go).
+	recent []string
 }
 
 func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult, error) {
@@ -142,6 +147,9 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 	}
 	if req.Index.Entities {
 		appendRoute("entities", index.entityRank(query, req.Input["entities"]))
+	}
+	if req.Index.Recency {
+		appendRoute("recency", index.recent)
 	}
 	seeds := fuse(lists...)
 	intent := retrieval.DetectIntent(query)
