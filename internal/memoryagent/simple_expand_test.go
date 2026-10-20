@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/mnemon-dev/mnemon/internal/records"
 )
@@ -623,5 +624,26 @@ func TestReadSimpleExpandWithoutStage4bUnchanged(t *testing.T) {
 			raw, _ := json.Marshal(view)
 			t.Errorf("%s: %s\n%s", name, got, raw)
 		}
+	}
+}
+
+// The memory service writes each Add of a conversation as its own document
+// of one session: adjacency follows the session across them.
+func TestAdjacencySpansConversationAdds(t *testing.T) {
+	s, _ := agentStore(t)
+	ctx := context.Background()
+	at := time.Date(2023, 5, 8, 13, 0, 0, 0, time.UTC)
+	ids := []string{}
+	for i := 0; i < 3; i++ {
+		when := at.Add(time.Duration(i) * time.Minute)
+		result, err := WriteConversation(ctx, s, ConversationRequest{ID: fmt.Sprintf("add%d", i), SessionID: "session-1", Messages: []ConversationMessage{{Role: "user", Content: fmt.Sprintf("turn %d about the launch plan", i), At: &when}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, result.Records[0].ID)
+	}
+	near, err := s.Adjacent(ctx, "", records.Scope{}, ids[1:2], 1)
+	if err != nil || len(near[ids[1]]) != 2 || near[ids[1]][0].ID != ids[0] || near[ids[1]][1].ID != ids[2] {
+		t.Fatal(near, err)
 	}
 }

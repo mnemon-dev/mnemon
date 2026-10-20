@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 )
 
 // Neighbors of known records for a reader that expands from evidence it has
@@ -73,11 +74,14 @@ type Nearby struct {
 // the same distance, the earlier first (offsets -1, 1, -2, 2, …): among the
 // active records visible in scope (original documents and index items left
 // out), in store order, those of the same session. A session is a place
-// (scope, workspace and session) and, within it, the record's original
-// document when the writer named one (data.documentID), else the day of the
-// writer's data.eventAt, else of the record's date, in the writer's own
-// offset. A record with neither has no session and no neighbors; neighbors
-// never cross sessions. window must be at least 1.
+// (scope, workspace and session) and, within it, the conversation session
+// the writer named (data.session: the memory service writes each Add of a
+// conversation as its own document of one session), else the record's
+// original document (data.documentID), else the day of the writer's
+// data.eventAt, else of the record's date, in the writer's own offset. A
+// record with none of them has no session and no neighbors; neighbors never
+// cross sessions. window must be at least 1. A revision's sessions in a
+// scope are built once and cached: a revision never changes.
 func (s *Store) Adjacent(ctx context.Context, revisionHash string, scope Scope, ids []string, window int) (map[string][]Nearby, error) {
 	if window < 1 {
 		return nil, errors.New("adjacent window must be at least 1")
@@ -86,55 +90,17 @@ func (s *Store) Adjacent(ctx context.Context, revisionHash string, scope Scope, 
 	if err != nil {
 		return nil, err
 	}
-	all, err := s.queryRecords(ctx, rev, hash)
+	index, err := s.sessionIndex(ctx, rev, hash, scope)
 	if err != nil {
 		return nil, err
-	}
-	// Only the two writer fields sessions need are projected.
-	rows, err := s.readDB().QueryContext(ctx, `SELECT id,
- CASE json_type(record_json,'$.data.documentID') WHEN 'text' THEN json_extract(record_json,'$.data.documentID') ELSE '' END,
- CASE json_type(record_json,'$.data.eventAt') WHEN 'text' THEN json_extract(record_json,'$.data.eventAt') ELSE '' END
-FROM record_versions WHERE rev_from<=? AND (rev_to IS NULL OR rev_to>?)`, rev, rev)
-	if err != nil {
-		return nil, err
-	}
-	written := map[string][2]string{}
-	for rows.Next() {
-		var id, document, eventAt string
-		if err = rows.Scan(&id, &document, &eventAt); err != nil {
-			rows.Close()
-			return nil, err
-		}
-		written[id] = [2]string{document, eventAt}
-	}
-	err = rows.Err()
-	rows.Close()
-	if err != nil {
-		return nil, err
-	}
-	sessions, key := map[string][]string{}, map[string]string{}
-	for _, r := range all {
-		if !visible(r, scope) || r.State != "active" || r.Kind == "memory-document" || r.Kind == "memory-index" {
-			continue
-		}
-		if session, ok := sessionOf(r, written[r.ID][0], written[r.ID][1]); ok {
-			key[r.ID] = session
-			sessions[session] = append(sessions[session], r.ID)
-		}
-	}
-	position := map[string]int{}
-	for _, list := range sessions {
-		for i, id := range list {
-			position[id] = i
-		}
 	}
 	out := map[string][]Nearby{}
 	for _, id := range ids {
-		session, ok := key[id]
+		session, ok := index.key[id]
 		if _, done := out[id]; done || !ok {
 			continue
 		}
-		list, at := sessions[session], position[id]
+		list, at := index.sessions[session], index.position[id]
 		near := []Nearby{}
 		for distance := 1; distance <= window; distance++ {
 			if at-distance >= 0 {
@@ -151,10 +117,110 @@ FROM record_versions WHERE rev_from<=? AND (rev_to IS NULL OR rev_to>?)`, rev, r
 	return out, nil
 }
 
-// sessionOf is the session key of a record: its place, then its document or
-// its day.
-func sessionOf(r record, document, eventAt string) (string, bool) {
+// sessions is a scope's records at one revision grouped into their
+// sessions, each in store order.
+type sessions struct {
+	key      map[string]string   // record id → session
+	sessions map[string][]string // session → record ids
+	position map[string]int      // record id → position in its session
+}
+
+// sessionCache keeps the sessions of the last sessionEntries (revision,
+// scope) pairs read; a revision is immutable, so an entry never goes stale.
+type sessionCache struct {
+	mu      sync.Mutex
+	entries map[string]*sessions
+	order   []string
+}
+
+const sessionEntries = 8
+
+// sessionIndex is the sessions of the records visible in scope at rev
+// (hash), from the cache or built and cached. Concurrent first reads may
+// each build them; the first to finish is kept.
+func (s *Store) sessionIndex(ctx context.Context, rev int64, hash string, scope Scope) (*sessions, error) {
+	raw, _ := json.Marshal(scope)
+	key := hash + "\x00" + string(raw)
+	c := &s.sessionCache
+	c.mu.Lock()
+	index := c.entries[key]
+	c.mu.Unlock()
+	if index != nil {
+		return index, nil
+	}
+	index, err := s.buildSessions(ctx, rev, hash, scope)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if existing := c.entries[key]; existing != nil {
+		return existing, nil
+	}
+	if c.entries == nil {
+		c.entries = map[string]*sessions{}
+	}
+	for len(c.order) >= sessionEntries {
+		delete(c.entries, c.order[0])
+		c.order = c.order[1:]
+	}
+	c.entries[key] = index
+	c.order = append(c.order, key)
+	return index, nil
+}
+
+// buildSessions groups the records visible in scope at rev into sessions,
+// reading the three writer fields sessions need.
+func (s *Store) buildSessions(ctx context.Context, rev int64, hash string, scope Scope) (*sessions, error) {
+	s.sessionBuilds.Add(1)
+	all, err := s.queryRecords(ctx, rev, hash)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.readDB().QueryContext(ctx, `SELECT id,
+ CASE json_type(record_json,'$.data.session') WHEN 'text' THEN json_extract(record_json,'$.data.session') ELSE '' END,
+ CASE json_type(record_json,'$.data.documentID') WHEN 'text' THEN json_extract(record_json,'$.data.documentID') ELSE '' END,
+ CASE json_type(record_json,'$.data.eventAt') WHEN 'text' THEN json_extract(record_json,'$.data.eventAt') ELSE '' END
+FROM record_versions WHERE rev_from<=? AND (rev_to IS NULL OR rev_to>?)`, rev, rev)
+	if err != nil {
+		return nil, err
+	}
+	written := map[string][3]string{}
+	for rows.Next() {
+		var id, session, document, eventAt string
+		if err = rows.Scan(&id, &session, &document, &eventAt); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		written[id] = [3]string{session, document, eventAt}
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return nil, err
+	}
+	index := &sessions{key: map[string]string{}, sessions: map[string][]string{}, position: map[string]int{}}
+	for _, r := range all {
+		if !visible(r, scope) || r.State != "active" || r.Kind == "memory-document" || r.Kind == "memory-index" {
+			continue
+		}
+		fields := written[r.ID]
+		if session, ok := sessionOf(r, fields[0], fields[1], fields[2]); ok {
+			index.key[r.ID] = session
+			index.position[r.ID] = len(index.sessions[session])
+			index.sessions[session] = append(index.sessions[session], r.ID)
+		}
+	}
+	return index, nil
+}
+
+// sessionOf is the session key of a record: its place, then its
+// conversation session, its document or its day.
+func sessionOf(r record, session, document, eventAt string) (string, bool) {
 	place, _ := json.Marshal([]any{r.Scope, r.WorkspaceID, r.SessionID})
+	if session != "" {
+		return string(place) + "\x00session\x00" + session, true
+	}
 	if document != "" {
 		return string(place) + "\x00document\x00" + document, true
 	}

@@ -227,3 +227,64 @@ func TestLinksConcurrentReadersShareTheIndex(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// A conversation's session (data.session) spans its documents: the memory
+// service writes each Add as its own document of one session. Sessions are
+// cached per revision and scope.
+func TestAdjacentSessionsSpanDocumentsAndAreCached(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	chunk := func(id, document, session string) Upsert {
+		data := map[string]any{"eventAt": "2023-05-08T13:00:00Z", "documentID": document}
+		if session != "" {
+			data["session"] = session
+		}
+		return indexedRecord(id, id, data)
+	}
+	first, err := s.Put(ctx, PutRequest{Upsert: []Upsert{
+		chunk("add0-0", "add0", "chat-1"), chunk("add0-1", "add0", "chat-1"),
+		chunk("other-0", "other", "chat-2"),
+		chunk("add1-0", "add1", "chat-1"),
+		chunk("plain-0", "plain", ""), chunk("plain-1", "plain", ""),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{"add0-0", "add0-1", "add1-0", "other-0", "plain-0"}
+	got, err := nearbyIDs(s.Adjacent(ctx, "", Scope{}, ids, 1))
+	want := map[string][]string{"add0-0": {"add0-1"}, "add0-1": {"add0-0", "add1-0"}, "add1-0": {"add0-1"}, "plain-0": {"plain-1"}}
+	if err != nil || !reflect.DeepEqual(got, want) {
+		t.Fatal(got, err)
+	}
+	// A later revision has its own sessions; the earlier one keeps its.
+	if _, err = s.Put(ctx, PutRequest{Upsert: []Upsert{chunk("add2-0", "add2", "chat-1")}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err = nearbyIDs(s.Adjacent(ctx, "", Scope{}, []string{"add1-0"}, 1)); err != nil || !reflect.DeepEqual(got["add1-0"], []string{"add0-1", "add2-0"}) {
+		t.Fatal(got, err)
+	}
+	if got, err = nearbyIDs(s.Adjacent(ctx, first, Scope{}, []string{"add1-0"}, 1)); err != nil || !reflect.DeepEqual(got["add1-0"], []string{"add0-1"}) {
+		t.Fatal(got, err)
+	}
+	// Each revision and scope is built once, then served from the cache;
+	// concurrent reads agree.
+	builds := s.sessionBuilds.Load()
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if got, err := nearbyIDs(s.Adjacent(ctx, "", Scope{}, []string{"add1-0"}, 1)); err != nil || !reflect.DeepEqual(got["add1-0"], []string{"add0-1", "add2-0"}) {
+				t.Error(got, err)
+			}
+		}()
+	}
+	wg.Wait()
+	if s.sessionBuilds.Load() != builds {
+		t.Fatal("the cached revision was rebuilt", s.sessionBuilds.Load(), builds)
+	}
+	w := "/w"
+	if _, err = s.Adjacent(ctx, "", Scope{WorkspaceID: &w}, []string{"add1-0"}, 1); err != nil || s.sessionBuilds.Load() != builds+1 {
+		t.Fatal("another scope shares an entry", err, s.sessionBuilds.Load(), builds)
+	}
+}

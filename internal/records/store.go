@@ -96,6 +96,10 @@ type Store struct {
 	fts      bool
 	// running is set while a query runtime (StartRuntime) runs.
 	running atomic.Bool
+	// sessionCache keeps the sessions Adjacent reads (neighbors.go);
+	// sessionBuilds counts how many it built.
+	sessionCache  sessionCache
+	sessionBuilds atomic.Int64
 }
 
 func (s *Store) ReadOnly() bool { return s.readonly }
