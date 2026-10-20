@@ -399,6 +399,34 @@ func TestResolveEntitiesIndexed_NilIndexEqualsResolveEntities(t *testing.T) {
 	}
 }
 
+func TestExtractEntities_FilePathsSkipNumbersAndAbbreviations(t *testing.T) {
+	entities := ExtractEntities("Scores 0.52 and 127.0.0.1, e.g. the J.Y. case on p.4, live in cmd/root.go, llama.cpp and example.org")
+	has := toSet(entities)
+	for _, want := range []string{"cmd/root.go", "llama.cpp", "example.org"} {
+		if !has[want] {
+			t.Errorf("want path %q, got %v", want, entities)
+		}
+	}
+	for _, noise := range []string{"0.52", "127.0.0.1", "e.g", "J.Y", "p.4"} {
+		if has[noise] {
+			t.Errorf("number or abbreviation %q must not be an entity, got %v", noise, entities)
+		}
+	}
+}
+
+func TestExtractEntities_EmphasisWordsAreNotAcronyms(t *testing.T) {
+	entities := ExtractEntities("NEVER skip the API check; ONLY use HTTP. Status: OK, FIXED")
+	has := toSet(entities)
+	if !has["API"] || !has["HTTP"] {
+		t.Errorf("want acronyms API and HTTP, got %v", entities)
+	}
+	for _, word := range []string{"NEVER", "ONLY", "OK", "FIXED"} {
+		if has[word] {
+			t.Errorf("emphasis word %q must not be an entity, got %v", word, entities)
+		}
+	}
+}
+
 func equalAsSets(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

@@ -59,6 +59,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   stanza. `brew` commands that load the cask printed "Calling `postflight` is
   deprecated! Use `postflight_steps` instead." on every invocation. The
   quarantine strip now runs through the declarative `postflight_steps` DSL.
+- Entity extraction no longer treats numbers, versions, and addresses with no
+  letter (`0.52`, `127.0.0.1`) or dotted abbreviations (`e.g`, `i.e`) as file
+  paths, and no longer admits ordinary words written in capitals (`NEVER`,
+  `ONLY`, `NOTE`, `FIXED`) as acronyms. Such tokens linked unrelated memories
+  through entity edges.
 
 ## [0.2.7] - 2026-09-01
 
