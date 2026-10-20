@@ -93,18 +93,23 @@ type timelineMemory struct {
 // last left the pending records, and FirstModelError is when the first of
 // them was (Unix milliseconds; 0 for none). Mode is the consolidation mode
 // of the job that last wrote the state: "" for timelines, or "layered".
+// EntityClusters (nativeEdges) holds the decided entity names: each name's
+// cluster, named by its first name; EdgesMemory names the memory the
+// records' derived metadata was last built from (edges.go).
 type timelineState struct {
-	Format          string          `json:"format"`
-	Mode            string          `json:"mode,omitempty"`
-	Watermark       int64           `json:"watermark"`
-	Pending         []pendingRecord `json:"pending"`
-	Memory          timelineMemory  `json:"memory"`
-	Usage           Usage           `json:"usage"`
-	Calls           int             `json:"calls"`
-	Batches         int             `json:"batches"`
-	Failed          int             `json:"failed"`
-	ModelErrors     int             `json:"modelErrors,omitempty"`
-	FirstModelError int64           `json:"firstModelError,omitempty"`
+	Format          string            `json:"format"`
+	Mode            string            `json:"mode,omitempty"`
+	Watermark       int64             `json:"watermark"`
+	Pending         []pendingRecord   `json:"pending"`
+	Memory          timelineMemory    `json:"memory"`
+	Usage           Usage             `json:"usage"`
+	Calls           int               `json:"calls"`
+	Batches         int               `json:"batches"`
+	Failed          int               `json:"failed"`
+	ModelErrors     int               `json:"modelErrors,omitempty"`
+	FirstModelError int64             `json:"firstModelError,omitempty"`
+	EntityClusters  map[string]string `json:"entityClusters,omitempty"`
+	EdgesMemory     string            `json:"edgesMemory,omitempty"`
 }
 
 func emptyTimelineState() timelineState {
@@ -748,6 +753,9 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	if req.MaxBatches < 1 || req.MaxBatches > 64 {
 		return ConsolidateResult{}, errors.New("maxBatches must be 1–64")
 	}
+	if req.RebuildEdges && req.Reset {
+		return ConsolidateResult{}, errors.New("rebuildEdges folds nothing and cannot reset")
+	}
 	unlock, err := a.lockTimelines(ctx, req.Scope)
 	if err != nil {
 		return ConsolidateResult{}, err
@@ -759,6 +767,11 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	}
 	if err != nil {
 		return ConsolidateResult{}, err
+	}
+	if req.RebuildEdges {
+		var result ConsolidateResult
+		err := a.nativeEdges(ctx, req.Scope, &state, &token, &result)
+		return result, err
 	}
 	state.Mode = ""
 	if layered {
@@ -818,12 +831,19 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 		if foldErr != nil {
 			saveCtx = context.WithoutCancel(ctx)
 		}
-		if _, err = a.overlay.saveTimelines(saveCtx, req.Scope, token, state); err != nil {
+		if token, err = a.overlay.saveTimelines(saveCtx, req.Scope, token, state); err != nil {
 			return result, err
 		}
 	}
 	result.Added = memorySize(state.Memory) - before
 	result.Remaining = len(state.Pending) + unread
+	// The records' derived metadata follows the memory, after a job that
+	// failed too, unless it was canceled.
+	if settings.NativeEdges && ctx.Err() == nil && state.EdgesMemory != edgesDigest(state.Memory) {
+		if err := a.nativeEdges(ctx, req.Scope, &state, &token, &result); err != nil {
+			return result, errors.Join(foldErr, err)
+		}
+	}
 	return result, foldErr
 }
 

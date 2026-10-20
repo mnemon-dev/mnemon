@@ -20,6 +20,10 @@ type ConsolidateRequest struct {
 	// even when nothing new was read, for a later job without Hold to fold
 	// once the conversation pauses.
 	Hold bool `json:"hold,omitempty"`
+	// RebuildEdges (nativeEdges) folds nothing: it decides the scope's
+	// entity names not yet decided and replaces the records' derived
+	// metadata from the stored states.
+	RebuildEdges bool `json:"rebuildEdges,omitempty"`
 }
 
 type ConsolidateResult struct {
@@ -55,6 +59,17 @@ type ConsolidateResult struct {
 	Conflicts     int    `json:"conflicts,omitempty"`
 	LinkFallbacks int    `json:"linkFallbacks,omitempty"`
 	LinkLexical   int    `json:"linkLexical,omitempty"`
+	// With nativeEdges, a job that changed the memory, or a rebuildEdges
+	// request, replaces the records' derived metadata (edges.go):
+	// EdgeRecords records got a row, with EdgeLinks links by type. Of the
+	// entity names it decided, AliasMerges joined another name's cluster and
+	// AliasFallbacks stayed alone because JEV failed; AliasCalls counts its
+	// JEV calls (part of LinkUsage).
+	EdgeRecords    int            `json:"edgeRecords,omitempty"`
+	EdgeLinks      map[string]int `json:"edgeLinks,omitempty"`
+	AliasCalls     int            `json:"aliasCalls,omitempty"`
+	AliasMerges    int            `json:"aliasMerges,omitempty"`
+	AliasFallbacks int            `json:"aliasFallbacks,omitempty"`
 }
 
 // ConsolidateDrop is records a timelines job gave up on: they stay
@@ -85,6 +100,9 @@ func (r *ConsolidateResult) keepDrops(n int) {
 func (a *Agent) Consolidate(ctx context.Context, req ConsolidateRequest) (ConsolidateResult, error) {
 	if a.indexError != nil {
 		return ConsolidateResult{}, fmt.Errorf("derived index is unavailable: %w", a.indexError)
+	}
+	if req.RebuildEdges && !(a.config.Consolidation.Timelines() && a.config.Consolidation.NativeEdges) {
+		return ConsolidateResult{}, errors.New("rebuildEdges requires consolidation nativeEdges")
 	}
 	if a.config.Consolidation.Timelines() {
 		return a.consolidateTimelines(ctx, req)

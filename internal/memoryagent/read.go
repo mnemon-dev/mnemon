@@ -62,6 +62,11 @@ const (
 // job. LinkCandidates and Parallel are layered settings: the existing
 // threads (and keys) JEV compares each new thread (and key) with, 8 by
 // default, and the extraction calls a job keeps in flight, 4 by default.
+// NativeEdges (either mode) turns the consolidated state into derived
+// metadata for the records' native indexes after every job that changed it
+// (edges.go): entities with aliases, thread and value-history links, event
+// dates. LinkCandidates also bounds the names each new entity name is
+// compared with (8 in timelines mode).
 type ConsolidationConfig struct {
 	Mode                string `json:"mode,omitempty"`
 	BatchCharacters     int    `json:"batchCharacters,omitempty"`
@@ -69,6 +74,7 @@ type ConsolidationConfig struct {
 	MaxBatches          int    `json:"maxBatches,omitempty"`
 	LinkCandidates      int    `json:"linkCandidates,omitempty"`
 	Parallel            int    `json:"parallel,omitempty"`
+	NativeEdges         bool   `json:"nativeEdges,omitempty"`
 }
 
 // Timelines reports whether the mode keeps a timelines state ("timelines"
@@ -157,6 +163,9 @@ type Agent struct {
 	timelineLocks sync.Map
 	// now is the clock timelines jobs date model errors by.
 	now func() time.Time
+	// edges serializes the replacements of the records' derived metadata,
+	// which every scope's state contributes to (edges.go).
+	edges sync.Mutex
 }
 
 func New(store *records.Store, config Config, models Models, overlay *Overlay) (*Agent, error) {

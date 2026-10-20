@@ -23,8 +23,8 @@ type linkCall struct {
 }
 
 // linkJudge answers the linking questions by the texts they name: kind is
-// "thread", "identity" or "contradiction". It records every call; err, when
-// set, fails every call.
+// "thread", "identity", "contradiction" or "alias" (which gets the two
+// names). It records every call; err, when set, fails every call.
 type linkJudge struct {
 	mu     sync.Mutex
 	calls  []linkCall
@@ -53,10 +53,10 @@ func (j *linkJudge) Decide(ctx context.Context, state any, questions map[string]
 			return nil, Usage{InputTokens: 3}, err
 		}
 	}
-	text := func(items []linkItem, id string) string {
+	item := func(items []linkItem, id string) linkItem {
 		for _, item := range items {
 			if item.ID == id {
-				return item.Text
+				return item
 			}
 		}
 		panic("no item " + id)
@@ -73,10 +73,17 @@ func (j *linkJudge) Decide(ctx context.Context, state any, questions map[string]
 			kind = "thread"
 		case strings.HasPrefix(q.Instructions, "Do the new fact"):
 			kind = "identity"
+		case strings.HasPrefix(q.Instructions, "Do the name"):
+			kind = "alias"
+		}
+		n, c := item(call.State.New, refs[0][1]), item(call.State.Candidates, refs[1][1])
+		newText, candidateText := n.Text, c.Text
+		if kind == "alias" {
+			newText, candidateText = n.Name, c.Name
 		}
 		out[key] = 0.1
 		if j.answer != nil {
-			out[key] = j.answer(kind, text(call.State.New, refs[0][1]), text(call.State.Candidates, refs[1][1]))
+			out[key] = j.answer(kind, newText, candidateText)
 		}
 	}
 	return out, Usage{InputTokens: 100, OutputTokens: 1, USD: 0.001}, nil
