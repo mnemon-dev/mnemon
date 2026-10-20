@@ -7,6 +7,10 @@ type Usage struct {
 	OutputTokens int     `json:"outputTokens"`
 	USD          float64 `json:"usd,omitempty"`
 	CNY          float64 `json:"cny,omitempty"`
+	// Cached counts the calls the model cache answered (Config.ModelCache):
+	// their tokens and prices are the recorded reply's, reported as the live
+	// call reported them, but nothing was sent, reserved or spent.
+	Cached int `json:"cached,omitempty"`
 }
 
 type Question struct {
@@ -46,4 +50,5 @@ func (u *Usage) add(other Usage) {
 	u.OutputTokens += other.OutputTokens
 	u.USD += other.USD
 	u.CNY += other.CNY
+	u.Cached += other.Cached
 }

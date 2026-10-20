@@ -36,6 +36,13 @@ type Config struct {
 	// Budgets sets per-account spending caps by provider kind: jev USD,
 	// deepseek CNY, openai USD. Missing kinds keep their defaults.
 	Budgets map[string]float64 `json:"budgets,omitempty"`
+	// ModelCache is the absolute path of a private model cache file
+	// (modelcache.go): every model call replays the reply recorded for the
+	// identical request instead of sending it, and records the replies it
+	// returns. For evaluations only, never production: it gives the arms of
+	// an ablation the base run's answers. It belongs to the models
+	// (OpenModels), so it stays out of the agent's config and View.policy.
+	ModelCache string `json:"modelCache,omitempty"`
 	// Strategy selects the read path: "" is memory-agent/v1, "simple" the
 	// reference system's final read path (simple.go). Unset, it and View stay
 	// out of the policy hash, so existing configs keep their View.policy.
@@ -246,6 +253,8 @@ type Agent struct {
 	overlay    *Overlay
 	indexError error
 	budget     *Budget
+	// cache is the model cache of the models Open opened; nil otherwise.
+	cache *ModelCache
 	// timelineLocks holds one lock per scope key (a chan struct{} of
 	// capacity 1): a timelines job reads, folds and writes its state alone.
 	timelineLocks sync.Map
@@ -301,6 +310,9 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	if err := json.Unmarshal(raw, &own); err != nil {
 		return nil, err
 	}
+	// The model cache belongs to the models; left out of the agent's
+	// config, it stays out of View.policy.
+	own.ModelCache = ""
 	if own.Strategy == strategySimple {
 		if own.View == nil {
 			own.View = &ViewConfig{}
@@ -447,6 +459,9 @@ func (a *Agent) MaxItems() int {
 func (a *Agent) Close() error {
 	if a.overlay != nil {
 		a.overlay.Close()
+	}
+	if a.cache != nil {
+		a.cache.Close()
 	}
 	if a.budget != nil {
 		return a.budget.Close()

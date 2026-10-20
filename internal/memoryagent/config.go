@@ -10,31 +10,39 @@ import (
 // Open constructs only the explicitly configured models. All stores and HTTP
 // clients remain owned by the returned Agent until Close, after its calls exit.
 func Open(store *records.Store, directory string, config Config, readonly bool) (*Agent, error) {
-	models, budget, err := OpenModels(config)
+	models, budget, cache, err := OpenModels(config)
 	if err != nil {
 		return nil, err
 	}
 	agent, err := OpenWithModels(store, directory, config, readonly, models)
 	if err != nil {
-		if budget != nil {
-			budget.Close()
-		}
+		closeModelFiles(budget, cache)
 		return nil, err
 	}
-	agent.budget = budget
+	agent.budget, agent.cache = budget, cache
 	return agent, nil
 }
 
-// OpenModels constructs the configured models and the budget file they share
-// (nil without one). The caller owns both: it closes the budget after the
-// models' last call. Agents opened with OpenWithModels can share them.
-func OpenModels(config Config) (Models, *Budget, error) {
+// OpenModels constructs the configured models, the budget file they share
+// (nil without one) and the model cache they share (Config.ModelCache, nil
+// without one). The caller owns the budget and the cache: it closes them
+// after the models' last call. Agents opened with OpenWithModels can share
+// them.
+func OpenModels(config Config) (Models, *Budget, *ModelCache, error) {
 	var budget *Budget
+	var cache *ModelCache
 	var err error
 	if config.BudgetFile != "" {
 		budget, err = OpenBudgetWithCaps(config.BudgetFile, config.Budgets)
 		if err != nil {
-			return Models{}, nil, err
+			return Models{}, nil, nil, err
+		}
+	}
+	if config.ModelCache != "" {
+		cache, err = OpenModelCache(config.ModelCache)
+		if err != nil {
+			closeModelFiles(budget, nil)
+			return Models{}, nil, nil, err
 		}
 	}
 	models := Models{}
@@ -51,14 +59,23 @@ func OpenModels(config Config) (Models, *Budget, error) {
 		}
 		provider, err := NewProvider(*model.config, budget)
 		if err != nil {
-			if budget != nil {
-				budget.Close()
-			}
-			return Models{}, nil, err
+			closeModelFiles(budget, cache)
+			return Models{}, nil, nil, err
 		}
+		provider.cache = cache
 		model.set(provider)
 	}
-	return models, budget, nil
+	return models, budget, cache, nil
+}
+
+// closeModelFiles closes the files models share; either may be nil.
+func closeModelFiles(budget *Budget, cache *ModelCache) {
+	if budget != nil {
+		budget.Close()
+	}
+	if cache != nil {
+		cache.Close()
+	}
 }
 
 // OpenWithModels is Open with models the caller owns, for example models
