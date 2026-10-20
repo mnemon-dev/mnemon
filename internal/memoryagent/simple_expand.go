@@ -362,9 +362,9 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 		if item.Needed >= 0.5 {
 			r.stats.ExpandedNeeded++
 		}
-		// An answer counts from a current candidate, for a need target
-		// asked.
-		if r.targeted && current(item) {
+		// An answer counts from a needed, current candidate, for a need
+		// target asked.
+		if r.targeted && item.Needed >= 0.5 && current(item) {
 			for _, k := range uncovered(covered) {
 				answered[k] = answered[k] || item.Row[k] >= 0.5
 			}
@@ -509,16 +509,11 @@ func peerBatches(items, peers []*simpleItem, partners map[*simpleItem][]*simpleI
 // peers: each call shows the peers first, then the candidates, and asks the
 // needed and superseded questions (judgeAll's, J:45-62) of the candidates
 // alone; nothing about a peer is asked or changed. The calls run in
-// parallel; every candidate first takes Needed = Screen and Superseded = 0,
-// which stand where its call is not made (past a spent decision budget: the
-// first calls it can pay for run, and errCallBudget is returned) or fails
-// (its error is returned).
+// parallel. A candidate whose call is not made (past a spent decision
+// budget: the first calls it can pay for run, and errCallBudget is
+// returned) or fails (its error is returned) keeps the values it had, so
+// a pooled record (rejudge) left unjudged is never taken for judged.
 func (r *simpleRun) judgeExpansions(ctx context.Context, batches []peerBatch) error {
-	for _, b := range batches {
-		for _, item := range b.items {
-			item.Needed, item.Superseded, item.Judged = item.Screen, 0, false
-		}
-	}
 	afford := min(len(batches), r.decisionsLeft())
 	errs := make([]error, afford)
 	var work sync.WaitGroup

@@ -226,11 +226,12 @@ type ReadStats struct {
 	// Intent is the intent a simple read with view intent "question" gave
 	// its searches (WHY, WHEN, ENTITY or GENERAL); absent otherwise.
 	Intent string `json:"intent,omitempty"`
-	// Expanded counts the neighbors a read with view expand had JEV judge,
-	// ExpandedNeeded those JEV called needed (they joined the judged list,
-	// current or not), and ExpandKinds, per kind, the judged neighbors that
-	// kind proposed (one proposed by several kinds counts for each). Absent
-	// without view expand, and when nothing was judged.
+	// Expanded counts the candidates a read with view expand had JEV judge
+	// (each joins the judged list and composes on its needed answer),
+	// ExpandedNeeded those JEV called needed (≥ 0.5, current or not), and
+	// ExpandKinds, per kind, the judged candidates that kind proposed (one
+	// proposed by several kinds counts for each). Absent without view
+	// expand, and when nothing was judged.
 	Expanded       int            `json:"expanded,omitempty"`
 	ExpandedNeeded int            `json:"expandedNeeded,omitempty"`
 	ExpandKinds    map[string]int `json:"expandKinds,omitempty"`
@@ -243,9 +244,10 @@ type ReadStats struct {
 	ExpandEventsEmbedded int  `json:"expandEventsEmbedded,omitempty"`
 	// ExpandGated reports that view expand's gate found the evidence
 	// sufficient and skipped the expansion; ExpandAnsweredNeeds counts the
-	// needs not covered before it that an expansion JEV judged needed
-	// answers (target); ExpandReserved the View slots held for expansions
-	// that they took (reserve).
+	// needs target asked (those not covered) that an expansion JEV judged
+	// needed and current answers; ExpandReserved the records held in
+	// reserved slots (reserve) that the final View still shows, after the
+	// timelines layer.
 	ExpandGated         bool `json:"expandGated,omitempty"`
 	ExpandAnsweredNeeds int  `json:"expandAnsweredNeeds,omitempty"`
 	ExpandReserved      int  `json:"expandReserved,omitempty"`

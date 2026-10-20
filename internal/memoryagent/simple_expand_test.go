@@ -758,4 +758,15 @@ func TestExpansionRejudgesPooledRecords(t *testing.T) {
 	if err != nil || r.stats.Expanded != 50 || got[1] != pooled || !pooled.Judged || !pooled.Expanded || pooled.Needed != 0.9 {
 		t.Fatal(err, r.stats.Expanded, got[1].ID)
 	}
+	// Left unjudged (its call failed), a pooled record keeps what it had:
+	// never judged, it is not taken for judged at its screen.
+	r, scored = setup(true)
+	pooled = r.items["n00"]
+	r.agent.models.Judge = decisionFunc(func(context.Context, any, map[string]Question) (map[string]float64, Usage, error) {
+		return nil, Usage{}, errors.New("judge down")
+	})
+	got, err = r.expandEvidence(ctx, scored, stopRounds)
+	if err != nil || len(got) != 1 || pooled.Judged || pooled.Expanded || pooled.Needed != 0 || pooled.Superseded != 0 || pooled.Screen != 0.3 {
+		t.Fatal(err, len(got), *pooled)
+	}
 }

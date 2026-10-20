@@ -436,12 +436,18 @@ func TestOrderedPivotIsANeededItem(t *testing.T) {
 // stage 4b review's probe): b1 answers the launch day but was moved.
 func TestExpansionAnsweredNeedsAreCurrent(t *testing.T) {
 	s := expandFixture(t)
-	judge := func(moved float64) *scriptedJudge {
+	judge := func(moved float64, neededMoved ...float64) *scriptedJudge {
+		needed := 0.9
+		if len(neededMoved) > 0 {
+			needed = neededMoved[0]
+		}
 		return &scriptedJudge{
 			answer: func(text string, need int) float64 {
 				switch {
-				case need < 0 && (strings.Contains(text, "ORBIT") || strings.Contains(text, "launch moved")):
+				case need < 0 && strings.Contains(text, "ORBIT"):
 					return 0.9
+				case need < 0 && strings.Contains(text, "launch moved"):
+					return needed
 				case need < 0:
 					return 0.2
 				case need == 0 && strings.Contains(text, "ORBIT"), need == 1 && strings.Contains(text, "moved"):
@@ -463,6 +469,11 @@ func TestExpansionAnsweredNeedsAreCurrent(t *testing.T) {
 		t.Fatal(view.Stats, view.Needs)
 	}
 	if view := needsRead(t, s, needs, targeted, judge(0.7)); view.Stats.ExpandAnsweredNeeds != 0 || view.Needs[1].HasEvidence {
+		t.Fatal(view.Stats, view.Needs)
+	}
+	// Nor from one JEV does not call needed, though it composes on merit
+	// and so gives the need evidence in the View.
+	if view := needsRead(t, s, needs, targeted, judge(0, 0.3)); view.Stats.ExpandAnsweredNeeds != 0 || !view.Needs[1].HasEvidence {
 		t.Fatal(view.Stats, view.Needs)
 	}
 }
