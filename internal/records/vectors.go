@@ -48,6 +48,23 @@ func (s *Store) DerivedVectors(ctx context.Context, texts []string, cfg Embeddin
 	return s.vectors(ctx, texts, cfg, cfg.DocumentPrefix, fill)
 }
 
+// EmbedDocuments embeds a bounded batch of texts as documents (with the
+// document prefix) without reading or filling any cache: for texts read
+// once, which stored vectors would never serve again.
+func (s *Store) EmbedDocuments(ctx context.Context, texts []string, cfg EmbeddingConfig) ([][]float32, error) {
+	if len(texts) > 512 {
+		return nil, errors.New("document embedding batch exceeds 512")
+	}
+	size := 0
+	for _, text := range texts {
+		size += len(text)
+	}
+	if size > 2<<20 {
+		return nil, errors.New("document embedding batch exceeds 2 MiB")
+	}
+	return embed(ctx, texts, cfg, cfg.DocumentPrefix)
+}
+
 func (s *Store) QueryVector(ctx context.Context, text string, cfg EmbeddingConfig) ([]float32, error) {
 	return s.queryVector(ctx, text, cfg)
 }

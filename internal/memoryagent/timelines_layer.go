@@ -603,13 +603,25 @@ func (r *simpleRun) layerVectors(ctx context.Context, message string, threadText
 // layerEmbedText units, in batches of layerEmbedBatch; missing vectors are
 // embedded and stored, so a later read or warm-up finds them.
 func (a *Agent) layerDocuments(ctx context.Context, texts []string) ([][]float32, error) {
+	return a.documentVectors(ctx, texts, true)
+}
+
+// documentVectors is layerDocuments; without store, every text is embedded
+// and its vector is not stored (texts read once).
+func (a *Agent) documentVectors(ctx context.Context, texts []string, store bool) ([][]float32, error) {
 	out := [][]float32{}
 	for start := 0; start < len(texts); start += layerEmbedBatch {
 		part := []string{}
 		for _, text := range texts[start:min(start+layerEmbedBatch, len(texts))] {
 			part = append(part, jsSlice(text, 0, layerEmbedText))
 		}
-		vectors, err := a.store.DerivedVectors(ctx, part, *a.config.Embedding, true)
+		var vectors [][]float32
+		var err error
+		if store {
+			vectors, err = a.store.DerivedVectors(ctx, part, *a.config.Embedding, true)
+		} else {
+			vectors, err = a.store.EmbedDocuments(ctx, part, *a.config.Embedding)
+		}
 		if err != nil {
 			return nil, err
 		}

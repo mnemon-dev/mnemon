@@ -294,8 +294,9 @@ func freshThreadID(m timelineMemory) string {
 
 // rank returns, for each query, the indexes of the l.k docs most similar to
 // it, best first: by the cosine of their document vectors when the agent has
-// an embedder (queries and docs both embedded as documents, through the
-// layer's vector cache), ties in doc order; else, or when embedding fails
+// an embedder (queries and docs both embedded as documents; the docs, stored
+// texts, through the layer's vector cache, the queries, read once, without
+// storing them), ties in doc order; else, or when embedding fails
 // (lexical), by shared words (BM25, as the layer falls back to). A doc with
 // no similarity at all (a cosine of 0 or less, no shared word) is not
 // ranked.
@@ -304,9 +305,13 @@ func (l *linker) rank(ctx context.Context, queries, docs []string) (ranks [][]in
 	if len(queries) == 0 || len(docs) == 0 {
 		return out, false, nil
 	}
-	if vectors, ok := l.embed(ctx, append(slices.Clone(queries), docs...)); ok {
-		docVectors := vectors[len(queries):]
-		for i, query := range vectors[:len(queries)] {
+	queryVectors, ok := l.embed(ctx, queries, false)
+	var docVectors [][]float32
+	if ok {
+		docVectors, ok = l.embed(ctx, docs, true)
+	}
+	if ok && len(queryVectors[0]) == len(docVectors[0]) {
+		for i, query := range queryVectors {
 			order, score := []int{}, make([]float64, len(docVectors))
 			for j, doc := range docVectors {
 				if score[j] = records.VectorDot(query, doc); score[j] > 0 {
@@ -328,10 +333,11 @@ func (l *linker) rank(ctx context.Context, queries, docs []string) (ranks [][]in
 	return out, l.agent.config.Embedding != nil, nil
 }
 
-// embed is the document vector of each text, from the job's own cache or
-// the layer's (layerDocuments); ok is false without an embedder, when
-// embedding fails, or when the vectors differ in size.
-func (l *linker) embed(ctx context.Context, texts []string) ([][]float32, bool) {
+// embed is the document vector of each text, from the job's own cache, else
+// the layer's (layerDocuments) when store, else embedded without storing it
+// (documentVectors); ok is false without an embedder, when embedding fails,
+// or when the vectors differ in size. texts is not empty.
+func (l *linker) embed(ctx context.Context, texts []string, store bool) ([][]float32, bool) {
 	if l.agent.config.Embedding == nil {
 		return nil, false
 	}
@@ -342,7 +348,7 @@ func (l *linker) embed(ctx context.Context, texts []string) ([][]float32, bool) 
 		}
 	}
 	if len(missing) > 0 {
-		vectors, err := l.agent.layerDocuments(ctx, missing)
+		vectors, err := l.agent.documentVectors(ctx, missing, store)
 		if err != nil || len(vectors) != len(missing) {
 			return nil, false
 		}

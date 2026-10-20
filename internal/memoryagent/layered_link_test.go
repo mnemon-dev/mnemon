@@ -493,8 +493,16 @@ func TestLinkCandidatesByEmbedding(t *testing.T) {
 			t.Fatal("not a document text", input)
 		}
 	}
-	if !slices.Contains(inputs, "search_document: Boat outing: 1 events, 2024/02/01 to 2024/02/01. Latest: 2024/02/01 Rented a kayak.") {
+	newText := "Boat outing: 1 events, 2024/02/01 to 2024/02/01. Latest: 2024/02/01 Rented a kayak."
+	storedText := "Garden: 1 events, 2024/01/05 to 2024/01/05. Latest: 2024/01/05 Planted tomatoes."
+	if !slices.Contains(inputs, "search_document: "+newText) || !slices.Contains(inputs, "search_document: "+storedText) {
 		t.Fatal(inputs)
+	}
+	// The stored threads' vectors are kept for the layer; the batch's own
+	// texts, read once, are not.
+	kept, err := a.store.DerivedVectors(context.Background(), []string{newText, storedText}, *embedding, false)
+	if err != nil || kept[0] != nil || kept[1] == nil {
+		t.Fatal("stored vectors", kept[0] != nil, kept[1] != nil, err)
 	}
 	// A failing embedder leaves shared words.
 	server.mu.Lock()
