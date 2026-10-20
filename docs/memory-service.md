@@ -96,13 +96,13 @@ rebuilds once after them). A failed edge step does not fail the job: it reports
 `rebuildEdges` removes the consolidation's derived metadata. A record's `entities` are
 the names of the events and values citing it (layered extraction names them; timelines
 names none) and its `aliases` the other names of their clusters, then the words a query
-can name a multi-word name by (each capitalized word of three letters or more that is no
-stopword, month, weekday, role or first-person word: "Greg Hall" gives "Greg" and "Hall"):
-each new name is compared, one JEV question each, with
-up to `linkCandidates` (8 in timelines mode) names known before it whose contexts (the
-name and its first three texts) are nearest, as linking finds candidates, and joins the
-cluster of its best yes (at least 0.5); the decision is kept in the state, so each name
-is decided once, and a name JEV failed to decide stays alone. In date order, the records
+can name a multi-word name by: each capitalized word of three letters or more that is no
+stopword, month, weekday, role or first-person word ("Greg Hall" gives "Greg" and
+"Hall"). For the clusters, each new name is compared, one JEV question each, with up to
+`linkCandidates` (8 in timelines mode) names known before it whose contexts (the name and
+its first three texts) are nearest, as linking finds candidates, and joins the cluster of
+its best yes (at least 0.5); the decision is kept in the state, so each name is decided
+once, and a name JEV failed to decide stays alone. In date order, the records
 of each event of a thread link (`entity`, weight 0.6) to those of its 4 nearest events
 and (`temporal`, 0.5) to those of the previous and the next one; the records of a key's
 value link (`supersedes`, 1) to those of the value before it when the two differ (a hint
