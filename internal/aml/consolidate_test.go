@@ -190,11 +190,23 @@ func TestConsolidationDropsAndPanicsAreLogged(t *testing.T) {
 }
 
 func TestLayeredModeFoldsLikeTimelines(t *testing.T) {
+	// Two records fill a batch of 300, as in timelines mode.
 	h := newHarness(t, func(config *ServerConfig) {
 		config.MemoryConfig.Consolidation = &memoryagent.ConsolidationConfig{Mode: "layered", BatchCharacters: 300}
 		config.ConsolidateOnAdd = true
 	})
-	if !h.server.timelines {
-		t.Fatal("layered mode does not fold full batches on Add and flush on Search")
+	h.mustAdd(t, addRequest("r1", "u1"))
+	if n := h.consolidator.calls.Load(); n != 0 {
+		t.Fatal("an Add folded its short tail", n)
+	}
+	h.mustAdd(t, addRequest("r2", "u1"))
+	h.mustAdd(t, addRequest("r3", "u1"))
+	if n := h.consolidator.calls.Load(); n != 1 {
+		t.Fatal("Adds did not fold exactly the full batch", n)
+	}
+	// The next Search folds the tail, links it and reads the layer.
+	items := h.search(t, SearchRequest{Query: question, UserID: "u1", TopK: 100})
+	if n := h.consolidator.calls.Load(); n != 2 || len(items) == 0 || !strings.HasPrefix(items[0].ID, "index:") || strings.Contains(h.log.String(), "failed") {
+		t.Fatal(n, items, h.log.String())
 	}
 }

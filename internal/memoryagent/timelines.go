@@ -91,9 +91,11 @@ type timelineMemory struct {
 // job reads the records after it, so none is read twice. ModelErrors counts
 // the jobs whose fold of the head batch ended in a model error since a batch
 // last left the pending records, and FirstModelError is when the first of
-// them was (Unix milliseconds; 0 for none).
+// them was (Unix milliseconds; 0 for none). Mode is the consolidation mode
+// of the job that last wrote the state: "" for timelines, or "layered".
 type timelineState struct {
 	Format          string          `json:"format"`
+	Mode            string          `json:"mode,omitempty"`
 	Watermark       int64           `json:"watermark"`
 	Pending         []pendingRecord `json:"pending"`
 	Memory          timelineMemory  `json:"memory"`
@@ -736,8 +738,9 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	if a.store.ReadOnly() || a.overlay.readonly {
 		return ConsolidateResult{}, errors.New("consolidation is unavailable with readonly storage")
 	}
-	if settings.Mode == consolidationLayered {
-		return ConsolidateResult{}, errors.New("layered consolidation is not available yet")
+	layered := settings.Mode == consolidationLayered
+	if layered && a.models.Judge == nil {
+		return ConsolidateResult{}, errors.New("layered consolidation requires a decision model")
 	}
 	if req.MaxBatches == 0 {
 		req.MaxBatches = settings.MaxBatches
@@ -757,6 +760,10 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	if err != nil {
 		return ConsolidateResult{}, err
 	}
+	state.Mode = ""
+	if layered {
+		state.Mode = consolidationLayered
+	}
 	revision, read, unread, err := a.readNewRecords(ctx, req.Scope, &state, settings.AssistantCharacters, settings.MaxBatches*settings.BatchCharacters)
 	if err != nil {
 		return ConsolidateResult{}, err
@@ -772,7 +779,12 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	// A reset replaces the stored state even when no record is left.
 	dirty := read > 0 || req.Reset
 	var foldErr error
-	for n := 0; n < req.MaxBatches; n++ {
+	if layered {
+		if foldErr, err = a.foldLayered(ctx, model, req, &state, &token, flush, &dirty, &result); err != nil {
+			return result, err
+		}
+	}
+	for n := 0; n < req.MaxBatches && !layered; n++ {
 		batch := nextBatch(state.Pending, settings.BatchCharacters, flush)
 		if batch == nil {
 			break
@@ -787,12 +799,7 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 		if foldErr != nil {
 			state.Memory, state.Batches, state.Failed = memory, batches, failed
 			result.keepDrops(drops)
-			if countedError(ctx, foldErr) {
-				if state.ModelErrors == 0 {
-					state.FirstModelError = a.now().UnixMilli()
-				}
-				state.ModelErrors++
-			}
+			a.countError(ctx, &state, foldErr)
 			break
 		}
 		state.Pending = state.Pending[len(batch):]
@@ -825,6 +832,17 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 // spent budget or an unavailable provider, which say nothing about the batch.
 func countedError(ctx context.Context, err error) bool {
 	return ctx.Err() == nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, ErrBudgetCap) && !errors.Is(err, ErrModelUnavailable)
+}
+
+// countError counts a fold's error against the head batch when it is a
+// counted model error (countedError).
+func (a *Agent) countError(ctx context.Context, state *timelineState, err error) {
+	if countedError(ctx, err) {
+		if state.ModelErrors == 0 {
+			state.FirstModelError = a.now().UnixMilli()
+		}
+		state.ModelErrors++
+	}
 }
 
 // dropDue reports whether the head batch is folded in drop mode: dropErrors
