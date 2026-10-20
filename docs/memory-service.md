@@ -383,6 +383,26 @@ or whose reply is unreadable, may have been billed and retains its reservation. 
 probabilities and missing paid metering fail explicitly. DeepSeek usage is conservatively accounted at peak non-cache rates,
 rather than claiming an exact invoice amount.
 
+For evaluations only, `"modelCache": "/absolute/private/model-cache.db"` records model
+replies and replays them, so the arms of an ablation get the base run's answers and differ
+only where they send different requests. Never set it in production: a replayed answer is
+not a fresh one, and the file keeps the replies, which quote the evidence they were given.
+Every completion and decision call of the configuration (planner, judge, consolidator)
+first looks up its request exactly as it would be sent: the key is a SHA-256 over the
+provider kind, the endpoint, the model and the encoded body, so any other prompt, output
+limit or model is a miss that calls the model. A recorded reply answers as the provider's
+would, without a request, a reservation or a settlement; its usage reports the recorded
+tokens and price as before and counts the call in `usage.cached`, so a read's
+`stats.usage.cached` says how many of its calls were replayed (absent when none were). A
+live reply is recorded only when the call returns it: errors, non-2xx refusals, unreadable,
+unmetered or cut-off replies and decisions that fail validation never are. The file is
+private like the budget file, and several processes can share it (WAL, 10-second busy
+timeout); two that miss the same request at once both call the model, and the last reply
+stored wins. A cache that cannot be read or written never fails a call: the call goes to
+the model. The setting stays out of `View.policy`. An identical retry is replayed as well:
+a consolidation fold that asks the same batch again after an unparsable reply gets the same
+reply, so the batch splits at once.
+
 Interfaces and prices were checked against the [JEV API](https://docs.typesafe.ai/api),
 [JEV models](https://docs.typesafe.ai/models) and
 [DeepSeek pricing](https://api-docs.deepseek.com/quick_start/pricing/).
