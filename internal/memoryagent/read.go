@@ -110,23 +110,30 @@ type ViewConfig struct {
 }
 
 // ExpandConfig sets the evidence expansion of a simple read. Kinds names the
-// neighbors followed, each once: "adjacent" (the records written just
-// before and after in the same session) and the link types "temporal",
-// "semantic", "causal", "entity" and "supersedes". Limit bounds the
-// neighbors judged (24 by default, 1–64), Seeds the needed records expanded
-// from (16 by default, 1–32). AdjacentWindow (with adjacent) is how many
-// records on each side are adjacent (1 by default, 1–5).
+// candidates proposed, each once: from the needed records (the seeds),
+// "adjacent" (the records written just before and after in the same
+// session) and the link types "temporal", "semantic", "causal", "entity"
+// and "supersedes"; from the question, "events" (the records cited by the
+// consolidated events nearest it). Limit bounds the candidates judged (24
+// by default, 1–64), Seeds the needed records expanded from (16 by default,
+// 1–32). AdjacentWindow (with adjacent) is how many records on each side
+// are adjacent (1 by default, 1–5); EventsTop (with events) how many events
+// are taken (10 by default, 1–40).
 type ExpandConfig struct {
 	Kinds          []string `json:"kinds"`
 	Limit          int      `json:"limit,omitempty"`
 	Seeds          int      `json:"seeds,omitempty"`
 	AdjacentWindow int      `json:"adjacentWindow,omitempty"`
+	EventsTop      int      `json:"eventsTop,omitempty"`
 }
 
-// expandKinds are the neighbors view.expand may follow.
-var expandKinds = []string{expandAdjacent, "temporal", "semantic", "causal", "entity", "supersedes"}
+// expandKinds are the candidates view.expand may propose.
+var expandKinds = []string{expandAdjacent, "temporal", "semantic", "causal", "entity", "supersedes", expandEvents}
 
-const expandAdjacent = "adjacent"
+const (
+	expandAdjacent = "adjacent"
+	expandEvents   = "events"
+)
 
 const viewIntentQuestion = "question"
 
@@ -170,9 +177,11 @@ type ReadStats struct {
 	// in), layer-state (the consolidated state did not load: no layer),
 	// layer-lexical (the layer's embedding failed: shared words rank), layer
 	// (the layer's judgement failed or found the budget spent), expand
-	// (records linked from the layer could not be read or judged) and
-	// expansion (view.expand could not read or judge every neighbor it
-	// chose). Empty for a read that fell back nowhere, and for
+	// (records linked from the layer could not be read or judged),
+	// expansion (view.expand could not read or judge every candidate it
+	// chose, or its events' state did not load) and expansion-lexical (the
+	// events' embedding failed or left vectors missing: shared words ranked
+	// them). Empty for a read that fell back nowhere, and for
 	// memory-agent/v1.
 	Degraded []string `json:"degraded,omitempty"`
 	// IndexRoutes counts, for each native index route of the records
@@ -190,6 +199,13 @@ type ReadStats struct {
 	Expanded       int            `json:"expanded,omitempty"`
 	ExpandedNeeded int            `json:"expandedNeeded,omitempty"`
 	ExpandKinds    map[string]int `json:"expandKinds,omitempty"`
+	// ExpandEventsLexical reports that shared words (BM25), not meaning,
+	// ranked the events of view expand: without an embedder, or when
+	// embedding failed or left vectors missing. ExpandEventsEmbedded counts
+	// the event texts the read embedded (and stored) because no stored
+	// vector had them.
+	ExpandEventsLexical  bool `json:"expandEventsLexical,omitempty"`
+	ExpandEventsEmbedded int  `json:"expandEventsEmbedded,omitempty"`
 }
 
 type View struct {
@@ -309,7 +325,7 @@ func (e *ExpandConfig) normalize() error {
 	}
 	for i, kind := range e.Kinds {
 		if !slices.Contains(expandKinds, kind) {
-			return fmt.Errorf("unknown expand kind %q: kinds lists adjacent, temporal, semantic, causal, entity or supersedes", kind)
+			return fmt.Errorf("unknown expand kind %q: kinds lists adjacent, temporal, semantic, causal, entity, supersedes or events", kind)
 		}
 		if slices.Contains(e.Kinds[:i], kind) {
 			return fmt.Errorf("expand kind %q is listed twice", kind)
@@ -324,17 +340,23 @@ func (e *ExpandConfig) normalize() error {
 	if e.Limit < 1 || e.Limit > 64 || e.Seeds < 1 || e.Seeds > 32 {
 		return errors.New("view expand requires limit 1–64 and seeds 1–32")
 	}
-	if !slices.Contains(e.Kinds, expandAdjacent) {
-		if e.AdjacentWindow != 0 {
-			return errors.New("view expand adjacentWindow requires kind adjacent")
+	for _, setting := range []struct {
+		kind, name  string
+		value       *int
+		fill, limit int
+	}{{expandAdjacent, "adjacentWindow", &e.AdjacentWindow, 1, 5}, {expandEvents, "eventsTop", &e.EventsTop, 10, 40}} {
+		if !slices.Contains(e.Kinds, setting.kind) {
+			if *setting.value != 0 {
+				return fmt.Errorf("view expand %s requires kind %s", setting.name, setting.kind)
+			}
+			continue
 		}
-		return nil
-	}
-	if e.AdjacentWindow == 0 {
-		e.AdjacentWindow = 1
-	}
-	if e.AdjacentWindow < 1 || e.AdjacentWindow > 5 {
-		return errors.New("view expand requires adjacentWindow 1–5")
+		if *setting.value == 0 {
+			*setting.value = setting.fill
+		}
+		if *setting.value < 1 || *setting.value > setting.limit {
+			return fmt.Errorf("view expand requires %s 1–%d", setting.name, setting.limit)
+		}
 	}
 	return nil
 }

@@ -58,7 +58,14 @@ func expandLink(id, kind string, weight float64) map[string]any {
 //	overlay: a2 → b1 temporal 0.8, a2 → doc-00001 causal 0.6
 func expandFixture(t *testing.T) *records.Store {
 	t.Helper()
-	s, _ := agentStore(t)
+	s, _ := expandFixtureIn(t)
+	return s
+}
+
+// expandFixtureIn is expandFixture and the store's directory.
+func expandFixtureIn(t *testing.T) (*records.Store, string) {
+	t.Helper()
+	s, dir := agentStore(t)
 	a, b := "2023-05-08T13:56:00Z", "2023-05-09T10:00:00Z"
 	upserts := []records.Upsert{
 		expandNote("a0", "Caroline: good morning, how was your weekend", a, nil),
@@ -78,7 +85,7 @@ func expandFixture(t *testing.T) *records.Store {
 	if err := s.ReplaceDerivedMetadata(context.Background(), "consolidation", overlay); err != nil {
 		t.Fatal(err)
 	}
-	return s
+	return s, dir
 }
 
 // expandJudge calls needed what names ORBIT or a launch, and no longer
@@ -154,8 +161,13 @@ func TestExpandConfig(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(*a.config.View.Expand, ExpandConfig{Kinds: []string{"adjacent", "supersedes"}, Limit: 24, Seeds: 16, AdjacentWindow: 1}) || expand.Limit != 0 || expand.Seeds != 0 || expand.AdjacentWindow != 0 {
 		t.Fatal(a, err, expand)
 	}
-	every := []string{"adjacent", "temporal", "semantic", "causal", "entity", "supersedes"}
-	for _, good := range []ExpandConfig{{Kinds: every, Limit: 64, Seeds: 32, AdjacentWindow: 5}, {Kinds: []string{"entity"}, Limit: 1, Seeds: 1}} {
+	// A window and a count of events are settings of their kinds.
+	a, err = New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"events", "causal"}}}}, both, nil)
+	if err != nil || !reflect.DeepEqual(*a.config.View.Expand, ExpandConfig{Kinds: []string{"events", "causal"}, Limit: 24, Seeds: 16, EventsTop: 10}) {
+		t.Fatal(a, err)
+	}
+	every := []string{"adjacent", "temporal", "semantic", "causal", "entity", "supersedes", "events"}
+	for _, good := range []ExpandConfig{{Kinds: every, Limit: 64, Seeds: 32, AdjacentWindow: 5, EventsTop: 40}, {Kinds: []string{"entity"}, Limit: 1, Seeds: 1}, {Kinds: []string{"events", "adjacent"}, AdjacentWindow: 1, EventsTop: 1}} {
 		if _, err = New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &good}}, both, nil); err != nil {
 			t.Error("valid expansion refused", good, err)
 		}
@@ -165,6 +177,8 @@ func TestExpandConfig(t *testing.T) {
 		{Kinds: []string{"adjacent"}, Limit: 65}, {Kinds: []string{"adjacent"}, Limit: -1},
 		{Kinds: []string{"adjacent"}, Seeds: 33}, {Kinds: []string{"adjacent"}, Seeds: -1},
 		{Kinds: []string{"adjacent"}, AdjacentWindow: 6}, {Kinds: []string{"adjacent"}, AdjacentWindow: -1}, {Kinds: []string{"causal"}, AdjacentWindow: 2},
+		{Kinds: []string{"events"}, EventsTop: 41}, {Kinds: []string{"events"}, EventsTop: -1}, {Kinds: []string{"adjacent"}, EventsTop: 5},
+		{Kinds: []string{"events", "events"}}, {Kinds: []string{"Events"}},
 	} {
 		if _, err = New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &bad}}, both, nil); err == nil {
 			t.Error("invalid expansion accepted", bad)
@@ -175,10 +189,10 @@ func TestExpandConfig(t *testing.T) {
 	if raw, _ := json.Marshal(ViewConfig{MaxItems: 16, MaxCharacters: 12000}); strings.Contains(string(raw), "expand") {
 		t.Fatal(string(raw))
 	}
-	decoder := json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"expand":{"kinds":["adjacent","temporal"],"limit":8,"seeds":4,"adjacentWindow":2}}}`))
+	decoder := json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"expand":{"kinds":["adjacent","temporal","events"],"limit":8,"seeds":4,"adjacentWindow":2,"eventsTop":12}}}`))
 	decoder.DisallowUnknownFields()
 	var decoded Config
-	if err = decoder.Decode(&decoded); err != nil || !reflect.DeepEqual(*decoded.View.Expand, ExpandConfig{Kinds: []string{"adjacent", "temporal"}, Limit: 8, Seeds: 4, AdjacentWindow: 2}) {
+	if err = decoder.Decode(&decoded); err != nil || !reflect.DeepEqual(*decoded.View.Expand, ExpandConfig{Kinds: []string{"adjacent", "temporal", "events"}, Limit: 8, Seeds: 4, AdjacentWindow: 2, EventsTop: 12}) {
 		t.Fatal(decoded, err)
 	}
 	decoder = json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"expand":{"kinds":["adjacent"],"depth":2}}}`))
@@ -270,6 +284,37 @@ func candidateIDs(list []expansionCandidate) []string {
 		out = append(out, c.id)
 	}
 	return out
+}
+
+func TestAlternateExpansionSources(t *testing.T) {
+	c := func(id string, kinds ...string) expansionCandidate { return expansionCandidate{id: id, kinds: kinds} }
+	ids := candidateIDs
+	seed := []expansionCandidate{c("s1", "adjacent"), c("s2", "causal"), c("x", "adjacent"), c("s3", "causal")}
+	events := []expansionCandidate{c("e1", "events"), c("x", "events"), c("e2", "events")}
+	// Seed first, then turn by turn; a record both sources propose is
+	// picked once, with both sources' kinds; a source's turn takes its
+	// next record not picked yet.
+	got := alternate(seed, events, 64)
+	if !slices.Equal(ids(got), []string{"s1", "e1", "s2", "x", "s3", "e2"}) || !slices.Equal(got[3].kinds, []string{"adjacent", "events"}) {
+		t.Fatalf("%+v", got)
+	}
+	if got = alternate(seed, events, 3); !slices.Equal(ids(got), []string{"s1", "e1", "s2"}) {
+		t.Fatalf("%+v", got)
+	}
+	// An exhausted source leaves the rest to the other.
+	if got = alternate(seed[:1], events, 64); !slices.Equal(ids(got), []string{"s1", "e1", "x", "e2"}) {
+		t.Fatalf("%+v", got)
+	}
+	if got = alternate(seed, events[:1], 64); !slices.Equal(ids(got), []string{"s1", "e1", "s2", "x", "s3"}) {
+		t.Fatalf("%+v", got)
+	}
+	// One source alone is that source, cut to the limit.
+	if got = alternate(seed, nil, 2); !reflect.DeepEqual(got, seed[:2]) {
+		t.Fatalf("%+v", got)
+	}
+	if got = alternate(nil, events, 2); !reflect.DeepEqual(got, events[:2]) {
+		t.Fatalf("%+v", got)
+	}
 }
 
 func TestReadSimpleExpandsFromNeededEvidence(t *testing.T) {

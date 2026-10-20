@@ -8,17 +8,19 @@ import (
 )
 
 // Evidence-anchored expansion (view.expand), after Jev-Mem's split: code
-// proposes a bounded set of candidates from evidence JEV has already judged,
-// and JEV decides. Once the shortlist is judged, the records JEV calls needed
-// are the seeds; their neighbors are the records written just before and
-// after them in their session (records.Store.Adjacent) and the records the
-// derived index links them to (records.Store.Links: the writer's and the
-// overlay's links, corrections both ways). The best of those not already
-// pooled are read, judged with judgeAll's questions, and join the judged
-// list only when JEV calls them needed. They add to what the cue searches
-// found and displace nothing before it is judged; composition then treats
-// them like any judged item (with fusion: judged items the message search
-// may not rank).
+// proposes a bounded set of candidates, and JEV decides. Two sources
+// propose them once the shortlist is judged. From the evidence JEV has
+// judged ("seed"): the records JEV calls needed are the seeds, and their
+// neighbors are the records written near them in their session
+// (records.Store.Adjacent) and the records the derived index links them to
+// (records.Store.Links: the writer's and the overlay's links, corrections
+// both ways). From the question ("events"): the records cited by the
+// consolidated events nearest it (simple_events.go). The sources take turns
+// filling the limit; the candidates not already pooled are read, judged
+// with judgeAll's questions, and join the judged list only when JEV calls
+// them needed. They add to what the cue searches found and displace nothing
+// before it is judged; composition then treats them like any judged item
+// (with fusion: judged items the message search may not rank).
 
 // neighbor is one way to reach a record from a seed: the kind that proposes
 // it, its weight (a link's, or 1 for an adjacent record) and its distance
@@ -29,10 +31,10 @@ type neighbor struct {
 	distance int
 }
 
-// expansionCandidate is a proposed neighbor: its best score over the seeds
-// (seed needed × weight), the rank of the first seed that gave that score,
-// the shortest distance it gave it at, and every kind that proposed it, in
-// the order they did.
+// expansionCandidate is a proposed record. From the seeds: its best score
+// over them (seed needed × weight), the rank of the first seed that gave
+// that score and the shortest distance it gave it at. From either source:
+// every kind that proposed it, in the order they did.
 type expansionCandidate struct {
 	id       string
 	score    float64
@@ -99,6 +101,48 @@ func rankExpansion(seeds []*simpleItem, neighbors map[string][]neighbor, known f
 	return out
 }
 
+// alternate fills limit from the seed source and the events source by
+// turns, seed first: each turn takes the source's next record not picked
+// yet, and once a source has none left the other fills the rest. A record
+// both sources propose is picked once, with the kinds of both (the seed's
+// first). One source alone is that source cut to limit.
+func alternate(seed, events []expansionCandidate, limit int) []expansionCandidate {
+	kinds := map[string][]string{}
+	for _, c := range slices.Concat(seed, events) {
+		for _, kind := range c.kinds {
+			if !slices.Contains(kinds[c.id], kind) {
+				kinds[c.id] = append(kinds[c.id], kind)
+			}
+		}
+	}
+	sources, next, picked := [2][]expansionCandidate{seed, events}, [2]int{}, map[string]bool{}
+	// take is the source's next record not picked yet.
+	take := func(source int) (expansionCandidate, bool) {
+		for next[source] < len(sources[source]) {
+			c := sources[source][next[source]]
+			next[source]++
+			if !picked[c.id] {
+				return c, true
+			}
+		}
+		return expansionCandidate{}, false
+	}
+	out, turn := []expansionCandidate{}, 0
+	for len(out) < limit {
+		c, ok := take(turn)
+		if !ok {
+			if c, ok = take(1 - turn); !ok {
+				break
+			}
+		}
+		picked[c.id] = true
+		c.kinds = kinds[c.id]
+		out = append(out, c)
+		turn = 1 - turn
+	}
+	return out
+}
+
 // neighbors reads the seeds' neighbors of the configured kinds at the read's
 // revision and scope: the records within the adjacent window with weight 1
 // at their distance, links with their weight at distance 1.
@@ -125,7 +169,7 @@ func (r *simpleRun) neighbors(ctx context.Context, seeds []*simpleItem, config *
 			}
 		}
 	}
-	if slices.ContainsFunc(kinds, func(kind string) bool { return kind != expandAdjacent }) {
+	if slices.ContainsFunc(kinds, linkKind) {
 		links, err := r.agent.store.Links(ctx, r.revision, r.req.Scope, ids)
 		if err != nil {
 			return nil, err
@@ -141,20 +185,33 @@ func (r *simpleRun) neighbors(ctx context.Context, seeds []*simpleItem, config *
 	return out, nil
 }
 
-// expandEvidence returns the judged list with the needed neighbors of its
-// needed items added after it. The best view.expand.limit neighbors of the
-// best view.expand.seeds needed items, among records not pooled, are read
+// linkKind reports whether an expansion kind is a link type.
+func linkKind(kind string) bool { return kind != expandAdjacent && kind != expandEvents }
+
+// seedKind reports whether an expansion kind expands from the seeds.
+func seedKind(kind string) bool { return kind != expandEvents }
+
+// expandEvidence returns the judged list with the needed candidates of the
+// expansion added after it. The seed source proposes the neighbors of the
+// best view.expand.seeds needed items, as rankExpansion orders them; the
+// events source the records cited by the events nearest the question
+// (simple_events.go); neither proposes a record already pooled. The sources
+// fill view.expand.limit by turns (alternate). The candidates are read
 // (evidence(), proved against their originals; one without evidence is
 // skipped) and judged by judgeAll within the read's decision budget; those
 // judged join the run's items (so fusion keeps what JEV calls no longer
-// current out), and those JEV calls needed join the list. A neighbor left
+// current out), and those JEV calls needed join the list. A candidate left
 // unjudged (the budget ran short, or its call failed) is dropped. Reading
 // or judging that falls short degrades the read (expansion) and keeps what
 // was judged; only a canceled read fails.
 func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem) ([]*simpleItem, error) {
 	config := r.agent.config.View.Expand
 	seeds := expansionSeeds(scored, config.Seeds)
-	if len(seeds) == 0 {
+	if !slices.ContainsFunc(config.Kinds, seedKind) {
+		seeds = nil
+	}
+	events := slices.Contains(config.Kinds, expandEvents)
+	if len(seeds) == 0 && !events {
 		return scored, nil
 	}
 	short := func() ([]*simpleItem, error) {
@@ -167,11 +224,27 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem) ([
 	if r.decisionsLeft() == 0 {
 		return short()
 	}
-	neighbors, err := r.neighbors(ctx, seeds, config)
-	if err != nil {
-		return short()
+	known := func(id string) bool { return r.items[id] != nil }
+	var fromSeeds, fromEvents []expansionCandidate
+	if len(seeds) > 0 {
+		// Neighbors that cannot be read degrade the read; the events, if
+		// any, still propose.
+		neighbors, err := r.neighbors(ctx, seeds, config)
+		if err != nil {
+			if _, err = short(); err != nil {
+				return nil, err
+			}
+		} else {
+			fromSeeds = rankExpansion(seeds, neighbors, known, config.Limit)
+		}
 	}
-	candidates := rankExpansion(seeds, neighbors, func(id string) bool { return r.items[id] != nil }, config.Limit)
+	if events {
+		var err error
+		if fromEvents, err = r.eventCandidates(ctx, config.EventsTop); err != nil {
+			return nil, err
+		}
+	}
+	candidates := alternate(fromSeeds, fromEvents, config.Limit)
 	if len(candidates) == 0 {
 		return scored, nil
 	}

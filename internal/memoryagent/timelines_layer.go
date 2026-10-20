@@ -609,29 +609,43 @@ func (a *Agent) layerDocuments(ctx context.Context, texts []string) ([][]float32
 // documentVectors is layerDocuments; without store, every text is embedded
 // and its vector is not stored (texts read once).
 func (a *Agent) documentVectors(ctx context.Context, texts []string, store bool) ([][]float32, error) {
+	return a.batchDocuments(texts, func(part []string) ([][]float32, error) {
+		if store {
+			return a.store.DerivedVectors(ctx, part, *a.config.Embedding, true)
+		}
+		return a.store.EmbedDocuments(ctx, part, *a.config.Embedding)
+	})
+}
+
+// storedDocuments is the stored document vectors of the texts, cut as
+// layerDocuments cuts them, nil where none is stored; nothing is embedded.
+func (a *Agent) storedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
+	return a.batchDocuments(texts, func(part []string) ([][]float32, error) {
+		return a.store.DerivedVectors(ctx, part, *a.config.Embedding, false)
+	})
+}
+
+// batchDocuments runs vectors over the texts, each cut to layerEmbedText
+// units, in batches of layerEmbedBatch.
+func (a *Agent) batchDocuments(texts []string, vectors func(part []string) ([][]float32, error)) ([][]float32, error) {
 	out := [][]float32{}
 	for start := 0; start < len(texts); start += layerEmbedBatch {
 		part := []string{}
 		for _, text := range texts[start:min(start+layerEmbedBatch, len(texts))] {
 			part = append(part, jsSlice(text, 0, layerEmbedText))
 		}
-		var vectors [][]float32
-		var err error
-		if store {
-			vectors, err = a.store.DerivedVectors(ctx, part, *a.config.Embedding, true)
-		} else {
-			vectors, err = a.store.EmbedDocuments(ctx, part, *a.config.Embedding)
-		}
+		values, err := vectors(part)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, vectors...)
+		out = append(out, values...)
 	}
 	return out, nil
 }
 
 // WarmLayer embeds and stores the scope's timelines layer texts, its topics
-// and value histories, which the first read after a consolidation would
+// and value histories, and with view expand events the event texts
+// (simple_events.go), which the first read after a consolidation would
 // otherwise embed while it answers (the reference system embeds them when
 // its consolidation catches up). It does nothing without an embedder, the
 // timelines layer or a consolidated state; an embedding error is returned
@@ -653,6 +667,11 @@ func (a *Agent) WarmLayer(ctx context.Context, scope records.Scope) error {
 	}
 	for _, key := range m.FactOrder {
 		texts = append(texts, valueTexts[key])
+	}
+	if a.expandsEvents() {
+		for _, e := range expansionEvents(m) {
+			texts = append(texts, e.text)
+		}
 	}
 	_, err = a.layerDocuments(ctx, texts)
 	return err
