@@ -45,13 +45,57 @@ const (
 	// The headers of the timelines and values blocks, outside their budgets.
 	timelinesHead = "Timelines of the topics this concerns:\n"
 	valuesHead    = "History of values:"
+	// layerReference is the View's characters the budgets are sized for
+	// (the author's View of 12,000).
+	layerReference = 12000
 )
 
-// layerBlocksMax is the most characters the layer's blocks can take: each
-// block's budget, the two headers counted outside theirs, and the "\n\n"
-// before a thread, added after the thread is fitted to the room left, by
-// which the timelines can pass their budget once (by 2).
-var layerBlocksMax = layerInstructions + layerDirectory + layerTimelines + 2 + layerValues + jsLen(timelinesHead) + jsLen(valuesHead)
+// layerBudgets is what the layer's blocks may take: each block's budget,
+// and a timeline's (thread). The floor a timeline is begun in is not a
+// budget.
+type layerBudgets struct {
+	instructions, directory, timelines, thread, values int
+}
+
+// referenceBudgets are the author's (LAYER, C:183).
+var referenceBudgets = layerBudgets{instructions: layerInstructions, directory: layerDirectory, timelines: layerTimelines, thread: layerThread, values: layerValues}
+
+// times is every budget multiplied by s.
+func (b layerBudgets) times(s int) layerBudgets {
+	return layerBudgets{instructions: b.instructions * s, directory: b.directory * s, timelines: b.timelines * s, thread: b.thread * s, values: b.values * s}
+}
+
+// blocksMax is the most characters the blocks can take within the budgets:
+// each block's budget, the two headers counted outside theirs, and the
+// "\n\n" before a thread, added after the thread is fitted to the room left,
+// by which the timelines can pass their budget once (by 2).
+func (b layerBudgets) blocksMax() int {
+	return b.instructions + b.directory + b.timelines + 2 + b.values + jsLen(timelinesHead) + jsLen(valuesHead)
+}
+
+// layerBlocksMax is blocksMax of the reference budgets.
+var layerBlocksMax = referenceBudgets.blocksMax()
+
+// layerScale is what view.layer "scaled" multiplies the budgets by: the
+// View's characters over layerReference, rounded down, at least 1; without
+// "scaled" it is 1.
+func (a *Agent) layerScale() int {
+	if a.config.View == nil || a.config.View.Layer != viewLayerScaled {
+		return 1
+	}
+	return max(1, a.config.View.MaxCharacters/layerReference)
+}
+
+// layerBudgets is the reference budgets times the agent's layer scale.
+func (a *Agent) layerBudgets() layerBudgets {
+	return referenceBudgets.times(a.layerScale())
+}
+
+// layerBound is the most characters the layer's blocks can take in the
+// agent's Views.
+func (a *Agent) layerBound() int {
+	return a.layerBudgets().blocksMax()
+}
 
 // eventThreads is the author's threadsOf (C:184-188) as event indexes, and
 // the threads that have events, in memory order.
@@ -186,7 +230,8 @@ func layerCandidates(lit litSets, threadIDs, keys []string, nearThreads, nearVal
 }
 
 // composeLayer is the author's composeLayer (C:218-267): the blocks of the
-// consolidated layer, each within its budget, as View.Index items.
+// consolidated layer, each within its budget of b (the reference's given
+// here; view.layer "scaled" multiplies them), as View.Index items.
 //   - 1-instructions: the directives, oldest first, until one would pass
 //     1500 with the header.
 //   - 2-topics: the chosen threads, then the threads by event count, each
@@ -200,7 +245,7 @@ func layerCandidates(lit litSets, threadIDs, keys []string, nearThreads, nearVal
 //
 // Records name the records linked from what each block shows, in order,
 // each once, by id only; the read keeps those its View shows.
-func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSets) []IndexItem {
+func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSets, b layerBudgets) []IndexItem {
 	_, by := eventThreads(m)
 	blocks := []IndexItem{}
 	add := func(id, text string, linked []string) {
@@ -218,7 +263,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 	size, shown := jsLen(text), 0
 	for _, d := range m.Directives {
 		line := "\n- (" + d.Date + ") " + d.Text
-		if size+jsLen(line) > layerInstructions {
+		if size+jsLen(line) > b.instructions {
 			break
 		}
 		text, size, shown = text+line, size+jsLen(line), shown+1
@@ -254,7 +299,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 	size = jsLen(head)
 	for _, id := range ids {
 		i := slices.IndexFunc(spans, func(s span) bool { return s.id == id })
-		if i < 0 || keep[id] || size+jsLen(topicLine(spans[i])) > layerDirectory {
+		if i < 0 || keep[id] || size+jsLen(topicLine(spans[i])) > b.directory {
 			continue
 		}
 		keep[id] = true
@@ -274,7 +319,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 	timelines, linked := "", []string{}
 	size = 0
 	for _, id := range threadOrder {
-		room := min(layerThread, layerTimelines-size)
+		room := min(b.thread, b.timelines-size)
 		if room < layerThreadFloor {
 			break
 		}
@@ -334,7 +379,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 			continue
 		}
 		line := "\n- " + valueText(key, list)
-		if size+jsLen(line) > layerValues {
+		if size+jsLen(line) > b.values {
 			continue
 		}
 		values, size = values+line, size+jsLen(line)
@@ -429,7 +474,7 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 		valueScore[key] = scores[len(topics)+i]
 	}
 	threadOrder, valueOrder := layerOrder(topics, values, lit, threadScore, valueScore)
-	blocks := composeLayer(m, threadOrder, valueOrder, lit)
+	blocks := composeLayer(m, threadOrder, valueOrder, lit, r.agent.layerBudgets())
 
 	// With records the reserve held (r.held), the trim keeps by compose's
 	// priority: the needed records that are not expansions, then the held

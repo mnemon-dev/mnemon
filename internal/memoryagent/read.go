@@ -118,6 +118,11 @@ type ViewConfig struct {
 	// Order "time" lists the View's records in time order once the View is
 	// composed (simple_order.go); "" keeps the rank order.
 	Order string `json:"order,omitempty"`
+	// Layer "scaled" multiplies the budgets of the timelines layer's blocks
+	// by the View's scale, its characters over the reference's 12,000
+	// (timelines_layer.go); "" keeps the reference's budgets. What the layer
+	// selects is the same either way.
+	Layer string `json:"layer,omitempty"`
 }
 
 // ExpandConfig sets the evidence expansion of a simple read. Kinds names the
@@ -174,6 +179,9 @@ const (
 )
 
 const viewIntentQuestion = "question"
+
+// viewLayerScaled is the value of view.layer that scales the layer's budgets.
+const viewLayerScaled = "scaled"
 
 const strategySimple = "simple"
 
@@ -367,6 +375,11 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	if own.View != nil && own.View.Expand != nil && slices.Contains(own.View.Expand.Kinds, expandEvents) && !(own.Consolidation.Timelines() && own.Policy.Consolidation) {
 		return nil, errors.New("view expand kind events requires timelines or layered consolidation, with the policy's consolidation on")
 	}
+	// The layer setting shapes the timelines layer: without it the setting
+	// could only ever be inert.
+	if own.View != nil && own.View.Layer != "" && !(own.Consolidation.Timelines() && own.Policy.Consolidation) {
+		return nil, errors.New("view layer requires timelines or layered consolidation, with the policy's consolidation on")
+	}
 	return &Agent{store: store, config: own, models: models, overlay: overlay, now: time.Now}, nil
 }
 
@@ -386,6 +399,9 @@ func (v *ViewConfig) normalize() error {
 	}
 	if v.Order != "" && v.Order != viewOrderTime {
 		return errors.New("memory view requires order \"\" or \"time\"")
+	}
+	if v.Layer != "" && v.Layer != viewLayerScaled {
+		return errors.New("memory view requires layer \"\" or \"scaled\"")
 	}
 	if v.Expand != nil {
 		return v.Expand.normalize()
