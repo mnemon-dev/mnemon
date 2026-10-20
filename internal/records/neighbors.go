@@ -3,6 +3,7 @@ package records
 import (
 	"context"
 	"encoding/json"
+	"errors"
 )
 
 // Neighbors of known records for a reader that expands from evidence it has
@@ -60,16 +61,27 @@ func (s *Store) Links(ctx context.Context, revisionHash string, scope Scope, ids
 	return out, nil
 }
 
-// Adjacent returns, for each of ids that has any, the records written just
-// before and just after it in its session, in that order: among the active
-// records visible in scope (original documents and index items left out),
-// in store order, the previous and the next one of the same session. A
-// session is a place (scope, workspace and session) and, within it, the
-// record's original document when the writer named one (data.documentID),
-// else the day of the writer's data.eventAt, else of the record's date, in
-// the writer's own offset. A record with neither has no session and no
-// neighbors; neighbors never cross sessions.
-func (s *Store) Adjacent(ctx context.Context, revisionHash string, scope Scope, ids []string) (map[string][]string, error) {
+// Nearby is a record written near another in their session: Offset records
+// after it, or before it when negative.
+type Nearby struct {
+	ID     string
+	Offset int
+}
+
+// Adjacent returns, for each of ids that has any, the records written up to
+// window records before and after it in its session, nearest first and, at
+// the same distance, the earlier first (offsets -1, 1, -2, 2, …): among the
+// active records visible in scope (original documents and index items left
+// out), in store order, those of the same session. A session is a place
+// (scope, workspace and session) and, within it, the record's original
+// document when the writer named one (data.documentID), else the day of the
+// writer's data.eventAt, else of the record's date, in the writer's own
+// offset. A record with neither has no session and no neighbors; neighbors
+// never cross sessions. window must be at least 1.
+func (s *Store) Adjacent(ctx context.Context, revisionHash string, scope Scope, ids []string, window int) (map[string][]Nearby, error) {
+	if window < 1 {
+		return nil, errors.New("adjacent window must be at least 1")
+	}
 	rev, hash, err := revision(ctx, s.readDB(), revisionHash)
 	if err != nil {
 		return nil, err
@@ -116,19 +128,21 @@ FROM record_versions WHERE rev_from<=? AND (rev_to IS NULL OR rev_to>?)`, rev, r
 			position[id] = i
 		}
 	}
-	out := map[string][]string{}
+	out := map[string][]Nearby{}
 	for _, id := range ids {
 		session, ok := key[id]
 		if _, done := out[id]; done || !ok {
 			continue
 		}
 		list, at := sessions[session], position[id]
-		near := []string{}
-		if at > 0 {
-			near = append(near, list[at-1])
-		}
-		if at+1 < len(list) {
-			near = append(near, list[at+1])
+		near := []Nearby{}
+		for distance := 1; distance <= window; distance++ {
+			if at-distance >= 0 {
+				near = append(near, Nearby{list[at-distance], -distance})
+			}
+			if at+distance < len(list) {
+				near = append(near, Nearby{list[at+distance], distance})
+			}
 		}
 		if len(near) > 0 {
 			out[id] = near

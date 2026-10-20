@@ -145,7 +145,7 @@ func TestAdjacentFollowsSessionsInStoreOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	ids := []string{"z1", "m2", "a3", "b1", "b2", "doc-0", "doc-1", "p1", "s1", "d1", "undated", "tz", "missing"}
-	got, err := s.Adjacent(ctx, "", Scope{}, ids)
+	got, err := nearbyIDs(s.Adjacent(ctx, "", Scope{}, ids, 1))
 	want := map[string][]string{
 		"z1": {"m2"}, "m2": {"z1", "a3"}, "a3": {"m2", "d1"}, "d1": {"a3", "tz"}, "tz": {"d1"},
 		"b1": {"b2"}, "b2": {"b1"},
@@ -156,20 +156,48 @@ func TestAdjacentFollowsSessionsInStoreOrder(t *testing.T) {
 	}
 	// The scope that sees them: a project record has its own sessions.
 	w, chat := "/w", "chat"
-	got, err = s.Adjacent(ctx, "", Scope{WorkspaceID: &w, SessionID: &chat}, []string{"p1", "s1"})
+	got, err = nearbyIDs(s.Adjacent(ctx, "", Scope{WorkspaceID: &w, SessionID: &chat}, []string{"p1", "s1"}, 1))
 	if err != nil || len(got) != 0 {
 		t.Fatal(got, err)
 	}
 	if _, err = s.Put(ctx, PutRequest{Upsert: []Upsert{placed(day("p2", "2023-05-08T16:00:00Z"), "project", "/w", "")}}); err != nil {
 		t.Fatal(err)
 	}
-	got, err = s.Adjacent(ctx, "", Scope{WorkspaceID: &w}, []string{"p1", "p2", "z1"})
+	got, err = nearbyIDs(s.Adjacent(ctx, "", Scope{WorkspaceID: &w}, []string{"p1", "p2", "z1"}, 1))
 	if err != nil || !reflect.DeepEqual(got, map[string][]string{"p1": {"p2"}, "p2": {"p1"}, "z1": {"m2"}}) {
 		t.Fatal(got, err)
 	}
-	if _, err = s.Adjacent(ctx, "nonsense", Scope{}, ids); err == nil {
+	// A wider window: the k nearest on each side, nearest first, earlier
+	// before later, within the session (z1 m2 a3 d1 tz on 2023-05-08).
+	wide, err := s.Adjacent(ctx, "", Scope{}, []string{"a3", "z1", "tz", "b1"}, 2)
+	if err != nil || !reflect.DeepEqual(wide, map[string][]Nearby{
+		"a3": {{"m2", -1}, {"d1", 1}, {"z1", -2}, {"tz", 2}},
+		"z1": {{"m2", 1}, {"a3", 2}},
+		"tz": {{"d1", -1}, {"a3", -2}},
+		"b1": {{"b2", 1}},
+	}) {
+		t.Fatal(wide, err)
+	}
+	if wide, err = s.Adjacent(ctx, "", Scope{}, []string{"z1"}, 5); err != nil || !reflect.DeepEqual(wide["z1"], []Nearby{{"m2", 1}, {"a3", 2}, {"d1", 3}, {"tz", 4}}) {
+		t.Fatal(wide, err)
+	}
+	if _, err = s.Adjacent(ctx, "", Scope{}, ids, 0); err == nil {
+		t.Fatal("empty window accepted")
+	}
+	if _, err = s.Adjacent(ctx, "nonsense", Scope{}, ids, 1); err == nil {
 		t.Fatal("unknown revision accepted")
 	}
+}
+
+// nearbyIDs is Adjacent's ids, offsets left out.
+func nearbyIDs(near map[string][]Nearby, err error) (map[string][]string, error) {
+	out := map[string][]string{}
+	for id, list := range near {
+		for _, n := range list {
+			out[id] = append(out[id], n.ID)
+		}
+	}
+	return out, err
 }
 
 // Concurrent readers of the cached index never write into its slices: x has

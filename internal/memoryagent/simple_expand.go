@@ -104,13 +104,13 @@ func (r *simpleRun) neighbors(ctx context.Context, seeds []*simpleItem, kinds []
 	}
 	out := map[string][]neighbor{}
 	if slices.Contains(kinds, expandAdjacent) {
-		adjacent, err := r.agent.store.Adjacent(ctx, r.revision, r.req.Scope, ids)
+		adjacent, err := r.agent.store.Adjacent(ctx, r.revision, r.req.Scope, ids, 1)
 		if err != nil {
 			return nil, err
 		}
 		for _, id := range ids {
 			for _, near := range adjacent[id] {
-				out[id] = append(out[id], neighbor{near, expandAdjacent, 1})
+				out[id] = append(out[id], neighbor{near.ID, expandAdjacent, 1})
 			}
 		}
 	}
