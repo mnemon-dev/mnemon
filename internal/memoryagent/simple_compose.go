@@ -195,30 +195,63 @@ func composeSimple(scored []*simpleItem, needless bool, maxItems, maxChars int) 
 }
 
 func composed(scored []*simpleItem, needless bool, maxItems, maxChars int) *viewFill {
-	return composedFrom(judgedOrder(scored), needless, maxItems, maxChars)
+	v, _ := composedFrom(judgedOrder(scored), 0, needless, maxItems, maxChars)
+	return v
 }
 
-// composedFrom is composed over items in compose's order (ordered).
-func composedFrom(order []*simpleItem, needless bool, maxItems, maxChars int) *viewFill {
+// composedFrom is composed over items in compose's order, with up to
+// reserve slots held for expansions (view.expand.reserve): first the
+// needed (≥ 0.5) current expansions take their slots and characters, in
+// order, while they fit; then the needed items and the fill run as without
+// it over what is left. The View lists the needed items, held ones
+// included, in order, then the fill. It returns the held items.
+func composedFrom(order []*simpleItem, reserve int, needless bool, maxItems, maxChars int) (*viewFill, []*simpleItem) {
 	fill := maxItems
 	if needless {
 		fill = 0
 	}
 	v := newViewFill(maxItems, maxChars)
+	held := heldExpansions(v, order, reserve)
+	needed := map[*simpleItem]bool{}
 	for _, item := range order {
 		if current(item) && item.Needed >= 0.5 && v.fits(item) {
 			v.take(item)
+			needed[item] = true
 		}
 	}
+	filled := []*simpleItem{}
 	for _, item := range order {
 		if len(v.selected) >= fill {
 			break
 		}
 		if current(item) && !slices.Contains(v.selected, item) && v.fits(item) {
 			v.take(item)
+			filled = append(filled, item)
 		}
 	}
-	return v
+	if len(held) > 0 {
+		listed := []*simpleItem{}
+		for _, item := range order {
+			if needed[item] || slices.Contains(held, item) {
+				listed = append(listed, item)
+			}
+		}
+		v.selected = append(listed, filled...)
+	}
+	return v, held
+}
+
+// heldExpansions takes into v the first reserve needed (≥ 0.5) and current
+// expansions of order that fit, and returns them.
+func heldExpansions(v *viewFill, order []*simpleItem, reserve int) []*simpleItem {
+	held := []*simpleItem{}
+	for _, item := range order {
+		if len(held) < reserve && item.Expanded && item.Needed >= 0.5 && current(item) && v.fits(item) {
+			v.take(item)
+			held = append(held, item)
+		}
+	}
+	return held
 }
 
 // ordered is the judged items in compose's order: judgedOrder (by Needed,
@@ -252,6 +285,15 @@ func (r *simpleRun) ordered(scored []*simpleItem) []*simpleItem {
 		}
 	}
 	return out
+}
+
+// reserve is the View slots held for expansions: view.expand.reserve, at
+// most the View's items; 0 without expansion.
+func (r *simpleRun) reserve() int {
+	if expand := r.agent.config.View.Expand; expand != nil {
+		return min(expand.Reserve, r.req.MaxItems)
+	}
+	return 0
 }
 
 // eligible is what composeSimple may show: the current items JEV calls
@@ -349,24 +391,36 @@ func (r *simpleRun) fused(ctx context.Context, scored []*simpleItem) ([]*simpleI
 func (r *simpleRun) compose(ctx context.Context, stop string, scored []*simpleItem) (View, error) {
 	maxItems, maxChars := r.req.MaxItems, r.agent.config.View.MaxCharacters
 	var v *viewFill
-	var candidates []*simpleItem
+	var candidates, held []*simpleItem
 	score := map[string]float64{}
 	if r.agent.config.View.Fusion == "rrf" {
 		var err error
 		if candidates, score, err = r.fused(ctx, scored); err != nil {
 			return View{}, err
 		}
+		// Held expansions take their slots first and are listed after the
+		// fused records that keep theirs.
 		v = newViewFill(maxItems, maxChars)
+		held = heldExpansions(v, r.ordered(scored), r.reserve())
 		for _, item := range candidates {
 			if v.fits(item) {
 				v.take(item)
 			}
 		}
+		if len(held) > 0 {
+			v.selected = append(v.selected[len(held):], held...)
+		}
 	} else {
-		v, candidates = composedFrom(r.ordered(scored), r.needless, maxItems, maxChars), eligible(scored, r.needless)
+		v, held = composedFrom(r.ordered(scored), r.reserve(), r.needless, maxItems, maxChars)
+		candidates = eligible(scored, r.needless)
 		for _, item := range v.selected {
 			score[item.ID] = item.Needed
 		}
+	}
+	if len(held) > 0 {
+		r.mu.Lock()
+		r.stats.ExpandReserved = len(held)
+		r.mu.Unlock()
 	}
 	records, err := r.records(ctx, v.selected, score)
 	if err != nil {

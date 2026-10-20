@@ -69,13 +69,14 @@ func needsRead(t *testing.T, s *records.Store, needs string, view *ViewConfig, j
 func TestExpandStage4bConfig(t *testing.T) {
 	s, _ := agentStore(t)
 	both := Models{Planner: expandPlanner(), Judge: expandJudge()}
-	good := ExpandConfig{Kinds: []string{"adjacent"}, Gate: "needs", Target: "needs"}
+	good := ExpandConfig{Kinds: []string{"adjacent"}, Gate: "needs", Target: "needs", Reserve: 8}
 	a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &good}}, both, nil)
-	if err != nil || a.config.View.Expand.Gate != "needs" || a.config.View.Expand.Target != "needs" {
+	if err != nil || a.config.View.Expand.Gate != "needs" || a.config.View.Expand.Target != "needs" || a.config.View.Expand.Reserve != 8 {
 		t.Fatal(a, err)
 	}
 	for _, bad := range []ExpandConfig{
-		{Kinds: []string{"adjacent"}, Gate: "always"}, {Kinds: []string{"adjacent"}, Gate: "Needs"}, {Kinds: []string{"adjacent"}, Target: "need"},
+		{Kinds: []string{"adjacent"}, Gate: "always"}, {Kinds: []string{"adjacent"}, Gate: "Needs"},
+		{Kinds: []string{"adjacent"}, Target: "need"}, {Kinds: []string{"adjacent"}, Reserve: 9}, {Kinds: []string{"adjacent"}, Reserve: -1},
 	} {
 		if _, err = New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &bad}}, both, nil); err == nil {
 			t.Error("invalid expansion accepted", bad)
@@ -83,16 +84,16 @@ func TestExpandStage4bConfig(t *testing.T) {
 	}
 	// Absent, they stay out of the config's JSON (and the policy).
 	raw, _ := json.Marshal(ExpandConfig{Kinds: []string{"adjacent"}, Limit: 24, Seeds: 16, AdjacentWindow: 1})
-	if strings.Contains(string(raw), "gate") || strings.Contains(string(raw), "target") {
+	if strings.Contains(string(raw), "gate") || strings.Contains(string(raw), "target") || strings.Contains(string(raw), "reserve") {
 		t.Fatal(string(raw))
 	}
-	decoder := json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"expand":{"kinds":["adjacent"],"gate":"needs","target":"needs"}}}`))
+	decoder := json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"expand":{"kinds":["adjacent"],"gate":"needs","target":"needs","reserve":4}}}`))
 	decoder.DisallowUnknownFields()
 	var decoded Config
-	if err = decoder.Decode(&decoded); err != nil || !reflect.DeepEqual(*decoded.View.Expand, ExpandConfig{Kinds: []string{"adjacent"}, Gate: "needs", Target: "needs"}) {
+	if err = decoder.Decode(&decoded); err != nil || !reflect.DeepEqual(*decoded.View.Expand, ExpandConfig{Kinds: []string{"adjacent"}, Gate: "needs", Target: "needs", Reserve: 4}) {
 		t.Fatal(decoded, err)
 	}
-	if raw, _ := json.Marshal(ReadStats{}); strings.Contains(string(raw), "expandGated") || strings.Contains(string(raw), "expandAnsweredNeeds") {
+	if raw, _ := json.Marshal(ReadStats{}); strings.Contains(string(raw), "expandGated") || strings.Contains(string(raw), "expandAnsweredNeeds") || strings.Contains(string(raw), "expandReserved") {
 		t.Fatal(string(raw))
 	}
 }
@@ -197,6 +198,59 @@ func TestExpansionTargetsUncoveredNeeds(t *testing.T) {
 			})
 	}) {
 		t.Fatal("ALL need not asked")
+	}
+	// Reserved slots follow the target order: with two slots and one held,
+	// the held one is a3, not the greeting.
+	reserve := targeted
+	reserve.Reserve = 1
+	if got := recordIDs(needsRead(t, s, needs, &ViewConfig{MaxItems: 2, Expand: &reserve}, judge()).Records); !slices.Equal(got, []string{"a2", "a3"}) {
+		t.Fatal(got)
+	}
+	untargeted := expand
+	untargeted.Reserve = 1
+	if got := recordIDs(needsRead(t, s, needs, &ViewConfig{MaxItems: 2, Expand: &untargeted}, judge()).Records); !slices.Equal(got, []string{"a0", "a2"}) {
+		t.Fatal(got)
+	}
+}
+
+func TestExpansionReserve(t *testing.T) {
+	s := expandFixture(t)
+	// JEV needs the pooled codename notes more than the launch notes the
+	// expansion finds: a2 0.99, a1 0.98, doc-00000 0.97; a3 0.92,
+	// doc-00001 0.91, b1 0.9.
+	judge := func() *scriptedJudge {
+		return needJudge(byWords(map[string]float64{"ORBIT": 0.99, "picked a codename": 0.98, "codename review": 0.97, "launch window": 0.92, "launch checklist": 0.91, "launch moved": 0.9}))
+	}
+	read := func(view *ViewConfig) View { return needsRead(t, s, "NEED: the codename", view, judge()) }
+	expand := func(reserve int) *ExpandConfig {
+		return &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, Reserve: reserve}
+	}
+	for reserve, want := range map[int][]string{
+		0: {"a2", "a1", "doc-00000"},
+		1: {"a2", "a1", "a3"},
+		2: {"a2", "a3", "doc-00001"},
+		8: {"a3", "doc-00001", "b1"},
+	} {
+		view := read(&ViewConfig{MaxItems: 3, Expand: expand(reserve)})
+		if got := recordIDs(view.Records); !slices.Equal(got, want) || view.Stats.ExpandReserved != min(reserve, 3) {
+			t.Fatal(reserve, got, view.Stats)
+		}
+		if view.Records[len(view.Records)-1].Score != judge().answer(view.Records[len(view.Records)-1].Text, -1) {
+			t.Fatal(view.Records)
+		}
+	}
+	// No needed expansion: the reserved slots go back to the composition.
+	plain := needsRead(t, s, "NEED: the codename", &ViewConfig{MaxItems: 3, Expand: expand(0)}, needJudge(byWords(map[string]float64{"ORBIT": 0.99})))
+	held := needsRead(t, s, "NEED: the codename", &ViewConfig{MaxItems: 3, Expand: expand(2)}, needJudge(byWords(map[string]float64{"ORBIT": 0.99})))
+	if !reflect.DeepEqual(held.Records, plain.Records) || held.Stats.ExpandReserved != 0 {
+		t.Fatal(recordIDs(held.Records), recordIDs(plain.Records))
+	}
+	// With fusion the fused records that keep their slots come first, the
+	// reserved expansions after them.
+	fused := read(&ViewConfig{MaxItems: 3, Fusion: "rrf", Expand: expand(0)})
+	reserved := read(&ViewConfig{MaxItems: 3, Fusion: "rrf", Expand: expand(2)})
+	if got := recordIDs(reserved.Records); len(got) != 3 || got[0] != recordIDs(fused.Records)[0] || !slices.Equal(got[1:], []string{"a3", "doc-00001"}) || reserved.Stats.ExpandReserved != 2 {
+		t.Fatal(recordIDs(fused.Records), got)
 	}
 }
 

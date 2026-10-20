@@ -118,12 +118,13 @@ type ViewConfig struct {
 // by default, 1–64), Seeds the needed records expanded from (16 by default,
 // 1–32). AdjacentWindow (with adjacent) is how many records on each side
 // are adjacent (1 by default, 1–5); EventsTop (with events) how many events
-// are taken (10 by default, 1–40). Gate and Target are Jev-Mem's
+// are taken (10 by default, 1–40). Gate, Target and Reserve are Jev-Mem's
 // evaluate-then-expand parts (simple_expand.go): Gate "needs" skips the
-// expansion when the need table finds the evidence sufficient, and Target
+// expansion when the need table finds the evidence sufficient, Target
 // "needs" asks the candidates the need table's question for the needs not
-// covered yet and ranks those that answer one first. Unset, each leaves the
-// read as it was.
+// covered yet and ranks those that answer one first, and Reserve (0–8)
+// holds View slots for needed expansions. Unset, each leaves the read as
+// it was.
 type ExpandConfig struct {
 	Kinds          []string `json:"kinds"`
 	Limit          int      `json:"limit,omitempty"`
@@ -132,6 +133,7 @@ type ExpandConfig struct {
 	EventsTop      int      `json:"eventsTop,omitempty"`
 	Gate           string   `json:"gate,omitempty"`
 	Target         string   `json:"target,omitempty"`
+	Reserve        int      `json:"reserve,omitempty"`
 }
 
 // expandKinds are the candidates view.expand may propose.
@@ -218,9 +220,11 @@ type ReadStats struct {
 	// ExpandGated reports that view expand's gate found the evidence
 	// sufficient and skipped the expansion; ExpandAnsweredNeeds counts the
 	// needs not covered before it that an expansion JEV judged needed
-	// answers (target).
+	// answers (target); ExpandReserved the View slots held for expansions
+	// that they took (reserve).
 	ExpandGated         bool `json:"expandGated,omitempty"`
 	ExpandAnsweredNeeds int  `json:"expandAnsweredNeeds,omitempty"`
+	ExpandReserved      int  `json:"expandReserved,omitempty"`
 }
 
 type View struct {
@@ -373,8 +377,8 @@ func (e *ExpandConfig) normalize() error {
 			return fmt.Errorf("view expand requires %s 1–%d", setting.name, setting.limit)
 		}
 	}
-	if e.Gate != "" && e.Gate != expandNeeds || e.Target != "" && e.Target != expandNeeds {
-		return errors.New("view expand requires gate and target \"\" or \"needs\"")
+	if e.Gate != "" && e.Gate != expandNeeds || e.Target != "" && e.Target != expandNeeds || e.Reserve < 0 || e.Reserve > 8 {
+		return errors.New("view expand requires gate \"\" or \"needs\", target \"\" or \"needs\" and reserve 0–8")
 	}
 	return nil
 }
