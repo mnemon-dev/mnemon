@@ -215,6 +215,28 @@ func TestLayeredModeFoldsLikeTimelines(t *testing.T) {
 	}
 }
 
+func TestLayeredLinkFallbacksAreLogged(t *testing.T) {
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &memoryagent.ConsolidationConfig{Mode: "layered", BatchCharacters: 300}
+		config.ConsolidateOnAdd = true
+	})
+	for _, id := range []string{"r1", "r2", "r3"} {
+		h.mustAdd(t, addRequest(id, "u1"))
+	}
+	if strings.Contains(h.log.String(), "without JEV") {
+		t.Fatal("a batch linked with a working JEV was logged as a fallback:", h.log.String())
+	}
+	// With JEV down, the next batch's thread is linked without it: the Add
+	// still succeeds, and the journal says so.
+	h.judge.fail.Store(true)
+	for _, id := range []string{"r4", "r5"} {
+		h.mustAdd(t, addRequest(id, "u1"))
+	}
+	if want := "consolidation linked 1 batches without JEV (user " + userKey("u1")[:8] + ")"; !strings.Contains(h.log.String(), want) {
+		t.Fatal(h.log.String())
+	}
+}
+
 // derivedGeneration is the derived-metadata generation of the one user's
 // records, "" before any was written.
 func derivedGeneration(t *testing.T, root string) string {

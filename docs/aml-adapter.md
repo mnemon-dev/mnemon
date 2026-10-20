@@ -236,8 +236,9 @@ spend from a trial run (read the budget file, below) before choosing the caps.
   whether it continues one. The three-failures rule above is about the extraction. A batch
   whose JEV calls fail, or whose JEV budget is spent, is linked without JEV: its topics and
   facts start new ones instead of continuing stored ones (a fact keeps the history of the
-  stored key of the same name), and the job goes on. The log does not report this; the `jev`
-  account of the budget file shows the spend.
+  stored key of the same name), and the job goes on. The journal logs it as
+  `consolidation linked N batches without JEV`; the `jev` account of the budget file shows the
+  spend.
 - **`--search-timeout`** (default `10m`, `1m` to `18m`) bounds a Search's memory read. When it
   expires the Search answers the raw ranking (HTTP 200, counted as degraded). With the tail
   fold's own 10 minutes before it, a Search answers within the platform's 30 minutes.
@@ -329,6 +330,7 @@ logged; a user appears as the first eight hex digits of its store hash.
 | `consolidation left native edges pending (user …)`, `flush left …` | The request's window ended before the edges were rebuilt; the next request rebuilds them. |
 | `consolidation native edges left <n> pairs undecided (user …)`, `flush native edges left …` | With `edgeKinds`, JEV did not answer that many event pairs in the rebuild (failed calls, a spent budget or an unavailable provider); the edges are built without them, and the next rebuild asks them again. |
 | `consolidation native edges gave up <n> pairs whose calls failed 3 times (user …)`, `flush native edges gave up …` | Those event pairs failed a third call in a rebuild in which other calls succeeded; they are never asked again and give no edge. |
+| `consolidation linked N batches without JEV (user …)` | Layered consolidation linked N batches without JEV because its calls failed or the `jev` budget is spent: their topics and facts started new ones instead of continuing stored ones (a fact still joins the stored key of the same name). Nothing is dropped. Check JEV's reachability and the `jev` account of the budget file; batches folded later link normally once JEV answers again. |
 | `consolidation dropped N records (user …): <reason>` | The index leaves out N records whose fold the provider refused or timed out on for at least 10 minutes, whose fold request was too large, or whose reply never parsed. Outages, rate limits (429), 5xx and credential or balance refusals (401/402/403) never drop records. The records stay searchable. |
 | `consolidation left to a queued Add (user …)` | Another Add of the user was waiting; it consolidates instead. |
 | `consolidation skipped: the Add's window has passed (user …)` | The Add waited 25 minutes for its user; the next request consolidates. |

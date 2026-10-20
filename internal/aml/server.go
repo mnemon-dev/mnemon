@@ -530,6 +530,9 @@ func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, la
 		for _, drop := range result.Drops {
 			s.log.Printf("consolidation dropped %d records (user %s): %s", drop.Records, user.key[:8], drop.Reason)
 		}
+		if result.LinkFallbacks > 0 {
+			s.log.Printf("consolidation linked %d batches without JEV (user %s): JEV failed or its budget is spent, so only keys of the same name were joined", result.LinkFallbacks, user.key[:8])
+		}
 		if err != nil {
 			s.log.Printf("%s failed (user %s): %v", label, user.key[:8], err)
 			break
