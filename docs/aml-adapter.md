@@ -27,9 +27,13 @@ AML platform ──HTTPS──▶ Caddy :443 ──HTTP──▶ aml-serve 127.0
   same `request_id` is idempotent.
 - **Search** (with `--consolidate-on-add`) first folds the user's tail, then runs the planner,
   the cue searches, the JEV need loop and the RRF fusion of the raw search rank with the JEV
-  rank, and returns stored records (and the consolidation blocks) in rank order. It never
-  returns generated answers. If a model, a budget or the embedder fails, or the read runs past
-  `--search-timeout`, it falls back to the raw hybrid ranking with HTTP 200 and logs the fact.
+  rank, and returns the consolidation blocks first, then the selected records in time order
+  (the deployment's `view.order: "time"`, as the reference system delivers its View; without
+  it, in rank order). The selection, and the cut at `top_k` when blocks and records pass it,
+  go by rank. Each item's `score` is `1/(position+1)`. It never returns generated answers. If
+  a model, a budget or the embedder fails, or the read runs past `--search-timeout`, it falls
+  back to the raw hybrid ranking with HTTP 200, cut at `top_k` by rank and delivered in the
+  same order, and logs the fact.
 - Each `user_id` has its own store: `<data-root>/users/<hex(sha256(user_id))[:32]>`. One user
   can never reach another's records.
 
@@ -41,8 +45,8 @@ AML platform ──HTTPS──▶ Caddy :443 ──HTTP──▶ aml-serve 127.0
   `text` of parts whose `type` ends in `text` (`text`, `input_text`, `output_text`).
 - Search needs only a `user_id`. A missing, zero or negative `top_k` means the View maximum
   (100 with the shipped configuration); a blank `query` answers `{"data":[]}`.
-- Each Search item's `score` is `1/(rank+1)` by its position in `data` (1, 0.5, 0.333…), layer
-  blocks included, so a client that sorts by score keeps the order.
+- Each Search item's `score` is `1/(position+1)` by its position in `data` (1, 0.5, 0.333…),
+  layer blocks included, so a client that sorts by score keeps the delivered order.
 
 ## Prerequisites
 

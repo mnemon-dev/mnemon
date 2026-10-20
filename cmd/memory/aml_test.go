@@ -73,9 +73,10 @@ func TestIndustrialConfigLoadsAndStarts(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := memoryagent.Config{
-		Version:       1,
-		Strategy:      "simple",
-		View:          &memoryagent.ViewConfig{MaxItems: 100, MaxCharacters: 240000, Fusion: "rrf"},
+		Version:  1,
+		Strategy: "simple",
+		// The reference system delivers its View in time order.
+		View:          &memoryagent.ViewConfig{MaxItems: 100, MaxCharacters: 240000, Fusion: "rrf", Order: "time"},
 		Consolidation: &memoryagent.ConsolidationConfig{Mode: "timelines"},
 		// DeepSeek without thinking: a thinking planner can return empty plans
 		// under the 200/400-token planning caps.

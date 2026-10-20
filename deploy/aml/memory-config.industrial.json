@@ -4,7 +4,8 @@
   "view": {
     "maxItems": 100,
     "maxCharacters": 240000,
-    "fusion": "rrf"
+    "fusion": "rrf",
+    "order": "time"
   },
   "consolidation": {
     "mode": "timelines"

@@ -43,6 +43,17 @@ than by each search's own words; `stats.intent` reports it. Absent or `""`, each
 detects its intent from its own text, as before, and `stats.intent` is absent. Other
 values are refused. The setting changes nothing without an `index` that reads intent.
 
+`"view": {"order": "time"}` lists a simple read's records in time order once its View is
+composed: after the expansion and the timelines layer, which still select, cut and trim by
+rank. The key is the record's `date` (the writer's `data.eventAt`, else its date, else its
+creation time) as an instant when it parses as RFC 3339 or as a day (`YYYY-MM-DD`, midnight
+UTC), earlier first, with records whose date does not parse after all the dated ones; then
+the write position (the document's, then the chunk's place in it); then the id. The index
+blocks keep their place and order, each record keeps its `score`, and the needs, `truncated`
+and the stats are those of the ranked View. If the write positions cannot be read the View
+stays in rank order and `order` is named in `stats.degraded`. Absent or `""` keeps the rank
+order, and reads and the policy hash are unchanged; other values are refused.
+
 `"view": {"expand": {"kinds": ["adjacent", "causal", "events"], "limit": 24, "seeds": 16}}`
 adds evidence-anchored expansion to a simple read. The cue searches, the pool, the need loop
 and the final judgement run as without it; then two sources propose more records, of the

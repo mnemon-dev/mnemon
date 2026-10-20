@@ -669,8 +669,8 @@ func (s *Server) read(ctx context.Context, user *userEntry, req memoryagent.Read
 	return user.agent.Read(ctx, req)
 }
 
-// answer writes a Search's items, scored by rank (1/(rank+1), best first),
-// and counts the Search.
+// answer writes a Search's items, scored by position (1/(position+1), in
+// the order delivered), and counts the Search.
 func (s *Server) answer(w http.ResponseWriter, items []SearchItem) {
 	for i := range items {
 		items[i].Score = 1 / float64(i+1)

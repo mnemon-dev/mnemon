@@ -1,7 +1,8 @@
 // Package aml serves the Agent Memory Leaderboard (AML) Add/Search contract
 // over one records store per user: Add stores a chunk of a conversation and
-// returns once it is persisted and searchable, Search returns ranked stored
-// evidence (records and consolidated layer blocks), never generated answers.
+// returns once it is persisted and searchable, Search returns selected stored
+// evidence (consolidated layer blocks, then records in the View's order),
+// never generated answers.
 //
 // AML publishes a run only if every task succeeds and does not retry a 4xx,
 // so the adapter reads requests leniently: only what identifies and isolates
@@ -257,11 +258,12 @@ func (r *SearchRequest) UnmarshalJSON(raw []byte) error {
 	return nil
 }
 
-// SearchItem is one piece of stored evidence, best first. Only Content is
-// sure to reach the answering model, so dates live inside it. Score is
-// 1/(rank+1) by the item's 0-based rank in the response (1 for the first,
-// then 0.5, …), so any sort by score keeps the order; CreatedAt is omitted
-// when unknown.
+// SearchItem is one piece of stored evidence, in the order delivered: the
+// layer blocks, then the records in the View's order (rank, or time with
+// view.order "time"). Only Content is sure to reach the answering model, so
+// dates live inside it. Score is 1/(position+1) by the item's 0-based
+// position in the response (1 for the first, then 0.5, …), so any sort by
+// score keeps the order; CreatedAt is omitted when unknown.
 type SearchItem struct {
 	ID        string  `json:"id"`
 	Content   string  `json:"content"`

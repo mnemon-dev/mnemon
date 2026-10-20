@@ -90,11 +90,13 @@ may do (see step 6 below).
    the user's new records before it returns, and the rest of the conversation is folded before
    that user's next Search, as the reference implementation folds a conversation once it
    pauses.
-7. **Search returns evidence only.** The response is a list of stored record texts (verbatim,
-   with the conversation heading and date) and the consolidation blocks, in rank order; each
-   item's `score` is `1/(rank+1)`. No answer is generated. If a model, a budget or the embedder
-   fails, or the read runs past its timeout, Search still answers with the plain hybrid ranking
-   and records the fact in its log.
+7. **Search returns evidence only.** The response lists the consolidation blocks first, then
+   the selected stored record texts (verbatim, with the conversation heading and date) in time
+   order (`view.order: "time"`, as the reference system delivers its View); the records are
+   selected, and cut at `top_k`, by rank. Each item's `score` is `1/(position+1)`. No answer is
+   generated. If a model, a budget or the embedder fails, or the read runs past its timeout,
+   Search still answers with the plain hybrid ranking, cut at `top_k` by rank and delivered in
+   time order, and records the fact in its log.
 
 ### Models and services
 
