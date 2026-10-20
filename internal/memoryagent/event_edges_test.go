@@ -551,8 +551,10 @@ func TestEventEdgeFailureRetried(t *testing.T) {
 
 func TestEventEdgeFailedPairsGiveUp(t *testing.T) {
 	// One call a pair. The judge cannot answer whether the deposit is a
-	// later development of the booking (an invalid probability): the
-	// calls after it are still asked.
+	// later development of the booking (an invalid probability); it
+	// answers the rest, and each step brings a new event to ask about. The
+	// calls after the failed one are still asked, and since others
+	// succeed, the failure counts.
 	m := cabinMemory()
 	m.Events = append(m.Events, event{Thread: "T1", Date: "2024/01/09", Text: "Greg cancelled the cabin.", Records: []string{"r3"}, Entities: []string{"Greg"}})
 	judge := &linkJudge{answer: func(kind, newText, candidate string) float64 {
@@ -564,36 +566,103 @@ func TestEventEdgeFailedPairsGiveUp(t *testing.T) {
 	a := linkAgent(t, limitedJudge{judge, 1}, 8, nil)
 	state := linkState0(m)
 	first, second := eventID(m.Events[0]), eventID(m.Events[1])
-	for attempt := 1; attempt <= 3; attempt++ {
+	failing := "temporal Greg paid the cabin deposit. ~ Greg booked the cabin."
+	for attempt := 1; attempt <= 4; attempt++ {
+		state.Memory.Events = append(state.Memory.Events, event{Thread: "T1", Date: fmt.Sprintf("2024/01/1%d", attempt), Text: fmt.Sprintf("Greg called the owner %d.", attempt), Records: []string{fmt.Sprintf("r%d", attempt+3)}})
 		judge.calls = nil
 		result := &ConsolidateResult{}
-		if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal"}, result, nil); err != nil || result.EdgeFallbacks != 1 {
-			t.Fatal(attempt, err, result)
+		if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal"}, result, nil); err != nil {
+			t.Fatal(attempt, err)
 		}
-		want := []string{"temporal Greg paid the cabin deposit. ~ Greg booked the cabin."}
-		if attempt == 1 {
-			want = append(want, "temporal Greg cancelled the cabin. ~ Greg booked the cabin.", "temporal Greg cancelled the cabin. ~ Greg paid the cabin deposit.")
-			slices.Sort(want)
-		}
-		if got := askedPairs(t, judge.calls); !slices.Equal(got, want) {
-			t.Fatal(attempt, got)
-		}
-		if got := state.EventEdges.Failures["temporal"][second][first]; got != attempt {
-			t.Fatal(attempt, got)
+		asked := askedPairs(t, judge.calls)
+		if slices.Contains(asked, failing) != (attempt <= 3) || len(asked) != len(judge.calls) {
+			t.Fatal(attempt, asked)
 		}
 		// Undecided until it fails a third time: then given up, not "no".
-		if decided := slices.Contains(state.EventEdges.Decided["temporal"], second); decided != (attempt == 3) || state.EventEdges.answered("temporal", second, first) {
+		fallbacks, givenUp := map[bool]int{true: 1}[attempt < 3], map[bool]int{true: 1}[attempt == 3]
+		if result.EdgeFallbacks != fallbacks || result.EdgeGivenUp != givenUp || result.EdgeCalls != len(asked) {
+			t.Fatal(attempt, result)
+		}
+		if got := state.EventEdges.Failures["temporal"][second][first]; got != min(attempt, 3) {
+			t.Fatal(attempt, got)
+		}
+		if decided := slices.Contains(state.EventEdges.Decided["temporal"], second); decided != (attempt >= 3) || state.EventEdges.answered("temporal", second, first) {
 			t.Fatal(attempt, state.EventEdges)
 		}
 	}
-	judge.calls = nil
-	if changed, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal"}, &ConsolidateResult{}, nil); err != nil || changed || judge.count() != 0 {
-		t.Fatal("a given-up pair was asked again", changed, err, judge.count())
-	}
 	// A given-up pair is no edge.
-	versions := map[string]int64{"r1": 1, "r2": 1, "r3": 1}
-	if links := buildEdges([]timelineState{*state}, versions, []string{"temporal"})["r2"].Links; !reflect.DeepEqual(links, []records.Link{edgeLink("r3", 1, "temporal", 0.9)}) {
-		t.Fatal(links)
+	versions := map[string]int64{}
+	for i := 1; i <= 7; i++ {
+		versions[fmt.Sprintf("r%d", i)] = 1
+	}
+	built := buildEdges([]timelineState{*state}, versions, []string{"temporal"})
+	for _, pair := range [][2]string{{"r1", "r2"}, {"r2", "r1"}} {
+		if slices.ContainsFunc(built[pair[0]].Links, func(l records.Link) bool { return l.ID == pair[1] }) {
+			t.Fatal(pair, built[pair[0]].Links)
+		}
+	}
+	if !slices.Contains(built["r2"].Links, edgeLink("r3", 1, "temporal", 0.9)) {
+		t.Fatal(built["r2"].Links)
+	}
+	raw, _ := json.Marshal(ConsolidateResult{EdgeGivenUp: 2})
+	if !strings.Contains(string(raw), `"edgeGivenUp":2`) {
+		t.Fatal(string(raw))
+	}
+}
+
+func TestEventEdgeSystemicFailuresGiveUpNothing(t *testing.T) {
+	// Four events of a thread: six temporal pairs, one call each. A judge
+	// whose every call fails (a request error, a timeout, a missing
+	// credential) ends each step after three failed calls in a row and
+	// counts no failure: however many steps, no pair is given up.
+	m := cabinMemory()
+	m.Events = append(m.Events,
+		event{Thread: "T1", Date: "2024/01/09", Text: "Greg cancelled the cabin.", Records: []string{"r3"}},
+		event{Thread: "T1", Date: "2024/01/10", Text: "Greg rebooked the cabin.", Records: []string{"r4"}})
+	judge := edgeAnswers(map[string]float64{"temporal": 0.9})
+	down := true
+	judge.err = func(context.Context) error {
+		if down {
+			return errors.New("400 bad request")
+		}
+		return nil
+	}
+	a := linkAgent(t, limitedJudge{judge, 1}, 8, nil)
+	state := linkState0(m)
+	for step := range 5 {
+		result := &ConsolidateResult{}
+		if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal"}, result, nil); err != nil {
+			t.Fatal(step, err)
+		}
+		if result.EdgeCalls != 3 || result.EdgeFallbacks != 6 || result.EdgeGivenUp != 0 || state.EventEdges.Failures != nil || state.EventEdges.Answers != nil || len(state.EventEdges.Decided["temporal"]) != 1 {
+			t.Fatal(step, result, state.EventEdges)
+		}
+	}
+	// A healthy judge then decides them all.
+	down = false
+	result := &ConsolidateResult{}
+	if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal"}, result, nil); err != nil || result.EdgeCalls != 6 || result.EdgeAsked["temporal"] != 6 || result.EdgeFallbacks != 0 || len(state.EventEdges.Decided["temporal"]) != 4 {
+		t.Fatal(err, result, state.EventEdges)
+	}
+	// Failed calls that are not three in a row do not end the step, and
+	// with calls succeeding around them, they count.
+	judge = edgeAnswers(map[string]float64{"temporal": 0.9})
+	judge.err = func(context.Context) error {
+		if n := judge.count(); n == 1 || n == 3 || n == 4 {
+			return errors.New("400 bad request")
+		}
+		return nil
+	}
+	state, result = linkState0(m), &ConsolidateResult{}
+	if _, err := linkAgent(t, limitedJudge{judge, 1}, 8, nil).newLinker().decideEventEdges(context.Background(), state, []string{"temporal"}, result, nil); err != nil {
+		t.Fatal(err)
+	}
+	failed := 0
+	for _, to := range state.EventEdges.Failures["temporal"] {
+		failed += len(to)
+	}
+	if result.EdgeCalls != 6 || result.EdgeFallbacks != 3 || failed != 3 || result.EdgeAsked["temporal"] != 3 {
+		t.Fatal(result, state.EventEdges)
 	}
 }
 

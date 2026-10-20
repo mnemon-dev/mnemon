@@ -275,6 +275,8 @@ const (
 	// pairAttempts is the failed calls after which a pair is given up:
 	// never asked again, and no edge.
 	pairAttempts = 3
+	// failedCalls is the failed calls in a row that end a step.
+	failedCalls = 3
 	// edgeChunkCalls is the calls a step makes between commits of its
 	// answers.
 	edgeChunkCalls = 32
@@ -373,12 +375,15 @@ func eventItem(id string, n eventNode, titles map[string]string) linkItem {
 // candidates in "candidates". A yes (at least 0.5) is an edge weighted by
 // its probability, to two decimals; a no is kept as 0.
 //
-// A call that fails for itself (countedError) counts a failure against
-// each of its pairs and the asking goes on; a pair is given up at its
-// pairAttempts-th failure. A spent budget, an unavailable provider or no
-// decision model ends the asking, counting nothing; the step goes on. The
-// pairs left unanswered (EdgeFallbacks) keep their events undecided, to be
-// asked again by the next step. After every edgeChunkCalls calls, and
+// A call that fails for itself (countedError) marks its pairs failed and
+// the asking goes on, unless failedCalls calls in a row have failed. The
+// failures count against the pairs only in a step in which a call
+// succeeded: a JEV failing every call (an outage, a missing credential, a
+// timeout) gives up nothing. A pair is given up at its pairAttempts-th
+// counted failure (EdgeGivenUp). A spent budget, an unavailable provider or
+// no decision model ends the asking, counting nothing; the step goes on.
+// The pairs left unanswered and not given up (EdgeFallbacks) keep their
+// events undecided, to be asked again by the next step. After every edgeChunkCalls calls, and
 // when the job is canceled, the answers so far go into the state and
 // commit (when not nil) saves it, the latter with a context that is not
 // canceled, so a step cut off resumes where it stopped; a canceled job
@@ -444,9 +449,9 @@ func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kin
 	// The new events n1, n2, … and their candidates c1, c2, …, each once;
 	// for each event and kind, the questions to ask.
 	type question struct {
-		pair         *linkPair
-		to           string
-		failed, kept bool
+		pair           *linkPair
+		kind, from, to string
+		failed, kept   bool
 	}
 	type decision struct {
 		kind, from string
@@ -486,13 +491,17 @@ func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kin
 					cands = append(cands, eventItem(fmt.Sprintf("c%d", len(cands)+1), nodes[j], titles))
 				}
 				p := &linkPair{kind: kind.pair, item: newOf[i], candidate: candOf[j]}
-				questionOf[p] = &question{pair: p, to: to}
+				questionOf[p] = &question{pair: p, kind: kind.name, from: n.id, to: to}
 				d.questions = append(d.questions, questionOf[p])
 				pairs = append(pairs, p)
 			}
 			decisions = append(decisions, d)
 		}
 	}
+	// succeeded reports whether a call of the step succeeded: only then do
+	// failed calls count against their pairs, so a JEV that fails every
+	// call (an outage, a missing credential) gives up no pair.
+	succeeded := false
 	// apply keeps what the calls so far answered or failed, and marks the
 	// events whose pairs are all answered or given up; it reports whether
 	// that changed the state.
@@ -514,8 +523,11 @@ func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kin
 					count(&result.EdgeAsked, d.kind)
 					edges.answer(d.kind, d.from, q.to, weight)
 					q.kept, dirty = true, true
-				case q.failed:
+				case q.failed && succeeded:
 					nested(&edges.Failures, d.kind, d.from)[q.to]++
+					if edges.givenUp(d.kind, d.from, q.to) {
+						result.EdgeGivenUp++
+					}
 					q.kept, dirty = true, true
 				}
 				if !q.pair.answered && !edges.givenUp(d.kind, d.from, q.to) {
@@ -536,8 +548,8 @@ func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kin
 		return dirty
 	}
 	defer func() {
-		for _, p := range pairs {
-			if !p.answered {
+		for _, q := range questionOf {
+			if !q.pair.answered && !edges.givenUp(q.kind, q.from, q.to) {
 				result.EdgeFallbacks++
 			}
 		}
@@ -551,6 +563,7 @@ func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kin
 	if l.agent.models.Judge == nil {
 		stop = errors.New("no decision model")
 	}
+	failedRun := 0
 	for start := 0; start < len(calls) && stop == nil; start += edgeChunkCalls {
 		for _, call := range calls[start:min(start+edgeChunkCalls, len(calls))] {
 			answers, err := l.decide(ctx, call.state, call.questions, state, result, &result.EdgeCalls)
@@ -562,8 +575,13 @@ func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kin
 				for _, p := range call.pairs {
 					questionOf[p].failed = true
 				}
+				if failedRun++; failedRun == failedCalls {
+					stop = err
+					break
+				}
 				continue
 			}
+			succeeded, failedRun = true, 0
 			for j, p := range call.pairs {
 				p.same, p.answered = answers[edgeKindOf(p.kind).key+strconv.Itoa(j)], true
 			}

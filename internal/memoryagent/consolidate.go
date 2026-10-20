@@ -77,8 +77,9 @@ type ConsolidateResult struct {
 	// With edgeKinds (event_edges.go), EdgeCalls counts the JEV calls
 	// deciding event edges (part of LinkUsage); EdgeAsked the pairs JEV
 	// answered and EdgeYes the edges it made, by kind; EdgeFallbacks the
-	// pairs left unanswered because JEV failed, asked again next time
-	// (until a pair has failed 3 calls); EdgeLexical counts the edge steps
+	// pairs left unanswered because JEV failed, asked again next time;
+	// EdgeGivenUp the pairs given up because their calls failed 3 times in
+	// steps where other calls succeeded; EdgeLexical counts the edge steps
 	// whose candidates shared words found because the embedder failed.
 	EdgesPending   bool           `json:"edgesPending,omitempty"`
 	EdgeError      string         `json:"edgeError,omitempty"`
@@ -91,6 +92,7 @@ type ConsolidateResult struct {
 	EdgeAsked      map[string]int `json:"edgeAsked,omitempty"`
 	EdgeYes        map[string]int `json:"edgeYes,omitempty"`
 	EdgeFallbacks  int            `json:"edgeFallbacks,omitempty"`
+	EdgeGivenUp    int            `json:"edgeGivenUp,omitempty"`
 	EdgeLexical    int            `json:"edgeLexical,omitempty"`
 }
 
