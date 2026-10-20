@@ -20,10 +20,15 @@ type ConsolidateRequest struct {
 	// even when nothing new was read, for a later job without Hold to fold
 	// once the conversation pauses.
 	Hold bool `json:"hold,omitempty"`
-	// RebuildEdges (nativeEdges) folds nothing: it decides the scope's
+	// RebuildEdges folds nothing. With nativeEdges it decides the scope's
 	// entity names not yet decided and replaces the records' derived
-	// metadata from the stored states.
+	// metadata from the stored states; without, it removes the
+	// consolidation's derived metadata.
 	RebuildEdges bool `json:"rebuildEdges,omitempty"`
+	// DeferEdges (nativeEdges) skips the edge step of a job that changed
+	// the memory: the result reports the edges pending, and a later job or
+	// RebuildEdges builds them, once for many jobs.
+	DeferEdges bool `json:"deferEdges,omitempty"`
 }
 
 type ConsolidateResult struct {
@@ -66,6 +71,11 @@ type ConsolidateResult struct {
 	// entity names it decided, AliasMerges joined another name's cluster and
 	// AliasFallbacks stayed alone because JEV failed; AliasCalls counts its
 	// JEV calls (part of LinkUsage).
+	// EdgesPending reports that the derived metadata does not yet follow
+	// the scope's memory after the job (deferred, or its edge step
+	// failed: EdgeError, which does not fail the job's folds).
+	EdgesPending   bool           `json:"edgesPending,omitempty"`
+	EdgeError      string         `json:"edgeError,omitempty"`
 	EdgeRecords    int            `json:"edgeRecords,omitempty"`
 	EdgeLinks      map[string]int `json:"edgeLinks,omitempty"`
 	AliasCalls     int            `json:"aliasCalls,omitempty"`
@@ -103,7 +113,7 @@ func (a *Agent) Consolidate(ctx context.Context, req ConsolidateRequest) (Consol
 		return ConsolidateResult{}, fmt.Errorf("derived index is unavailable: %w", a.indexError)
 	}
 	if req.RebuildEdges && !(a.config.Consolidation.Timelines() && a.config.Consolidation.NativeEdges) {
-		return ConsolidateResult{}, errors.New("rebuildEdges requires consolidation nativeEdges")
+		return ConsolidateResult{}, a.clearEdges(ctx, req)
 	}
 	if a.config.Consolidation.Timelines() {
 		return a.consolidateTimelines(ctx, req)

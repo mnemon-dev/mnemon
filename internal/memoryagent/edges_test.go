@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/mnemon-dev/mnemon/internal/records"
@@ -577,8 +578,13 @@ func TestNativeEdgesOffLeavesRecordsAlone(t *testing.T) {
 					t.Fatal(field, string(state), string(out))
 				}
 			}
-			if _, err := a.Consolidate(context.Background(), ConsolidateRequest{RebuildEdges: true}); err == nil || !strings.Contains(err.Error(), "nativeEdges") {
-				t.Fatal("rebuilt edges without nativeEdges", err)
+			// Without nativeEdges a rebuild clears the consolidation's rows,
+			// and here there are none.
+			if result, err := a.Consolidate(context.Background(), ConsolidateRequest{RebuildEdges: true}); err != nil || result.EdgeRecords != 0 {
+				t.Fatal(result, err)
+			}
+			if rows, written := derivedOverlay(t, dir); rows != 0 || written {
+				t.Fatal("derived metadata written", rows, written)
 			}
 		})
 	}
@@ -593,8 +599,11 @@ func TestNativeEdgesOffLeavesRecordsAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.Consolidate(context.Background(), ConsolidateRequest{RebuildEdges: true}); err == nil || !strings.Contains(err.Error(), "nativeEdges") {
-		t.Fatal("v1 rebuilt edges", err)
+	if _, err := a.Consolidate(context.Background(), ConsolidateRequest{RebuildEdges: true}); err != nil {
+		t.Fatal("v1 rebuild", err)
+	}
+	if rows, written := derivedOverlay(t, dir); rows != 0 || written {
+		t.Fatal("derived metadata written", rows, written)
 	}
 }
 
@@ -666,5 +675,115 @@ func TestNativeEdgesEmptyScopeWritesNothing(t *testing.T) {
 	}
 	if _, token, err := overlay.loadTimelines(context.Background(), records.Scope{}); err != nil || token != "" {
 		t.Fatal("an empty scope's state was written", token, err)
+	}
+}
+
+func TestRebuildEdgesWithoutNativeEdgesClears(t *testing.T) {
+	s, dir := agentStore(t)
+	seedTopics(t, s, 1)
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return layeredReply(prompt), nil }}
+	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100, NativeEdges: true}, model, topicJudge())
+	if result, err := a.Consolidate(context.Background(), ConsolidateRequest{}); err != nil || result.EdgeRecords != 3 {
+		t.Fatal(result, err)
+	}
+	// The same store, nativeEdges turned off: a rebuild clears the rows.
+	off, err := New(s, Config{Version: 1, Policy: &ReadPolicy{Consolidation: true}, Consolidation: &ConsolidationConfig{Mode: "layered", BatchCharacters: 100}}, Models{Consolidator: model, Judge: topicJudge()}, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := off.Consolidate(context.Background(), ConsolidateRequest{RebuildEdges: true, Reset: true}); err == nil {
+		t.Fatal("a rebuild reset the state")
+	}
+	if result, err := off.Consolidate(context.Background(), ConsolidateRequest{RebuildEdges: true}); err != nil || result.EdgeRecords != 0 {
+		t.Fatal(result, err)
+	}
+	if rows, _ := derivedOverlay(t, dir); rows != 0 {
+		t.Fatal("rows left", rows)
+	}
+}
+
+func TestNativeEdgesResetClears(t *testing.T) {
+	s, dir := agentStore(t)
+	seedTopics(t, s, 1)
+	var fail atomic.Bool
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) {
+		if fail.Load() {
+			return "", errors.New("refused")
+		}
+		return layeredReply(prompt), nil
+	}}
+	a, _ := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100, NativeEdges: true}, model, topicJudge())
+	if result, err := a.Consolidate(context.Background(), ConsolidateRequest{}); err != nil || result.EdgeRecords != 3 {
+		t.Fatal(result, err)
+	}
+	// A reset whose fold fails leaves an empty memory: its edges go too.
+	fail.Store(true)
+	result, err := a.Consolidate(context.Background(), ConsolidateRequest{Reset: true})
+	if err == nil || result.EdgeRecords != 0 || result.EdgesPending || result.EdgeError != "" {
+		t.Fatal(result, err)
+	}
+	if rows, _ := derivedOverlay(t, dir); rows != 0 {
+		t.Fatal("a reset kept the old edges", rows)
+	}
+}
+
+func TestNativeEdgesFailureKeepsTheFold(t *testing.T) {
+	s, dir := agentStore(t)
+	seedTopics(t, s, 1)
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return layeredReply(prompt), nil }}
+	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100, NativeEdges: true}, model, topicJudge())
+	// Another scope's state that will not load breaks the edge step.
+	if _, err := overlay.db.Exec(`INSERT INTO timelines VALUES('broken','not its digest','{}')`); err != nil {
+		t.Fatal(err)
+	}
+	result, err := a.Consolidate(context.Background(), ConsolidateRequest{})
+	if err != nil || result.Folded != 1 || !result.EdgesPending || !strings.Contains(result.EdgeError, "digest") {
+		t.Fatal("the edge step failed the fold", result, err)
+	}
+	if state := loadState(t, overlay); len(state.Memory.Events) != 3 || state.EdgesMemory != "" {
+		t.Fatal("the fold was not kept, or the edges were marked built", state.EdgesMemory)
+	}
+	// The next job, with nothing new, retries the edges.
+	if _, err := overlay.db.Exec(`DELETE FROM timelines WHERE scope='broken'`); err != nil {
+		t.Fatal(err)
+	}
+	result, err = a.Consolidate(context.Background(), ConsolidateRequest{})
+	if err != nil || result.Folded != 0 || result.EdgeRecords != 3 || result.EdgesPending || result.EdgeError != "" {
+		t.Fatal(result, err)
+	}
+}
+
+func TestNativeEdgesDeferred(t *testing.T) {
+	s, dir := agentStore(t)
+	seedTopics(t, s, 2)
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return layeredReply(prompt), nil }}
+	judge := topicJudge()
+	a, _ := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100, NativeEdges: true}, model, judge)
+	// Deferred jobs fold and leave the edges pending, asking JEV nothing
+	// about names.
+	for i := range 2 {
+		result, err := a.Consolidate(context.Background(), ConsolidateRequest{Hold: true, DeferEdges: true, MaxBatches: 1})
+		if err != nil || result.Folded != 1 || !result.EdgesPending || result.EdgeRecords != 0 || result.AliasCalls != 0 {
+			t.Fatal(i, result, err)
+		}
+	}
+	if rows, _ := derivedOverlay(t, dir); rows != 0 {
+		t.Fatal("a deferred job wrote edges", rows)
+	}
+	// A deferred job that folds nothing still reports the pending edges.
+	if result, err := a.Consolidate(context.Background(), ConsolidateRequest{Hold: true, DeferEdges: true, MaxBatches: 1}); err != nil || result.Folded != 0 || !result.EdgesPending {
+		t.Fatal(result, err)
+	}
+	// One rebuild catches up.
+	result, err := a.Consolidate(context.Background(), ConsolidateRequest{RebuildEdges: true})
+	if err != nil || result.EdgeRecords != 6 || result.EdgesPending {
+		t.Fatal(result, err)
+	}
+	if result, err := a.Consolidate(context.Background(), ConsolidateRequest{Hold: true, DeferEdges: true, MaxBatches: 1}); err != nil || result.EdgesPending {
+		t.Fatal(result, err)
+	}
+	raw, _ := json.Marshal(ConsolidateRequest{DeferEdges: true})
+	if !strings.Contains(string(raw), `"deferEdges":true`) {
+		t.Fatal(string(raw))
 	}
 }

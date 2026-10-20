@@ -422,6 +422,10 @@ func edgeCounts(items map[string]records.DerivedMetadata) (int, map[string]int) 
 	return len(items), links
 }
 
+// edgesStale is the EdgesMemory of a reset state: its old edges are still
+// stored, whatever the memory.
+const edgesStale = "stale"
+
 // edgesDigest names a memory whose edges were built (EdgesMemory); "" for
 // an empty memory, which has none.
 func edgesDigest(m timelineMemory) string {
@@ -440,11 +444,11 @@ func edgesDigest(m timelineMemory) string {
 func (a *Agent) nativeEdges(ctx context.Context, scope records.Scope, state *timelineState, token *string, result *ConsolidateResult) error {
 	a.edges.Lock()
 	defer a.edges.Unlock()
-	decided, err := a.newLinker().resolveAliases(ctx, state, result)
+	keys, stored, err := a.overlay.allTimelines(ctx)
 	if err != nil {
 		return err
 	}
-	keys, stored, err := a.overlay.allTimelines(ctx)
+	decided, err := a.newLinker().resolveAliases(ctx, state, result)
 	if err != nil {
 		return err
 	}
@@ -508,4 +512,18 @@ func (a *Agent) recordVersions(ctx context.Context, ids []string) (string, map[s
 		}
 	}
 	return snapshot.Revision, versions, nil
+}
+
+// clearEdges is RebuildEdges without nativeEdges: it removes the
+// consolidation's derived metadata from the records.
+func (a *Agent) clearEdges(ctx context.Context, req ConsolidateRequest) error {
+	if req.Reset {
+		return errors.New("rebuildEdges folds nothing and cannot reset")
+	}
+	if a.store.ReadOnly() {
+		return errors.New("consolidation is unavailable with readonly storage")
+	}
+	a.edges.Lock()
+	defer a.edges.Unlock()
+	return a.store.ReplaceDerivedMetadata(ctx, edgesSource, nil)
 }

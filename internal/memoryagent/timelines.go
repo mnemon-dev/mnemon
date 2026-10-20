@@ -768,9 +768,14 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	if err != nil {
 		return ConsolidateResult{}, err
 	}
+	if req.Reset && settings.NativeEdges {
+		// The old memory's edges go with it, even when nothing new folds.
+		state.EdgesMemory = edgesStale
+	}
 	if req.RebuildEdges {
 		var result ConsolidateResult
 		err := a.nativeEdges(ctx, req.Scope, &state, &token, &result)
+		result.EdgesPending = err != nil
 		return result, err
 	}
 	state.Mode = ""
@@ -838,10 +843,16 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	result.Added = memorySize(state.Memory) - before
 	result.Remaining = len(state.Pending) + unread
 	// The records' derived metadata follows the memory, after a job that
-	// failed too, unless it was canceled.
-	if settings.NativeEdges && ctx.Err() == nil && state.EdgesMemory != edgesDigest(state.Memory) {
-		if err := a.nativeEdges(ctx, req.Scope, &state, &token, &result); err != nil {
-			return result, errors.Join(foldErr, err)
+	// failed too, unless it was canceled or defers it. A failed edge step
+	// leaves it pending for the next job and does not fail the folds.
+	if settings.NativeEdges && state.EdgesMemory != edgesDigest(state.Memory) {
+		result.EdgesPending = true
+		if !req.DeferEdges && ctx.Err() == nil {
+			if err := a.nativeEdges(ctx, req.Scope, &state, &token, &result); err != nil {
+				result.EdgeError = err.Error()
+			} else {
+				result.EdgesPending = false
+			}
 		}
 	}
 	return result, foldErr
