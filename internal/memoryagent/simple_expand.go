@@ -303,9 +303,11 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 		for _, kind := range kinds[i] {
 			r.stats.ExpandKinds[kind]++
 		}
+		// Every judged candidate joins the judged list and composes on its
+		// needed answer like a shortlisted record.
+		scored = append(scored, item)
 		if item.Needed >= 0.5 {
 			r.stats.ExpandedNeeded++
-			scored = append(scored, item)
 			for k, answer := range item.Row {
 				answered[k] = answered[k] || answer >= 0.5
 			}

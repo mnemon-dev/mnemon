@@ -288,8 +288,10 @@ func TestReadSimpleExpandsEvents(t *testing.T) {
 	if got := expansion(judge); !slices.Equal(got, []string{launch, travel}) {
 		t.Fatal(got)
 	}
-	if !slices.Contains(recordIDs(view.Records), "a3") || slices.Contains(recordIDs(view.Records), "doc-00002") || view.Stats.Expanded != 2 || view.Stats.ExpandedNeeded != 1 || !reflect.DeepEqual(view.Stats.ExpandKinds, map[string]int{"events": 2}) || !view.Stats.ExpandEventsLexical {
-		t.Fatal(recordIDs(view.Records), view.Stats)
+	// a3 is needed; doc-00002 (0.2) fills after the pooled records at the
+	// same answer. (b1 and doc-00001 are the layer's linked records.)
+	if got := recordIDs(view.Records); !slices.Equal(got[:5], []string{"a2", "a3", "a1", "doc-00000", "doc-00002"}) || view.Stats.Expanded != 2 || view.Stats.ExpandedNeeded != 1 || view.Stats.ExpandShown != 2 || !reflect.DeepEqual(view.Stats.ExpandKinds, map[string]int{"events": 2}) || !view.Stats.ExpandEventsLexical {
+		t.Fatal(got, view.Stats)
 	}
 	// With seeds too, the sources take turns, seed first: a3 is a2's next
 	// record and an event's; doc-00002 comes from the events.

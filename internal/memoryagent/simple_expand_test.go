@@ -373,32 +373,43 @@ func TestReadSimpleExpandsFromNeededEvidence(t *testing.T) {
 	}
 }
 
-func TestReadSimpleComposesExpansionOnlyWhenNeeded(t *testing.T) {
+func TestReadSimpleComposesExpansionsOnMerit(t *testing.T) {
 	s := expandFixture(t)
-	// JEV needs ORBIT alone: the launch notes are judged and stay out, even
-	// where the fill has room, with and without fusion.
-	orbit := func() *scriptedJudge {
+	// JEV needs ORBIT alone, the rest at 0.2: the launch notes are judged
+	// and fill the View like the shortlist's records, after the pooled ones
+	// at the same answer (ties keep the judged list's order).
+	orbit := func(launch float64) *scriptedJudge {
 		judge := expandJudge()
 		judge.answer = func(text string, _ int) float64 {
-			if strings.Contains(text, "ORBIT") {
+			switch {
+			case strings.Contains(text, "ORBIT"):
 				return 0.9
+			case strings.Contains(text, "launch"):
+				return launch
 			}
-			return 0.2
+			return 0.05
 		}
 		return judge
 	}
 	expand := &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}}
-	for _, fusion := range []string{"", "rrf"} {
-		plain := expandRead(t, s, &ViewConfig{Fusion: fusion}, orbit())
-		view := expandRead(t, s, &ViewConfig{Fusion: fusion, Expand: expand}, orbit())
-		if !slices.Equal(recordIDs(view.Records), recordIDs(plain.Records)) || view.Stats.Expanded != 3 || view.Stats.ExpandedNeeded != 0 {
-			t.Fatal(fusion, recordIDs(view.Records), recordIDs(plain.Records), view.Stats)
-		}
-		for i := range view.Records {
-			if view.Records[i].Score != plain.Records[i].Score {
-				t.Fatal(fusion, view.Records[i], plain.Records[i])
-			}
-		}
+	view := expandRead(t, s, &ViewConfig{Expand: expand}, orbit(0.05))
+	if got := recordIDs(view.Records); !slices.Equal(got, []string{"a2", "a1", "doc-00000", "a3", "b1", "doc-00001"}) || view.Stats.Expanded != 3 || view.Stats.ExpandedNeeded != 0 || view.Stats.ExpandShown != 3 {
+		t.Fatal(got, view.Stats)
+	}
+	// An expansion JEV answers 0.3 goes before a pooled record at 0.05:
+	// with three slots the fill is theirs.
+	plain := expandRead(t, s, &ViewConfig{MaxItems: 3}, orbit(0.3))
+	view = expandRead(t, s, &ViewConfig{MaxItems: 3, Expand: expand}, orbit(0.3))
+	if got := recordIDs(plain.Records); !slices.Equal(got, []string{"a2", "a1", "doc-00000"}) {
+		t.Fatal(got)
+	}
+	if got := recordIDs(view.Records); !slices.Equal(got, []string{"a2", "a3", "b1"}) || view.Records[1].Score != 0.3 || view.Stats.ExpandShown != 2 {
+		t.Fatal(got, view.Stats)
+	}
+	// With fusion the judged order holds them too.
+	fused := expandRead(t, s, &ViewConfig{MaxItems: 16, Fusion: "rrf", Expand: expand}, orbit(0.3))
+	if got := recordIDs(fused.Records); !slices.Contains(got, "a3") || !slices.Contains(got, "b1") || !slices.Contains(got, "doc-00001") || fused.Stats.ExpandShown != 3 {
+		t.Fatal(got, fused.Stats)
 	}
 }
 
@@ -582,14 +593,16 @@ func TestReadSimpleExpandsAdjacentWindow(t *testing.T) {
 	if !slices.Equal(texts, []string{"Melanie: launch window opens Friday at dawn", "Caroline: good morning, how was your weekend", "Caroline: sounds great, see you there"}) {
 		t.Fatal(texts)
 	}
-	if got := recordIDs(view.Records); !slices.Equal(got, []string{"a2", "a3", "a1", "doc-00000"}) || view.Stats.Expanded != 3 || view.Stats.ExpandedNeeded != 1 || !reflect.DeepEqual(view.Stats.ExpandKinds, map[string]int{"adjacent": 3}) {
+	// a0 and a4 (0.2) fill after the pooled records at the same answer.
+	if got := recordIDs(view.Records); !slices.Equal(got, []string{"a2", "a3", "a1", "doc-00000", "a0", "a4"}) || view.Stats.Expanded != 3 || view.Stats.ExpandedNeeded != 1 || view.Stats.ExpandShown != 3 || !reflect.DeepEqual(view.Stats.ExpandKinds, map[string]int{"adjacent": 3}) {
 		t.Fatal(got, view.Stats)
 	}
 }
 
 // Reads with view.expand but none of stage 4b's settings (gate, target,
-// reserve) are what they were before those settings existed: these hashes
-// were taken at f330d564.
+// reserve), pinned by hash: taken at f330d564 and re-pinned only where a
+// change was meant (every judged expansion composes on merit, and
+// stats.expandShown), so nothing else moves them.
 func TestReadSimpleExpandWithoutStage4bUnchanged(t *testing.T) {
 	s := expandFixture(t)
 	events, overlay := eventsStore(t)
@@ -600,10 +613,10 @@ func TestReadSimpleExpandWithoutStage4bUnchanged(t *testing.T) {
 		view    *ViewConfig
 		want    string
 	}{
-		"judged":  {s, nil, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, AdjacentWindow: 2}}, "57d91a090e07cf9ff2b5d8fdfaa2653d9fda9915b962aa04625b8421bba7f5d8"},
-		"fusion":  {s, nil, &ViewConfig{MaxItems: 5, Fusion: "rrf", Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}}}, "c3c59d9657c08928298cc3e4af700918031d72669d062cbdf1dea7ccc72f6c50"},
-		"events":  {events, overlay, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "events"}, EventsTop: 3}}, "d2985cf9de93c48c8bc53ca78f74fe1888bbd27b2b1048bad26650fee784b7f4"},
-		"limited": {s, nil, &ViewConfig{MaxItems: 3, Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, Limit: 2}}, "62c357ad3fcaecd73e973c1f0b1b5a5ff6340adcaf468b673192ea80916d7317"},
+		"judged":  {s, nil, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, AdjacentWindow: 2}}, "b2be452b616b7b8d1281089ed574aa8538abd30374faf16142507de11bf60006"},
+		"fusion":  {s, nil, &ViewConfig{MaxItems: 5, Fusion: "rrf", Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}}}, "d29cb344f04e74ab2e54b459a28d2a6c6d899c99897188747349203818cf4b28"},
+		"events":  {events, overlay, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "events"}, EventsTop: 3}}, "2157e4c5e704353741e663e1e27cbf82933dc4fadbb43da099b552c234f187ef"},
+		"limited": {s, nil, &ViewConfig{MaxItems: 3, Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, Limit: 2}}, "1cec11e29ff55e1dfb0140f0bdd49abbc2391864062c6d16d6a542eda00bad78"},
 	} {
 		config := Config{View: tc.view}
 		var a *Agent

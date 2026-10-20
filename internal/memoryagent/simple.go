@@ -125,12 +125,29 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		}
 	}
 	view, err := r.compose(ctx, stop, scored)
-	if err != nil || !a.layerOn() {
-		return view, err
+	if err == nil && a.layerOn() {
+		// In timelines mode the consolidated layer goes before the records
+		// (timelines_layer.go).
+		view, err = r.layer(ctx, view)
 	}
-	// In timelines mode the consolidated layer goes before the records
-	// (timelines_layer.go).
-	return r.layer(ctx, view)
+	if err != nil {
+		return View{}, err
+	}
+	if a.config.View.Expand != nil {
+		view.Stats.ExpandShown = r.expandedShown(view.Records)
+	}
+	return view, nil
+}
+
+// expandedShown counts the records shown that view.expand proposed.
+func (r *simpleRun) expandedShown(records []Evidence) int {
+	n := 0
+	for _, record := range records {
+		if item := r.items[record.ID]; item != nil && item.Expanded {
+			n++
+		}
+	}
+	return n
 }
 
 // screen gives the pool JEV's screen. A spent JEV budget is not an error:

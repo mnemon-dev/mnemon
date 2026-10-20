@@ -232,6 +232,9 @@ type ReadStats struct {
 	ExpandGated         bool `json:"expandGated,omitempty"`
 	ExpandAnsweredNeeds int  `json:"expandAnsweredNeeds,omitempty"`
 	ExpandReserved      int  `json:"expandReserved,omitempty"`
+	// ExpandShown counts the records view.expand proposed that the final
+	// View shows (after the timelines layer).
+	ExpandShown int `json:"expandShown,omitempty"`
 }
 
 type View struct {
