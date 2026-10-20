@@ -14,7 +14,7 @@ while the service runs. No old data needs conversion.
 | `memory.write` | `text`, optional `id`, `source`, `at`, `scope`, `workspaceId`, `sessionId` | Committed revision, original-document reference and block references. |
 | `memory.writeConversation` | `messages` (`role`, `content`, optional RFC 3339 `at`), `sessionId`, optional `id`, `source`, `scope`, `workspaceId` | Same as `memory.write`. |
 | `memory.read` | `question`, optional `recent`, `scope`, `revision`, `maxItems` | Original-evidence View, index hints, needs, stop reason and resource use. |
-| `memory.consolidate` | Optional `scope`, `maxBatches` (1–4 for memory-agent/v1, 1–64 for timelines and layered), `reset`, `hold` (timelines and layered) | Background job progress and usage. |
+| `memory.consolidate` | Optional `scope`, `maxBatches` (1–4 for memory-agent/v1, 1–64 for timelines and layered), `reset`, `hold` (timelines and layered), `rebuildEdges` (`nativeEdges`) | Background job progress and usage. |
 
 `maxItems` caps the records of a `"strategy": "simple"` View: 0 or absent takes the
 configured `view.maxItems`, and more than it is an error. memory-agent/v1 reads have no
@@ -80,6 +80,28 @@ joined stored ones or started new ones), `conflicts` (joined keys JEV found cont
 `linkFallbacks` (batches linked without JEV) and `linkLexical` (batches whose candidates
 shared words found because the embedder failed). Extractions run in parallel, so
 `modelMs`, which sums the time of every model call, can exceed the job's wall time.
+
+With `"nativeEdges": true` (timelines or layered mode) the consolidated state also
+feeds the records' native indexes ([records-indexes.md](records-indexes.md)): after
+every job that changed the memory since they were last built (also one that ended in a
+model error, not a canceled one), and on `rebuildEdges: true`, which folds nothing, the
+job replaces the records' derived metadata of source `consolidation` with what every
+stored scope state says. A record's `entities` are the names of the events and values
+citing it (layered extraction names them; timelines names none) and its `aliases` the
+other names of their clusters: each new name is compared, one JEV question each, with
+up to `linkCandidates` (8 in timelines mode) names known before it whose contexts (the
+name and its first three texts) are nearest, as linking finds candidates, and joins the
+cluster of its best yes (at least 0.5); the decision is kept in the state, so each name
+is decided once, and a name JEV failed to decide stays alone. In date order, the records
+of each event of a thread link (`entity`, weight 0.6) to those of its 4 nearest events
+and (`temporal`, 0.5) to those of the previous and the next one; the records of a key's
+value link (`supersedes`, 1) to those of the value before it when the two differ (a hint
+that expands, never demotes); a record's `eventAt` is the earliest session date citing it,
+used only when its writer gave none (`memory.write` and `memory.writeConversation`
+always give one). Links bind the records' current versions. Turn a route on per read
+with the `index` setting. The result adds `edgeRecords` and `edgeLinks` (rows written
+and their links by type), `aliasCalls` (JEV calls, part of `linkUsage`), `aliasMerges`
+and `aliasFallbacks` (names that joined a cluster, or stayed alone because JEV failed).
 
 Native search/show/recall retain their access-count and operation-log effects.
 The new service returns the full typed search/recall structures; existing CLI

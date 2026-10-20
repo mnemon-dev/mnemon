@@ -49,3 +49,20 @@ later requests. Cold build time and warm lookup time must be measured separately
 All features are opt-in. See the workspace experiment report for measured
 single-feature and combined effects; an enabled route is not evidence that a
 particular corpus benefits from it.
+
+## Derived metadata
+
+A process that derives index metadata from the records (for example the memory
+service's consolidation with `nativeEdges`) keeps it beside them, in the
+`derived_metadata` table of `records.db`, never in the records. Each source owns
+one row per record, `{"version":1,"entities":[…],"aliases":[…],"links":[…],"eventAt":"…"}`,
+and replaces all its rows at once (Go: `Store.ReplaceDerivedMetadata`; readonly
+stores refuse). A row has at most 64 entities, 64 aliases and 50 links, with the
+link rules above. It applies only while its record has the row's `version` (the
+record JSON's version, which links also bind), and only adds to the writer's
+`data`: its entities and aliases join the writer's, its links follow the writer's
+and, whatever their type, are advisory hints (a derived `supersedes` link expands
+but never demotes), and its `eventAt` counts only when the writer gave none. Each
+replace bumps a generation that keys the enhanced caches, so no query is served
+a replaced overlay. Without rows, every response keeps its bytes; records-v1
+queries never read the table. A store opened for writing gains the table.
