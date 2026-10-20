@@ -94,8 +94,20 @@ type ConsolidateResult struct {
 	EdgeFallbacks  int            `json:"edgeFallbacks,omitempty"`
 	EdgeGivenUp    int            `json:"edgeGivenUp,omitempty"`
 	EdgeLexical    int            `json:"edgeLexical,omitempty"`
-	// With consolidation.insights (insights.go), InsightLinkCalls counts
-	// the JEV calls of a layered job's L2 linking (part of LinkUsage).
+	// With consolidation.insights (insights.go), a layered job's L2:
+	// InsightBatches counts the L2 batches it read (their items no longer
+	// unread), InsightsDropped the items of those it gave up on (their
+	// replies did not parse, or their requests were too large); of the
+	// insights the batches gave, InsightsNew were added and InsightsMerged
+	// joined a stored insight JEV found states the same conclusion;
+	// InsightFallbacks counts the batches whose insights were all added
+	// because JEV failed; InsightLinkCalls the JEV calls of L2 linking
+	// (part of LinkUsage).
+	InsightBatches   int `json:"insightBatches,omitempty"`
+	InsightsDropped  int `json:"insightsDropped,omitempty"`
+	InsightsNew      int `json:"insightsNew,omitempty"`
+	InsightsMerged   int `json:"insightsMerged,omitempty"`
+	InsightFallbacks int `json:"insightFallbacks,omitempty"`
 	InsightLinkCalls int `json:"insightLinkCalls,omitempty"`
 }
 

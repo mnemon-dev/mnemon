@@ -514,6 +514,9 @@ func edgesDigest(m timelineMemory) string {
 	if memorySize(m) == 0 {
 		return ""
 	}
+	// The edges are the events' and values' only: L2's insights
+	// (insights.go) never change them.
+	m.Insights = nil
 	raw, _ := json.Marshal(m)
 	return reference("edges", string(raw)).Hash
 }

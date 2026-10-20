@@ -98,7 +98,9 @@ type timelineMemory struct {
 // EntityClusters (nativeEdges) holds the decided entity names: each name's
 // cluster, named by its first name; EventEdges (edgeKinds) JEV's decisions
 // about pairs of events (event_edges.go); EdgesMemory names the memory the
-// records' derived metadata was last built from (edges.go).
+// records' derived metadata was last built from (edges.go). InsightRead is
+// L2's read position (consolidation.insights, insights.go), absent without
+// it.
 type timelineState struct {
 	Format          string            `json:"format"`
 	Mode            string            `json:"mode,omitempty"`
@@ -114,6 +116,7 @@ type timelineState struct {
 	EntityClusters  map[string]string `json:"entityClusters,omitempty"`
 	EventEdges      *eventEdges       `json:"eventEdges,omitempty"`
 	EdgesMemory     string            `json:"edgesMemory,omitempty"`
+	InsightRead     *insightRead      `json:"insightRead,omitempty"`
 }
 
 func emptyTimelineState() timelineState {
@@ -734,7 +737,9 @@ func jsString(raw json.RawMessage) string {
 // error withdraws the batch's items, keeps its records pending, ends the job
 // with the error and, unless it is the caller's cancellation or a spent
 // budget, counts against the head batch: after dropErrors such jobs over
-// dropAfter, the head batch is folded in drop mode (foldDropping).
+// dropAfter, the head batch is folded in drop mode (foldDropping). With
+// insights (layered mode), L2 then reads the consolidated items it has not
+// read (foldInsights), and Remaining counts those too.
 func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest) (ConsolidateResult, error) {
 	settings := a.config.Consolidation
 	model := a.models.Consolidator
@@ -805,6 +810,15 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 		if foldErr, err = a.foldLayered(ctx, model, req, &state, &token, flush, &dirty, &result); err != nil {
 			return result, err
 		}
+		// With insights, L2 reads what L0 and L1 consolidated, after them,
+		// the short rest of its stream only when the job does not hold and
+		// no record is left to fold (insights.go).
+		if settings.Insights && foldErr == nil && ctx.Err() == nil {
+			rest := !req.Hold && len(state.Pending) == 0 && unread == 0
+			if foldErr, err = a.foldInsights(ctx, model, req, &state, &token, rest, &dirty, &result); err != nil {
+				return result, err
+			}
+		}
 	} else {
 		for n := 0; n < req.MaxBatches; n++ {
 			batch := nextBatch(state.Pending, settings.BatchCharacters, flush)
@@ -846,6 +860,9 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	}
 	result.Added = memorySize(state.Memory) - before
 	result.Remaining = len(state.Pending) + unread
+	if settings.Insights {
+		result.Remaining += insightsUnread(state)
+	}
 	// The records' derived metadata follows the memory, after a job that
 	// failed too, unless it was canceled or defers it. A failed edge step
 	// leaves it pending for the next job and does not fail the folds.

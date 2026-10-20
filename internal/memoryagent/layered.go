@@ -171,14 +171,26 @@ var errExtractionPanic = errors.New("extraction panicked")
 // extractBatches starts the L0 of batches, at most parallel at a time. The
 // head batch is extracted in drop mode when head's errors make it due.
 func (a *Agent) extractBatches(ctx context.Context, model Completer, head timelineState, batches [][]pendingRecord, parallel int) *extractionRun {
-	run := &extractionRun{out: make([]extraction, len(batches)), done: make([]chan struct{}, len(batches)), cancels: make([]context.CancelFunc, len(batches)), failed: len(batches)}
-	contexts := make([]context.Context, len(batches))
-	for i := range batches {
+	dropping := a.dropDue(head)
+	return startExtractions(ctx, len(batches), parallel, func(ctx context.Context, i int, x *extraction) error {
+		x.state = timelineState{Memory: emptyTimelineState().Memory, ModelErrors: head.ModelErrors, FirstModelError: head.FirstModelError}
+		if i == 0 && dropping {
+			return a.foldDropping(ctx, model, layeredFold, &x.state, batches[i], &x.result)
+		}
+		return a.foldTimelines(ctx, model, layeredFold, &x.state, batches[i], true, &x.result)
+	})
+}
+
+// startExtractions starts n extractions, extract(ctx, i, out[i]) for batch
+// i, at most parallel at a time and in order (L0's batches, or L2's).
+func startExtractions(ctx context.Context, n, parallel int, extract func(ctx context.Context, i int, x *extraction) error) *extractionRun {
+	run := &extractionRun{out: make([]extraction, n), done: make([]chan struct{}, n), cancels: make([]context.CancelFunc, n), failed: n}
+	contexts := make([]context.Context, n)
+	for i := range n {
 		run.done[i] = make(chan struct{})
 		contexts[i], run.cancels[i] = context.WithCancel(ctx)
 	}
-	dropping := a.dropDue(head)
-	for range min(parallel, len(batches)) {
+	for range min(parallel, n) {
 		run.work.Add(1)
 		go func() {
 			defer run.work.Done()
@@ -192,13 +204,7 @@ func (a *Agent) extractBatches(ctx context.Context, model Completer, head timeli
 				run.next++
 				run.mu.Unlock()
 				x := &run.out[i]
-				x.state = timelineState{Memory: emptyTimelineState().Memory, ModelErrors: head.ModelErrors, FirstModelError: head.FirstModelError}
-				x.err = run.guard(func() error {
-					if i == 0 && dropping {
-						return a.foldDropping(contexts[i], model, layeredFold, &x.state, batches[i], &x.result)
-					}
-					return a.foldTimelines(contexts[i], model, layeredFold, &x.state, batches[i], true, &x.result)
-				})
+				x.err = run.guard(func() error { return extract(contexts[i], i, x) })
 				if x.err != nil {
 					run.mu.Lock()
 					if i < run.failed {

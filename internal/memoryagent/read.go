@@ -79,6 +79,10 @@ const (
 // semantic, temporal, causal and entity once (event_edges.go): with any,
 // they replace the thread links, and LinkCandidates bounds the earlier
 // events each new event is compared with per kind (8 in timelines mode).
+// Insights (layered mode) consolidates the consolidated items one level up
+// (L2, insights.go) after every job's L0 and L1, and adds its conclusions
+// to the layer of simple reads (insights_layer.go); off, it stays out of the
+// config's JSON and the policy hash.
 type ConsolidationConfig struct {
 	Mode                string   `json:"mode,omitempty"`
 	BatchCharacters     int      `json:"batchCharacters,omitempty"`
@@ -88,6 +92,7 @@ type ConsolidationConfig struct {
 	Parallel            int      `json:"parallel,omitempty"`
 	NativeEdges         bool     `json:"nativeEdges,omitempty"`
 	EdgeKinds           []string `json:"edgeKinds,omitempty"`
+	Insights            bool     `json:"insights,omitempty"`
 }
 
 // Timelines reports whether the mode keeps a timelines state ("timelines"
@@ -445,6 +450,9 @@ func (e *ExpandConfig) normalize() error {
 // normalize fills the timelines (and layered) defaults and checks the
 // bounds. Mode "" is the v1 fold, which takes no settings.
 func (c *ConsolidationConfig) normalize() error {
+	if c.Insights && c.Mode != consolidationLayered {
+		return errors.New("consolidation insights requires consolidation mode \"layered\"")
+	}
 	switch c.Mode {
 	case "":
 		if !reflect.ValueOf(*c).IsZero() {
