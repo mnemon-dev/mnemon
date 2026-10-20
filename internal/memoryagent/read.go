@@ -219,7 +219,9 @@ type ReadStats struct {
 	// (the judgement failed or found the budget spent: the screen stands
 	// in), layer-state (the consolidated state did not load: no layer),
 	// layer-lexical (the layer's embedding failed: shared words rank), layer
-	// (the layer's judgement failed or found the budget spent), expand
+	// (the layer's judgement failed or found the budget spent),
+	// layer-insights (consolidation.insights' judgement failed or could not
+	// be paid for: no insights), expand
 	// (records linked from the layer could not be read or judged),
 	// expansion (view.expand could not read or judge every candidate it
 	// chose, its events' state did not load, or gate and target could not
@@ -268,6 +270,9 @@ type ReadStats struct {
 	// expanded from.
 	ExpandShown int `json:"expandShown,omitempty"`
 	ExpandSeeds int `json:"expandSeeds,omitempty"`
+	// LayerInsights counts the insights the View's layer shows
+	// (consolidation.insights); absent at zero.
+	LayerInsights int `json:"layerInsights,omitempty"`
 }
 
 type View struct {

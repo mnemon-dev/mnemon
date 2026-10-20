@@ -300,7 +300,7 @@ func (r *simpleRun) ordered(scored []*simpleItem) []*simpleItem {
 // of the judged list (selection, the very selection compose makes), and
 // with the layer only the leading records the layer's character trim can
 // never drop, those within the View's characters less the most the
-// layer's blocks can take (layerBlocksMax). It makes no model call; under
+// layer's blocks can take (layerBound). It makes no model call; under
 // fusion it reads the evidence of raw hits not pooled, as compose does,
 // and that time counts in queryMs.
 func (r *simpleRun) wouldShow(ctx context.Context, scored []*simpleItem) ([]*simpleItem, error) {
@@ -313,7 +313,7 @@ func (r *simpleRun) wouldShow(ctx context.Context, scored []*simpleItem) ([]*sim
 	if !r.agent.layerOn() {
 		return v.selected, nil
 	}
-	room, kept := r.agent.config.View.MaxCharacters-layerBlocksMax, []*simpleItem{}
+	room, kept := r.agent.config.View.MaxCharacters-r.agent.layerBound(), []*simpleItem{}
 	for _, item := range v.selected {
 		if room -= jsLen(item.Evidence.Text); room < 0 {
 			break

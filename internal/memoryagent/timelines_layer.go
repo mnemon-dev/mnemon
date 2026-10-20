@@ -47,10 +47,11 @@ const (
 	valuesHead    = "History of values:"
 )
 
-// layerBlocksMax is the most characters the layer's blocks can take: each
-// block's budget, the two headers counted outside theirs, and the "\n\n"
-// before a thread, added after the thread is fitted to the room left, by
-// which the timelines can pass their budget once (by 2).
+// layerBlocksMax is the most characters the layer's four blocks can take:
+// each block's budget, the two headers counted outside theirs, and the
+// "\n\n" before a thread, added after the thread is fitted to the room
+// left, by which the timelines can pass their budget once (by 2). With
+// insights, layerBound adds their block.
 var layerBlocksMax = layerInstructions + layerDirectory + layerTimelines + 2 + layerValues + jsLen(timelinesHead) + jsLen(valuesHead)
 
 // eventThreads is the author's threadsOf (C:184-188) as event indexes, and
@@ -359,10 +360,13 @@ func (a *Agent) layerOn() bool {
 // or nothing consolidated, the View is unchanged. Anchors are the View's
 // records. The candidates are the lit topics and the 12 nearest the raw last
 // user message, the lit values and the 16 nearest; JEV judges them, the
-// order picks what the blocks show. The blocks' characters count toward
+// order picks what the blocks show. With consolidation.insights the
+// insights block follows, chosen by a judgement of its own
+// (insights_layer.go). The blocks' characters count toward
 // View.MaxCharacters, not toward the items: walking the records in order,
-// one that would pass the characters is dropped. Then linked records may
-// join (expand). A block's Records name the linked records the View shows.
+// one that would pass the characters is dropped. Then records linked from
+// the first four blocks may join (expand); the insights' records never do.
+// A block's Records name the linked records the View shows.
 // The layer degrades and never fails the read (a state that will not load,
 // an embedder that fails, a judgement that fails or finds the budget spent;
 // each named in ReadStats.Degraded), unless the read is canceled.
@@ -402,7 +406,7 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 			break
 		}
 	}
-	nearThreads, nearValues, _ := r.nearest(ctx, message, threadList, valueList)
+	nearThreads, nearValues, lexical := r.nearest(ctx, message, threadList, valueList)
 	if ctx.Err() != nil {
 		return View{}, ctx.Err()
 	}
@@ -430,6 +434,16 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 	}
 	threadOrder, valueOrder := layerOrder(topics, values, lit, threadScore, valueScore)
 	blocks := composeLayer(m, threadOrder, valueOrder, lit)
+	joined := len(blocks)
+	if r.agent.insightsOn() {
+		insights, err := r.insights(ctx, m, anchors, message, lexical)
+		if err != nil {
+			return View{}, err
+		}
+		if insights != nil {
+			blocks = append(blocks, *insights)
+		}
+	}
 
 	// With records the reserve held (r.held), the trim keeps by compose's
 	// priority: the needed records that are not expansions, then the held
@@ -465,7 +479,7 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 			cut = true
 		}
 	}
-	if kept, err = r.expand(ctx, blocks, kept, used); err != nil {
+	if kept, err = r.expand(ctx, blocks[:joined], kept, used); err != nil {
 		return View{}, err
 	}
 	shown := map[string]Reference{}
@@ -676,8 +690,9 @@ func (a *Agent) batchDocuments(texts []string, vectors func(part []string) ([][]
 }
 
 // WarmLayer embeds and stores the scope's timelines layer texts, its topics
-// and value histories, and with view expand events the event texts
-// (simple_events.go), which the first read after a consolidation would
+// and value histories, with view expand events the event texts
+// (simple_events.go), and with consolidation.insights the insight texts
+// (insights_layer.go), which the first read after a consolidation would
 // otherwise embed while it answers (the reference system embeds them when
 // its consolidation catches up). It does nothing without an embedder, the
 // timelines layer or a consolidated state; an embedding error is returned
@@ -703,6 +718,11 @@ func (a *Agent) WarmLayer(ctx context.Context, scope records.Scope) error {
 	if a.expandsEvents() {
 		for _, e := range expansionEvents(m) {
 			texts = append(texts, e.text)
+		}
+	}
+	if a.insightsOn() {
+		for _, in := range m.Insights {
+			texts = append(texts, in.Text)
 		}
 	}
 	_, err = a.layerDocuments(ctx, texts)
