@@ -234,9 +234,22 @@ func (r *simpleRun) table(ctx context.Context, items []*simpleItem) error {
 		}
 		return nil
 	}
+	all := make([]int, len(r.needs))
+	for k := range all {
+		all[k] = k
+	}
+	return r.askNeeds(ctx, items, all, r.setRow)
+}
+
+// askNeeds asks JEV the need table's question (J:108-119) for each item and
+// each of the asked needs (indexes into r.needs, in order), in sequential
+// batches of 24, and passes set each item's row: its answers for the asked
+// needs, 0 for the others. A spent decision budget returns errCallBudget
+// between batches; rows already set stay.
+func (r *simpleRun) askNeeds(ctx context.Context, items []*simpleItem, asked []int, set func(*simpleItem, []float64)) error {
 	needs := []judgeNeed{}
-	for k, need := range r.needs {
-		needs = append(needs, judgeNeed{ID: fmt.Sprintf("q%d", k), Need: need.Text})
+	for _, k := range asked {
+		needs = append(needs, judgeNeed{ID: fmt.Sprintf("q%d", k), Need: r.needs[k].Text})
 	}
 	dialogue := judgeDialogue(r.dialogue, 6, simpleListing)
 	rubric := judgeRubric{Question: needQuestion, Yes: needYes, No: needNo}
@@ -244,7 +257,7 @@ func (r *simpleRun) table(ctx context.Context, items []*simpleItem) error {
 		part := items[start:min(start+tableBatch, len(items))]
 		questions := map[string]Question{}
 		for i := range part {
-			for k := range r.needs {
+			for _, k := range asked {
 				questions[fmt.Sprintf("c%dq%d", i, k)] = Question{Type: "noul", Instructions: needInstruction(i, k)}
 			}
 		}
@@ -254,10 +267,10 @@ func (r *simpleRun) table(ctx context.Context, items []*simpleItem) error {
 		}
 		for i, item := range part {
 			row := make([]float64, len(r.needs))
-			for k := range r.needs {
+			for _, k := range asked {
 				row[k] = answers[fmt.Sprintf("c%dq%d", i, k)]
 			}
-			r.setRow(item, row)
+			set(item, row)
 		}
 	}
 	return nil

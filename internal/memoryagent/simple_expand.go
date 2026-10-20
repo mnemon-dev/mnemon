@@ -200,16 +200,18 @@ func seedKind(kind string) bool { return kind != expandEvents }
 // (simple_events.go); neither proposes a record already pooled. The sources
 // fill view.expand.limit by turns (alternate). The candidates are read
 // (evidence(), proved against their originals; one without evidence is
-// skipped) and judged by judgeAll within the read's decision budget; those
-// judged join the run's items (so fusion keeps what JEV calls no longer
-// current out), and those JEV calls needed join the list. A candidate left
-// unjudged (the budget ran short, or its call failed) is dropped. Reading
-// or judging that falls short degrades the read (expansion) and keeps what
-// was judged; only a canceled read fails. stop is why the need loop
-// stopped.
+// skipped); with target "needs" they are asked the need table's question
+// for the needs not covered yet (target); then they are judged by judgeAll
+// within the read's decision budget; those judged join the run's items (so
+// fusion keeps what JEV calls no longer current out), and those JEV calls
+// needed join the list. A candidate left unjudged (the budget ran short, or
+// its call failed) is dropped. Reading or judging that falls short degrades
+// the read (expansion) and keeps what was judged; only a canceled read
+// fails. stop is why the need loop stopped.
 func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, stop string) ([]*simpleItem, error) {
 	config := r.agent.config.View.Expand
-	if config.Gate == expandNeeds && sufficient(stop, r.covered(scored)) {
+	covered := r.covered(scored)
+	if config.Gate == expandNeeds && sufficient(stop, covered) {
 		r.mu.Lock()
 		r.stats.ExpandGated = true
 		r.mu.Unlock()
@@ -275,6 +277,11 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 			items, kinds = append(items, &simpleItem{ID: c.id, Evidence: value}), append(kinds, c.kinds)
 		}
 	}
+	if config.Target == expandNeeds {
+		if err = r.target(ctx, items, covered); err != nil {
+			return nil, err
+		}
+	}
 	if err = r.judgeAll(ctx, items); err != nil {
 		if _, err = short(); err != nil {
 			return nil, err
@@ -282,10 +289,12 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	answered := make([]bool, len(r.needs))
 	for i, item := range items {
 		if !item.Judged {
 			continue
 		}
+		item.Expanded = true
 		r.items[item.ID] = item
 		r.stats.Expanded++
 		if r.stats.ExpandKinds == nil {
@@ -297,6 +306,14 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 		if item.Needed >= 0.5 {
 			r.stats.ExpandedNeeded++
 			scored = append(scored, item)
+			for k, answer := range item.Row {
+				answered[k] = answered[k] || answer >= 0.5
+			}
+		}
+	}
+	for _, yes := range answered {
+		if yes {
+			r.stats.ExpandAnsweredNeeds++
 		}
 	}
 	return scored, nil
@@ -322,4 +339,40 @@ func (r *simpleRun) covered(scored []*simpleItem) []bool {
 // need is an ALL need).
 func sufficient(stop string, covered []bool) bool {
 	return stop == stopCovered && !slices.Contains(covered, false)
+}
+
+// target is target "needs", Jev-Mem's new-information question: before
+// their judgement, the candidates are asked the need table's question
+// (askNeeds) for each need not covered, and their rows are set; compose then
+// ranks those that answer one first (ordered). With every need covered it
+// asks nothing. The judgement comes first: when the budget cannot pay for
+// the need table and the judgement both, or the need table fails, the
+// candidates go without rows and the read is degraded (expansion). Only a
+// canceled read is an error.
+func (r *simpleRun) target(ctx context.Context, items []*simpleItem, covered []bool) error {
+	asked := []int{}
+	for k, done := range covered {
+		if !done {
+			asked = append(asked, k)
+		}
+	}
+	if len(asked) == 0 || len(items) == 0 {
+		return nil
+	}
+	if calls := (len(items)+tableBatch-1)/tableBatch + (len(items)+judgeBatch-1)/judgeBatch; r.decisionsLeft() < calls {
+		r.degrade("expansion")
+		return nil
+	}
+	if err := r.askNeeds(ctx, items, asked, func(item *simpleItem, row []float64) { item.Row = row }); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		for _, item := range items {
+			item.Row = nil
+		}
+		r.degrade("expansion")
+		return nil
+	}
+	r.targeted = true
+	return nil
 }

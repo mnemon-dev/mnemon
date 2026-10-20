@@ -47,7 +47,10 @@ type simpleRun struct {
 	// intent is the question's intent every search carries (view intent
 	// "question"); "" lets each search detect its own.
 	intent string
-	mu     sync.Mutex // guards stats during concurrent model calls
+	// targeted is set when view.expand's target asked the expansions the
+	// need table's question: compose then orders by it (ordered).
+	targeted bool
+	mu       sync.Mutex // guards stats during concurrent model calls
 }
 
 // simpleItem is one pooled record and what the models said about it.
@@ -62,6 +65,8 @@ type simpleItem struct {
 	Superseded float64
 	Judged     bool
 	FirstSeen  int // position in pool order
+	// Expanded marks a judged record view.expand proposed (not pooled).
+	Expanded bool
 }
 
 func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string) (View, error) {

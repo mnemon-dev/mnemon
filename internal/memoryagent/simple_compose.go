@@ -195,7 +195,12 @@ func composeSimple(scored []*simpleItem, needless bool, maxItems, maxChars int) 
 }
 
 func composed(scored []*simpleItem, needless bool, maxItems, maxChars int) *viewFill {
-	order, fill := judgedOrder(scored), maxItems
+	return composedFrom(judgedOrder(scored), needless, maxItems, maxChars)
+}
+
+// composedFrom is composed over items in compose's order (ordered).
+func composedFrom(order []*simpleItem, needless bool, maxItems, maxChars int) *viewFill {
+	fill := maxItems
 	if needless {
 		fill = 0
 	}
@@ -214,6 +219,39 @@ func composed(scored []*simpleItem, needless bool, maxItems, maxChars int) *view
 		}
 	}
 	return v
+}
+
+// ordered is the judged items in compose's order: judgedOrder (by Needed,
+// best first), and when target asked the expansions the need table's
+// question, each expansion that answers no need moves after the last item
+// that answers one (a need-table answer ≥ 0.5; for the items JEV tabled in
+// the loop, of any need), keeping its order among those moved.
+func (r *simpleRun) ordered(scored []*simpleItem) []*simpleItem {
+	order := judgedOrder(scored)
+	if !r.targeted {
+		return order
+	}
+	answers := func(item *simpleItem) bool {
+		return slices.ContainsFunc(item.Row, func(answer float64) bool { return answer >= 0.5 })
+	}
+	last := -1
+	for i, item := range order {
+		if answers(item) {
+			last = i
+		}
+	}
+	out, moved := []*simpleItem{}, []*simpleItem{}
+	for i, item := range order {
+		if i < last && item.Expanded && !answers(item) {
+			moved = append(moved, item)
+			continue
+		}
+		out = append(out, item)
+		if i == last {
+			out = append(out, moved...)
+		}
+	}
+	return out
 }
 
 // eligible is what composeSimple may show: the current items JEV calls
@@ -257,7 +295,7 @@ func fuseRRF(lists [][]string, k int) []string {
 // read through evidence(); those without evidence are skipped.
 func (r *simpleRun) fused(ctx context.Context, scored []*simpleItem) ([]*simpleItem, map[string]float64, error) {
 	judged := []string{}
-	for _, item := range judgedOrder(scored) {
+	for _, item := range r.ordered(scored) {
 		if current(item) {
 			judged = append(judged, item.ID)
 		}
@@ -325,7 +363,7 @@ func (r *simpleRun) compose(ctx context.Context, stop string, scored []*simpleIt
 			}
 		}
 	} else {
-		v, candidates = composed(scored, r.needless, maxItems, maxChars), eligible(scored, r.needless)
+		v, candidates = composedFrom(r.ordered(scored), r.needless, maxItems, maxChars), eligible(scored, r.needless)
 		for _, item := range v.selected {
 			score[item.ID] = item.Needed
 		}

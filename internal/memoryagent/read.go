@@ -118,9 +118,12 @@ type ViewConfig struct {
 // by default, 1–64), Seeds the needed records expanded from (16 by default,
 // 1–32). AdjacentWindow (with adjacent) is how many records on each side
 // are adjacent (1 by default, 1–5); EventsTop (with events) how many events
-// are taken (10 by default, 1–40). Gate "needs" is Jev-Mem's check before
-// expanding (simple_expand.go): it skips the expansion when the need table
-// finds the evidence sufficient. Unset, it leaves the read as it was.
+// are taken (10 by default, 1–40). Gate and Target are Jev-Mem's
+// evaluate-then-expand parts (simple_expand.go): Gate "needs" skips the
+// expansion when the need table finds the evidence sufficient, and Target
+// "needs" asks the candidates the need table's question for the needs not
+// covered yet and ranks those that answer one first. Unset, each leaves the
+// read as it was.
 type ExpandConfig struct {
 	Kinds          []string `json:"kinds"`
 	Limit          int      `json:"limit,omitempty"`
@@ -128,6 +131,7 @@ type ExpandConfig struct {
 	AdjacentWindow int      `json:"adjacentWindow,omitempty"`
 	EventsTop      int      `json:"eventsTop,omitempty"`
 	Gate           string   `json:"gate,omitempty"`
+	Target         string   `json:"target,omitempty"`
 }
 
 // expandKinds are the candidates view.expand may propose.
@@ -136,7 +140,7 @@ var expandKinds = []string{expandAdjacent, "temporal", "semantic", "causal", "en
 const (
 	expandAdjacent = "adjacent"
 	expandEvents   = "events"
-	// expandNeeds is the value of gate that reads the need table.
+	// expandNeeds is the value of gate and target that reads the need table.
 	expandNeeds = "needs"
 )
 
@@ -212,8 +216,11 @@ type ReadStats struct {
 	ExpandEventsLexical  bool `json:"expandEventsLexical,omitempty"`
 	ExpandEventsEmbedded int  `json:"expandEventsEmbedded,omitempty"`
 	// ExpandGated reports that view expand's gate found the evidence
-	// sufficient and skipped the expansion.
-	ExpandGated bool `json:"expandGated,omitempty"`
+	// sufficient and skipped the expansion; ExpandAnsweredNeeds counts the
+	// needs not covered before it that an expansion JEV judged needed
+	// answers (target).
+	ExpandGated         bool `json:"expandGated,omitempty"`
+	ExpandAnsweredNeeds int  `json:"expandAnsweredNeeds,omitempty"`
 }
 
 type View struct {
@@ -366,8 +373,8 @@ func (e *ExpandConfig) normalize() error {
 			return fmt.Errorf("view expand requires %s 1–%d", setting.name, setting.limit)
 		}
 	}
-	if e.Gate != "" && e.Gate != expandNeeds {
-		return errors.New("view expand requires gate \"\" or \"needs\"")
+	if e.Gate != "" && e.Gate != expandNeeds || e.Target != "" && e.Target != expandNeeds {
+		return errors.New("view expand requires gate and target \"\" or \"needs\"")
 	}
 	return nil
 }
