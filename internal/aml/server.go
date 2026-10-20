@@ -506,12 +506,20 @@ func (s *Server) flush(ctx context.Context, user *userEntry) {
 // folds no full batch; without, until nothing remains (a job reads full
 // batches; one that finds nothing new folds the rest). It stops at the first
 // error, logged under label, or after maxConsolidateCalls jobs; it logs each
-// drop of records, and returns the batches folded.
+// drop of records, and returns the batches folded. The jobs defer the
+// records' native edges (nativeEdges); when one leaves them pending, they
+// are rebuilt once after the jobs.
 func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, label string) int {
-	folded := 0
+	folded, pending := 0, false
+	defer func() {
+		if pending {
+			s.rebuildEdges(ctx, user, label)
+		}
+	}()
 	for call := 1; call <= maxConsolidateCalls; call++ {
-		result, err := s.consolidateOnce(ctx, user, hold)
+		result, err := s.consolidateOnce(ctx, user, memoryagent.ConsolidateRequest{Hold: hold, DeferEdges: true})
 		folded += result.Folded
+		pending = pending || result.EdgesPending
 		for _, drop := range result.Drops {
 			s.log.Printf("consolidation dropped %d records (user %s): %s", drop.Records, user.key[:8], drop.Reason)
 		}
@@ -529,16 +537,29 @@ func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, la
 	return folded
 }
 
+// rebuildEdges rebuilds the records' native edges that consolidate's jobs
+// left pending, unless its window has passed; a failure is logged under
+// label, and the next rebuild catches up.
+func (s *Server) rebuildEdges(ctx context.Context, user *userEntry, label string) {
+	if ctx.Err() != nil {
+		s.log.Printf("%s left native edges pending (user %s): %v", label, user.key[:8], ctx.Err())
+		return
+	}
+	if _, err := s.consolidateOnce(ctx, user, memoryagent.ConsolidateRequest{RebuildEdges: true}); err != nil {
+		s.log.Printf("%s native edges failed (user %s): %v", label, user.key[:8], err)
+	}
+}
+
 // consolidateOnce runs one job; a job that panics fails, its panic and stack
 // logged.
-func (s *Server) consolidateOnce(ctx context.Context, user *userEntry, hold bool) (result memoryagent.ConsolidateResult, err error) {
+func (s *Server) consolidateOnce(ctx context.Context, user *userEntry, req memoryagent.ConsolidateRequest) (result memoryagent.ConsolidateResult, err error) {
 	defer func() {
 		if value := recover(); value != nil {
 			s.log.Printf("consolidation panicked (user %s): %v\n%s", user.key[:8], value, debug.Stack())
 			result, err = memoryagent.ConsolidateResult{}, fmt.Errorf("panic: %v", value)
 		}
 	}()
-	return user.agent.Consolidate(ctx, memoryagent.ConsolidateRequest{Hold: hold})
+	return user.agent.Consolidate(ctx, req)
 }
 
 // search reads the user's memory for the question, within SearchTimeout,

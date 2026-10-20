@@ -2,8 +2,12 @@ package aml
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
+	"io/fs"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -208,5 +212,68 @@ func TestLayeredModeFoldsLikeTimelines(t *testing.T) {
 	items := h.search(t, SearchRequest{Query: question, UserID: "u1", TopK: 100})
 	if n := h.consolidator.calls.Load(); n != 2 || len(items) == 0 || !strings.HasPrefix(items[0].ID, "index:") || strings.Contains(h.log.String(), "failed") {
 		t.Fatal(n, items, h.log.String())
+	}
+}
+
+// derivedGeneration is the derived-metadata generation of the one user's
+// records, "" before any was written.
+func derivedGeneration(t *testing.T, root string) string {
+	t.Helper()
+	var path string
+	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err == nil && d.Name() == "records.db" {
+			path = p
+		}
+		return nil
+	})
+	db, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var value string
+	err = db.QueryRow(`SELECT value FROM meta WHERE key='derived'`).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ""
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	return value
+}
+
+func TestNativeEdgesRebuiltOncePerConsolidation(t *testing.T) {
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &memoryagent.ConsolidationConfig{Mode: "layered", BatchCharacters: 300, MaxBatches: 1, NativeEdges: true}
+		config.ConsolidateOnAdd = true
+	})
+	// Six long messages: six records, each a full batch, one job each.
+	long := addRequest("r1", "u1")
+	long.Messages = nil
+	for i := range 6 {
+		long.Messages = append(long.Messages, Message{Role: "user", Content: fmt.Sprintf("Note %d: ", i) + strings.Repeat("Caroline talked about the support group again. ", 10), Timestamp: at(i)})
+	}
+	h.mustAdd(t, long)
+	if n := h.consolidator.calls.Load(); n < 2 {
+		t.Fatal("the Add folded fewer than two jobs", n)
+	}
+	// The jobs defer their edges; the Add rebuilds them once.
+	if g := derivedGeneration(t, h.root); g != "1" {
+		t.Fatal("rebuilds", g, h.log.String())
+	}
+	// An Add that folds nothing rebuilds nothing.
+	h.mustAdd(t, addRequest("r2", "u1"))
+	if g := derivedGeneration(t, h.root); g != "1" {
+		t.Fatal("rebuilds", g)
+	}
+	// The Search's flush folds the tail and rebuilds once more; with
+	// nothing pending, a Search rebuilds nothing.
+	h.search(t, SearchRequest{Query: question, UserID: "u1", TopK: 100})
+	if g := derivedGeneration(t, h.root); g != "2" {
+		t.Fatal("rebuilds", g)
+	}
+	h.search(t, SearchRequest{Query: question, UserID: "u1", TopK: 100})
+	if g := derivedGeneration(t, h.root); g != "2" || strings.Contains(h.log.String(), "failed") {
+		t.Fatal("rebuilds", g, h.log.String())
 	}
 }
