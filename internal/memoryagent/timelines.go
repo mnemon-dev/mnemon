@@ -51,11 +51,14 @@ type thread struct {
 	Title string `json:"title"`
 }
 
+// Entities, of an event or a fact value, are the names of what it is about,
+// as layered extraction lists them; timelines consolidation never sets them.
 type event struct {
-	Thread  string   `json:"thread"`
-	Date    string   `json:"date"`
-	Text    string   `json:"text"`
-	Records []string `json:"records"`
+	Thread   string   `json:"thread"`
+	Date     string   `json:"date"`
+	Text     string   `json:"text"`
+	Records  []string `json:"records"`
+	Entities []string `json:"entities,omitempty"`
 }
 
 type factValue struct {
@@ -63,6 +66,7 @@ type factValue struct {
 	Date     string   `json:"date"`
 	Records  []string `json:"records"`
 	Conflict bool     `json:"conflict"`
+	Entities []string `json:"entities,omitempty"`
 }
 
 type directive struct {
@@ -507,6 +511,12 @@ var batchRef = regexp.MustCompile(`^r?([0-9]+)$`)
 // that restates one already kept is skipped. Unlike the author, lists that are
 // not arrays and entries that are not objects add nothing instead of throwing.
 func applyReply(m *timelineMemory, batch []pendingRecord, reply string) error {
+	return applyReplyWith(m, batch, reply, false)
+}
+
+// applyReplyWith is applyReply; with entities, the "entities" an event or a
+// fact names are kept with it (layered extraction).
+func applyReplyWith(m *timelineMemory, batch []pendingRecord, reply string, entities bool) error {
 	value, ok := parseTimelineReply(reply)
 	if !ok {
 		return errors.New("consolidation reply holds no JSON object")
@@ -523,6 +533,20 @@ func applyReply(m *timelineMemory, batch []pendingRecord, reply string) error {
 			}
 			if i, err := strconv.Atoi(match[1]); err == nil && i < len(batch) {
 				out = append(out, batch[i].ID)
+			}
+		}
+		return out
+	}
+	// names is an item's entity names: its strings, trimmed, each once;
+	// nil when it names none, or when they are not asked for.
+	names := func(raw json.RawMessage) []string {
+		if !entities {
+			return nil
+		}
+		var out []string
+		for _, item := range jsonList(raw) {
+			if name := jsonText(item); name != "" && !slices.Contains(out, name) {
+				out = append(out, name)
 			}
 		}
 		return out
@@ -549,7 +573,7 @@ func applyReply(m *timelineMemory, batch []pendingRecord, reply string) error {
 				at = len(m.Threads) - 1
 			}
 		}
-		m.Events = append(m.Events, event{Thread: m.Threads[at].ID, Date: jsonText(e["date"]), Text: said, Records: refs(e["records"])})
+		m.Events = append(m.Events, event{Thread: m.Threads[at].ID, Date: jsonText(e["date"]), Text: said, Records: refs(e["records"]), Entities: names(e["entities"])})
 	}
 	for _, raw := range jsonList(value["facts"]) {
 		f := jsonObject(raw)
@@ -564,7 +588,7 @@ func applyReply(m *timelineMemory, batch []pendingRecord, reply string) error {
 		if _, known := m.Facts[key]; !known {
 			m.FactOrder = append(m.FactOrder, key)
 		}
-		m.Facts[key] = append(m.Facts[key], factValue{Value: said, Date: jsonText(f["date"]), Records: refs(f["records"]), Conflict: conflict})
+		m.Facts[key] = append(m.Facts[key], factValue{Value: said, Date: jsonText(f["date"]), Records: refs(f["records"]), Conflict: conflict, Entities: names(f["entities"])})
 	}
 	for _, raw := range jsonList(value["directives"]) {
 		d := jsonObject(raw)
@@ -922,7 +946,7 @@ func (a *Agent) foldTimelines(ctx context.Context, model Completer, spec foldSpe
 		if err != nil {
 			return err
 		}
-		if applyReply(&state.Memory, batch, reply) == nil {
+		if applyReplyWith(&state.Memory, batch, reply, spec.entities) == nil {
 			state.Batches++
 			return nil
 		}
