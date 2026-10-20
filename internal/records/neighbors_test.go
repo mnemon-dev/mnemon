@@ -3,6 +3,7 @@ package records
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
@@ -286,5 +287,43 @@ func TestAdjacentSessionsSpanDocumentsAndAreCached(t *testing.T) {
 	w := "/w"
 	if _, err = s.Adjacent(ctx, "", Scope{WorkspaceID: &w}, []string{"add1-0"}, 1); err != nil || s.sessionBuilds.Load() != builds+1 {
 		t.Fatal("another scope shares an entry", err, s.sessionBuilds.Load(), builds)
+	}
+}
+
+// Concurrent first reads of one revision and scope build its sessions once:
+// the others wait for that build.
+func TestAdjacentConcurrentFirstReadsBuildOnce(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	upserts := []Upsert{}
+	for i := 0; i < 400; i++ {
+		upserts = append(upserts, indexedRecord(fmt.Sprintf("r%03d", i), "text", map[string]any{"eventAt": "2023-05-08T13:00:00Z"}))
+	}
+	if _, err := s.Put(ctx, PutRequest{Upsert: upserts}); err != nil {
+		t.Fatal(err)
+	}
+	for round := 0; round < 5; round++ {
+		// Each round reads a new revision.
+		if _, err := s.Put(ctx, PutRequest{Upsert: []Upsert{indexedRecord(fmt.Sprintf("new%d", round), "text", map[string]any{"eventAt": "2023-05-08T13:00:00Z"})}}); err != nil {
+			t.Fatal(err)
+		}
+		before := s.sessionBuilds.Load()
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i := 0; i < 24; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				if near, err := s.Adjacent(ctx, "", Scope{}, []string{"r001"}, 1); err != nil || len(near["r001"]) != 2 {
+					t.Error(near, err)
+				}
+			}()
+		}
+		close(start)
+		wg.Wait()
+		if built := s.sessionBuilds.Load() - before; built != 1 {
+			t.Fatal("round", round, "built", built)
+		}
 	}
 }
