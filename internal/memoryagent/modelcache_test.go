@@ -161,6 +161,38 @@ func TestModelCacheLookupAndLastWriteWins(t *testing.T) {
 	}
 }
 
+func TestModelCacheOpensConcurrently(t *testing.T) {
+	// Serve processes started together open a new file at once: they race
+	// to switch it to WAL, and every one of them must open it.
+	for round := range 100 {
+		path := filepath.Join(t.TempDir(), fmt.Sprint("model-cache-", round, ".db"))
+		caches := make(chan *ModelCache, 8)
+		failures := make(chan error, 8)
+		var work sync.WaitGroup
+		for range 8 {
+			work.Add(1)
+			go func() {
+				defer work.Done()
+				cache, err := OpenModelCache(path)
+				if err != nil {
+					failures <- err
+					return
+				}
+				caches <- cache
+			}()
+		}
+		work.Wait()
+		close(caches)
+		close(failures)
+		for cache := range caches {
+			cache.Close()
+		}
+		for err := range failures {
+			t.Fatal("concurrent open failed", round, err)
+		}
+	}
+}
+
 func TestReplayKeyCoversKindEndpointModelAndBody(t *testing.T) {
 	base := replayKey("deepseek", "https://api.example/chat/completions", "m", []byte(`{"a":1}`))
 	if len(base) != 64 || base != replayKey("deepseek", "https://api.example/chat/completions", "m", []byte(`{"a":1}`)) {

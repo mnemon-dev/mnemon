@@ -7,9 +7,14 @@ import (
 	byteorder "encoding/binary"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
+	"time"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // ModelCache records model replies and replays them to identical requests
@@ -60,12 +65,41 @@ func OpenModelCache(path string) (*ModelCache, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
-	if _, err = db.Exec(`PRAGMA journal_mode=WAL;
-CREATE TABLE IF NOT EXISTS replies(key TEXT PRIMARY KEY,body BLOB NOT NULL);`); err != nil {
+	if err = walMode(db); err == nil {
+		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS replies(key TEXT PRIMARY KEY,body BLOB NOT NULL)`)
+	}
+	if err != nil {
 		db.Close()
 		return nil, err
 	}
 	return &ModelCache{db: db}, nil
+}
+
+// walMode puts the file in write-ahead-log mode. Processes that open a new
+// file together race to switch it, and SQLite refuses a losing switch at
+// once instead of waiting out the busy timeout (waiting could deadlock), so
+// a refused switch is retried until the busy timeout has passed.
+func walMode(db *sql.DB) error {
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var mode string
+		err := db.QueryRow(`PRAGMA journal_mode=WAL`).Scan(&mode)
+		switch {
+		case err == nil && mode == "wal":
+			return nil
+		case err == nil:
+			return fmt.Errorf("model cache journal mode is %q, not wal", mode)
+		case !busy(err) || time.Now().After(deadline):
+			return err
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// busy reports whether err is SQLite's SQLITE_BUSY, extended codes included.
+func busy(err error) bool {
+	var sqliteErr *sqlite.Error
+	return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == sqlite3.SQLITE_BUSY
 }
 
 // Close closes the file, after the last call of the models that share it.
