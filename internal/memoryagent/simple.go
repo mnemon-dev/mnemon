@@ -6,6 +6,7 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,7 +70,7 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	}
 	r := &simpleRun{agent: a, req: req, revision: revision, items: map[string]*simpleItem{}}
 	if a.config.View.Intent == viewIntentQuestion {
-		r.intent = string(retrieval.DetectIntent(req.Question))
+		r.intent = string(retrieval.DetectIntent(intentText(req.Question)))
 		r.stats.Intent = r.intent
 	}
 	// The author's prompts read at most the last six messages (N:348).
@@ -176,4 +177,15 @@ func (r *simpleRun) complete(ctx context.Context, system, prompt string, maxToke
 func (r *simpleRun) policy() string {
 	config, _ := json.Marshal(r.agent.config)
 	return "memory-agent/simple/" + reference("policy", string(config)).Hash
+}
+
+// intentText is the question without leading "Current date: …" lines: a
+// date header gives the reader context, not the question's intent, and its
+// word "date" would make every question look like a WHEN question.
+func intentText(question string) string {
+	lines := strings.Split(question, "\n")
+	for len(lines) > 1 && strings.HasPrefix(strings.ToLower(strings.TrimSpace(lines[0])), "current date:") {
+		lines = lines[1:]
+	}
+	return strings.Join(lines, "\n")
 }

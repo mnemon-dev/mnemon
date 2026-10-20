@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/mnemon-dev/mnemon/internal/records"
+	"github.com/mnemon-dev/mnemon/internal/retrieval"
 )
 
 // plannerCall is one call a scripted planner received.
@@ -566,5 +567,21 @@ func TestReadSimpleQuestionIntent(t *testing.T) {
 	var decoded Config
 	if err := decoder.Decode(&decoded); err != nil || decoded.View.Intent != "question" {
 		t.Fatal(decoded, err)
+	}
+}
+
+func TestIntentTextDropsDateHeader(t *testing.T) {
+	q := "Current date: 2024/04/25 (Thu) 00:00\nHow did the user feedback influence the UI improvements?"
+	if got := intentText(q); got != "How did the user feedback influence the UI improvements?" {
+		t.Fatalf("%q", got)
+	}
+	if retrieval.DetectIntent(intentText(q)) != retrieval.IntentGeneral {
+		t.Fatal("a date header must not make the question WHEN")
+	}
+	if got := intentText("Current date: 2024/04/25"); got != "Current date: 2024/04/25" {
+		t.Fatalf("a lone header is kept: %q", got)
+	}
+	if retrieval.DetectIntent(intentText("Current date: 2024/04/25\nWhen did I move?")) != retrieval.IntentWhen {
+		t.Fatal("a WHEN question stays WHEN")
 	}
 }
