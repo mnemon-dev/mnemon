@@ -277,3 +277,40 @@ func TestNativeEdgesRebuiltOncePerConsolidation(t *testing.T) {
 		t.Fatal("rebuilds", g, h.log.String())
 	}
 }
+
+func TestNativeEventEdgesRebuiltOncePerConsolidation(t *testing.T) {
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &memoryagent.ConsolidationConfig{Mode: "layered", BatchCharacters: 300, MaxBatches: 1, NativeEdges: true, EdgeKinds: []string{"semantic", "temporal", "causal", "entity"}}
+		config.ConsolidateOnAdd = true
+	})
+	// Six long messages: six jobs, each folding one event.
+	long := addRequest("r1", "u1")
+	long.Messages = nil
+	for i := range 6 {
+		long.Messages = append(long.Messages, Message{Role: "user", Content: fmt.Sprintf("Note %d: ", i) + strings.Repeat("Caroline talked about the support group again. ", 10), Timestamp: at(i)})
+	}
+	h.mustAdd(t, long)
+	if n := h.consolidator.calls.Load(); n < 2 {
+		t.Fatal("the Add folded fewer than two jobs", n)
+	}
+	// The jobs defer their edges; the Add decides the new events' edges in
+	// one rebuild, whose questions fit one call.
+	if g, n := derivedGeneration(t, h.root), h.judge.edgeCalls.Load(); g != "1" || n != 1 {
+		t.Fatal("rebuilds", g, n, h.log.String())
+	}
+	// An Add that folds nothing rebuilds nothing.
+	h.mustAdd(t, addRequest("r2", "u1"))
+	if g, n := derivedGeneration(t, h.root), h.judge.edgeCalls.Load(); g != "1" || n != 1 {
+		t.Fatal("rebuilds", g, n)
+	}
+	// The Search's flush folds the tail and rebuilds once more, asking only
+	// about the new event; with nothing pending, a Search rebuilds nothing.
+	h.search(t, SearchRequest{Query: question, UserID: "u1", TopK: 100})
+	if g, n := derivedGeneration(t, h.root), h.judge.edgeCalls.Load(); g != "2" || n != 2 {
+		t.Fatal("rebuilds", g, n)
+	}
+	h.search(t, SearchRequest{Query: question, UserID: "u1", TopK: 100})
+	if g, n := derivedGeneration(t, h.root), h.judge.edgeCalls.Load(); g != "2" || n != 2 || strings.Contains(h.log.String(), "failed") {
+		t.Fatal("rebuilds", g, n, h.log.String())
+	}
+}
