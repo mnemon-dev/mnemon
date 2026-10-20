@@ -213,9 +213,10 @@ type ReadStats struct {
 	// (the layer's judgement failed or found the budget spent), expand
 	// (records linked from the layer could not be read or judged),
 	// expansion (view.expand could not read or judge every candidate it
-	// chose, or its events' state did not load) and expansion-lexical (the
+	// chose, or its events' state did not load), expansion-lexical (the
 	// events' embedding failed or left vectors missing: shared words ranked
-	// them). Empty for a read that fell back nowhere, and for
+	// them) and expansion-target (target's need table was skipped for the
+	// budget or failed). Empty for a read that fell back nowhere, and for
 	// memory-agent/v1.
 	Degraded []string `json:"degraded,omitempty"`
 	// IndexRoutes counts, for each native index route of the records
