@@ -167,9 +167,11 @@ type ReadStats struct {
 	// (the judgement failed or found the budget spent: the screen stands
 	// in), layer-state (the consolidated state did not load: no layer),
 	// layer-lexical (the layer's embedding failed: shared words rank), layer
-	// (the layer's judgement failed or found the budget spent) and expand
-	// (linked records could not be read or judged). Empty for a read that
-	// fell back nowhere, and for memory-agent/v1.
+	// (the layer's judgement failed or found the budget spent), expand
+	// (records linked from the layer could not be read or judged) and
+	// expansion (view.expand could not read or judge every neighbor it
+	// chose). Empty for a read that fell back nowhere, and for
+	// memory-agent/v1.
 	Degraded []string `json:"degraded,omitempty"`
 	// IndexRoutes counts, for each native index route of the records
 	// (Config.Index), the searches of a simple read in which it found a
@@ -178,6 +180,14 @@ type ReadStats struct {
 	// Intent is the intent a simple read with view intent "question" gave
 	// its searches (WHY, WHEN, ENTITY or GENERAL); absent otherwise.
 	Intent string `json:"intent,omitempty"`
+	// Expanded counts the neighbors a read with view expand had JEV judge,
+	// ExpandedNeeded those JEV called needed (they joined the judged list,
+	// current or not), and ExpandKinds, per kind, the judged neighbors that
+	// kind proposed (one proposed by several kinds counts for each). Absent
+	// without view expand, and when nothing was judged.
+	Expanded       int            `json:"expanded,omitempty"`
+	ExpandedNeeded int            `json:"expandedNeeded,omitempty"`
+	ExpandKinds    map[string]int `json:"expandKinds,omitempty"`
 }
 
 type View struct {

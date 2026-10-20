@@ -5,8 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"maps"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -187,5 +190,306 @@ func TestExpandConfig(t *testing.T) {
 	expanded, _ := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent"}}}}, both, nil)
 	if (&simpleRun{agent: plain}).policy() == (&simpleRun{agent: expanded}).policy() {
 		t.Fatal("expansion left out of the policy")
+	}
+}
+
+// expandRead reads "What is the codename?" from the fixture, whose cues
+// pool a1, a2 and doc-00000 only, with view settings and a judge.
+func expandRead(t *testing.T, s *records.Store, view *ViewConfig, judge Decider) View {
+	t.Helper()
+	return expandAsk(t, s, "What is the codename?", "codename project\nNOTE: the codename is ORBIT", view, judge)
+}
+
+// expandAsk reads question from the fixture with the planner's cues.
+func expandAsk(t *testing.T, s *records.Store, question, cues string, view *ViewConfig, judge Decider) View {
+	t.Helper()
+	planner := replies(cues, "NEED: the answer", "unrelated words")
+	a, err := New(s, Config{Version: 1, Strategy: "simple", View: view}, Models{Planner: planner, Judge: judge}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.Read(context.Background(), ReadRequest{Question: question})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return got
+}
+
+func TestExpansionSeedsAreNeededItems(t *testing.T) {
+	scored := []*simpleItem{scoredItem("a", 0.9, 0, "a"), scoredItem("b", 0.4, 0, "b"), scoredItem("c", 0.5, 0.8, "c"), scoredItem("d", 0.9, 0, "d"), scoredItem("e", 0.95, 0, "e")}
+	// Best needed first, ties in shortlist order; a superseded seed counts.
+	if got := itemIDs(expansionSeeds(scored, 16)); !slices.Equal(got, []string{"e", "a", "d", "c"}) {
+		t.Fatal(got)
+	}
+	if got := itemIDs(expansionSeeds(scored, 2)); !slices.Equal(got, []string{"e", "a"}) {
+		t.Fatal(got)
+	}
+	if got := expansionSeeds([]*simpleItem{scoredItem("b", 0.49, 0, "b")}, 16); len(got) != 0 {
+		t.Fatal(itemIDs(got))
+	}
+}
+
+func TestRankExpansion(t *testing.T) {
+	seeds := []*simpleItem{scoredItem("s0", 0.9, 0, ""), scoredItem("s1", 0.8, 0, ""), scoredItem("s2", 0.8, 0, "")}
+	neighbors := map[string][]neighbor{
+		"s0": {{"x", "temporal", 0.5}, {"pooled", "adjacent", 1}, {"y", "adjacent", 1}, {"x", "semantic", 0.25}},
+		"s1": {{"x", "causal", 1}, {"z", "entity", 1}, {"w", "supersedes", 0.5}},
+		"s2": {{"v", "semantic", 1}, {"w", "temporal", 0.5}},
+	}
+	known := func(id string) bool { return id == "pooled" || id == "s1" }
+	got := rankExpansion(seeds, neighbors, known, 64)
+	// y 0.9 (s0); x max(0.45, 0.225, 0.8) = 0.8 by s1; v, z 0.8 (z's seed
+	// ranks first); w 0.4 (s1 before s2). Kinds collect over every seed.
+	want := []expansionCandidate{
+		{id: "y", score: 0.9, seed: 0, kinds: []string{"adjacent"}},
+		{id: "x", score: 0.8, seed: 1, kinds: []string{"temporal", "semantic", "causal"}},
+		{id: "z", score: 0.8, seed: 1, kinds: []string{"entity"}},
+		{id: "v", score: 0.8, seed: 2, kinds: []string{"semantic"}},
+		{id: "w", score: 0.4, seed: 1, kinds: []string{"supersedes", "temporal"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("%+v", got)
+	}
+	if got := rankExpansion(seeds, neighbors, known, 2); !reflect.DeepEqual(got, want[:2]) {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestReadSimpleExpandsFromNeededEvidence(t *testing.T) {
+	s := expandFixture(t)
+	every := &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "semantic", "causal", "entity", "supersedes"}}}
+	// Without expansion the launch notes stay out: no cue reaches them.
+	plain := expandRead(t, s, nil, expandJudge())
+	if got := recordIDs(plain.Records); !slices.Equal(got, []string{"a2", "a1", "doc-00000"}) {
+		t.Fatal(got)
+	}
+	judge := expandJudge()
+	view := expandRead(t, s, every, judge)
+	// a2 is the one seed: its next record a3 (0.9 × 1), its overlay links
+	// b1 (temporal, 0.9 × 0.8) and doc-00001 (causal, 0.9 × 0.6); a1, the
+	// record before it, is pooled. JEV calls all three needed.
+	if got := recordIDs(view.Records); !slices.Equal(got, []string{"a2", "a3", "b1", "doc-00001", "a1", "doc-00000"}) {
+		t.Fatal(got)
+	}
+	stats := view.Stats
+	if stats.Expanded != 3 || stats.ExpandedNeeded != 3 || !reflect.DeepEqual(stats.ExpandKinds, map[string]int{"adjacent": 1, "temporal": 1, "causal": 1}) || stats.DecisionCalls != plain.Stats.DecisionCalls+1 || stats.Candidates != plain.Stats.Candidates || stats.Degraded != nil {
+		t.Fatalf("%+v %+v", stats, plain.Stats)
+	}
+	if view.Records[1].Score != 0.9 || view.Records[1].Parent != nil || view.Records[3].Parent == nil || view.Records[3].Parent.ID != "doc" {
+		t.Fatal(view.Records)
+	}
+	// The expansion is judged with judgeAll's questions, in candidate order.
+	last := judge.calls[len(judge.calls)-1]
+	texts := []judgeCandidate{}
+	for _, text := range []string{"Melanie: launch window opens Friday at dawn", "Caroline: launch moved to Monday", "Notes: launch checklist signed"} {
+		texts = append(texts, judgeCandidate{Source: judgeSource, Text: text})
+	}
+	state, questions := batchRequest([]Message{user("What is the codename?")}, texts)
+	if raw, _ := json.Marshal(state); last.Raw != string(raw) || !reflect.DeepEqual(last.Questions, questions) {
+		t.Fatal(last.Raw)
+	}
+	// Fusion places them as judged items by their needed answer.
+	fusion := expandRead(t, s, &ViewConfig{Fusion: "rrf", Expand: every.Expand}, expandJudge())
+	if got := recordIDs(fusion.Records); !slices.Contains(got, "a3") || !slices.Contains(got, "b1") || !slices.Contains(got, "doc-00001") || len(got) != 6 {
+		t.Fatal(got)
+	}
+	// Only the kinds asked for are followed.
+	temporal := expandRead(t, s, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"temporal"}}}, expandJudge())
+	if got := recordIDs(temporal.Records); !slices.Equal(got, []string{"a2", "b1", "a1", "doc-00000"}) || !reflect.DeepEqual(temporal.Stats.ExpandKinds, map[string]int{"temporal": 1}) {
+		t.Fatal(got, temporal.Stats)
+	}
+	// The stats are absent without expansion.
+	if raw, _ := json.Marshal(plain.Stats); strings.Contains(string(raw), "expand") {
+		t.Fatal(string(raw))
+	}
+}
+
+func TestReadSimpleComposesExpansionOnlyWhenNeeded(t *testing.T) {
+	s := expandFixture(t)
+	// JEV needs ORBIT alone: the launch notes are judged and stay out, even
+	// where the fill has room, with and without fusion.
+	orbit := func() *scriptedJudge {
+		judge := expandJudge()
+		judge.answer = func(text string, _ int) float64 {
+			if strings.Contains(text, "ORBIT") {
+				return 0.9
+			}
+			return 0.2
+		}
+		return judge
+	}
+	expand := &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}}
+	for _, fusion := range []string{"", "rrf"} {
+		plain := expandRead(t, s, &ViewConfig{Fusion: fusion}, orbit())
+		view := expandRead(t, s, &ViewConfig{Fusion: fusion, Expand: expand}, orbit())
+		if !slices.Equal(recordIDs(view.Records), recordIDs(plain.Records)) || view.Stats.Expanded != 3 || view.Stats.ExpandedNeeded != 0 {
+			t.Fatal(fusion, recordIDs(view.Records), recordIDs(plain.Records), view.Stats)
+		}
+		for i := range view.Records {
+			if view.Records[i].Score != plain.Records[i].Score {
+				t.Fatal(fusion, view.Records[i], plain.Records[i])
+			}
+		}
+	}
+}
+
+func TestReadSimpleExpandsWriterAndOverlayLinks(t *testing.T) {
+	s := expandFixture(t)
+	// JEV also needs the rocket: a1 is a seed after a2, and its writer link
+	// reaches b0 (semantic, 0.9 × 0.5); a2's overlay links reach b1 (0.72)
+	// and doc-00001 (0.54).
+	rocket := expandJudge()
+	rocket.answer = func(text string, _ int) float64 {
+		if strings.Contains(text, "ORBIT") || strings.Contains(text, "launch") || strings.Contains(text, "rocket") {
+			return 0.9
+		}
+		return 0.2
+	}
+	links := &ExpandConfig{Kinds: []string{"temporal", "semantic", "causal"}}
+	view := expandRead(t, s, &ViewConfig{Expand: links}, rocket)
+	if got := recordIDs(view.Records); !slices.Equal(got, []string{"a2", "a1", "b1", "doc-00001", "b0", "doc-00000"}) || !reflect.DeepEqual(view.Stats.ExpandKinds, map[string]int{"temporal": 1, "semantic": 1, "causal": 1}) {
+		t.Fatal(got, view.Stats)
+	}
+	// Seeds bounds the records expanded from: a2, ranked first, alone.
+	view = expandRead(t, s, &ViewConfig{Expand: &ExpandConfig{Kinds: links.Kinds, Seeds: 1}}, rocket)
+	if got := recordIDs(view.Records); !slices.Equal(got, []string{"a2", "a1", "b1", "doc-00001", "doc-00000"}) || view.Stats.Expanded != 2 {
+		t.Fatal(got, view.Stats)
+	}
+	// Limit bounds the neighbors judged: b1 is the best.
+	view = expandRead(t, s, &ViewConfig{Expand: &ExpandConfig{Kinds: links.Kinds, Limit: 1}}, rocket)
+	if got := recordIDs(view.Records); !slices.Equal(got, []string{"a2", "a1", "b1", "doc-00000"}) || view.Stats.Expanded != 1 {
+		t.Fatal(got, view.Stats)
+	}
+	// A correction is followed both ways. "What was redone?" pools b2 (and
+	// a0, "was"): from b2, which corrects b0, to b0, which JEV needs.
+	corrections := &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"supersedes"}}}
+	view = expandAsk(t, s, "What was redone?", "redone\nNOTE: it was redone", corrections, rocket)
+	if got := recordIDs(view.Records); !slices.Equal(got, []string{"b0", "a0"}) || !reflect.DeepEqual(view.Stats.ExpandKinds, map[string]int{"supersedes": 1}) || view.Stats.ExpandedNeeded != 1 {
+		t.Fatal(got, view.Stats)
+	}
+	// From b0 back to b2, which JEV needs but calls no longer current: it
+	// is judged and withdrawn.
+	view = expandAsk(t, s, "What went fine?", "went fine\nNOTE: it went fine", corrections, rocket)
+	if got := recordIDs(view.Records); !slices.Equal(got, []string{"b0"}) || view.Stats.Expanded != 1 || view.Stats.ExpandedNeeded != 1 {
+		t.Fatal(got, view.Stats)
+	}
+}
+
+func TestExpansionDegradesWithoutFailing(t *testing.T) {
+	s := expandFixture(t)
+	every := &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}}}
+	plain := expandRead(t, s, nil, expandJudge())
+	// The expansion's judgement fails (only its call shows a launch note):
+	// the read goes on without it.
+	launchDown := func(cancel context.CancelFunc) Decider {
+		judge := expandJudge()
+		return decisionFunc(func(ctx context.Context, state any, questions map[string]Question) (map[string]float64, Usage, error) {
+			if raw, _ := json.Marshal(state); strings.Contains(string(raw), "launch window") {
+				if cancel != nil {
+					cancel()
+					return nil, Usage{}, ctx.Err()
+				}
+				return nil, Usage{}, errors.New("judge down")
+			}
+			return judge.Decide(ctx, state, questions)
+		})
+	}
+	view := expandRead(t, s, every, launchDown(nil))
+	if !slices.Equal(recordIDs(view.Records), recordIDs(plain.Records)) || !slices.Equal(view.Stats.Degraded, []string{"expansion"}) || view.Stats.Expanded != 0 {
+		t.Fatal(recordIDs(view.Records), view.Stats)
+	}
+	if raw, _ := json.Marshal(view.Stats); strings.Contains(string(raw), "expandKinds") {
+		t.Fatal(string(raw))
+	}
+	// A canceled read fails.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	a, err := New(s, Config{Version: 1, Strategy: "simple", View: every}, Models{Planner: replies("codename project\nNOTE: the codename is ORBIT", "NEED: the answer", "unrelated words"), Judge: launchDown(cancel)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Read(ctx, ReadRequest{Question: "What is the codename?"}); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+}
+
+// expansionRun is a judged run over a store whose seed note links to 50
+// launch notes (weights falling with their number), the seed alone pooled
+// and judged needed.
+func expansionRun(t *testing.T, judge Decider) (*simpleRun, []*simpleItem) {
+	t.Helper()
+	s, _ := agentStore(t)
+	ctx := context.Background()
+	upserts := []records.Upsert{expandNote("seed", "the codename is ORBIT", "2023-05-08T13:56:00Z", nil)}
+	links := []records.Link{}
+	for i := 0; i < 50; i++ {
+		id := fmt.Sprintf("n%02d", i)
+		upserts = append(upserts, expandNote(id, fmt.Sprintf("launch note %02d", i), "2023-06-01T10:00:00Z", nil))
+		links = append(links, records.Link{ID: id, Version: 1, Type: "temporal", Weight: float64(50-i) / 50})
+	}
+	revision, err := s.Put(ctx, records.PutRequest{Upsert: upserts})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ReplaceDerivedMetadata(ctx, "consolidation", map[string]records.DerivedMetadata{"seed": {Version: 1, Links: links}}); err != nil {
+		t.Fatal(err)
+	}
+	a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"temporal"}, Limit: 64}}}, Models{Planner: expandPlanner(), Judge: judge}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := testRun(a, user("What is the codename?"))
+	r.revision = revision
+	values, err := evidence(ctx, s, revision, records.Scope{}, []string{"seed"})
+	if err != nil || len(values) != 1 {
+		t.Fatal(values, err)
+	}
+	seed := &simpleItem{ID: "seed", Evidence: values[0], Needed: 0.9, Judged: true}
+	r.items["seed"], r.order = seed, []string{"seed"}
+	return r, []*simpleItem{seed}
+}
+
+func TestExpansionWithinTheDecisionBudget(t *testing.T) {
+	ctx := context.Background()
+	// Fifty neighbors are two judgement batches (40 and 10).
+	judge := expandJudge()
+	r, scored := expansionRun(t, judge)
+	got, err := r.expandEvidence(ctx, scored)
+	if err != nil || len(got) != 51 || judge.count() != 2 || r.stats.Expanded != 50 || r.stats.ExpandedNeeded != 50 || r.stats.Degraded != nil {
+		t.Fatal(len(got), err, judge.count(), r.stats)
+	}
+	if got[1].ID != "n00" || got[50].ID != "n49" || r.items["n49"] != got[50] || slices.Contains(r.order, "n00") {
+		t.Fatal(itemIDs(got))
+	}
+	// One call left judges the best 40; the rest are dropped.
+	judge = expandJudge()
+	r, scored = expansionRun(t, judge)
+	r.stats.DecisionCalls = simpleDecisionBudget - 1
+	got, err = r.expandEvidence(ctx, scored)
+	if err != nil || len(got) != 41 || got[40].ID != "n39" || judge.count() != 1 || r.stats.Expanded != 40 || r.items["n40"] != nil || !slices.Equal(r.stats.Degraded, []string{"expansion"}) {
+		t.Fatal(len(got), err, judge.count(), r.stats)
+	}
+	// None left: nothing is read or judged.
+	judge = expandJudge()
+	r, scored = expansionRun(t, judge)
+	r.stats.DecisionCalls = simpleDecisionBudget
+	got, err = r.expandEvidence(ctx, scored)
+	if err != nil || len(got) != 1 || judge.count() != 0 || r.stats.Expanded != 0 || r.stats.QueryMS != 0 || !slices.Equal(r.stats.Degraded, []string{"expansion"}) {
+		t.Fatal(len(got), err, judge.count(), r.stats)
+	}
+	// Neighbors that cannot be read degrade too.
+	judge = expandJudge()
+	r, scored = expansionRun(t, judge)
+	r.revision = "nonsense"
+	got, err = r.expandEvidence(ctx, scored)
+	if err != nil || len(got) != 1 || judge.count() != 0 || !slices.Equal(r.stats.Degraded, []string{"expansion"}) {
+		t.Fatal(len(got), err, judge.count(), r.stats)
+	}
+	// No needed item, no expansion.
+	judge = expandJudge()
+	r, scored = expansionRun(t, judge)
+	scored[0].Needed = 0.4
+	if got, err = r.expandEvidence(ctx, scored); err != nil || len(got) != 1 || judge.count() != 0 || r.stats.Degraded != nil || r.stats.QueryMS != 0 {
+		t.Fatal(len(got), err, judge.count(), r.stats)
 	}
 }
