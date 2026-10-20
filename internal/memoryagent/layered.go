@@ -62,8 +62,9 @@ func edited(s string, pairs ...string) string {
 // job: the batches before it stay linked, it and those after it stay
 // pending (their extractions discarded), and the error counts against the
 // head batch as in timelines. The job's cancellation during linking leaves
-// that batch pending. foldErr is the error the job ends with after saving;
-// err a save error, returned at once.
+// that batch pending; one that fails a batch's save leaves it linked, for
+// the final save. foldErr is the error the job ends with after saving; err
+// another save error, returned at once.
 func (a *Agent) foldLayered(ctx context.Context, model Completer, req ConsolidateRequest, state *timelineState, token *string, flush bool, dirty *bool, result *ConsolidateResult) (foldErr, err error) {
 	settings := a.config.Consolidation
 	batches, rest := [][]pendingRecord{}, state.Pending
@@ -112,13 +113,21 @@ func (a *Agent) foldLayered(ctx context.Context, model Completer, req Consolidat
 		state.Pending = state.Pending[len(batch):]
 		state.ModelErrors, state.FirstModelError = 0, 0
 		result.Folded++
-		if *token, err = a.overlay.saveTimelines(ctx, req.Scope, *token, *state); err != nil {
+		saved, err := a.overlay.saveTimelines(ctx, req.Scope, *token, *state)
+		if err != nil {
+			if ctx.Err() != nil {
+				// The job was canceled: the save after the loop, which the
+				// cancellation does not stop, keeps this batch and what the
+				// job spent.
+				foldErr = err
+				break
+			}
 			if value := run.stop(); value != nil {
 				panic(value)
 			}
 			return nil, err
 		}
-		*dirty = false
+		*token, *dirty = saved, false
 	}
 	// The extractions after the batches linked are discarded; what they
 	// spent is kept.

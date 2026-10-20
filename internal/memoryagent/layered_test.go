@@ -409,6 +409,34 @@ func TestConsolidateLayeredLinkingDegradesOrCancels(t *testing.T) {
 	})
 }
 
+func TestConsolidateLayeredCanceledSaveKeepsSpending(t *testing.T) {
+	// The job is canceled while the second batch is linked: linking ends
+	// well, but saving it fails. The final save, without cancellation,
+	// keeps that batch and every call the job made.
+	s, dir := agentStore(t)
+	seedTopics(t, s, 3)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return layeredReply(prompt), nil }}
+	judge := topicJudge()
+	judge.err = func(context.Context) error {
+		cancel()
+		return nil
+	}
+	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, model, judge)
+	result, err := a.Consolidate(ctx, ConsolidateRequest{})
+	if !errors.Is(err, context.Canceled) || result.Folded != 2 || result.Remaining != 3 {
+		t.Fatalf("result %+v %v", result, err)
+	}
+	state := loadState(t, overlay)
+	if state.Batches != 2 || len(state.Pending) != 3 || state.Calls != 3 || state.Usage.InputTokens != 3*10+100 || state.ModelErrors != 0 {
+		t.Fatalf("state %+v", state)
+	}
+	if got := threadEvents(state); !reflect.DeepEqual(got, map[string][]string{"kayak": {"n00", "n03"}, "taxes": {"n01", "n04"}, "garden": {"n02", "n05"}}) {
+		t.Fatal(got)
+	}
+}
+
 func TestConsolidateLayeredDropsHeadBatchAfterRepeatedErrors(t *testing.T) {
 	s, dir := agentStore(t)
 	notes := []string{"alpha note number one here...", "bravo note number two here....", "charlie note number three.....", "delta note number four here..."}
