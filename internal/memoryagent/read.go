@@ -137,6 +137,10 @@ type ReadStats struct {
 	// (linked records could not be read or judged). Empty for a read that
 	// fell back nowhere, and for memory-agent/v1.
 	Degraded []string `json:"degraded,omitempty"`
+	// IndexRoutes counts, for each native index route of the records
+	// (Config.Index), the searches of a simple read in which it found a
+	// candidate. Absent when none did, and for memory-agent/v1.
+	IndexRoutes map[string]int `json:"indexRoutes,omitempty"`
 }
 
 type View struct {

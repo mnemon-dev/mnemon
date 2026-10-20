@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -450,5 +451,44 @@ func TestReadSimplePool(t *testing.T) {
 	}
 	if _, err = a.Read(context.Background(), ReadRequest{Question: "q", Recent: []Message{{Role: "system", Text: "x"}}}); err == nil {
 		t.Fatal("invalid dialogue role accepted")
+	}
+}
+
+func TestReadSimpleCountsIndexRoutes(t *testing.T) {
+	s, _ := agentStore(t)
+	seedNote(t, s, "answer", "codename ORBIT")
+	seedNote(t, s, "other", "the weather was fine")
+	if err := s.ReplaceDerivedMetadata(context.Background(), "consolidation", map[string]records.DerivedMetadata{"other": {Version: 1, Entities: []string{"Zephyr"}}}); err != nil {
+		t.Fatal(err)
+	}
+	planner := completeFunc(func(_ context.Context, system, _ string) (string, Usage, error) {
+		if strings.HasPrefix(system, "You plan searches in the notes") {
+			return "Zephyr\nNOTE: the codename is ORBIT", Usage{}, nil
+		}
+		return "NEED: the codename", Usage{}, nil
+	})
+	read := func(index *records.IndexPolicy) View {
+		a, err := New(s, Config{Version: 1, Strategy: "simple", Index: index}, Models{Planner: planner, Judge: decisionFunc(fixtureJudge)}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		view, err := a.Read(context.Background(), ReadRequest{Question: "What is the codename?"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return view
+	}
+	// Three searches: the message and the note share words with a record;
+	// the note names ORBIT, which the answer's text gives as an entity,
+	// and "Zephyr" the other record's derived entity. No relation is found.
+	view := read(&records.IndexPolicy{Version: 1, Lexical: true, Entities: true, Relations: true})
+	if view.Stats.Searches != 3 || !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"lexical": 2, "entities": 2}) {
+		t.Fatal(view.Stats.Searches, view.Stats.IndexRoutes)
+	}
+	// Without native routes there is nothing to count.
+	view = read(nil)
+	raw, _ := json.Marshal(view.Stats)
+	if view.Stats.IndexRoutes != nil || strings.Contains(string(raw), "indexRoutes") {
+		t.Fatal(string(raw))
 	}
 }

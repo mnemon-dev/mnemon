@@ -63,6 +63,18 @@ func (r *simpleRun) search(ctx context.Context, c cue) (*cueSearch, error) {
 	if err != nil {
 		return nil, err
 	}
+	if result.Index != nil {
+		r.mu.Lock()
+		for route, n := range result.Index.Routes {
+			if route != "base" && n > 0 {
+				if r.stats.IndexRoutes == nil {
+					r.stats.IndexRoutes = map[string]int{}
+				}
+				r.stats.IndexRoutes[route]++
+			}
+		}
+		r.mu.Unlock()
+	}
 	s.IDs = result.IDs[:min(simpleSearchLimit, len(result.IDs))]
 	r.searches = append(r.searches, s)
 	return s, nil

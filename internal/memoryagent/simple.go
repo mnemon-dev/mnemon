@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"maps"
 	"slices"
 	"sync"
 	"time"
@@ -138,6 +139,7 @@ func (r *simpleRun) statsNow() ReadStats {
 	defer r.mu.Unlock()
 	stats := r.stats
 	stats.Degraded = slices.Clone(r.stats.Degraded)
+	stats.IndexRoutes = maps.Clone(r.stats.IndexRoutes)
 	return stats
 }
 
