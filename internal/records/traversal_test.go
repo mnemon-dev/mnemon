@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -90,6 +91,29 @@ func TestTraversalSemanticBreaksTies(t *testing.T) {
 	failing := func([]string) (map[string]float64, error) { return nil, errors.New("vectors unreadable") }
 	if _, err := (&derivedIndex{links: links}).traverse(context.Background(), []scored{{"a", 1}}, retrieval.IntentGeneral, &similarities{read: failing}); err == nil {
 		t.Fatal("vector read error swallowed")
+	}
+}
+
+func TestTraversalStartsEachAnchorFromItsOwnScore(t *testing.T) {
+	// A —causal→ B —causal→ n1 → … → n5, anchors A (2) and B (1): A
+	// normalized 1, B 0.5. Native starts B's beam from 0.5 even after A's
+	// path raised B to 1.7, so the order of the anchors does not matter.
+	links := map[string][]Link{"A": {edge("B", "causal", 1)}, "B": {edge("n1", "causal", 1)}}
+	for i := 1; i < 5; i++ {
+		links[fmt.Sprintf("n%d", i)] = []Link{edge(fmt.Sprintf("n%d", i+1), "causal", 1)}
+	}
+	// WHY: 0.7 a step, five levels from each anchor.
+	want := map[string]float64{"A": 1, "B": 1.7, "n1": 2.4, "n2": 3.1, "n3": 3.8, "n4": 4.5, "n5": 4.0}
+	for _, anchors := range [][]scored{{{"A", 2}, {"B", 1}}, {{"B", 1}, {"A", 2}}} {
+		best, err := (&derivedIndex{links: links}).traverse(context.Background(), anchors, retrieval.IntentWhy, nil)
+		if err != nil || len(best) != len(want) {
+			t.Fatal(best, err)
+		}
+		for id, score := range want {
+			if math.Abs(best[id]-score) > 1e-9 {
+				t.Errorf("anchors %v: %s = %v, want %v", anchors, id, best[id], score)
+			}
+		}
 	}
 }
 

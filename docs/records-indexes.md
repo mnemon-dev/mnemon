@@ -53,7 +53,9 @@ of each level and stops at native's budgets (the anchor counts as visited):
 | GENERAL | 10 | 4 | 500 |
 
 Every record keeps its best path score (an anchor its own unless a path beats it);
-scores add up along a path. The path score is not the route's order: every collected
+scores add up along a path. Each anchor's beam starts from the anchor's own normalized
+score, even when another anchor's path reached it with a higher one, so the anchors'
+order does not change the result. The path score is not the route's order: every collected
 record, anchors included, is re-ranked by four signals in [0, 1]:
 
 - keyword: the share of the query's tokens in the record's search text (the `lexical`

@@ -388,19 +388,24 @@ func (index *derivedIndex) traverse(ctx context.Context, anchors []scored, inten
 	for _, anchor := range anchors {
 		top = max(top, anchor.score)
 	}
+	normalized := func(score float64) float64 {
+		if top > 0 {
+			return score / top
+		}
+		return score
+	}
 	best := map[string]float64{}
 	for _, anchor := range anchors {
-		score := anchor.score
-		if top > 0 {
-			score /= top
-		}
-		best[anchor.id] = score
+		best[anchor.id] = normalized(anchor.score)
 	}
 	for _, anchor := range anchors {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if err := t.beam(anchor.id, best[anchor.id], budget, best); err != nil {
+		// From the anchor's own score, as native's beamSearchFromAnchor, not
+		// from best, which an earlier anchor's path may have raised: the
+		// anchors' order does not change the result.
+		if err := t.beam(anchor.id, normalized(anchor.score), budget, best); err != nil {
 			return nil, err
 		}
 	}
