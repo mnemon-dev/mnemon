@@ -465,7 +465,7 @@ func searchItems(view memoryagent.View, topK int) []SearchItem {
 		if len(items) == topK {
 			return items
 		}
-		items = append(items, SearchItem{ID: "index:" + block.ID, Content: block.Text})
+		items = append(items, SearchItem{ID: blockID(block), Content: block.Text})
 	}
 	for _, record := range view.Records {
 		if len(items) == topK {
@@ -474,4 +474,13 @@ func searchItems(view memoryagent.View, topK int) []SearchItem {
 		items = append(items, SearchItem{ID: record.ID, Content: record.Text, Score: record.Score, CreatedAt: record.Date})
 	}
 	return items
+}
+
+// blockID identifies a consolidation block by its kind and its text: a read
+// composes a block's text for the question, so the kind alone would name
+// different memory on different Searches (AML: an id "stably identifies the
+// memory").
+func blockID(block memoryagent.IndexItem) string {
+	sum := sha256.Sum256([]byte(block.Text))
+	return "index:" + block.ID + ":" + hex.EncodeToString(sum[:8])
 }

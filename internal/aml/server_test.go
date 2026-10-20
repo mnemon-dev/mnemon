@@ -725,7 +725,7 @@ func TestSearchTopKIncludesBlocks(t *testing.T) {
 		t.Fatal("an Add folded its short tail")
 	}
 	items := h.search(t, SearchRequest{Query: "When did Caroline go to the LGBTQ support group?", UserID: "u1", TopK: 3})
-	if len(items) != 3 || items[0].ID != "index:2-topics" || items[1].ID != "index:3-timelines" || strings.HasPrefix(items[2].ID, "index:") || h.consolidator.calls.Load() != 1 {
+	if len(items) != 3 || !strings.HasPrefix(items[0].ID, "index:2-topics:") || !strings.HasPrefix(items[1].ID, "index:3-timelines:") || strings.HasPrefix(items[2].ID, "index:") || h.consolidator.calls.Load() != 1 {
 		t.Fatal(items)
 	}
 	// Scores are by rank, blocks included.
@@ -734,7 +734,7 @@ func TestSearchTopKIncludesBlocks(t *testing.T) {
 	}
 	checkRankScores(t, items)
 	// Blocks count toward top_k.
-	if items = h.search(t, SearchRequest{Query: "When did Caroline go to the LGBTQ support group?", UserID: "u1", TopK: 1}); len(items) != 1 || items[0].ID != "index:2-topics" {
+	if items = h.search(t, SearchRequest{Query: "When did Caroline go to the LGBTQ support group?", UserID: "u1", TopK: 1}); len(items) != 1 || !strings.HasPrefix(items[0].ID, "index:2-topics:") {
 		t.Fatal(items)
 	}
 }

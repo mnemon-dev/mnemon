@@ -234,3 +234,11 @@ func TestAddTimestampForms(t *testing.T) {
 		}
 	}
 }
+
+func TestBlockIDsFollowBlockText(t *testing.T) {
+	a := memoryagent.IndexItem{ID: "2-topics", Kind: "2-topics", Text: "Topic: adoption"}
+	b := memoryagent.IndexItem{ID: "2-topics", Kind: "2-topics", Text: "Topic: hiking"}
+	if blockID(a) != blockID(a) || blockID(a) == blockID(b) || !strings.HasPrefix(blockID(a), "index:2-topics:") {
+		t.Fatal(blockID(a), blockID(b))
+	}
+}
