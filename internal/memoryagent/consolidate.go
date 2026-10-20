@@ -48,8 +48,8 @@ type ConsolidateResult struct {
 	Dropped int               `json:"dropped,omitempty"`
 	Drops   []ConsolidateDrop `json:"drops,omitempty"`
 	// A layered job's linking: LinkCalls counts its JEV calls (LinkUsage
-	// is the part of Usage of every JEV call of the job, these and
-	// AliasCalls); of the threads it extracted and linked,
+	// is the part of Usage of every JEV call of the job, these,
+	// AliasCalls and EdgeCalls); of the threads it extracted and linked,
 	// ThreadsLinked continued a stored thread and ThreadsNew started one;
 	// of the keys, KeysLinked joined a stored key and KeysNew started one;
 	// Conflicts counts the joined keys whose new value JEV found contradicts
@@ -74,6 +74,10 @@ type ConsolidateResult struct {
 	// EdgesPending reports that the derived metadata does not yet follow
 	// the scope's memory after the job (deferred, or its edge step
 	// failed: EdgeError, which does not fail the job's folds).
+	// With edgeKinds (event_edges.go), EdgeCalls counts the JEV calls
+	// deciding event edges (part of LinkUsage); EdgeAsked the pairs JEV
+	// answered and EdgeYes the edges it made, by kind; EdgeFallbacks the
+	// pairs left undecided because JEV failed, asked again next time.
 	EdgesPending   bool           `json:"edgesPending,omitempty"`
 	EdgeError      string         `json:"edgeError,omitempty"`
 	EdgeRecords    int            `json:"edgeRecords,omitempty"`
@@ -81,6 +85,10 @@ type ConsolidateResult struct {
 	AliasCalls     int            `json:"aliasCalls,omitempty"`
 	AliasMerges    int            `json:"aliasMerges,omitempty"`
 	AliasFallbacks int            `json:"aliasFallbacks,omitempty"`
+	EdgeCalls      int            `json:"edgeCalls,omitempty"`
+	EdgeAsked      map[string]int `json:"edgeAsked,omitempty"`
+	EdgeYes        map[string]int `json:"edgeYes,omitempty"`
+	EdgeFallbacks  int            `json:"edgeFallbacks,omitempty"`
 }
 
 // ConsolidateDrop is records a timelines job gave up on: they stay

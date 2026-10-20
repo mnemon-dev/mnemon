@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/mnemon-dev/mnemon/internal/records"
@@ -52,11 +53,15 @@ const (
 
 // linkItem is a thread or a key as JEV reads it: a new one, n1, n2, …, or a
 // stored one, by thread id or K<i> (the i-th key of M, from 1). An entity
-// name (edges.go) is an item with its Name and the texts naming it.
+// name (edges.go) is an item with its Name and the texts naming it; an
+// event (event_edges.go) one with its date, thread title and names.
 type linkItem struct {
-	ID   string `json:"id"`
-	Name string `json:"name,omitempty"`
-	Text string `json:"text"`
+	ID       string   `json:"id"`
+	Name     string   `json:"name,omitempty"`
+	Date     string   `json:"date,omitempty"`
+	Thread   string   `json:"thread,omitempty"`
+	Text     string   `json:"text"`
+	Entities []string `json:"entities,omitempty"`
 }
 
 // linkState is a linking call's state: the new items and the candidates its
@@ -385,8 +390,8 @@ func (l *linker) embed(ctx context.Context, texts []string, store bool) ([][]flo
 
 // linkRequest is one packed linking call: its state, its questions and the
 // pairs they ask about, in order (pair j asks t<j>, or i<j> and x<j>, or
-// x<j>), and the request's size so far, as JEV's client measures it, plus
-// at most one unit per list item.
+// x<j>, or a<j>, or an event edge kind's key and j), and the request's size
+// so far, as JEV's client measures it, plus at most one unit per list item.
 type linkRequest struct {
 	state     linkState
 	questions map[string]Question
@@ -407,6 +412,9 @@ func pairQuestions(p *linkPair, news, cands []linkItem, j int) map[string]Questi
 		return map[string]Question{fmt.Sprintf("i%d", j): {Type: "noul", Instructions: sameKeyQuestion(n, c), Criteria: map[string]string{"true": sameKeyYes, "false": sameKeyNo}}, fmt.Sprintf("x%d", j): contradicts}
 	case linkAlias:
 		return map[string]Question{fmt.Sprintf("a%d", j): {Type: "noul", Instructions: aliasQuestion(n, c), Criteria: map[string]string{"true": aliasYes, "false": aliasNo}}}
+	case linkSemantic, linkTemporal, linkCausal, linkEntity:
+		k := edgeKindOf(p.kind)
+		return map[string]Question{k.key + strconv.Itoa(j): {Type: "noul", Instructions: k.question(n, c), Criteria: map[string]string{"true": k.yes, "false": k.no}}}
 	}
 	return map[string]Question{fmt.Sprintf("x%d", j): contradicts}
 }
@@ -491,6 +499,8 @@ func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*lin
 				p.same, p.contradicts = answers[fmt.Sprintf("i%d", j)], answers[fmt.Sprintf("x%d", j)]
 			case linkAlias:
 				p.same = answers[fmt.Sprintf("a%d", j)]
+			case linkSemantic, linkTemporal, linkCausal, linkEntity:
+				p.same = answers[edgeKindOf(p.kind).key+strconv.Itoa(j)]
 			default:
 				p.contradicts = answers[fmt.Sprintf("x%d", j)]
 			}

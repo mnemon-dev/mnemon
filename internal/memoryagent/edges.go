@@ -55,8 +55,9 @@ const (
 	// The records' bounds of a row.
 	maxEdgeNames = 64
 	maxEdgeLinks = 50
-	// aliasCandidates is the names a new name is compared with when the
-	// mode sets no LinkCandidates (timelines).
+	// aliasCandidates is the names a new name, and the events a new event
+	// for each kind of event edge, is compared with when the mode sets no
+	// LinkCandidates (timelines).
 	aliasCandidates = 8
 )
 

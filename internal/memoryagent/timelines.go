@@ -94,7 +94,8 @@ type timelineMemory struct {
 // them was (Unix milliseconds; 0 for none). Mode is the consolidation mode
 // of the job that last wrote the state: "" for timelines, or "layered".
 // EntityClusters (nativeEdges) holds the decided entity names: each name's
-// cluster, named by its first name; EdgesMemory names the memory the
+// cluster, named by its first name; EventEdges (edgeKinds) JEV's decisions
+// about pairs of events (event_edges.go); EdgesMemory names the memory the
 // records' derived metadata was last built from (edges.go).
 type timelineState struct {
 	Format          string            `json:"format"`
@@ -109,6 +110,7 @@ type timelineState struct {
 	ModelErrors     int               `json:"modelErrors,omitempty"`
 	FirstModelError int64             `json:"firstModelError,omitempty"`
 	EntityClusters  map[string]string `json:"entityClusters,omitempty"`
+	EventEdges      *eventEdges       `json:"eventEdges,omitempty"`
 	EdgesMemory     string            `json:"edgesMemory,omitempty"`
 }
 
