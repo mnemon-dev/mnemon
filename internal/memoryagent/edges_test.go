@@ -62,7 +62,7 @@ func gregClusters() map[string]string {
 func TestBuildEdgesFromState(t *testing.T) {
 	state := emptyTimelineState()
 	state.Memory, state.EntityClusters = edgeMemory(), gregClusters()
-	got := buildEdges([]timelineState{state}, edgeVersions())
+	got := buildEdges([]timelineState{state}, edgeVersions(), nil)
 	want := map[string]records.DerivedMetadata{
 		// Entities of the events and values citing it, with the other names
 		// of their clusters; links to the nearest events of its threads
@@ -95,7 +95,7 @@ func TestBuildEdgesFromState(t *testing.T) {
 	}
 	// Without decisions every name is its own cluster: word aliases only.
 	state.EntityClusters = nil
-	for id, item := range buildEdges([]timelineState{state}, edgeVersions()) {
+	for id, item := range buildEdges([]timelineState{state}, edgeVersions(), nil) {
 		words := map[string][]string{"r1": {"Greg", "Hall", "Cabin"}}[id]
 		if !slices.Equal(item.Aliases, words) || !slices.Equal(item.Entities, want[id].Entities) {
 			t.Fatal(id, item)
@@ -106,7 +106,7 @@ func TestBuildEdgesFromState(t *testing.T) {
 		state.Memory.Events[i].Entities = nil
 	}
 	state.Memory.Facts["job · title"][1].Entities = nil
-	for id, item := range buildEdges([]timelineState{state}, edgeVersions()) {
+	for id, item := range buildEdges([]timelineState{state}, edgeVersions(), nil) {
 		if item.Entities != nil || !reflect.DeepEqual(item.Links, want[id].Links) || item.EventAt != want[id].EventAt {
 			t.Fatal(id, item)
 		}
@@ -123,7 +123,7 @@ func TestBuildEdgesNearestEvents(t *testing.T) {
 		state.Memory.Events = append(state.Memory.Events, event{Thread: "T1", Date: fmt.Sprintf("2024/01/0%d", p+1), Text: id, Records: []string{id}})
 		versions[id] = 1
 	}
-	got := buildEdges([]timelineState{state}, versions)
+	got := buildEdges([]timelineState{state}, versions, nil)
 	want := []records.Link{edgeLink("e5", 1, "entity", 0.6), edgeLink("e5", 1, "temporal", 0.5), edgeLink("e4", 1, "entity", 0.6), edgeLink("e3", 1, "entity", 0.6), edgeLink("e2", 1, "entity", 0.6)}
 	if !reflect.DeepEqual(got["e6"].Links, want) {
 		t.Fatal("the last event links its four nearest", got["e6"].Links)
@@ -163,7 +163,7 @@ func TestBuildEdgesNearestEvents(t *testing.T) {
 		{Thread: "T2", Date: "2024/01/03", Text: "c", Records: []string{"rb"}},
 		{Thread: "T2", Date: "2024/01/04", Text: "d", Records: []string{"ra"}},
 	}
-	got = buildEdges([]timelineState{state}, map[string]int64{"ra": 1, "rb": 1})
+	got = buildEdges([]timelineState{state}, map[string]int64{"ra": 1, "rb": 1}, nil)
 	if !reflect.DeepEqual(got["rb"].Links, []records.Link{edgeLink("ra", 1, "entity", 0.6), edgeLink("ra", 1, "temporal", 0.5)}) ||
 		!reflect.DeepEqual(got["ra"].Links, []records.Link{edgeLink("rb", 1, "temporal", 0.5)}) {
 		t.Fatal(got)
@@ -191,7 +191,7 @@ func TestBuildEdgesBounds(t *testing.T) {
 		state.Memory.Events = append(state.Memory.Events, e)
 	}
 	state.Memory.Events = append(state.Memory.Events, event{Thread: "T2", Date: "2024/03/01", Text: "solo", Records: []string{"solo"}, Entities: []string{"N0"}})
-	got := buildEdges([]timelineState{state}, versions)
+	got := buildEdges([]timelineState{state}, versions, nil)
 	hub, solo := got["hub"], got["solo"]
 	if len(hub.Links) != 50 || len(hub.Entities) != 64 || !slices.Equal(hub.Aliases, names[64:]) || len(solo.Aliases) != 64 || solo.Aliases[0] != "N1" {
 		t.Fatal(len(hub.Links), len(hub.Entities), hub.Aliases, len(solo.Aliases))
@@ -798,7 +798,7 @@ func TestBuildEdgesWordAliases(t *testing.T) {
 	state.Memory.Threads = []thread{{ID: "T1", Title: "Names"}}
 	names := []string{"Lake Tahoe", "The Cabin Co", "User Profile", "May Day Parade", "Monday Meeting", "Assistant Manager", "cabin rental", "G. Hall", "Dr. Anne-Marie O'Brien", "Acme", "Greg's Bakery", "Our Garden"}
 	state.Memory.Events = []event{{Thread: "T1", Date: "2024/01/01", Text: "names", Records: []string{"r"}, Entities: names}}
-	got := buildEdges([]timelineState{state}, map[string]int64{"r": 1})["r"]
+	got := buildEdges([]timelineState{state}, map[string]int64{"r": 1}, nil)["r"]
 	// The capitalized words of three letters or more of each multi-word
 	// name, but no stopword, month, weekday, role or first-person word;
 	// single-word names and lowercase words give none.
@@ -808,7 +808,7 @@ func TestBuildEdgesWordAliases(t *testing.T) {
 	}
 	// A word that is itself one of the record's names is no alias.
 	state.Memory.Events[0].Entities = []string{"Tahoe", "Lake Tahoe"}
-	if got := buildEdges([]timelineState{state}, map[string]int64{"r": 1})["r"]; !slices.Equal(got.Aliases, []string{"Lake"}) {
+	if got := buildEdges([]timelineState{state}, map[string]int64{"r": 1}, nil)["r"]; !slices.Equal(got.Aliases, []string{"Lake"}) {
 		t.Fatalf("aliases %q", got.Aliases)
 	}
 }

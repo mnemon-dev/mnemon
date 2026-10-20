@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 	"time"
@@ -415,4 +416,84 @@ func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kin
 		state.EventEdges = edges
 	}
 	return changed, nil
+}
+
+// judgedLink is a record link an event edge gives: from source to target,
+// or, for a kind the records' index reads both ways (mirrored), between
+// the two, source the lesser id.
+type judgedLink struct{ source, target, kind string }
+
+// mirrored reports whether the records' index reads a link of kind both
+// ways, so that one written link joins both records.
+func mirrored(kind string) bool {
+	return kind == "semantic" || kind == "entity"
+}
+
+// addEventEdges collects the record links of the state's event edges of
+// the builder's kinds: each yes links every record of one event to every
+// record of the other, with the edge's kind and weight, both ways (a
+// mirrored kind once per pair). A pair of records keeps the highest weight
+// any edge gives it.
+func (b *edgeBuilder) addEventEdges(state timelineState) {
+	if state.EventEdges == nil {
+		return
+	}
+	cited := map[string][]string{}
+	for _, e := range state.Memory.Events {
+		cited[eventID(e)] = e.Records
+	}
+	keep := func(l judgedLink, weight float64) {
+		if weight > b.judged[l] {
+			b.judged[l] = weight
+		}
+	}
+	for _, kind := range b.kinds {
+		for from, answers := range state.EventEdges.Answers[kind] {
+			for to, weight := range answers {
+				if weight < 0.5 {
+					continue
+				}
+				for _, x := range cited[from] {
+					for _, y := range cited[to] {
+						switch {
+						case x == y:
+						case mirrored(kind):
+							keep(judgedLink{min(x, y), max(x, y), kind}, weight)
+						default:
+							keep(judgedLink{x, y, kind}, weight)
+							keep(judgedLink{y, x, kind}, weight)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// placeJudged writes the collected record links, the heaviest first (ties
+// by kind, then ids), after the supersedes links: a link on its source, a
+// mirrored one on whichever of its records has fewer links so far (the
+// lesser id on a tie), so that the per-record cap keeps the heaviest links
+// and drops a mirrored one only when both records are full.
+func (b *edgeBuilder) placeJudged() {
+	links := slices.Collect(maps.Keys(b.judged))
+	kind := func(name string) int {
+		return slices.IndexFunc(eventEdgeKinds, func(k eventEdgeKind) bool { return k.name == name })
+	}
+	slices.SortFunc(links, func(x, y judgedLink) int {
+		return cmp.Or(cmp.Compare(b.judged[y], b.judged[x]), cmp.Compare(kind(x.kind), kind(y.kind)), cmp.Compare(x.source, y.source), cmp.Compare(x.target, y.target))
+	})
+	count := func(id string) int {
+		if r := b.records[id]; r != nil {
+			return len(r.links)
+		}
+		return 0
+	}
+	for _, l := range links {
+		source, target := l.source, l.target
+		if mirrored(l.kind) && count(target) < count(source) {
+			source, target = target, source
+		}
+		b.link(source, target, l.kind, b.judged[l], 1)
+	}
 }

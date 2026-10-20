@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -586,5 +587,242 @@ func TestEventEdgeCandidatesBySimilarity(t *testing.T) {
 	}
 	if got := askedPairs(t, judge.calls); !slices.Contains(got, "semantic Rented a boat for the lake. ~ Planted tomatoes by the lake.") || slices.Contains(got, "semantic Rented a boat for the lake. ~ Booked a kayak.") {
 		t.Fatal(got)
+	}
+}
+
+// judgedState is three events of a thread, a key whose second value
+// supersedes the first, and JEV's answers about the events of every kind.
+// A cites ra1 and ra2, B rb, C rc and ra1.
+func judgedState() timelineState {
+	state := emptyTimelineState()
+	state.Memory = timelineMemory{
+		Threads: []thread{{ID: "T1", Title: "Cabin trip"}},
+		Events: []event{
+			{Thread: "T1", Date: "2024/01/02", Text: "A", Records: []string{"ra1", "ra2"}, Entities: []string{"Greg"}},
+			{Thread: "T1", Date: "2024/01/05", Text: "B", Records: []string{"rb"}, Entities: []string{"Greg Hall"}},
+			{Thread: "T1", Date: "2024/01/09", Text: "C", Records: []string{"rc", "ra1"}},
+		},
+		Facts: map[string][]factValue{"cabin · date": {
+			{Value: "May 3", Date: "2024/01/02", Records: []string{"ra2"}},
+			{Value: "May 10", Date: "2024/01/05", Records: []string{"rb"}},
+		}},
+		FactOrder: []string{"cabin · date"}, Directives: []directive{},
+	}
+	state.EntityClusters = map[string]string{"Greg": "Greg Hall", "Greg Hall": "Greg Hall"}
+	a, b, c := eventID(state.Memory.Events[0]), eventID(state.Memory.Events[1]), eventID(state.Memory.Events[2])
+	state.EventEdges = &eventEdges{Answers: map[string]map[string]map[string]float64{
+		"temporal": {b: {a: 0.8}, c: {b: 0.6}},
+		"semantic": {b: {a: 0}, c: {a: 0.9}},
+		"causal":   {c: {b: 0.7}},
+		"entity":   {b: {a: 0.55}},
+	}}
+	return state
+}
+
+func TestBuildEdgesFromEventEdges(t *testing.T) {
+	versions := map[string]int64{"ra1": 1, "ra2": 1, "rb": 2, "rc": 1}
+	got := buildEdges([]timelineState{judgedState()}, versions, allEdgeKinds)
+	// Each edge links every record of one event to every record of the
+	// other, with its kind and weight: temporal and causal both ways;
+	// semantic and entity, which the records' index reads both ways, once
+	// per pair, on the record with fewer links. A pair of records two edges
+	// of a kind join keeps the higher weight. Per record: supersedes first,
+	// then the highest weights. The thread's rule links are gone; the
+	// names, the supersedes link and the dates stay.
+	want := map[string]records.DerivedMetadata{
+		"ra1": {Version: 1, Entities: []string{"Greg"}, Aliases: []string{"Greg Hall", "Hall"}, EventAt: "2024-01-02", Links: []records.Link{
+			edgeLink("ra2", 1, "semantic", 0.9), edgeLink("rb", 2, "temporal", 0.8), edgeLink("rb", 2, "causal", 0.7), edgeLink("rb", 2, "entity", 0.55)}},
+		"ra2": {Version: 1, Entities: []string{"Greg"}, Aliases: []string{"Greg Hall", "Hall"}, EventAt: "2024-01-02", Links: []records.Link{
+			edgeLink("rc", 1, "semantic", 0.9), edgeLink("rb", 2, "temporal", 0.8), edgeLink("rb", 2, "entity", 0.55)}},
+		"rb": {Version: 2, Entities: []string{"Greg Hall"}, Aliases: []string{"Greg", "Hall"}, EventAt: "2024-01-05", Links: []records.Link{
+			edgeLink("ra2", 1, "supersedes", 1), edgeLink("ra1", 1, "temporal", 0.8), edgeLink("ra2", 1, "temporal", 0.8),
+			edgeLink("ra1", 1, "causal", 0.7), edgeLink("rc", 1, "causal", 0.7), edgeLink("rc", 1, "temporal", 0.6)}},
+		"rc": {Version: 1, EventAt: "2024-01-09", Links: []records.Link{
+			edgeLink("ra1", 1, "semantic", 0.9), edgeLink("rb", 2, "causal", 0.7), edgeLink("rb", 2, "temporal", 0.6)}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		for id := range want {
+			if !reflect.DeepEqual(got[id], want[id]) {
+				t.Errorf("%s:\n got %+v\nwant %+v", id, got[id], want[id])
+			}
+		}
+		t.Fatalf("records %d, want %d", len(got), len(want))
+	}
+	// Only the listed kinds are projected.
+	got = buildEdges([]timelineState{judgedState()}, versions, []string{"causal"})
+	if !reflect.DeepEqual(got["rc"].Links, []records.Link{edgeLink("rb", 2, "causal", 0.7)}) ||
+		!reflect.DeepEqual(got["rb"].Links, []records.Link{edgeLink("ra2", 1, "supersedes", 1), edgeLink("ra1", 1, "causal", 0.7), edgeLink("rc", 1, "causal", 0.7)}) {
+		t.Fatal(got["rc"].Links, got["rb"].Links)
+	}
+	// A record missing from the store gets no row and no link.
+	delete(versions, "rc")
+	got = buildEdges([]timelineState{judgedState()}, versions, allEdgeKinds)
+	if _, ok := got["rc"]; ok {
+		t.Fatal(got["rc"])
+	}
+	for id, item := range got {
+		for _, link := range item.Links {
+			if link.ID == "rc" {
+				t.Fatal(id, link)
+			}
+		}
+	}
+	// Without edgeKinds the decisions are ignored: stage 2 exactly.
+	plain := judgedState()
+	plain.EventEdges = nil
+	versions["rc"] = 1
+	if stage2, judged := buildEdges([]timelineState{plain}, versions, nil), buildEdges([]timelineState{judgedState()}, versions, nil); !reflect.DeepEqual(stage2, judged) {
+		t.Fatal("decisions changed the stage-2 edges", judged)
+	} else if links := stage2["rc"].Links; len(links) == 0 || links[0].Type != "entity" || links[0].Weight != 0.6 {
+		t.Fatal("stage 2 has no thread links", links)
+	}
+}
+
+func TestBuildEdgesFromEventEdgesCap(t *testing.T) {
+	// A hub event with 51 temporal edges of weights 0.50 … 1.00, and a
+	// semantic edge (0.6) to the event of the weakest: the hub keeps its
+	// 50 strongest; the semantic edge lives on the other record. A second
+	// hub as full: a semantic edge between the hubs, weaker than all their
+	// links, is dropped.
+	state := emptyTimelineState()
+	state.Memory.Threads = []thread{{ID: "T1", Title: "Hub"}}
+	versions := map[string]int64{"hub": 1, "hub2": 1}
+	state.Memory.Events = []event{{Thread: "T1", Date: "2024/03/01", Text: "hub", Records: []string{"hub"}}, {Thread: "T1", Date: "2024/03/01", Text: "hub2", Records: []string{"hub2"}}}
+	hub, hub2 := eventID(state.Memory.Events[0]), eventID(state.Memory.Events[1])
+	answers := map[string]map[string]float64{hub: {}, hub2: {}}
+	for i := range 51 {
+		for h, prefix := range []string{"x", "y"} {
+			id := fmt.Sprintf("%s%02d", prefix, i)
+			versions[id] = 1
+			e := event{Thread: "T1", Date: "2024/02/01", Text: id, Records: []string{id}}
+			state.Memory.Events = append(state.Memory.Events, e)
+			answers[[]string{hub, hub2}[h]][eventID(e)] = float64(50+i) / 100
+		}
+	}
+	x00 := eventID(state.Memory.Events[2])
+	state.EventEdges = &eventEdges{Answers: map[string]map[string]map[string]float64{
+		"temporal": answers,
+		"semantic": {hub: {x00: 0.6, hub2: 0.5}},
+	}}
+	got := buildEdges([]timelineState{state}, versions, allEdgeKinds)
+	links := got["hub"].Links
+	if len(links) != 50 || links[0] != edgeLink("x50", 1, "temporal", 1) || links[49] != edgeLink("x01", 1, "temporal", 0.51) {
+		t.Fatal(len(links), links[0], links[len(links)-1])
+	}
+	if !reflect.DeepEqual(got["x00"].Links, []records.Link{edgeLink("hub", 1, "semantic", 0.6), edgeLink("hub", 1, "temporal", 0.5)}) {
+		t.Fatal(got["x00"].Links)
+	}
+	for _, id := range []string{"hub", "hub2"} {
+		for _, link := range got[id].Links {
+			if link.Type == "semantic" {
+				t.Fatal("a weaker link outlived the cap", id, link)
+			}
+		}
+	}
+	s, _ := agentStore(t)
+	if err := s.ReplaceDerivedMetadata(context.Background(), edgesSource, got); err != nil {
+		t.Fatal("the store refused the built rows", err)
+	}
+}
+
+// topicEdgeJudge is topicJudge that also says two events of one topic are
+// joined by a semantic (0.9), temporal (0.8) and entity (0.7) edge, never
+// a causal one.
+func topicEdgeJudge() *linkJudge {
+	topics := topicJudge()
+	return &linkJudge{answer: func(kind, newText, candidate string) float64 {
+		weights := map[string]float64{"semantic": 0.9, "temporal": 0.8, "entity": 0.7, "causal": 0.2}
+		if weight, ok := weights[kind]; ok {
+			if strings.Fields(newText)[0] == strings.Fields(candidate)[0] {
+				return weight
+			}
+			return 0.1
+		}
+		return topics.answer(kind, newText, candidate)
+	}}
+}
+
+func TestEdgeKindsLayeredJob(t *testing.T) {
+	s, dir := agentStore(t)
+	seedTopics(t, s, 3)
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return layeredReply(prompt), nil }}
+	judge := topicEdgeJudge()
+	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100, NativeEdges: true, EdgeKinds: allEdgeKinds}, model, judge)
+	result, err := a.Consolidate(context.Background(), ConsolidateRequest{})
+	if err != nil || result.Folded != 3 {
+		t.Fatal(result, err)
+	}
+	// Nine notes, three of each topic, all of one day: each event is asked
+	// about the events before it (all share a word: semantic and causal),
+	// those of its thread or names (temporal, entity). JEV joins the
+	// events of a topic: three pairs a topic.
+	if result.EdgeCalls != 1 || result.EdgeFallbacks != 0 ||
+		!reflect.DeepEqual(result.EdgeAsked, map[string]int{"semantic": 36, "temporal": 9, "causal": 36, "entity": 9}) ||
+		!reflect.DeepEqual(result.EdgeYes, map[string]int{"semantic": 9, "temporal": 9, "entity": 9}) {
+		t.Fatalf("%+v", result)
+	}
+	// Record links: semantic and entity once a pair, temporal both ways, and
+	// the values' supersedes; no thread links.
+	if result.EdgeRecords != 9 || !reflect.DeepEqual(result.EdgeLinks, map[string]int{"semantic": 9, "temporal": 18, "entity": 9, "supersedes": 6}) {
+		t.Fatalf("%+v", result)
+	}
+	rows := buildEdges([]timelineState{loadState(t, overlay)}, map[string]int64{"n00": 1, "n01": 1, "n02": 1, "n03": 1, "n04": 1, "n05": 1, "n06": 1, "n07": 1, "n08": 1}, allEdgeKinds)
+	for id, row := range rows {
+		for _, link := range row.Links {
+			want := map[string]float64{"semantic": 0.9, "temporal": 0.8, "entity": 0.7, "supersedes": 1}[link.Type]
+			if link.Weight != want || id[:2] != link.ID[:2] || (id[2]-'0')%3 != (link.ID[2]-'0')%3 {
+				t.Fatal(id, link)
+			}
+		}
+	}
+	state := loadState(t, overlay)
+	if state.EventEdges == nil || len(state.EventEdges.Decided["causal"]) != 9 || state.EdgesMemory != edgesDigest(state.Memory) {
+		t.Fatalf("%+v", state.EventEdges)
+	}
+	// The records' index reads the links: a topic's notes reach each other
+	// through an entity link from either end, and through temporal links
+	// both ways.
+	relations := &records.IndexPolicy{Version: 1, Relations: true}
+	for query, want := range map[string][]string{"00": {"n03", "n06"}, "06": {"n00", "n03"}} {
+		got := queryIDs(t, s, query, relations, nil)
+		when := queryIDs(t, s, query, relations, map[string]string{"intent": "WHEN"})
+		for _, id := range want {
+			if !slices.Contains(got, id) || !slices.Contains(when, id) {
+				t.Fatal(query, got, when)
+			}
+		}
+		if slices.Contains(got, "n01") || slices.Contains(when, "n01") {
+			t.Fatal("another topic", got, when)
+		}
+	}
+	// A rebuild asks nothing again and writes the same rows.
+	again, err := a.Consolidate(context.Background(), ConsolidateRequest{RebuildEdges: true})
+	if err != nil || again.EdgeCalls != 0 || again.EdgeRecords != 9 || !reflect.DeepEqual(again.EdgeLinks, result.EdgeLinks) || judge.count() != result.LinkCalls+result.AliasCalls+1 {
+		t.Fatal(again, err, judge.count())
+	}
+	// A reset forgets the decisions with the memory.
+	if _, err := a.Consolidate(context.Background(), ConsolidateRequest{Reset: true, MaxBatches: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if state := loadState(t, overlay); len(state.EventEdges.Decided["semantic"]) != 3 {
+		t.Fatalf("%+v", state.EventEdges)
+	}
+}
+
+func TestEdgeKindsOffKeepsTheState(t *testing.T) {
+	s, dir := agentStore(t)
+	seedTopics(t, s, 2)
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return layeredReply(prompt), nil }}
+	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100, NativeEdges: true}, model, topicEdgeJudge())
+	result, err := a.Consolidate(context.Background(), ConsolidateRequest{})
+	if err != nil || result.EdgeRecords != 6 || result.EdgeLinks["entity"] == 0 || result.EdgeLinks["semantic"] != 0 {
+		t.Fatal(result, err)
+	}
+	state, _ := json.Marshal(loadState(t, overlay))
+	out, _ := json.Marshal(result)
+	for _, field := range []string{"eventEdges", "edgeCalls", "edgeAsked", "edgeYes", "edgeFallbacks"} {
+		if strings.Contains(string(state), field) || strings.Contains(string(out), field) {
+			t.Fatal(field, string(state), string(out))
+		}
 	}
 }

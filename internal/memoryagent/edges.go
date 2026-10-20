@@ -32,6 +32,8 @@ import (
 //     link (entity, relationWeight) to those of its relationNeighbors
 //     nearest events, and (temporal, temporalWeight) to those of the
 //     previous and the next event. Nothing extracts causes: no causal links.
+//     With edgeKinds, JEV's event edges of those kinds (semantic, temporal,
+//     causal, entity; event_edges.go) replace these thread links.
 //   - L1d supersedes: the records of a key's value link (supersedes, 1) to
 //     those of the value before it, when the two values differ. The index
 //     takes them as hints that expand, never as corrections that demote.
@@ -235,19 +237,32 @@ type edgeBuilder struct {
 	// pairs holds the record pairs given an entity link, either way: the
 	// index reads an entity link both ways, so each pair is written once.
 	pairs map[[2]string]bool
+	// kinds are the event edge kinds projected (edgeKinds), in
+	// eventEdgeKinds order; judged the record links their edges give, each
+	// with its highest weight (event_edges.go).
+	kinds  []string
+	judged map[judgedLink]float64
 }
 
 // buildEdges is the derived metadata of the records the states' memories
 // cite (see the top of this file), for the records in versions (id →
 // current record version): a record not in it gets no row, and no link
 // points to it. A name a state has not decided is a cluster of its own.
-// Entities, aliases and links are cut to the records' bounds, links
-// supersedes first, then the nearest.
-func buildEdges(states []timelineState, versions map[string]int64) map[string]records.DerivedMetadata {
-	b := &edgeBuilder{versions: versions, records: map[string]*recordEdges{}, pairs: map[[2]string]bool{}}
+// With kinds (edgeKinds), the event edges of those kinds that JEV decided
+// replace the thread links (projectEventEdges). Entities, aliases and
+// links are cut to the records' bounds, links supersedes first, then the
+// nearest, or, with kinds, the heaviest.
+func buildEdges(states []timelineState, versions map[string]int64, kinds []string) map[string]records.DerivedMetadata {
+	b := &edgeBuilder{versions: versions, records: map[string]*recordEdges{}, pairs: map[[2]string]bool{}, judged: map[judgedLink]float64{}}
+	for _, k := range eventEdgeKinds {
+		if slices.Contains(kinds, k.name) {
+			b.kinds = append(b.kinds, k.name)
+		}
+	}
 	for _, state := range states {
 		b.add(state)
 	}
+	b.placeJudged()
 	out := map[string]records.DerivedMetadata{}
 	for id, r := range b.records {
 		item := records.DerivedMetadata{Version: versions[id], Entities: r.entities[:min(maxEdgeNames, len(r.entities))], EventAt: r.eventAt}
@@ -333,7 +348,32 @@ func (b *edgeBuilder) add(state timelineState) {
 			cite(v.Records, v.Entities, v.Date)
 		}
 	}
-	// L1c: each thread's events in date order (ties in memory order).
+	// L1c: the decided event edges, or the thread links.
+	if len(b.kinds) > 0 {
+		b.addEventEdges(state)
+	} else {
+		b.threadLinks(m)
+	}
+	// L1d: a key's value supersedes the value before it when they differ.
+	for _, key := range m.FactOrder {
+		values := m.Facts[key]
+		for i := 1; i < len(values); i++ {
+			if values[i].Value == values[i-1].Value {
+				continue
+			}
+			for _, source := range values[i].Records {
+				for _, target := range values[i-1].Records {
+					b.link(source, target, "supersedes", supersedesWeight, 0)
+				}
+			}
+		}
+	}
+}
+
+// threadLinks collects the thread links of m: each thread's events in date
+// order (ties in memory order), each linked to its relationNeighbors
+// nearest (entity) and to the previous and the next (temporal).
+func (b *edgeBuilder) threadLinks(m timelineMemory) {
 	threads, events := eventThreads(m)
 	for _, id := range threads {
 		order := slices.Clone(events[id])
@@ -353,20 +393,6 @@ func (b *edgeBuilder) add(state timelineState) {
 							b.link(source, target, "temporal", temporalWeight, 1)
 						}
 					}
-				}
-			}
-		}
-	}
-	// L1d: a key's value supersedes the value before it when they differ.
-	for _, key := range m.FactOrder {
-		values := m.Facts[key]
-		for i := 1; i < len(values); i++ {
-			if values[i].Value == values[i-1].Value {
-				continue
-			}
-			for _, source := range values[i].Records {
-				for _, target := range values[i-1].Records {
-					b.link(source, target, "supersedes", supersedesWeight, 0)
 				}
 			}
 		}
@@ -492,10 +518,10 @@ func edgesDigest(m timelineMemory) string {
 	return reference("edges", string(raw)).Hash
 }
 
-// nativeEdges decides the new entity names of scope's state, replaces the
-// records' derived metadata with the edges of every stored state (the
-// scope's as it is in state) and saves the state, marked as built, when
-// that changed it. It holds the agent's edges lock, so a replacement always
+// nativeEdges decides the new entity names of scope's state, and with
+// edgeKinds its new events' edges, replaces the records' derived metadata
+// with the edges of every stored state (the scope's as it is in state) and
+// saves the state, marked as built, when that changed it. It holds the agent's edges lock, so a replacement always
 // reads the states the replacements before it saved.
 func (a *Agent) nativeEdges(ctx context.Context, scope records.Scope, state *timelineState, token *string, result *ConsolidateResult) error {
 	a.edges.Lock()
@@ -504,9 +530,18 @@ func (a *Agent) nativeEdges(ctx context.Context, scope records.Scope, state *tim
 	if err != nil {
 		return err
 	}
-	decided, err := a.newLinker().resolveAliases(ctx, state, result)
+	link := a.newLinker()
+	decided, err := link.resolveAliases(ctx, state, result)
 	if err != nil {
 		return err
+	}
+	kinds := a.config.Consolidation.EdgeKinds
+	if len(kinds) > 0 {
+		judged, err := link.decideEventEdges(ctx, state, kinds, result)
+		if err != nil {
+			return err
+		}
+		decided = decided || judged
 	}
 	states := []timelineState{}
 	for i, other := range stored {
@@ -531,7 +566,7 @@ func (a *Agent) nativeEdges(ctx context.Context, scope records.Scope, state *tim
 	if err != nil {
 		return err
 	}
-	items := buildEdges(states, versions)
+	items := buildEdges(states, versions, kinds)
 	if err := a.store.ReplaceDerivedMetadata(ctx, edgesSource, items); err != nil {
 		return err
 	}
