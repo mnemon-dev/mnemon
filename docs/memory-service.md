@@ -56,11 +56,13 @@ extracted at once. Then, strictly in batch order, JEV links each batch into the 
 memory (L1a): every new thread is compared with the `linkCandidates` (default 8, 1–32)
 stored threads nearest to it, every new key with the nearest stored keys (as
 `key: latest value`), nearest by the cosine of document embeddings when `embedding` is
-set, else by shared words. JEV answers whether the thread continues a candidate, whether
-the key is the same attribute of the same thing, and whether its value contradicts the
-candidate's latest without the records saying it changed. A thread joins its best yes
-(at least 0.5; ties go to the nearer candidate) or starts a thread; a key appends its
-values to its best yes or to the stored key of the same name, else starts a key, and a
+set (the stored texts' vectors are kept, the batch's own are not), else, or when the
+embedder fails, by shared words. JEV answers whether the thread continues a candidate,
+whether the key is the same attribute of the same thing, and whether its value
+contradicts the candidate's latest without the records saying it changed. A thread joins
+its best yes (at least 0.5; ties go to the nearer candidate) or starts a thread. A batch
+key with the same name as a stored key always links to it (only the contradiction
+question is asked); otherwise it links to its best yes, else starts a key. A
 contradiction marks the appended values as conflicts. Directives are de-duplicated as in
 timelines mode. The questions are packed into as few JEV calls as fit 128 questions and
 96,000 UTF-16 units. When a JEV call fails or its budget is spent, the batch links nothing
@@ -74,8 +76,10 @@ batch (up to `linkCandidates` questions per new thread and twice that per new ke
 most 128 a call); and embeddings of the new and changed thread and key texts. The result
 adds `linkCalls` and `linkUsage` (the JEV calls and their part of `usage`),
 `threadsLinked`/`threadsNew` and `keysLinked`/`keysNew` (extracted threads and keys that
-joined stored ones or started new ones), `conflicts` (joined keys JEV found contradicted)
-and `linkFallbacks` (batches linked without JEV).
+joined stored ones or started new ones), `conflicts` (joined keys JEV found contradicted),
+`linkFallbacks` (batches linked without JEV) and `linkLexical` (batches whose candidates
+shared words found because the embedder failed). Extractions run in parallel, so
+`modelMs`, which sums the time of every model call, can exceed the job's wall time.
 
 Native search/show/recall retain their access-count and operation-log effects.
 The new service returns the full typed search/recall structures; existing CLI
