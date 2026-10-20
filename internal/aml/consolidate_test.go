@@ -8,8 +8,10 @@ import (
 	"io/fs"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -212,6 +214,54 @@ func TestLayeredModeFoldsLikeTimelines(t *testing.T) {
 	items := h.search(t, SearchRequest{Query: question, UserID: "u1", TopK: 100})
 	if n := h.consolidator.calls.Load(); n != 2 || len(items) == 0 || !strings.HasPrefix(items[0].ID, "index:") || strings.Contains(h.log.String(), "failed") {
 		t.Fatal(n, items, h.log.String())
+	}
+}
+
+func TestLayeredInsightsFollowTheJobs(t *testing.T) {
+	// Two records fill a batch of 300 and give one event; five events fill
+	// an L2 batch.
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &memoryagent.ConsolidationConfig{Mode: "layered", BatchCharacters: 300, Insights: true}
+		config.ConsolidateOnAdd = true
+	})
+	var l0, l2 atomic.Int64
+	h.consolidator.answer(func(_ context.Context, prompt string) (string, error) {
+		if strings.HasPrefix(prompt, "New records:") {
+			l0.Add(1)
+			return `{"events":[{"thread":"new: Support group","date":"2023/05/08","text":"Caroline went to the LGBTQ support group.","records":["r0"]}]}`, nil
+		}
+		l2.Add(1)
+		ids := []string{}
+		for _, line := range strings.Split(prompt, "\n") {
+			ids = append(ids, strings.Fields(line)[0])
+		}
+		if len(ids) < 2 {
+			return `{"insights":[]}`, nil
+		}
+		return `{"insights":[{"text":"Caroline keeps going to the support group.","date":"2023/05/08","items":["` + ids[0] + `","` + ids[1] + `"]}]}`, nil
+	})
+	// The Adds' held jobs fold the full record batches, then the full L2
+	// batch of the first five events; the sixth event waits.
+	for i := 1; i <= 12; i++ {
+		h.mustAdd(t, addRequest(fmt.Sprintf("r%d", i), "u1"))
+	}
+	if l0.Load() != 6 || l2.Load() != 1 {
+		t.Fatal(l0.Load(), l2.Load(), h.log.String())
+	}
+	// The Search's flush folds L2's short rest, then reads the conclusion.
+	items := h.search(t, SearchRequest{Query: question, UserID: "u1", TopK: 100})
+	if l0.Load() != 6 || l2.Load() != 2 || strings.Contains(h.log.String(), "failed") {
+		t.Fatal(l0.Load(), l2.Load(), h.log.String())
+	}
+	if !slices.ContainsFunc(items, func(item SearchItem) bool {
+		return strings.HasPrefix(item.ID, "index:5-insights:") && item.Content == "Conclusions drawn from the memory:\n- (2023/05/08) Caroline keeps going to the support group."
+	}) {
+		t.Fatal(items)
+	}
+	// With nothing left to read, a Search folds nothing.
+	h.search(t, SearchRequest{Query: question, UserID: "u1", TopK: 100})
+	if l0.Load() != 6 || l2.Load() != 2 {
+		t.Fatal(l0.Load(), l2.Load())
 	}
 }
 
