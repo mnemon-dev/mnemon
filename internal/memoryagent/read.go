@@ -114,6 +114,9 @@ type ViewConfig struct {
 	// them on their merit (simple_expand.go). Unset, it stays out of the
 	// policy hash and the read is unchanged.
 	Expand *ExpandConfig `json:"expand,omitempty"`
+	// Order "time" lists the View's records in time order once the View is
+	// composed (simple_order.go); "" keeps the rank order.
+	Order string `json:"order,omitempty"`
 }
 
 // ExpandConfig sets the evidence expansion of a simple read. Kinds names the
@@ -259,9 +262,14 @@ type ReadStats struct {
 }
 
 type View struct {
-	Revision   string      `json:"revision"`
-	Policy     string      `json:"policy"`
-	Records    []Evidence  `json:"records"`
+	Revision string     `json:"revision"`
+	Policy   string     `json:"policy"`
+	Records  []Evidence `json:"records"`
+	// RankOrder is the records' ids in rank order when view.order lists the
+	// records in another order; nil otherwise. It is not serialized: a
+	// caller that cuts the records (the AML adapter's top_k) keeps the best
+	// ranked.
+	RankOrder  []string    `json:"-"`
 	Index      []IndexItem `json:"index,omitempty"`
 	Needs      []Need      `json:"needs"`
 	StopReason string      `json:"stopReason"`
@@ -371,6 +379,9 @@ func (v *ViewConfig) normalize() error {
 	}
 	if v.Intent != "" && v.Intent != viewIntentQuestion {
 		return errors.New("memory view requires intent \"\" or \"question\"")
+	}
+	if v.Order != "" && v.Order != viewOrderTime {
+		return errors.New("memory view requires order \"\" or \"time\"")
 	}
 	if v.Expand != nil {
 		return v.Expand.normalize()

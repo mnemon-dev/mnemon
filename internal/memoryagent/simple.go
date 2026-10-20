@@ -144,6 +144,23 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 			}
 		}
 	}
+	// With view.order "time" the composed View is listed in time order.
+	if a.config.View.Order == viewOrderTime {
+		ranked := []string{}
+		for _, record := range view.Records {
+			ranked = append(ranked, record.ID)
+		}
+		ordered, err := a.timeOrder(ctx, r.revision, view.Records)
+		if err != nil {
+			if ctx.Err() != nil {
+				return View{}, ctx.Err()
+			}
+			r.degrade("order")
+			view.Stats.Degraded = r.statsNow().Degraded
+			return view, nil
+		}
+		view.Records, view.RankOrder = ordered, ranked
+	}
 	return view, nil
 }
 
