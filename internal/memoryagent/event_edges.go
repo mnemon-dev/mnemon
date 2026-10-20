@@ -14,15 +14,16 @@ import (
 	"time"
 )
 
-// edgeKindOf is the kind of event edge a linking pair kind asks about.
-func edgeKindOf(pair int) eventEdgeKind {
-	for _, k := range eventEdgeKinds {
-		if k.pair == pair {
-			return k
-		}
-	}
-	panic(fmt.Sprintf("no event edge kind for pair kind %d", pair))
-}
+// Event edges (edgeKinds; stage 3 of
+// docs/superpowers/specs/2026-10-20-layered-consolidation-design.md) are
+// native mnemon's four graphs between consolidation events, every edge a
+// JEV decision: no similarity threshold ever links two events. For each
+// listed kind, the edge step (nativeEdges) asks about each event not yet
+// decided for it (decideEventEdges): up to LinkCandidates earlier events,
+// picked by the kind's rule (edgeCandidates), one yes/no question each.
+// The state keeps every answer, so a pair is asked once; the records'
+// derived metadata gets each yes as links between the two events' records
+// (addEventEdges, placeJudged), in place of the thread links of edges.go.
 
 // eventEdgeKind is a kind of event edge: its name (the records' link type),
 // its linking pair kind, the key prefix of its questions, its question about
@@ -41,6 +42,16 @@ var eventEdgeKinds = []eventEdgeKind{
 	{name: "temporal", pair: linkTemporal, key: "et", question: temporalQuestion, yes: temporalYes, no: temporalNo},
 	{name: "causal", pair: linkCausal, key: "ec", question: causalQuestion, yes: causalYes, no: causalNo},
 	{name: "entity", pair: linkEntity, key: "en", question: entityQuestion, yes: entityYes, no: entityNo},
+}
+
+// edgeKindOf is the kind of event edge a linking pair kind asks about.
+func edgeKindOf(pair int) eventEdgeKind {
+	for _, k := range eventEdgeKinds {
+		if k.pair == pair {
+			return k
+		}
+	}
+	panic(fmt.Sprintf("no event edge kind for pair kind %d", pair))
 }
 
 // The event edge questions, in the style of the linking questions.
@@ -260,7 +271,8 @@ func eventItem(id string, n eventNode, titles map[string]string) linkItem {
 // decided events' kept in the derived vector cache, the new ones' not),
 // else, or when embedding fails, shared words (rankWith). A pair answered
 // before is not asked again. The questions of all kinds are packed into
-// few calls (judge), the new event's text in "new", its candidates' in
+// few calls (judge); JEV reads each event as its date, thread title, text
+// and names (eventItem), the new ones in "new", their candidates in
 // "candidates". A yes (at least 0.5) is an edge weighted by its
 // probability, to two decimals; a no is kept as 0. A pair whose call failed
 // (an error or a spent budget, which ends the asking, or no decision model)

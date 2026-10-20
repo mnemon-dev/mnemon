@@ -249,9 +249,9 @@ type edgeBuilder struct {
 // current record version): a record not in it gets no row, and no link
 // points to it. A name a state has not decided is a cluster of its own.
 // With kinds (edgeKinds), the event edges of those kinds that JEV decided
-// replace the thread links (projectEventEdges). Entities, aliases and
-// links are cut to the records' bounds, links supersedes first, then the
-// nearest, or, with kinds, the heaviest.
+// replace the thread links (addEventEdges, placeJudged). Entities, aliases
+// and links are cut to the records' bounds, links supersedes first, then
+// the nearest, or, with kinds, the heaviest.
 func buildEdges(states []timelineState, versions map[string]int64, kinds []string) map[string]records.DerivedMetadata {
 	b := &edgeBuilder{versions: versions, records: map[string]*recordEdges{}, pairs: map[[2]string]bool{}, judged: map[judgedLink]float64{}}
 	for _, k := range eventEdgeKinds {
@@ -521,8 +521,9 @@ func edgesDigest(m timelineMemory) string {
 // nativeEdges decides the new entity names of scope's state, and with
 // edgeKinds its new events' edges, replaces the records' derived metadata
 // with the edges of every stored state (the scope's as it is in state) and
-// saves the state, marked as built, when that changed it. It holds the agent's edges lock, so a replacement always
-// reads the states the replacements before it saved.
+// saves the state, marked as built, when that changed it. It holds the
+// agent's edges lock, so a replacement always reads the states the
+// replacements before it saved.
 func (a *Agent) nativeEdges(ctx context.Context, scope records.Scope, state *timelineState, token *string, result *ConsolidateResult) error {
 	a.edges.Lock()
 	defer a.edges.Unlock()

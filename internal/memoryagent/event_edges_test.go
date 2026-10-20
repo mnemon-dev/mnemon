@@ -826,3 +826,41 @@ func TestEdgeKindsOffKeepsTheState(t *testing.T) {
 		}
 	}
 }
+
+func TestEventEdgePackingBounds(t *testing.T) {
+	// Forty long events of one thread, all naming Greg, every kind: each
+	// event after the eighth has eight candidates a kind, and the questions
+	// take many calls, each within 128 questions and 96,000 units, each
+	// question naming items its call holds.
+	m := timelineMemory{Threads: []thread{{ID: "T1", Title: "Cabin trip"}}, Facts: map[string][]factValue{}, FactOrder: []string{}, Directives: []directive{}}
+	long := strings.Repeat("渡し舟の予定 cabin ", 100)
+	for i := range 40 {
+		m.Events = append(m.Events, event{Thread: "T1", Date: fmt.Sprintf("2024/%02d/%02d", i/28+1, i%28+1), Text: fmt.Sprintf("event %d %s", i, long), Records: []string{fmt.Sprintf("r%d", i)}, Entities: []string{"Greg", strings.Repeat("Name ", 200)}})
+	}
+	judge := edgeAnswers(nil)
+	result := &ConsolidateResult{}
+	if _, err := linkAgent(t, judge, 8, nil).newLinker().decideEventEdges(context.Background(), linkState0(m), allEdgeKinds, result); err != nil || result.EdgeFallbacks != 0 {
+		t.Fatal(err, result)
+	}
+	questions := 0
+	for _, call := range judge.calls {
+		if len(call.Questions) > 128 || call.Size > maxJEVRequest {
+			t.Fatal("call over the limits", len(call.Questions), call.Size)
+		}
+		for _, item := range append(slices.Clone(call.State.New), call.State.Candidates...) {
+			if jsLen(item.Text) > 600 || jsLen(item.Entities[1]) > 600 {
+				t.Fatal("a text was not cut", jsLen(item.Text))
+			}
+		}
+		questions += len(call.Questions)
+	}
+	asked := 0
+	for _, n := range result.EdgeAsked {
+		asked += n
+	}
+	// 4 kinds × (0+1+…+8 + 31×8) = 4 × 284.
+	if questions != 1136 || asked != questions || judge.count() != result.EdgeCalls || judge.count() <= 1136/128 {
+		t.Fatal(questions, asked, judge.count(), result.EdgeCalls)
+	}
+	askedPairs(t, judge.calls)
+}
