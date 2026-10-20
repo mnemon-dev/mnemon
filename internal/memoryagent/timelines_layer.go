@@ -48,8 +48,10 @@ const (
 )
 
 // layerBlocksMax is the most characters the layer's blocks can take: each
-// block's budget, and the two headers counted outside theirs.
-var layerBlocksMax = layerInstructions + layerDirectory + layerTimelines + layerValues + jsLen(timelinesHead) + jsLen(valuesHead)
+// block's budget, the two headers counted outside theirs, and the "\n\n"
+// before a thread, added after the thread is fitted to the room left, by
+// which the timelines can pass their budget once (by 2).
+var layerBlocksMax = layerInstructions + layerDirectory + layerTimelines + 2 + layerValues + jsLen(timelinesHead) + jsLen(valuesHead)
 
 // eventThreads is the author's threadsOf (C:184-188) as event indexes, and
 // the threads that have events, in memory order.

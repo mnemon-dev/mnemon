@@ -540,3 +540,24 @@ func TestExpansionCoverageFailureDegrades(t *testing.T) {
 		t.Fatal(err, len(got), r.stats)
 	}
 }
+
+// The timelines block can pass its budget by the "\n\n" before a thread,
+// added after the thread is fitted to the room left (the review's probe):
+// layerBlocksMax holds every block at its most.
+func TestLayerBlocksMax(t *testing.T) {
+	m := timelineMemory{Facts: map[string][]factValue{}, FactOrder: []string{}}
+	m.Threads = []thread{{ID: "A", Title: "A"}, {ID: "B", Title: "B"}, {ID: "C", Title: "C"}}
+	m.Events = []event{
+		{Thread: "A", Date: "2023/05/08", Text: strings.Repeat("a", 1476)},
+		{Thread: "B", Date: "2023/05/08", Text: strings.Repeat("b", 1476)},
+		{Thread: "C", Date: "2023/05/08", Text: strings.Repeat("c", 474)},
+	}
+	blocks := composeLayer(m, []string{"A", "B", "C"}, nil, litSets{Events: map[int]bool{}})
+	timelines := slices.IndexFunc(blocks, func(b IndexItem) bool { return b.ID == "3-timelines" })
+	if timelines < 0 || jsLen(blocks[timelines].Text) != layerTimelines+2+jsLen(timelinesHead) {
+		t.Fatal(blocks)
+	}
+	if layerBlocksMax != layerInstructions+layerDirectory+layerTimelines+2+layerValues+jsLen(timelinesHead)+jsLen(valuesHead) || layerBlocksMax != 8059 {
+		t.Fatal(layerBlocksMax)
+	}
+}

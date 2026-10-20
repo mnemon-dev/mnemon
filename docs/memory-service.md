@@ -119,7 +119,7 @@ every instance) and a record of the View compose would show without the expansio
 it in the need table (≥ 0.5; the screen for an untabled single need), as `needs[]`
 reports `hasEvidence`. That View is compose's selection (fusion's when set); with the
 timelines layer only its leading records within the View's characters less the most the
-layer's blocks can take (8,057) count, since the layer's character trim, which depends on
+layer's blocks can take (8,059) count, since the layer's character trim, which depends on
 its own model calls, can never drop those. It makes no model call. (`needs[].covered`
 remains the need loop's own state.)
 
