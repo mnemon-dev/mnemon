@@ -23,19 +23,20 @@ stages that fell back instead of failing the read, each once and in order: `scan
 and `loop-budget` (the decision budget ran out and the need loop stopped), `judge` (the
 final judgement failed or found the budget spent; JEV's screen stands in), `layer-state`
 (the consolidated state did not load; no layer), `layer-lexical` (the layer's embedding
-failed; shared words rank the topics), `layer` (the layer's judgement failed), `expand`
-(records linked from the layer could not be read or judged), `expansion` (the
-`view.expand` candidates could not all be read or judged, the events' state did not
-load, or `gate` and `target` could not read the View whose coverage of the needs they
-check, so that nothing counts as covered; see below), `expansion-lexical` (the events'
-embedding failed or left vectors missing; shared words ranked them), `expansion-target`
-(`target`'s need table was skipped for the budget or failed) and `order` (`view.order`
-could not read the records' write positions; the View stays in rank order). It is absent
-when nothing fell back, and always for memory-agent/v1. With an `index` setting, a simple
-read's `stats.indexRoutes` counts, for each native route (`lexical`, `entities`,
-`relations`, `temporal`, `supersedes`, `recency`, `traversal`), the read's searches in
-which that route found a candidate, and under `traversal+` the searches whose traversal
-reached a record over a link (not only its anchors).
+failed; shared words rank the topics, or the entities of `profiles`), `layer` (the layer's
+judgement failed), `layer-profiles` (the judgement of `profiles` failed or the decision
+budget could not pay for it; no profiles), `expand` (records linked from the layer could
+not be read or judged), `expansion` (the `view.expand` candidates could not all be read or
+judged, the events' state did not load, or `gate` and `target` could not read the View
+whose coverage of the needs they check, so that nothing counts as covered; see below),
+`expansion-lexical` (the events' embedding failed or left vectors missing; shared words
+ranked them), `expansion-target` (`target`'s need table was skipped for the budget or
+failed) and `order` (`view.order` could not read the records' write positions; the View
+stays in rank order). It is absent when nothing fell back, and always for memory-agent/v1.
+With an `index` setting, a simple read's `stats.indexRoutes` counts, for each native route
+(`lexical`, `entities`, `relations`, `temporal`, `supersedes`, `recency`, `traversal`), the
+read's searches in which that route found a candidate, and under `traversal+` the searches
+whose traversal reached a record over a link (not only its anchors).
 
 `"view": {"intent": "question"}` makes a simple read detect the intent of its `question`
 once (native recall's WHY, WHEN, ENTITY or GENERAL detection) and pass it as `input.intent`
@@ -72,14 +73,48 @@ while 400 characters are left, and at most 8 join.
 
 `"view": {"layer": "scaled"}` multiplies every one of those budgets by the View's scale s =
 max(1, ⌊`maxCharacters` / 12,000⌋), 20 for a View of 240,000 characters: the instructions,
-the directory, the timelines and each topic's timeline, and the values. What the layer
-selects does not change: the same topics and values are judged by the same JEV call and
-chosen in the same order, the 300-character floor and the linked-record limits stay, and
-only what each chosen item may show grows. The linked records are those of what the blocks
-show, so a scaled layer that shows events the reference budgets cut can judge other linked
-records. Absent or `""`, the reference budgets apply and reads and the policy hash are
-unchanged; other values are refused, and so is `"scaled"` without timelines or layered
-consolidation and the policy's `consolidation`.
+the directory, the timelines and each topic's timeline, the values, and with `profiles`
+their block and each profile. What the layer selects does not change: the same topics and
+values are judged by the same JEV call and chosen in the same order, the 300-character
+floor and the linked-record limits stay, and only what each chosen item may show grows. The
+linked records are those of what the blocks show, so a scaled layer that shows events the
+reference budgets cut can judge other linked records. Absent or `""`, the reference budgets
+apply and reads and the policy hash are unchanged; other values are refused, and so is
+`"scaled"` without timelines or layered consolidation and the policy's `consolidation`.
+
+`"view": {"profiles": true}` adds a fifth block, `5-profiles`, after the values: profiles
+of the people and things the consolidated events and values name, as layered extraction
+lists them (their `entities`). Names are grouped by a key, the name lowercased, its
+whitespace collapsed, a version token (a word such as `3.11` or `v18.2`) removed and its
+outer punctuation trimmed (`#` stays, as in C#), and a profile shows the most frequent
+spelling without its version token (ties: the first seen). An entity's items are the events
+naming it and the keys with a value naming it. The candidates are the entities the View's
+records light up (those of the lit events and of the lit keys' values), most anchor links
+first (ties: the first lit), then the 12 entities nearest the last user message, each once.
+Nearness is by meaning, the embedding of each entity's text, built like a topic's
+(`<name>: N events, <first> to <last>. Latest: …`, its latest three events; for an entity
+only values name, its last three keys' latest values), or by shared words without an
+embedder, when embedding fails, or when the topics were ranked by shared words. JEV judges
+the candidates in a call of its own (source `entity`, 40 a call), so the topics' and
+values' call is the same request with profiles or without: profiles add one JEV call to
+each read whose memory names an entity, and none to one that names none (a timelines state,
+which shows no profiles). The block shows, under
+`Profiles of the people and things this concerns:` and separated by a blank line, the
+profiles of the entities JEV calls needed (at least 0.5), best first, then of the other lit
+entities by their anchor links: `Profile: <name>`, then after `- Facts:` a line
+`<key>: <latest value> (<date>, earlier <n> values)` per key (the date of its latest value,
+and the count of its other values when it had some), then `- <date>: <text>` per event, by
+date. The block takes 3,500 characters, each profile at most 1,500 of what is left and none
+begun with less than 300 left (with `layer` `"scaled"`, 3,500 × s and 1,500 × s; the floor
+stays), the header outside them; a profile over its room keeps the lines of the lit keys
+and events first, then the newest lines that fit, shown in order. Like the other blocks it
+counts toward `maxCharacters`, and the records of the latest values and events it shows
+join the linked records the layer may add. `stats.layerProfiles` counts the profiles shown.
+A judgement that fails, or that the read's decision budget cannot pay for whole, shows no
+profiles and names `layer-profiles` in `stats.degraded`. `WarmLayer` embeds the entity
+texts with the layer's. Absent or false, reads and the policy hash are unchanged; the
+setting is refused without timelines or layered consolidation and the policy's
+`consolidation`.
 
 `"view": {"expand": {"kinds": ["adjacent", "causal", "events"], "limit": 24, "seeds": 16}}`
 adds evidence-anchored expansion to a simple read. The cue searches, the pool, the need loop
@@ -156,15 +191,16 @@ evaluate the evidence before expanding, score each candidate for new information
 output slots for expansions). Each is off when absent, and the read is then unchanged. Gate
 and target share one coverage: a need is covered when it is not an ALL need (one wants
 every instance) and a record of the View compose would show without the expansion answers
-it in the need table (≥ 0.5; the screen for an untabled single need), as `needs[]`
-reports `hasEvidence`. That View is compose's selection (fusion's when set); with the
-timelines layer only its leading records within the View's characters less the most the
-layer's blocks can take (8,059; with `layer` `"scaled"`, 8,000 × s + 59) count, since the
-layer's character trim, which depends on its own model calls, can never drop those. It makes no model call. Under fusion it reads
-the evidence of the raw hits that were not pooled, as compose does, and counts that time
-in `queryMs`; when that read fails, `expansion` is named in `stats.degraded`, nothing
-counts as covered, and so the gate does not skip. (`needs[].covered` remains the need
-loop's own state.)
+it in the need table (≥ 0.5; the screen for an untabled single need), as `needs[]` reports
+`hasEvidence`. That View is compose's selection (fusion's when set); with the timelines
+layer only its leading records within the View's characters less the most the layer's
+blocks can take (8,059; with `layer` `"scaled"`, 8,000 × s + 59; with `profiles`, 3,551
+more, or 3,500 × s + 51 when scaled) count, since the layer's character trim, which depends
+on its own model calls, can never drop those. It makes no model call. Under fusion it reads
+the evidence of the raw hits that were not pooled, as compose does, and counts that time in
+`queryMs`; when that read fails, `expansion` is named in `stats.degraded`, nothing counts
+as covered, and so the gate does not skip. (`needs[].covered` remains the need loop's own
+state.)
 
 | Setting | Values | Jev-Mem step | What it does |
 |---|---|---|---|
