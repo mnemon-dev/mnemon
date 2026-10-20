@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -167,20 +168,21 @@ func (s *Store) Query(ctx context.Context, req QueryRequest) (QueryResult, error
 }
 
 func (s *Store) rankSelection(ctx context.Context, hash string, req QueryRequest, selection *querySelection) (QueryResult, error) {
-	result, _, err := s.rankSelectionVector(ctx, hash, req, selection)
+	result, _, err := s.rankSelectionCosines(ctx, hash, req, selection, false)
 	return result, err
 }
 
-// rankSelectionVector is rankSelection that also returns the query's vector
-// when a hybrid match embedded it, else nil.
-func (s *Store) rankSelectionVector(ctx context.Context, hash string, req QueryRequest, selection *querySelection) (QueryResult, []float32, error) {
+// rankSelectionCosines is rankSelection that, with keep, also returns the
+// cosines of a hybrid match: every selection record's with the query, in
+// the selection's order; else nil.
+func (s *Store) rankSelectionCosines(ctx context.Context, hash string, req QueryRequest, selection *querySelection, keep bool) (QueryResult, []scored, error) {
 	query := stringValue(req.Input["query"])
 	term := lower(query)
 	match := stringValue(req.Input["match"])
 	words := (match == "words" || match == "hybrid") && term != ""
 	records := selection.docs
 	var err error
-	var vector []float32
+	var cosines []scored
 	result := QueryResult{IDs: []string{}}
 	if words {
 		index, precomputed, err := s.queryLexical(ctx, hash, req, selection, term)
@@ -196,14 +198,18 @@ func (s *Store) rankSelectionVector(ctx context.Context, hash string, req QueryR
 		}
 		result.IDs = index.searchN(term, limit)
 		if match == "hybrid" && req.Embedding != nil {
-			if vector, err = s.queryVector(ctx, query, *req.Embedding); err != nil {
-				return QueryResult{}, nil, err
-			}
-			semantic, err := s.selectionVectorRankOf(ctx, vector, selection, *req.Embedding)
+			target, err := s.queryVector(ctx, query, *req.Embedding)
 			if err != nil {
 				return QueryResult{}, nil, err
 			}
-			result.IDs = fuse(result.IDs, semantic)
+			hits, err := s.selectionCosines(ctx, target, selection, *req.Embedding)
+			if err != nil {
+				return QueryResult{}, nil, err
+			}
+			if keep {
+				cosines = slices.Clone(hits) // rank reorders hits
+			}
+			result.IDs = fuse(result.IDs, rank(hits, 200))
 		}
 		if trueValue(req.Input["expand"]) && req.Input["cursor"] == nil {
 			ids := result.IDs
@@ -225,5 +231,5 @@ func (s *Store) rankSelectionVector(ctx context.Context, hash string, req QueryR
 			return QueryResult{}, nil, err
 		}
 	}
-	return result, vector, nil
+	return result, cosines, nil
 }

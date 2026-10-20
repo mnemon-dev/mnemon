@@ -102,12 +102,10 @@ type derivedIndex struct {
 	words        map[string][]string
 	links        map[string][]Link
 	replacements map[string][]Link
-	// recent is the recency route of an index with Recency; position each
-	// record's place in docs and named its indexed entities, for one with
-	// Traversal (recall.go).
-	recent   []string
-	position map[string]int
-	named    map[string][]string
+	// recent is the recency route of an index with Recency; named each
+	// record's indexed entities, for one with Traversal (recall.go).
+	recent []string
+	named  map[string][]string
 }
 
 func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult, error) {
@@ -128,7 +126,7 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 	}
 	// Later caches are keyed by the overlay the index was built from.
 	req.derived = index.generation
-	result, vector, err := s.rankSelectionVector(ctx, hash, req, selection)
+	result, cosines, err := s.rankSelectionCosines(ctx, hash, req, selection, req.Index.Traversal)
 	if err != nil {
 		return QueryResult{}, err
 	}
@@ -158,11 +156,10 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 	if req.Index.Recency {
 		appendRoute("recency", index.recent)
 	}
-	seeds := fuse(lists...)
-	var anchors []scored
-	if req.Index.Traversal {
-		anchors = recallSeeds(seeds, lists)
-	}
+	// The fused seeds, with their reciprocal-rank scores: traversal's anchors
+	// are the first twenty, as native's carry their RRF scores.
+	fused := fuseRanked(lists...)
+	seeds := scoredIDs(fused)
 	intent := retrieval.DetectIntent(query)
 	if raw := stringValue(req.Input["intent"]); raw != "" {
 		intent, err = retrieval.IntentFromString(raw)
@@ -174,18 +171,20 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 		appendRoute("relations", index.related(seeds, intent, false, limit))
 	}
 	if req.Index.Traversal {
-		// Semantic scores need the query's vector, which only a hybrid base
-		// route has, and read stored vectors only: traversal never embeds.
+		// Semantic scores are the hybrid base route's cosines (none without
+		// one): traversal neither embeds nor reads vectors.
 		q := recallQuery{intent: intent, tokens: retrieval.Tokenize(query), limit: limit}
 		q.entities, _ = index.queryEntities(query, req.Input["entities"])
-		if vector != nil {
-			q.similarity = s.storedSimilarity(ctx, index, *req.Embedding, vector)
+		if cosines != nil {
+			q.similar = &similarities{cosines: cosines, at: selection.byID}
 		}
-		route, err := index.recall(ctx, anchors, q)
+		route, reached, err := index.recall(ctx, fused[:min(recallAnchors, len(fused))], q)
 		if err != nil {
 			return QueryResult{}, err
 		}
 		appendRoute("traversal", route)
+		// The route's records that links reached, not anchors: real expansion.
+		info.Routes["traversal+"] = reached
 	}
 	if req.Index.Supersedes && !trueValue(req.Input["history"]) && req.Input["until"] == nil {
 		appendRoute("supersedes", index.related(seeds, intent, true, limit))

@@ -87,134 +87,75 @@ func (index *derivedIndex) newest(n int) []string {
 	return out
 }
 
-// recallSeeds is traversal's anchors: the first twenty fused seeds with
-// their reciprocal-rank scores, as native's anchors carry their RRF scores.
-func recallSeeds(seeds []string, lists [][]string) []scored {
-	score := map[string]float64{}
-	for _, hit := range fusedHits(lists...) {
-		score[hit.id] = hit.score
-	}
-	anchors := make([]scored, 0, recallAnchors)
-	for _, id := range seeds[:min(recallAnchors, len(seeds))] {
-		anchors = append(anchors, scored{id, score[id]})
-	}
-	return anchors
-}
-
-// storedSimilarity scores records by the cosine of their stored vectors
-// with the query's (the vectors are unit length). It reads the in-memory and
-// on-disk embedding caches only and never embeds; a record without a stored
-// vector, or of another dimension, has none.
-func (s *Store) storedSimilarity(ctx context.Context, index *derivedIndex, cfg EmbeddingConfig, query []float32) func([]string) (map[string]float64, error) {
-	return func(ids []string) (map[string]float64, error) {
-		known, texts := []string{}, []string{}
-		for _, id := range ids {
-			if at, ok := index.position[id]; ok {
-				known = append(known, id)
-				texts = append(texts, index.docs[at].VectorText)
-			}
-		}
-		values, err := s.vectors(ctx, texts, cfg, cfg.DocumentPrefix, false)
-		if err != nil {
-			return nil, err
-		}
-		out := make(map[string]float64, len(known))
-		for i, value := range values {
-			if value == nil {
-				continue
-			}
-			if similarity := dot(query, value); !math.IsNaN(similarity) {
-				out[known[i]] = similarity
-			}
-		}
-		return out, nil
-	}
-}
-
-// similarities memoizes one query's cosines with stored record vectors,
-// shared by the beam search and the re-ranking (native's recallCache). With
-// no reader every cosine is 0.
+// similarities is one query's cosines with the records' vectors: those the
+// hybrid base route computed for every record of the selection, in its
+// order (native's cache.similarities, which beam search and re-ranking
+// share). nil when the query has no vector.
 type similarities struct {
-	read  func([]string) (map[string]float64, error)
-	known map[string]float64
-	any   bool // some record read had a stored vector
+	cosines []scored       // the selection's docs, in order
+	at      map[string]int // a record's place in cosines (the selection's byID)
 }
 
-// stored reports whether some record read had a stored vector: native's
-// "embeddings are available", which selects its re-ranking weights.
-func (s *similarities) stored() bool { return s != nil && s.any }
-
-// load reads the cosines of ids not read yet, in one call.
-func (s *similarities) load(ids []string) error {
-	if s == nil || s.read == nil {
-		return nil
-	}
-	if s.known == nil {
-		s.known = map[string]float64{}
-	}
-	missing, asked := []string{}, map[string]bool{}
-	for _, id := range ids {
-		if _, ok := s.known[id]; !ok && !asked[id] {
-			asked[id] = true
-			missing = append(missing, id)
-		}
-	}
-	if len(missing) == 0 {
-		return nil
-	}
-	found, err := s.read(missing)
-	if err != nil {
-		return err
-	}
-	for _, id := range missing {
-		s.known[id] = found[id]
-	}
-	s.any = s.any || len(found) > 0
-	return nil
-}
-
-// of is a loaded cosine, counted only when positive as native's are.
+// of is a record's cosine, counted only when positive as native's are; 0
+// for a record the cosines do not cover.
 func (s *similarities) of(id string) float64 {
-	if s == nil || s.known[id] <= 0 {
+	if s == nil {
 		return 0
 	}
-	return s.known[id]
+	at, ok := s.at[id]
+	if !ok || at >= len(s.cosines) || s.cosines[at].id != id || !(s.cosines[at].score > 0) {
+		return 0
+	}
+	return s.cosines[at].score
+}
+
+// available is native's test for its re-ranking weights, "some embedding
+// was compared with the query" (len(similarities) > 0): some record has a
+// cosine, of any sign. A NaN marks a vector of another dimension.
+func (s *similarities) available() bool {
+	if s == nil {
+		return false
+	}
+	for _, c := range s.cosines {
+		if !math.IsNaN(c.score) {
+			return true
+		}
+	}
+	return false
 }
 
 // recallQuery is what the re-ranking compares each collected record with.
 type recallQuery struct {
-	intent     retrieval.Intent
-	tokens     map[string]bool // the query's tokens (retrieval.Tokenize)
-	entities   []string        // the query's entities as the index resolves them
-	similarity func([]string) (map[string]float64, error)
-	limit      int
+	intent   retrieval.Intent
+	tokens   map[string]bool // the query's tokens (retrieval.Tokenize)
+	entities []string        // the query's entities as the index resolves them
+	similar  *similarities
+	limit    int
 }
 
 // recall is native Smart Recall from the anchors on (recall.go
 // IntentAwareRecallFrom, steps 3–5): the beam search collects records, every
 // collected record (anchors included) is re-ranked by four signals, the
-// best limit are kept, and for WHY they are put in causal order. The result
-// is the traversal route.
+// best limit are kept, and for WHY they are put in causal order. It returns
+// the traversal route and how many of its records are not anchors (reached
+// over links).
 //
 // The signals, each in [0, 1] as native's: keyword, the share of the query's
 // tokens in the record's search text (the lexical index's tokenizer);
-// entity, the query's entities the record names over max(1, their number);
-// similarity, the cosine of the stored vectors (0 without one); graph, the
-// beam search's score, min-max normalized over the collected records.
-func (index *derivedIndex) recall(ctx context.Context, anchors []scored, q recallQuery) ([]string, error) {
-	similar := &similarities{read: q.similarity}
-	best, err := index.traverse(ctx, anchors, q.intent, similar)
+// entity, the query's entities the record names over max(1, their number),
+// names compared without case and counted once; similarity, the base
+// route's cosine (0 without one); graph, the beam search's score, min-max
+// normalized over the collected records.
+func (index *derivedIndex) recall(ctx context.Context, anchors []scored, q recallQuery) ([]string, int, error) {
+	best, err := index.traverse(ctx, anchors, q.intent, q.similar)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	ids := make([]string, 0, len(best))
 	for id := range best {
 		ids = append(ids, id)
 	}
 	slices.Sort(ids)
-	if err := similar.load(ids); err != nil {
-		return nil, err
-	}
 	keyword := map[string]int{}
 	for token := range q.tokens {
 		for _, id := range index.words[token] {
@@ -229,14 +170,15 @@ func (index *derivedIndex) recall(ctx context.Context, anchors []scored, q recal
 	}
 	candidates := make(map[string]recallSignals, len(best))
 	for _, id := range ids {
-		signals := recallSignals{similarity: similar.of(id), graph: best[id]}
+		signals := recallSignals{similarity: q.similar.of(id), graph: best[id]}
 		if len(q.tokens) > 0 {
 			signals.keyword = float64(keyword[id]) / float64(len(q.tokens))
 		}
 		if len(entities) > 0 {
-			matched := 0
+			matched, seen := 0, map[string]bool{}
 			for _, entity := range index.named[id] {
-				if entities[strings.ToLower(entity)] {
+				if name := strings.ToLower(entity); entities[name] && !seen[name] {
+					seen[name] = true
 					matched++
 				}
 			}
@@ -244,12 +186,22 @@ func (index *derivedIndex) recall(ctx context.Context, anchors []scored, q recal
 		}
 		candidates[id] = signals
 	}
-	ranked := rerankRecall(candidates, similar.stored())
+	ranked := rerankRecall(candidates, q.similar.available())
 	ranked = ranked[:min(q.limit, len(ranked))]
 	if q.intent == retrieval.IntentWhy {
 		ranked = index.causalOrder(ranked)
 	}
-	return ranked, nil
+	isAnchor := make(map[string]bool, len(anchors))
+	for _, anchor := range anchors {
+		isAnchor[anchor.id] = true
+	}
+	reached := 0
+	for _, id := range ranked {
+		if !isAnchor[id] {
+			reached++
+		}
+	}
+	return ranked, reached, nil
 }
 
 // recallSignals is a collected record's re-ranking signals; graph holds the
@@ -405,16 +357,14 @@ func (index *derivedIndex) traverse(ctx context.Context, anchors []scored, inten
 		// From the anchor's own score, as native's beamSearchFromAnchor, not
 		// from best, which an earlier anchor's path may have raised: the
 		// anchors' order does not change the result.
-		if err := t.beam(anchor.id, normalized(anchor.score), budget, best); err != nil {
-			return nil, err
-		}
+		t.beam(anchor.id, normalized(anchor.score), budget, best)
 	}
 	return best, nil
 }
 
 // beam is native's beamSearchFromAnchor: visited and the visit budget belong
 // to this anchor, best to the query.
-func (t *traversal) beam(start string, score float64, budget traversalBudget, best map[string]float64) error {
+func (t *traversal) beam(start string, score float64, budget traversalBudget, best map[string]float64) {
 	visited := map[string]bool{start: true}
 	total := 1
 	current := []scored{{start, score}}
@@ -427,11 +377,7 @@ func (t *traversal) beam(start string, score float64, budget traversalBudget, be
 			if total >= budget.visited {
 				break
 			}
-			steps, err := t.stepsFrom(node.id)
-			if err != nil {
-				return err
-			}
-			for _, step := range steps {
+			for _, step := range t.stepsFrom(node.id) {
 				if total >= budget.visited {
 					break
 				}
@@ -450,23 +396,15 @@ func (t *traversal) beam(start string, score float64, budget traversalBudget, be
 		slices.SortFunc(next, compareScore)
 		current = next[:min(budget.width, len(next))]
 	}
-	return nil
 }
 
 // stepsFrom is native's rankRecallTransitions: the node's traversable
 // links, best step first (ties by id, then type), computed once per query.
-func (t *traversal) stepsFrom(id string) ([]traversalStep, error) {
+func (t *traversal) stepsFrom(id string) []traversalStep {
 	if steps, ok := t.steps[id]; ok {
-		return steps, nil
+		return steps
 	}
 	links := t.links[id]
-	targets := make([]string, len(links))
-	for i, link := range links {
-		targets[i] = link.ID
-	}
-	if err := t.similar.load(targets); err != nil {
-		return nil, err
-	}
 	steps := make([]traversalStep, 0, len(links))
 	for _, link := range links {
 		weight, ok := t.weights[link.Type]
@@ -492,5 +430,5 @@ func (t *traversal) stepsFrom(id string) ([]traversalStep, error) {
 		return strings.Compare(a.kind, b.kind)
 	})
 	t.steps[id] = steps
-	return steps, nil
+	return steps
 }

@@ -532,7 +532,16 @@ func TestReadSimpleQuestionIntent(t *testing.T) {
 	if view.Stats.Searches != 3 || !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"lexical": 3, "relations": 3}) || view.Stats.Intent != "WHEN" {
 		t.Fatal(view.Stats)
 	}
-	// The native recall routes are counted like the others.
+	// The native recall routes are counted like the others; traversal+
+	// counts the searches whose traversal reached a record over a link.
+	view = read(&ViewConfig{Intent: "question"}, &records.IndexPolicy{Version: 1, Traversal: true})
+	if !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"traversal": 3, "traversal+": 3}) {
+		t.Fatal(view.Stats)
+	}
+	// Without links traversal holds its anchors alone: no traversal+.
+	if err := s.ReplaceDerivedMetadata(context.Background(), "consolidation", nil); err != nil {
+		t.Fatal(err)
+	}
 	view = read(&ViewConfig{Intent: "question"}, &records.IndexPolicy{Version: 1, Traversal: true})
 	if !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"traversal": 3}) {
 		t.Fatal(view.Stats)

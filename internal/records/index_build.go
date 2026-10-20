@@ -82,7 +82,7 @@ func (s *Store) buildDerived(ctx context.Context, rev int64, all []record, req Q
 	docs := candidates(all, input, "", true)
 	index := &derivedIndex{meta: map[string]indexDocument{}, entities: map[string][]string{}, known: map[string]bool{}, words: map[string][]string{}, links: map[string][]Link{}, replacements: map[string][]Link{}}
 	if req.Index.Traversal {
-		index.position, index.named = map[string]int{}, map[string][]string{}
+		index.named = map[string][]string{}
 	}
 	metadata, generation, err := s.indexMetadata(ctx, rev, docs, req.derived)
 	if err != nil {
@@ -107,9 +107,6 @@ func (s *Store) buildDerived(ctx context.Context, rev int64, all []record, req Q
 		}
 		index.docs = append(index.docs, r)
 		index.meta[r.ID] = indexDocument{meta: meta, at: at}
-		if req.Index.Traversal {
-			index.position[r.ID] = len(index.docs) - 1
-		}
 		// Traversal's re-ranking reads the entity and word indexes too
 		// (recall.go), and each record's entities.
 		if req.Index.Entities || req.Index.Traversal {

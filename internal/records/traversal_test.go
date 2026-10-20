@@ -3,8 +3,8 @@ package records
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -19,11 +19,25 @@ func edge(id, kind string, weight float64) Link {
 	return Link{ID: id, Version: 1, Type: kind, Weight: weight}
 }
 
+// similarFrom is the cosines of a hybrid base route giving these records
+// these cosines; nil without any.
+func similarFrom(cosines map[string]float64) *similarities {
+	if cosines == nil {
+		return nil
+	}
+	s := &similarities{at: map[string]int{}}
+	for _, id := range slices.Sorted(maps.Keys(cosines)) {
+		s.at[id] = len(s.cosines)
+		s.cosines = append(s.cosines, scored{id, cosines[id]})
+	}
+	return s
+}
+
 // beamOnly runs the beam search alone and returns the records it reached
 // that are not anchors, by raw path score (ties by id).
-func beamOnly(t *testing.T, links map[string][]Link, intent retrieval.Intent, similarity func([]string) (map[string]float64, error), anchors ...scored) []string {
+func beamOnly(t *testing.T, links map[string][]Link, intent retrieval.Intent, cosines map[string]float64, anchors ...scored) []string {
 	t.Helper()
-	best, err := (&derivedIndex{links: links}).traverse(context.Background(), anchors, intent, &similarities{read: similarity})
+	best, err := (&derivedIndex{links: links}).traverse(context.Background(), anchors, intent, similarFrom(cosines))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,13 +51,13 @@ func beamOnly(t *testing.T, links map[string][]Link, intent retrieval.Intent, si
 }
 
 // traverseOnly is beamOnly from anchors of equal score.
-func traverseOnly(t *testing.T, links map[string][]Link, intent retrieval.Intent, similarity func([]string) (map[string]float64, error), anchors ...string) []string {
+func traverseOnly(t *testing.T, links map[string][]Link, intent retrieval.Intent, cosines map[string]float64, anchors ...string) []string {
 	t.Helper()
 	seeds := []scored{}
 	for _, id := range anchors {
 		seeds = append(seeds, scored{id, 1.0 / 60})
 	}
-	return beamOnly(t, links, intent, similarity, seeds...)
+	return beamOnly(t, links, intent, cosines, seeds...)
 }
 
 func TestTraversalIntentWeights(t *testing.T) {
@@ -76,21 +90,25 @@ func TestTraversalSemanticBreaksTies(t *testing.T) {
 	if got := traverseOnly(t, links, retrieval.IntentGeneral, nil, "a"); !slices.Equal(got, []string{"x", "y", "z"}) {
 		t.Fatal(got)
 	}
-	var asked [][]string
-	similarity := func(ids []string) (map[string]float64, error) {
-		asked = append(asked, slices.Clone(ids))
-		// z has no stored vector; a negative cosine adds nothing, as native.
-		return map[string]float64{"x": -0.5, "y": 0.9}, nil
-	}
-	if got := traverseOnly(t, links, retrieval.IntentGeneral, similarity, "a"); !slices.Equal(got, []string{"y", "x", "z"}) {
+	// z has no cosine; a negative or NaN cosine adds nothing, as native.
+	if got := traverseOnly(t, links, retrieval.IntentGeneral, map[string]float64{"x": -0.5, "y": 0.9, "w": math.NaN()}, "a"); !slices.Equal(got, []string{"y", "x", "z"}) {
 		t.Fatal(got)
 	}
-	if len(asked) != 1 || !slices.Equal(asked[0], []string{"x", "y", "z"}) {
-		t.Fatal("each neighborhood's vectors are read once", asked)
+	// Vectors are available, as native's test reads it, when the base route
+	// gave some record a cosine, even a negative one; not with NaN alone.
+	for _, tc := range []struct {
+		s    *similarities
+		want bool
+	}{{nil, false}, {similarFrom(map[string]float64{}), false}, {similarFrom(map[string]float64{"a": math.NaN()}), false}, {similarFrom(map[string]float64{"a": math.NaN(), "b": -0.2}), true}} {
+		if got := tc.s.available(); got != tc.want {
+			t.Error(tc.s, got)
+		}
 	}
-	failing := func([]string) (map[string]float64, error) { return nil, errors.New("vectors unreadable") }
-	if _, err := (&derivedIndex{links: links}).traverse(context.Background(), []scored{{"a", 1}}, retrieval.IntentGeneral, &similarities{read: failing}); err == nil {
-		t.Fatal("vector read error swallowed")
+	// A record the cosines do not cover, or cover at another place, has none.
+	s := similarFrom(map[string]float64{"a": 0.5})
+	s.at["b"] = 0
+	if s.of("a") != 0.5 || s.of("b") != 0 || s.of("c") != 0 {
+		t.Fatal("cosine lookup")
 	}
 }
 
@@ -185,9 +203,15 @@ func TestTraversalBudgets(t *testing.T) {
 	}
 	// The candidate limit bounds the route: the re-ranked children (equal
 	// signals, ids decide), the anchor (lowest graph score) last.
-	got, err := (&derivedIndex{links: star}).recall(context.Background(), []scored{{"a", 1}}, recallQuery{intent: retrieval.IntentGeneral, limit: 50})
-	if err != nil || len(got) != 50 || got[0] != "v000" || got[49] != "v049" {
-		t.Error("limit", got, err)
+	got, reached, err := (&derivedIndex{links: star}).recall(context.Background(), []scored{{"a", 1}}, recallQuery{intent: retrieval.IntentGeneral, limit: 50})
+	if err != nil || len(got) != 50 || got[0] != "v000" || got[49] != "v049" || reached != 50 {
+		t.Error("limit", got, reached, err)
+	}
+	// An anchor without links: the route holds the anchor alone, and reached
+	// nothing.
+	got, reached, err = (&derivedIndex{}).recall(context.Background(), []scored{{"a", 1}}, recallQuery{intent: retrieval.IntentGeneral, limit: 50})
+	if err != nil || !slices.Equal(got, []string{"a"}) || reached != 0 {
+		t.Error("anchor only", got, reached, err)
 	}
 }
 
@@ -202,8 +226,8 @@ func TestRecallReranks(t *testing.T) {
 	if raw := traverseOnly(t, index.links, retrieval.IntentGeneral, nil, "a"); !slices.Equal(raw, []string{"c", "b"}) {
 		t.Fatal(raw)
 	}
-	route := func(intent retrieval.Intent, similarity func([]string) (map[string]float64, error)) []string {
-		got, err := index.recall(ctx, []scored{{"a", 1.0 / 60}}, recallQuery{intent: intent, tokens: retrieval.Tokenize("outage"), similarity: similarity, limit: 200})
+	route := func(intent retrieval.Intent, cosines map[string]float64) []string {
+		got, _, err := index.recall(ctx, []scored{{"a", 1.0 / 60}}, recallQuery{intent: intent, tokens: retrieval.Tokenize("outage"), similar: similarFrom(cosines), limit: 200})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -219,8 +243,7 @@ func TestRecallReranks(t *testing.T) {
 	// similarity 0.35, graph 0.20): without the word, b's cosine still lifts
 	// it over c.
 	index.words = nil
-	similar := func([]string) (map[string]float64, error) { return map[string]float64{"b": 0.9, "c": -0.4}, nil }
-	if got := route(retrieval.IntentGeneral, similar); !slices.Equal(got, []string{"b", "c", "a"}) {
+	if got := route(retrieval.IntentGeneral, map[string]float64{"b": 0.9, "c": -0.4}); !slices.Equal(got, []string{"b", "c", "a"}) {
 		t.Fatal("similarity", got)
 	}
 	// The weights do not depend on the intent; WHY's causal order then puts
@@ -235,9 +258,17 @@ func TestRecallReranks(t *testing.T) {
 		links: map[string][]Link{"a": {edge("x", "entity", 1), edge("y", "entity", 1)}},
 		named: map[string][]string{"y": {"Athena"}},
 	}
-	got, err := index.recall(ctx, []scored{{"a", 1}}, recallQuery{intent: retrieval.IntentEntity, entities: []string{"athena"}, limit: 200})
+	got, _, err := index.recall(ctx, []scored{{"a", 1}}, recallQuery{intent: retrieval.IntentEntity, entities: []string{"athena"}, limit: 200})
 	if err != nil || !slices.Equal(got, []string{"y", "x", "a"}) {
 		t.Fatal("ENTITY", got, err)
+	}
+	// The entity signal stays within 1: names differing only in case count
+	// once. y's entity 0.25 + graph 0.30 is below x's keyword 0.45 + 0.30.
+	index.named["y"] = []string{"Athena", "ATHENA", "athena"}
+	index.words = map[string][]string{"outage": {"x"}}
+	got, _, err = index.recall(ctx, []scored{{"a", 1}}, recallQuery{intent: retrieval.IntentEntity, tokens: retrieval.Tokenize("outage"), entities: []string{"athena", "Athena"}, limit: 200})
+	if err != nil || !slices.Equal(got, []string{"x", "y", "a"}) {
+		t.Fatal("entity cap", got, err)
 	}
 }
 
@@ -267,18 +298,6 @@ func TestRecallRerankWeights(t *testing.T) {
 	// Equal raw scores: no graph signal at all.
 	if got := rerankRecall(map[string]recallSignals{"b": {graph: 3}, "a": {graph: 3}}, true); !slices.Equal(got, []string{"a", "b"}) {
 		t.Fatal(got)
-	}
-	// "With vectors" means a stored vector was read for some record, as
-	// native's means it loaded some embedding.
-	none := &similarities{read: func([]string) (map[string]float64, error) { return map[string]float64{}, nil }}
-	some := &similarities{read: func([]string) (map[string]float64, error) { return map[string]float64{"b": -0.2}, nil }}
-	for _, s := range []*similarities{nil, {}, none, some} {
-		if err := s.load([]string{"a", "b"}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if (*similarities)(nil).stored() || (&similarities{}).stored() || none.stored() || !some.stored() {
-		t.Fatal("stored vectors misreported")
 	}
 }
 
@@ -311,7 +330,7 @@ func TestTraversalRouteReachesTwoHops(t *testing.T) {
 		t.Fatal(related, err)
 	}
 	got, err := s.Query(ctx, indexRequest("Why outage Athena", &IndexPolicy{Version: 1, Traversal: true}))
-	if err != nil || !slices.Contains(got.IDs, "cause") || !slices.Contains(got.IDs, "root") || got.Index.Routes["traversal"] == 0 {
+	if err != nil || !slices.Contains(got.IDs, "cause") || !slices.Contains(got.IDs, "root") || got.Index.Routes["traversal"] == 0 || got.Index.Routes["traversal+"] == 0 {
 		t.Fatal(got.IDs, got.Index, err)
 	}
 	if got.Index.Policy == related.Index.Policy {
@@ -320,7 +339,7 @@ func TestTraversalRouteReachesTwoHops(t *testing.T) {
 	// The correction new → old is not traversed (the route holds the anchor
 	// alone); the supersedes route follows it.
 	got, err = s.Query(ctx, indexRequest("beta", &IndexPolicy{Version: 1, Traversal: true}))
-	if err != nil || !slices.Equal(got.IDs, []string{"new"}) || got.Index.Routes["traversal"] != 1 {
+	if v, ok := got.Index.Routes["traversal+"]; err != nil || !slices.Equal(got.IDs, []string{"new"}) || got.Index.Routes["traversal"] != 1 || !ok || v != 0 {
 		t.Fatal(got.IDs, got.Index, err)
 	}
 	got, err = s.Query(ctx, indexRequest("beta", &IndexPolicy{Version: 1, Supersedes: true}))
@@ -370,12 +389,14 @@ func TestRecencyAnchorsSeedTraversal(t *testing.T) {
 	}
 	got, err = s.Query(ctx, indexRequest("zzz", &IndexPolicy{Version: 1, Recency: true, Traversal: true}))
 	// The route: the twenty anchors and stale, re-ranked.
-	if err != nil || !slices.Contains(got.IDs, "stale") || got.Index.Routes["traversal"] != 21 {
+	if err != nil || !slices.Contains(got.IDs, "stale") || got.Index.Routes["traversal"] != 21 || got.Index.Routes["traversal+"] != 1 {
 		t.Fatal(got.IDs, got.Index, err)
 	}
 }
 
-func TestTraversalSemanticUsesStoredVectorsOnly(t *testing.T) {
+// The semantic term reuses the hybrid base route's cosines: no embedding
+// and no vector read beyond the base route's.
+func TestTraversalSemanticReusesBaseCosines(t *testing.T) {
 	ctx := context.Background()
 	var requests atomic.Int64
 	letters := letterEmbeddings(t)
@@ -431,7 +452,7 @@ func TestTraversalSemanticUsesStoredVectorsOnly(t *testing.T) {
 		before = requests.Load()
 		got, err := s.Query(ctx, hybrid)
 		// The route: the twenty anchors and the two neighbors, re-ranked.
-		if err != nil || got.Index.Routes["traversal"] != 22 {
+		if err != nil || got.Index.Routes["traversal"] != 22 || got.Index.Routes["traversal+"] != 2 {
 			t.Fatal(got, err)
 		}
 		if requests.Load()-before != warm {

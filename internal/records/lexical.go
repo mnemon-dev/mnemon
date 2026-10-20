@@ -330,8 +330,24 @@ func feedbackToken(token string, exclude map[string]bool) bool {
 }
 
 func fuse(rankings ...[]string) []string {
+	return scoredIDs(fuseRanked(rankings...))
+}
+
+// fuseRanked is fuse with each id's reciprocal-rank score, best first: the
+// order rank gives these always finite scores.
+func fuseRanked(rankings ...[]string) []scored {
 	hits := fusedHits(rankings...)
-	return rank(hits, len(hits))
+	slices.SortFunc(hits, compareScore)
+	return hits
+}
+
+// scoredIDs is the ids of hits, in order.
+func scoredIDs(hits []scored) []string {
+	ids := make([]string, len(hits))
+	for i, hit := range hits {
+		ids[i] = hit.id
+	}
+	return ids
 }
 
 // fusedHits is fuse's reciprocal-rank score of each id, in first-seen order.
