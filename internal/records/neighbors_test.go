@@ -3,10 +3,12 @@ package records
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 )
 
 // placed is indexedRecord with a scope, workspace and session.
@@ -325,5 +327,64 @@ func TestAdjacentConcurrentFirstReadsBuildOnce(t *testing.T) {
 		if built := s.sessionBuilds.Load() - before; built != 1 {
 			t.Fatal("round", round, "built", built)
 		}
+	}
+}
+
+// A build that panics must not leave its key loading: the readers waiting
+// for it are woken and build in turn, and later readers are not blocked.
+// (Left in the loading map, the key would hold every first reader of the
+// revision and scope until its context ends.)
+func TestSessionCacheSurvivesAPanickingBuild(t *testing.T) {
+	var c sessionCache
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	started, proceed, panicked := make(chan struct{}), make(chan struct{}), make(chan any, 1)
+	go func() {
+		defer func() { panicked <- recover() }()
+		c.get(ctx, "key", func() (*sessions, error) {
+			close(started)
+			<-proceed
+			panic("build failed")
+		})
+	}()
+	<-started
+	// A second first reader waits for that build (if it has not started
+	// waiting yet when the build panics, it finds the key free and builds).
+	built := &sessions{key: map[string]string{"r1": "s1"}}
+	var waited *sessions
+	waiter := make(chan error, 1)
+	go func() {
+		var err error
+		waited, err = c.get(ctx, "key", func() (*sessions, error) { return built, nil })
+		waiter <- err
+	}()
+	time.Sleep(20 * time.Millisecond)
+	close(proceed)
+	if value := <-panicked; value != "build failed" {
+		t.Fatal("the build's panic did not reach its reader:", value)
+	}
+	if err := <-waiter; err != nil || waited != built {
+		t.Fatal("the waiting reader did not build in turn:", waited, err)
+	}
+	// Nothing is left loading, the panicking build cached nothing and the
+	// waiting reader's build is cached.
+	c.mu.Lock()
+	loading, cached := len(c.loading), len(c.entries)
+	c.mu.Unlock()
+	if loading != 0 || cached != 1 {
+		t.Fatal("loading", loading, "cached", cached)
+	}
+	again, err := c.get(ctx, "key", func() (*sessions, error) { return nil, errors.New("built again") })
+	if err != nil || again != built {
+		t.Fatal(again, err)
+	}
+	// A later reader of another key whose first build panicked is not
+	// blocked either, though no reader was waiting.
+	func() {
+		defer func() { recover() }()
+		c.get(ctx, "other", func() (*sessions, error) { panic("again") })
+	}()
+	if got, err := c.get(ctx, "other", func() (*sessions, error) { return built, nil }); err != nil || got != built {
+		t.Fatal("a later reader was blocked or failed:", got, err)
 	}
 }

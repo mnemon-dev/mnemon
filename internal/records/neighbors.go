@@ -138,13 +138,19 @@ type sessionCache struct {
 const sessionEntries = 8
 
 // sessionIndex is the sessions of the records visible in scope at rev
-// (hash), from the cache or built and cached. One read builds a pair; its
-// concurrent first readers wait for that build (and build it themselves
-// if it fails), so a pair is built once.
+// (hash), from the cache or built and cached.
 func (s *Store) sessionIndex(ctx context.Context, rev int64, hash string, scope Scope) (*sessions, error) {
 	raw, _ := json.Marshal(scope)
-	key := hash + "\x00" + string(raw)
-	c := &s.sessionCache
+	return s.sessionCache.get(ctx, hash+"\x00"+string(raw), func() (*sessions, error) {
+		return s.buildSessions(ctx, rev, hash, scope)
+	})
+}
+
+// get returns the sessions of key from the cache, or builds them with build
+// and caches them. One read builds a key; its concurrent first readers wait
+// for that build (and build it themselves if it fails), so a key is built
+// once.
+func (c *sessionCache) get(ctx context.Context, key string, build func() (*sessions, error)) (*sessions, error) {
 	for {
 		c.mu.Lock()
 		if index := c.entries[key]; index != nil {
@@ -166,24 +172,34 @@ func (s *Store) sessionIndex(ctx context.Context, rev int64, hash string, scope 
 		}
 		c.loading[key] = done
 		c.mu.Unlock()
-		index, err := s.buildSessions(ctx, rev, hash, scope)
+		return c.built(key, done, build)
+	}
+}
+
+// built runs a build whose key the caller registered as loading. Its
+// cleanup runs in a defer, so a build that panics cannot leave the key
+// loading forever, its waiting readers never woken: they wake and build in
+// turn. Only a build that returned its sessions is cached.
+func (c *sessionCache) built(key string, done chan struct{}, build func() (*sessions, error)) (index *sessions, err error) {
+	defer func() {
 		c.mu.Lock()
+		defer c.mu.Unlock()
 		delete(c.loading, key)
 		close(done)
-		if err == nil {
-			if c.entries == nil {
-				c.entries = map[string]*sessions{}
-			}
-			for len(c.order) >= sessionEntries {
-				delete(c.entries, c.order[0])
-				c.order = c.order[1:]
-			}
-			c.entries[key] = index
-			c.order = append(c.order, key)
+		if err != nil || index == nil {
+			return
 		}
-		c.mu.Unlock()
-		return index, err
-	}
+		if c.entries == nil {
+			c.entries = map[string]*sessions{}
+		}
+		for len(c.order) >= sessionEntries {
+			delete(c.entries, c.order[0])
+			c.order = c.order[1:]
+		}
+		c.entries[key] = index
+		c.order = append(c.order, key)
+	}()
+	return build()
 }
 
 // buildSessions groups the records visible in scope at rev into sessions,
