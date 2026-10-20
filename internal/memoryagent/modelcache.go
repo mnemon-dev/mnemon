@@ -89,15 +89,16 @@ func walMode(db *sql.DB) error {
 			return nil
 		case err == nil:
 			return fmt.Errorf("model cache journal mode is %q, not wal", mode)
-		case !busy(err) || time.Now().After(deadline):
+		case !sqliteBusy(err) || time.Now().After(deadline):
 			return err
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 }
 
-// busy reports whether err is SQLite's SQLITE_BUSY, extended codes included.
-func busy(err error) bool {
+// sqliteBusy reports whether err is SQLite's SQLITE_BUSY, extended codes
+// included.
+func sqliteBusy(err error) bool {
 	var sqliteErr *sqlite.Error
 	return errors.As(err, &sqliteErr) && sqliteErr.Code()&0xff == sqlite3.SQLITE_BUSY
 }
