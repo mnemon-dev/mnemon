@@ -320,7 +320,8 @@ logged; a user appears as the first eight hex digits of its store hash.
 | Line | Meaning |
 |---|---|
 | `degraded search N (user xxxxxxxx): <error>` | Search could not use the models and answered with the raw hybrid ranking (HTTP 200). `N` counts degraded searches since the process started. `context deadline exceeded` means the read ran past `--search-timeout`. |
-| `partially degraded search N (user …): judge, layer` | The read answered, but the named stages fell back: `judge` (JEV's final judgement failed; its screen stood in), `scan-budget` or `loop-budget` (the read's JEV budget ran out), `layer-state`, `layer-lexical`, `layer` or `expand` (the consolidation layer was left out, ranked by words, or not judged). |
+| `degraded search kept rank order (user xxxxxxxx): <error>` | A degraded Search could not read the write positions of its records (a store error), so it delivered the raw ranking in rank order instead of time order. The Search still answered (HTTP 200). |
+| `partially degraded search N (user …): judge, layer` | The read answered, but the named stages fell back: `judge` (JEV's final judgement failed; its screen stood in), `scan-budget` or `loop-budget` (the read's JEV budget ran out), `layer-state`, `layer-lexical`, `layer` or `expand` (the consolidation layer was left out, ranked by words, or not judged), `order` (the write positions of the records could not be read: the View stayed in rank order instead of time order). |
 | `status: adds A, searches S, degraded D, partially degraded P; budget deepseek spent … held … cap …, jev …` | Every 10 minutes: the Adds and Searches answered since the start, the degraded ones, and each budget account in use. |
 | `hybrid search failed, searching words (user …)` | The embedder was down during a degraded search. |
 | `consolidation failed (user …): <error>` | Consolidation stopped during an Add; the Add still succeeded and the next request of the user retries. |
