@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"runtime/debug"
 	"slices"
 	"strings"
@@ -66,15 +67,20 @@ const (
 // metadata for the records' native indexes after every job that changed it
 // (edges.go): entities with aliases, thread and value-history links, event
 // dates. LinkCandidates also bounds the names each new entity name is
-// compared with (8 in timelines mode).
+// compared with (8 in timelines mode). EdgeKinds (with NativeEdges, and a
+// decision model) lists the kinds of event edge JEV decides, each of
+// semantic, temporal, causal and entity once (event_edges.go): with any,
+// they replace the thread links, and LinkCandidates bounds the earlier
+// events each new event is compared with per kind (8 in timelines mode).
 type ConsolidationConfig struct {
-	Mode                string `json:"mode,omitempty"`
-	BatchCharacters     int    `json:"batchCharacters,omitempty"`
-	AssistantCharacters int    `json:"assistantCharacters,omitempty"`
-	MaxBatches          int    `json:"maxBatches,omitempty"`
-	LinkCandidates      int    `json:"linkCandidates,omitempty"`
-	Parallel            int    `json:"parallel,omitempty"`
-	NativeEdges         bool   `json:"nativeEdges,omitempty"`
+	Mode                string   `json:"mode,omitempty"`
+	BatchCharacters     int      `json:"batchCharacters,omitempty"`
+	AssistantCharacters int      `json:"assistantCharacters,omitempty"`
+	MaxBatches          int      `json:"maxBatches,omitempty"`
+	LinkCandidates      int      `json:"linkCandidates,omitempty"`
+	Parallel            int      `json:"parallel,omitempty"`
+	NativeEdges         bool     `json:"nativeEdges,omitempty"`
+	EdgeKinds           []string `json:"edgeKinds,omitempty"`
 }
 
 // Timelines reports whether the mode keeps a timelines state ("timelines"
@@ -208,6 +214,9 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	if config.Consolidation != nil && config.Consolidation.Mode == consolidationLayered && (models.Judge == nil || models.Consolidator == nil && models.Planner == nil) {
 		return nil, errors.New("layered consolidation requires a decision model and a completion model (consolidator or planner)")
 	}
+	if config.Consolidation != nil && len(config.Consolidation.EdgeKinds) > 0 && models.Judge == nil {
+		return nil, errors.New("edgeKinds requires a decision model")
+	}
 	// Config and its nested pointers belong to this service, never its caller.
 	raw, _ := json.Marshal(config)
 	var own Config
@@ -249,7 +258,7 @@ func (v *ViewConfig) normalize() error {
 func (c *ConsolidationConfig) normalize() error {
 	switch c.Mode {
 	case "":
-		if *c != (ConsolidationConfig{}) {
+		if !reflect.ValueOf(*c).IsZero() {
 			return errors.New("consolidation settings require mode \"timelines\" or \"layered\"")
 		}
 		return nil
@@ -281,6 +290,17 @@ func (c *ConsolidationConfig) normalize() error {
 	}
 	if c.BatchCharacters < 100 || c.BatchCharacters > 50000 || c.AssistantCharacters < 0 || c.AssistantCharacters > 4000 || c.MaxBatches < 1 || c.MaxBatches > 64 {
 		return errors.New("timelines consolidation requires batchCharacters 100–50000, assistantCharacters 0–4000 and maxBatches 1–64")
+	}
+	if len(c.EdgeKinds) > 0 && !c.NativeEdges {
+		return errors.New("edgeKinds requires nativeEdges")
+	}
+	for i, kind := range c.EdgeKinds {
+		if !slices.ContainsFunc(eventEdgeKinds, func(k eventEdgeKind) bool { return k.name == kind }) {
+			return fmt.Errorf("unknown edge kind %q: edgeKinds lists semantic, temporal, causal or entity", kind)
+		}
+		if slices.Contains(c.EdgeKinds[:i], kind) {
+			return fmt.Errorf("edge kind %q is listed twice", kind)
+		}
 	}
 	return nil
 }

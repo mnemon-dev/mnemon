@@ -111,7 +111,7 @@ func TestLayeredConsolidationConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := ConsolidationConfig{Mode: "layered", BatchCharacters: 10000, AssistantCharacters: 240, MaxBatches: 16, LinkCandidates: 8, Parallel: 4}
-	if got := *a.config.Consolidation; got != want {
+	if got := *a.config.Consolidation; !reflect.DeepEqual(got, want) {
 		t.Fatalf("defaults %+v", got)
 	}
 	if !a.layerOn() || !a.config.Consolidation.Timelines() {

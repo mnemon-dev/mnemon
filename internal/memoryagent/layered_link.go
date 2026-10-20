@@ -94,12 +94,17 @@ func (r *ConsolidateResult) addLinks(c linkCounts) {
 // The kinds of pair: does a new thread continue a stored one; is a new key
 // a stored one, and does its value contradict it; does a new key's value
 // contradict the stored key of the same name; do two entity names name the
-// same one (edges.go).
+// same one (edges.go); does a kind of event edge join a new event and an
+// earlier one (event_edges.go).
 const (
 	linkThread = iota
 	linkKey
 	linkExact
 	linkAlias
+	linkSemantic
+	linkTemporal
+	linkCausal
+	linkEntity
 )
 
 // linkPair is a new item (an index into the new items) and a candidate (an

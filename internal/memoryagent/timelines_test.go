@@ -562,7 +562,7 @@ func TestConsolidationConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := *a.config.Consolidation; got != (ConsolidationConfig{Mode: "timelines", BatchCharacters: 10000, AssistantCharacters: 240, MaxBatches: 16}) {
+	if got := *a.config.Consolidation; !reflect.DeepEqual(got, ConsolidationConfig{Mode: "timelines", BatchCharacters: 10000, AssistantCharacters: 240, MaxBatches: 16}) {
 		t.Fatalf("defaults %+v", got)
 	}
 	for _, bad := range []Config{
@@ -609,7 +609,7 @@ func TestConsolidationConfigEmptyModeStaysV1(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *a.config.Consolidation != (ConsolidationConfig{}) {
+	if !reflect.DeepEqual(*a.config.Consolidation, ConsolidationConfig{}) {
 		t.Fatal("mode \"\" took timelines defaults", *a.config.Consolidation)
 	}
 	result, err := a.Consolidate(context.Background(), ConsolidateRequest{})
