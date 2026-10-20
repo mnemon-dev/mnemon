@@ -579,3 +579,43 @@ func TestReadSimpleExpandsAdjacentWindow(t *testing.T) {
 		t.Fatal(got, view.Stats)
 	}
 }
+
+// Reads with view.expand but none of stage 4b's settings (gate, target,
+// reserve) are what they were before those settings existed: these hashes
+// were taken at f330d564.
+func TestReadSimpleExpandWithoutStage4bUnchanged(t *testing.T) {
+	s := expandFixture(t)
+	events, overlay := eventsStore(t)
+	two := replies("codename project\nNOTE: the codename is ORBIT", "NEED: the codename\nNEED: the launch day", "codename rocket")
+	for name, tc := range map[string]struct {
+		store   *records.Store
+		overlay *Overlay
+		view    *ViewConfig
+		want    string
+	}{
+		"judged":  {s, nil, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, AdjacentWindow: 2}}, "57d91a090e07cf9ff2b5d8fdfaa2653d9fda9915b962aa04625b8421bba7f5d8"},
+		"fusion":  {s, nil, &ViewConfig{MaxItems: 5, Fusion: "rrf", Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}}}, "c3c59d9657c08928298cc3e4af700918031d72669d062cbdf1dea7ccc72f6c50"},
+		"events":  {events, overlay, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "events"}, EventsTop: 3}}, "d2985cf9de93c48c8bc53ca78f74fe1888bbd27b2b1048bad26650fee784b7f4"},
+		"limited": {s, nil, &ViewConfig{MaxItems: 3, Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, Limit: 2}}, "62c357ad3fcaecd73e973c1f0b1b5a5ff6340adcaf468b673192ea80916d7317"},
+	} {
+		config := Config{View: tc.view}
+		var a *Agent
+		if tc.overlay != nil {
+			a = layerAgent(t, tc.store, tc.overlay, config, two, expandJudge())
+		} else {
+			config.Version, config.Strategy = 1, "simple"
+			var err error
+			if a, err = New(tc.store, config, Models{Planner: two, Judge: expandJudge()}, nil); err != nil {
+				t.Fatal(err)
+			}
+		}
+		view, err := a.Read(context.Background(), ReadRequest{Question: "What is the codename?"})
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		if got := pinnedView(t, view); got != tc.want {
+			raw, _ := json.Marshal(view)
+			t.Errorf("%s: %s\n%s", name, got, raw)
+		}
+	}
+}
