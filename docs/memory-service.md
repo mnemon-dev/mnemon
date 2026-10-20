@@ -25,15 +25,17 @@ final judgement failed or found the budget spent; JEV's screen stands in), `laye
 (the consolidated state did not load; no layer), `layer-lexical` (the layer's embedding
 failed; shared words rank the topics), `layer` (the layer's judgement failed), `expand`
 (records linked from the layer could not be read or judged), `expansion` (the
-`view.expand` candidates could not all be read or judged, or the events' state did not
-load; see below), `expansion-lexical` (the events' embedding failed or left vectors
-missing; shared words ranked them) and `expansion-target` (`target`'s need table was
-skipped for the budget or failed). It is absent when nothing fell back, and always for
-memory-agent/v1. With an `index` setting, a simple read's `stats.indexRoutes`
-counts, for each native route (`lexical`, `entities`, `relations`, `temporal`,
-`supersedes`, `recency`, `traversal`), the read's searches in which that route found a
-candidate, and under `traversal+` the searches whose traversal reached a record over a link
-(not only its anchors).
+`view.expand` candidates could not all be read or judged, the events' state did not
+load, or `gate` and `target` could not read the View whose coverage of the needs they
+check, so that nothing counts as covered; see below), `expansion-lexical` (the events'
+embedding failed or left vectors missing; shared words ranked them), `expansion-target`
+(`target`'s need table was skipped for the budget or failed) and `order` (`view.order`
+could not read the records' write positions; the View stays in rank order). It is absent
+when nothing fell back, and always for memory-agent/v1. With an `index` setting, a simple
+read's `stats.indexRoutes` counts, for each native route (`lexical`, `entities`,
+`relations`, `temporal`, `supersedes`, `recency`, `traversal`), the read's searches in
+which that route found a candidate, and under `traversal+` the searches whose traversal
+reached a record over a link (not only its anchors).
 
 `"view": {"intent": "question"}` makes a simple read detect the intent of its `question`
 once (native recall's WHY, WHEN, ENTITY or GENERAL detection) and pass it as `input.intent`
@@ -133,13 +135,16 @@ it in the need table (≥ 0.5; the screen for an untabled single need), as `need
 reports `hasEvidence`. That View is compose's selection (fusion's when set); with the
 timelines layer only its leading records within the View's characters less the most the
 layer's blocks can take (8,059) count, since the layer's character trim, which depends on
-its own model calls, can never drop those. It makes no model call. (`needs[].covered`
-remains the need loop's own state.)
+its own model calls, can never drop those. It makes no model call. Under fusion it reads
+the evidence of the raw hits that were not pooled, as compose does, and counts that time
+in `queryMs`; when that read fails, `expansion` is named in `stats.degraded`, nothing
+counts as covered, and so the gate does not skip. (`needs[].covered` remains the need
+loop's own state.)
 
 | Setting | Values | Jev-Mem step | What it does |
 |---|---|---|---|
 | `gate` | `""` (default) or `"needs"` | The sufficiency check before every expansion round, including the first (stop when the current evidence suffices). | Skips the expansion when the need loop stopped as covered and every need is covered. `stats.expandGated` reports a skip. |
-| `target` | `""` (default) or `"needs"` | Scoring each expansion candidate for relevance and new information (what the current evidence lacks). | Before their judgement, the candidates are asked the need table's question, with its rubric, batches of 24 and the read's budget, for each need not covered. The needs output counts a shown candidate that answers a need (≥ 0.5) as that need's evidence. In compose's order, each expansion that answers no need moves after the last needed, current record that answers one (for records the loop tabled: any need), keeping the needed answer it ranks by among those moved. With every need covered nothing is asked. When the budget cannot pay for the need table and the judgement both, or the need table fails, the judgement goes first: no candidate gets a new need answer, and `expansion-target` is named in `stats.degraded`. `stats.expandAnsweredNeeds` counts the needs it asked that a current expansion answers. |
+| `target` | `""` (default) or `"needs"` | Scoring each expansion candidate for relevance and new information (what the current evidence lacks). | Before their judgement, the candidates are asked the need table's question, with its rubric, batches of 24 and the read's budget, for each need not covered. The needs output counts a shown candidate that answers a need (≥ 0.5) as that need's evidence. In compose's order, each expansion that answers no need moves after the last needed, current record that answers one (for records the loop tabled: any need), keeping the needed answer it ranks by among those moved. With every need covered nothing is asked. When the budget cannot pay for the need table and the judgement both, or the need table fails, the judgement goes first: no candidate gets a new need answer, and `expansion-target` is named in `stats.degraded`. `stats.expandAnsweredNeeds` counts the needs it asked that a needed (≥ 0.5), current expansion answers. |
 | `reserve` | 0–8 (default 0) | The output structure: 40 (50) slots over at most 30 anchors, so expansions always get at least 10. | Holds up to `reserve` View slots, at most half the View's items, for expansions. Compose takes the current needed records that are not expansions first (a held slot never displaces them), then the first current expansions in compose's order (after `target`'s; needed ones only when the plan named no need), whatever their needed answer, then the needed records and the fill as without it; slots no expansion takes go back to the composition. Without fusion the View lists what compose took in compose's order; with fusion the records that are not held in fused order, then the held expansions. The timelines layer's character trim then keeps the needed records that are not expansions first, then the held ones, then the others. `stats.expandReserved` counts the held records the final View shows. |
 
 Cost: `gate` makes no call and saves the expansion's calls when it skips; `target` adds one
