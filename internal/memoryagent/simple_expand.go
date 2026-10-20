@@ -192,9 +192,11 @@ func linkKind(kind string) bool { return kind != expandAdjacent && kind != expan
 func seedKind(kind string) bool { return kind != expandEvents }
 
 // expandEvidence returns the judged list with the needed candidates of the
-// expansion added after it. The seed source proposes the neighbors of the
-// best view.expand.seeds needed items, as rankExpansion orders them; the
-// events source the records cited by the events nearest the question
+// expansion added after it. With gate "needs" it first asks whether the
+// evidence is already sufficient (sufficient) and, if so, returns the list
+// as it is. The seed source proposes the neighbors of the best
+// view.expand.seeds needed items, as rankExpansion orders them; the events
+// source the records cited by the events nearest the question
 // (simple_events.go); neither proposes a record already pooled. The sources
 // fill view.expand.limit by turns (alternate). The candidates are read
 // (evidence(), proved against their originals; one without evidence is
@@ -203,9 +205,16 @@ func seedKind(kind string) bool { return kind != expandEvents }
 // current out), and those JEV calls needed join the list. A candidate left
 // unjudged (the budget ran short, or its call failed) is dropped. Reading
 // or judging that falls short degrades the read (expansion) and keeps what
-// was judged; only a canceled read fails.
-func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem) ([]*simpleItem, error) {
+// was judged; only a canceled read fails. stop is why the need loop
+// stopped.
+func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, stop string) ([]*simpleItem, error) {
 	config := r.agent.config.View.Expand
+	if config.Gate == expandNeeds && sufficient(stop, r.covered(scored)) {
+		r.mu.Lock()
+		r.stats.ExpandGated = true
+		r.mu.Unlock()
+		return scored, nil
+	}
 	seeds := expansionSeeds(scored, config.Seeds)
 	if !slices.ContainsFunc(config.Kinds, seedKind) {
 		seeds = nil
@@ -291,4 +300,26 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem) ([
 		}
 	}
 	return scored, nil
+}
+
+// covered reports, for each need, whether the evidence judged so far gives
+// it: the need is not an ALL need (one wants every instance), and an item
+// JEV judged needed (≥ 0.5) and current answers it in the need table
+// (≥ 0.5).
+func (r *simpleRun) covered(scored []*simpleItem) []bool {
+	out := make([]bool, len(r.needs))
+	for k, need := range r.needs {
+		out[k] = !need.All && slices.ContainsFunc(scored, func(item *simpleItem) bool {
+			return item.Needed >= 0.5 && current(item) && r.answer(item.ID, k) >= 0.5
+		})
+	}
+	return out
+}
+
+// sufficient is gate "needs", Jev-Mem's question whether the evidence
+// suffices before it expands, answered from the need loop's state with no
+// model call: the loop stopped as covered and every need is covered (so no
+// need is an ALL need).
+func sufficient(stop string, covered []bool) bool {
+	return stop == stopCovered && !slices.Contains(covered, false)
 }

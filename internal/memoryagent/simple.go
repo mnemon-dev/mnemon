@@ -115,7 +115,7 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	// With view.expand, the needed items' neighbors are judged the same way
 	// and the needed ones join the list (simple_expand.go).
 	if a.config.View.Expand != nil {
-		if scored, err = r.expandEvidence(ctx, scored); err != nil {
+		if scored, err = r.expandEvidence(ctx, scored, stop); err != nil {
 			return View{}, err
 		}
 	}

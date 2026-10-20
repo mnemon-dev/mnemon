@@ -118,13 +118,16 @@ type ViewConfig struct {
 // by default, 1–64), Seeds the needed records expanded from (16 by default,
 // 1–32). AdjacentWindow (with adjacent) is how many records on each side
 // are adjacent (1 by default, 1–5); EventsTop (with events) how many events
-// are taken (10 by default, 1–40).
+// are taken (10 by default, 1–40). Gate "needs" is Jev-Mem's check before
+// expanding (simple_expand.go): it skips the expansion when the need table
+// finds the evidence sufficient. Unset, it leaves the read as it was.
 type ExpandConfig struct {
 	Kinds          []string `json:"kinds"`
 	Limit          int      `json:"limit,omitempty"`
 	Seeds          int      `json:"seeds,omitempty"`
 	AdjacentWindow int      `json:"adjacentWindow,omitempty"`
 	EventsTop      int      `json:"eventsTop,omitempty"`
+	Gate           string   `json:"gate,omitempty"`
 }
 
 // expandKinds are the candidates view.expand may propose.
@@ -133,6 +136,8 @@ var expandKinds = []string{expandAdjacent, "temporal", "semantic", "causal", "en
 const (
 	expandAdjacent = "adjacent"
 	expandEvents   = "events"
+	// expandNeeds is the value of gate that reads the need table.
+	expandNeeds = "needs"
 )
 
 const viewIntentQuestion = "question"
@@ -206,6 +211,9 @@ type ReadStats struct {
 	// vector had them.
 	ExpandEventsLexical  bool `json:"expandEventsLexical,omitempty"`
 	ExpandEventsEmbedded int  `json:"expandEventsEmbedded,omitempty"`
+	// ExpandGated reports that view expand's gate found the evidence
+	// sufficient and skipped the expansion.
+	ExpandGated bool `json:"expandGated,omitempty"`
 }
 
 type View struct {
@@ -357,6 +365,9 @@ func (e *ExpandConfig) normalize() error {
 		if *setting.value < 1 || *setting.value > setting.limit {
 			return fmt.Errorf("view expand requires %s 1–%d", setting.name, setting.limit)
 		}
+	}
+	if e.Gate != "" && e.Gate != expandNeeds {
+		return errors.New("view expand requires gate \"\" or \"needs\"")
 	}
 	return nil
 }

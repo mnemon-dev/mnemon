@@ -486,6 +486,12 @@ func TestExpansionDegradesWithoutFailing(t *testing.T) {
 // and judged needed.
 func expansionRun(t *testing.T, judge Decider) (*simpleRun, []*simpleItem) {
 	t.Helper()
+	return expansionRunWith(t, judge, &ExpandConfig{Kinds: []string{"temporal"}, Limit: 64})
+}
+
+// expansionRunWith is expansionRun with expand settings.
+func expansionRunWith(t *testing.T, judge Decider, expand *ExpandConfig) (*simpleRun, []*simpleItem) {
+	t.Helper()
 	s, _ := agentStore(t)
 	ctx := context.Background()
 	upserts := []records.Upsert{expandNote("seed", "the codename is ORBIT", "2023-05-08T13:56:00Z", nil)}
@@ -502,7 +508,7 @@ func expansionRun(t *testing.T, judge Decider) (*simpleRun, []*simpleItem) {
 	if err = s.ReplaceDerivedMetadata(ctx, "consolidation", map[string]records.DerivedMetadata{"seed": {Version: 1, Links: links}}); err != nil {
 		t.Fatal(err)
 	}
-	a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"temporal"}, Limit: 64}}}, Models{Planner: expandPlanner(), Judge: judge}, nil)
+	a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: expand}}, Models{Planner: expandPlanner(), Judge: judge}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -522,7 +528,7 @@ func TestExpansionWithinTheDecisionBudget(t *testing.T) {
 	// Fifty neighbors are two judgement batches (40 and 10).
 	judge := expandJudge()
 	r, scored := expansionRun(t, judge)
-	got, err := r.expandEvidence(ctx, scored)
+	got, err := r.expandEvidence(ctx, scored, stopRounds)
 	if err != nil || len(got) != 51 || judge.count() != 2 || r.stats.Expanded != 50 || r.stats.ExpandedNeeded != 50 || r.stats.Degraded != nil {
 		t.Fatal(len(got), err, judge.count(), r.stats)
 	}
@@ -533,7 +539,7 @@ func TestExpansionWithinTheDecisionBudget(t *testing.T) {
 	judge = expandJudge()
 	r, scored = expansionRun(t, judge)
 	r.stats.DecisionCalls = simpleDecisionBudget - 1
-	got, err = r.expandEvidence(ctx, scored)
+	got, err = r.expandEvidence(ctx, scored, stopRounds)
 	if err != nil || len(got) != 41 || got[40].ID != "n39" || judge.count() != 1 || r.stats.Expanded != 40 || r.items["n40"] != nil || !slices.Equal(r.stats.Degraded, []string{"expansion"}) {
 		t.Fatal(len(got), err, judge.count(), r.stats)
 	}
@@ -541,7 +547,7 @@ func TestExpansionWithinTheDecisionBudget(t *testing.T) {
 	judge = expandJudge()
 	r, scored = expansionRun(t, judge)
 	r.stats.DecisionCalls = simpleDecisionBudget
-	got, err = r.expandEvidence(ctx, scored)
+	got, err = r.expandEvidence(ctx, scored, stopRounds)
 	if err != nil || len(got) != 1 || judge.count() != 0 || r.stats.Expanded != 0 || r.stats.QueryMS != 0 || !slices.Equal(r.stats.Degraded, []string{"expansion"}) {
 		t.Fatal(len(got), err, judge.count(), r.stats)
 	}
@@ -549,7 +555,7 @@ func TestExpansionWithinTheDecisionBudget(t *testing.T) {
 	judge = expandJudge()
 	r, scored = expansionRun(t, judge)
 	r.revision = "nonsense"
-	got, err = r.expandEvidence(ctx, scored)
+	got, err = r.expandEvidence(ctx, scored, stopRounds)
 	if err != nil || len(got) != 1 || judge.count() != 0 || !slices.Equal(r.stats.Degraded, []string{"expansion"}) {
 		t.Fatal(len(got), err, judge.count(), r.stats)
 	}
@@ -557,7 +563,7 @@ func TestExpansionWithinTheDecisionBudget(t *testing.T) {
 	judge = expandJudge()
 	r, scored = expansionRun(t, judge)
 	scored[0].Needed = 0.4
-	if got, err = r.expandEvidence(ctx, scored); err != nil || len(got) != 1 || judge.count() != 0 || r.stats.Degraded != nil || r.stats.QueryMS != 0 {
+	if got, err = r.expandEvidence(ctx, scored, stopRounds); err != nil || len(got) != 1 || judge.count() != 0 || r.stats.Degraded != nil || r.stats.QueryMS != 0 {
 		t.Fatal(len(got), err, judge.count(), r.stats)
 	}
 }
