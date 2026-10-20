@@ -1,12 +1,14 @@
 package aml
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
+	"github.com/mnemon-dev/mnemon/internal/records"
 )
 
 // timedSessions adds three sessions about the support group, written late
@@ -105,4 +107,57 @@ func TestSearchTopKCutsByRankBeforeTimeOrder(t *testing.T) {
 		t.Fatal(ids(all))
 	}
 	checkRankScores(t, byTime)
+}
+
+// A degraded Search whose records' write positions cannot be read keeps the
+// raw ranking's order and logs it; the Search still answers.
+func TestDegradedSearchKeepsRankOrderWhenPositionsFail(t *testing.T) {
+	h := newHarness(t, timeOrdered)
+	timedSessions(t, h, "u1")
+	ctx := context.Background()
+	user, err := h.server.users.acquire(ctx, "u1", false)
+	if err != nil || user == nil {
+		t.Fatal(user, err)
+	}
+	defer h.server.users.release(user)
+	snapshot, err := user.store.Get(ctx, records.GetRequest{IDs: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found, err := rawQuery(ctx, user.store, snapshot.Revision, "Caroline went to the LGBTQ support group", nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence, err := user.agent.Hydrate(ctx, snapshot.Revision, records.Scope{}, found)
+	if err != nil || len(evidence) != 3 {
+		t.Fatal(len(evidence), err)
+	}
+	// A ranking that is not in time order: the latest session first.
+	ranked := slices.Clone(evidence)
+	slices.SortFunc(ranked, func(a, b memoryagent.Evidence) int { return strings.Compare(b.Date, a.Date) })
+	evidenceIDs := func(list []memoryagent.Evidence) []string {
+		out := []string{}
+		for _, record := range list {
+			out = append(out, record.ID)
+		}
+		return out
+	}
+	// The positions of the snapshot's revision give the time order.
+	timed := h.server.ordered(ctx, user, snapshot.Revision, ranked)
+	dates := []string{}
+	for _, record := range timed {
+		dates = append(dates, record.Date)
+	}
+	if slices.Equal(evidenceIDs(timed), evidenceIDs(ranked)) || !slices.IsSorted(dates) || strings.Contains(h.log.String(), "kept rank order") {
+		t.Fatal(evidenceIDs(timed), dates, evidenceIDs(ranked), h.log.String())
+	}
+	// At a revision the store does not hold they cannot be read: the rank
+	// order stays, and the log says so.
+	kept := h.server.ordered(ctx, user, "no such revision", ranked)
+	if !slices.Equal(evidenceIDs(kept), evidenceIDs(ranked)) {
+		t.Fatal(evidenceIDs(kept), evidenceIDs(ranked))
+	}
+	if want := "degraded search kept rank order (user " + user.key[:8] + "): "; !strings.Contains(h.log.String(), want) {
+		t.Fatal(h.log.String())
+	}
 }

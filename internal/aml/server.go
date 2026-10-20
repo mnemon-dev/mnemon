@@ -702,16 +702,23 @@ func (s *Server) rawSearch(ctx context.Context, user *userEntry, query string, t
 	if err != nil {
 		return nil, err
 	}
-	if ordered, err := user.agent.OrderRecords(ctx, snapshot.Revision, evidence); err == nil {
-		evidence = ordered
-	} else {
-		s.log.Printf("degraded search kept rank order (user %s): %v", user.key[:8], err)
-	}
 	items := []SearchItem{}
-	for _, item := range evidence {
+	for _, item := range s.ordered(ctx, user, snapshot.Revision, evidence) {
 		items = append(items, SearchItem{ID: item.ID, Content: item.Text, CreatedAt: item.Date})
 	}
 	return items, nil
+}
+
+// ordered lists the raw ranking's evidence as the View's order setting lists
+// a read's records. When their write positions cannot be read it keeps the
+// rank order and logs it: a degraded Search still answers.
+func (s *Server) ordered(ctx context.Context, user *userEntry, revision string, evidence []memoryagent.Evidence) []memoryagent.Evidence {
+	ordered, err := user.agent.OrderRecords(ctx, revision, evidence)
+	if err != nil {
+		s.log.Printf("degraded search kept rank order (user %s): %v", user.key[:8], err)
+		return evidence
+	}
+	return ordered
 }
 
 func rawQuery(ctx context.Context, store *records.Store, revision, query string, embedding *records.EmbeddingConfig, index *records.IndexPolicy) ([]string, error) {
