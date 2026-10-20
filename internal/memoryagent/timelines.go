@@ -302,14 +302,20 @@ func renderTimelinePrompt(m timelineMemory, batch []pendingRecord, limit *indexL
 			directives = append(directives, "- "+d.Text)
 		}
 	}
+	return "Threads so far" + shownOf(len(threads), len(m.Threads)) + ":\n" + linesOrNone(threads) +
+		"\n\nState keys so far, with the latest value" + shownOf(len(facts), len(keys)) + ":\n" + linesOrNone(facts) +
+		"\n\nDirectives so far" + shownOf(len(directives), len(m.Directives)) + ":\n" + linesOrNone(directives) +
+		"\n\n" + batchSection(batch)
+}
+
+// batchSection is the batch part of a fold's prompt (C:113-114): the
+// records under batch-local ids r0, r1, …, each with its header.
+func batchSection(batch []pendingRecord) string {
 	shown := []string{}
 	for i, record := range batch {
 		shown = append(shown, fmt.Sprintf("[r%d] %s\n%s", i, record.Header, record.Text))
 	}
-	return "Threads so far" + shownOf(len(threads), len(m.Threads)) + ":\n" + linesOrNone(threads) +
-		"\n\nState keys so far, with the latest value" + shownOf(len(facts), len(keys)) + ":\n" + linesOrNone(facts) +
-		"\n\nDirectives so far" + shownOf(len(directives), len(m.Directives)) + ":\n" + linesOrNone(directives) +
-		"\n\nNew records:\n\n" + strings.Join(shown, "\n\n")
+	return "New records:\n\n" + strings.Join(shown, "\n\n")
 }
 
 // shownOf names a cut list (C:112).
@@ -728,9 +734,9 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 		memory, batches, failed, drops := cloneMemory(state.Memory), state.Batches, state.Failed, len(result.Drops)
 		dirty = true
 		if n == 0 && a.dropDue(state) {
-			foldErr = a.foldDropping(ctx, model, &state, batch, &result)
+			foldErr = a.foldDropping(ctx, model, timelinesFold, &state, batch, &result)
 		} else {
-			foldErr = a.foldTimelines(ctx, model, &state, batch, true, &result)
+			foldErr = a.foldTimelines(ctx, model, timelinesFold, &state, batch, true, &result)
 		}
 		if foldErr != nil {
 			state.Memory, state.Batches, state.Failed = memory, batches, failed
@@ -786,7 +792,7 @@ func (a *Agent) dropDue(state timelineState) bool {
 // whose fold fails with a counted model error is dropped whole (Failed, and a
 // Drop naming the error); a half that folds is kept. Any other error ends the
 // job as in foldTimelines, dropping nothing.
-func (a *Agent) foldDropping(ctx context.Context, model Completer, state *timelineState, batch []pendingRecord, result *ConsolidateResult) error {
+func (a *Agent) foldDropping(ctx context.Context, model Completer, spec foldSpec, state *timelineState, batch []pendingRecord, result *ConsolidateResult) error {
 	cause := fmt.Sprintf("%d failed jobs over %s", state.ModelErrors, a.now().Sub(time.UnixMilli(state.FirstModelError)).Round(time.Second))
 	parts := [][]pendingRecord{batch}
 	if len(batch) > 1 {
@@ -795,7 +801,7 @@ func (a *Agent) foldDropping(ctx context.Context, model Completer, state *timeli
 	}
 	for _, part := range parts {
 		memory, batches, failed, drops := cloneMemory(state.Memory), state.Batches, state.Failed, len(result.Drops)
-		err := a.foldTimelines(ctx, model, state, part, false, result)
+		err := a.foldTimelines(ctx, model, spec, state, part, false, result)
 		if err == nil {
 			continue
 		}
@@ -880,15 +886,27 @@ func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *
 	return revision, read, 0, nil
 }
 
+// foldSpec is what a fold sends the consolidating model: its system prompt
+// and the user message for a batch, or a part of one, given the memory so
+// far; entities keeps the entity names the replies give (applyReplyWith).
+type foldSpec struct {
+	system   string
+	prompt   func(m timelineMemory, batch []pendingRecord) string
+	entities bool
+}
+
+// timelinesFold is the author's fold: the index so far, then the batch.
+var timelinesFold = foldSpec{system: timelineSystem, prompt: timelinePrompt}
+
 // foldTimelines folds one batch (N:1095-1105): two attempts, then, when split
 // is allowed, each half with two attempts of its own; a part that still does
 // not parse is dropped. A request the provider refuses as too large before
 // sending it splits in halves at once, each folded like the batch, down to
 // single records; a single record still too large is dropped. So a long
-// batch never stops every later job.
-func (a *Agent) foldTimelines(ctx context.Context, model Completer, state *timelineState, batch []pendingRecord, split bool, result *ConsolidateResult) error {
+// batch never stops every later job. spec says what each call sends.
+func (a *Agent) foldTimelines(ctx context.Context, model Completer, spec foldSpec, state *timelineState, batch []pendingRecord, split bool, result *ConsolidateResult) error {
 	for attempt := 0; attempt < 2; attempt++ {
-		reply, err := a.completeFold(ctx, model, timelinePrompt(state.Memory, batch), state, result)
+		reply, err := a.completeFold(ctx, model, spec.system, spec.prompt(state.Memory, batch), state, result)
 		if errors.Is(err, ErrRequestTooLarge) {
 			if len(batch) == 1 {
 				state.Failed++
@@ -896,10 +914,10 @@ func (a *Agent) foldTimelines(ctx context.Context, model Completer, state *timel
 				return nil
 			}
 			half := (len(batch) + 1) / 2
-			if err := a.foldTimelines(ctx, model, state, batch[:half], split, result); err != nil {
+			if err := a.foldTimelines(ctx, model, spec, state, batch[:half], split, result); err != nil {
 				return err
 			}
-			return a.foldTimelines(ctx, model, state, batch[half:], split, result)
+			return a.foldTimelines(ctx, model, spec, state, batch[half:], split, result)
 		}
 		if err != nil {
 			return err
@@ -912,10 +930,10 @@ func (a *Agent) foldTimelines(ctx context.Context, model Completer, state *timel
 	// A reply that will not parse is usually cut off at the token limit.
 	if split && len(batch) > 1 {
 		half := (len(batch) + 1) / 2
-		if err := a.foldTimelines(ctx, model, state, batch[:half], false, result); err != nil {
+		if err := a.foldTimelines(ctx, model, spec, state, batch[:half], false, result); err != nil {
 			return err
 		}
-		return a.foldTimelines(ctx, model, state, batch[half:], false, result)
+		return a.foldTimelines(ctx, model, spec, state, batch[half:], false, result)
 	}
 	state.Failed++
 	result.drop(len(batch), "the model's reply did not parse twice")
@@ -923,15 +941,15 @@ func (a *Agent) foldTimelines(ctx context.Context, model Completer, state *timel
 }
 
 // completeFold makes one consolidating model call and meters it.
-func (a *Agent) completeFold(ctx context.Context, model Completer, prompt string, state *timelineState, result *ConsolidateResult) (string, error) {
+func (a *Agent) completeFold(ctx context.Context, model Completer, system, prompt string, state *timelineState, result *ConsolidateResult) (string, error) {
 	start := time.Now()
 	var reply string
 	var usage Usage
 	var err error
 	if limited, ok := model.(CompleterWithMax); ok {
-		reply, usage, err = limited.CompleteWith(ctx, timelineSystem, prompt, timelineMaxTokens)
+		reply, usage, err = limited.CompleteWith(ctx, system, prompt, timelineMaxTokens)
 	} else {
-		reply, usage, err = model.Complete(ctx, timelineSystem, prompt)
+		reply, usage, err = model.Complete(ctx, system, prompt)
 	}
 	result.ModelMS += float64(time.Since(start).Microseconds()) / 1000
 	result.Usage.add(usage)
