@@ -38,6 +38,21 @@ type ConsolidateResult struct {
 	// reason; Drops says how many each time, and why.
 	Dropped int               `json:"dropped,omitempty"`
 	Drops   []ConsolidateDrop `json:"drops,omitempty"`
+	// A layered job's linking: LinkCalls counts its JEV calls (LinkUsage
+	// is their part of Usage); of the threads it extracted and linked,
+	// ThreadsLinked continued a stored thread and ThreadsNew started one;
+	// of the keys, KeysLinked joined a stored key and KeysNew started one;
+	// Conflicts counts the joined keys whose new value JEV found contradicts
+	// the stored latest; LinkFallbacks counts the batches linked without
+	// JEV because it failed.
+	LinkCalls     int    `json:"linkCalls,omitempty"`
+	LinkUsage     *Usage `json:"linkUsage,omitempty"`
+	ThreadsLinked int    `json:"threadsLinked,omitempty"`
+	ThreadsNew    int    `json:"threadsNew,omitempty"`
+	KeysLinked    int    `json:"keysLinked,omitempty"`
+	KeysNew       int    `json:"keysNew,omitempty"`
+	Conflicts     int    `json:"conflicts,omitempty"`
+	LinkFallbacks int    `json:"linkFallbacks,omitempty"`
 }
 
 // ConsolidateDrop is records a timelines job gave up on: they stay

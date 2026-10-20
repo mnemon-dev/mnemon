@@ -417,22 +417,42 @@ func bm25Top(texts []string, query string, limit int) []int {
 	if len(texts) == 0 {
 		return []int{}
 	}
-	type doc struct {
-		tf     map[string]int
-		length int
-	}
-	docs, df, total := make([]doc, len(texts)), map[string]int{}, 0
+	return newBM25(texts).top(query, limit)
+}
+
+// bm25Index is bm25Top's index of texts, built once for many queries.
+type bm25Index struct {
+	docs    []bm25Doc
+	df      map[string]int
+	average float64
+}
+
+type bm25Doc struct {
+	tf     map[string]int
+	length int
+}
+
+// newBM25 indexes texts, at least one.
+func newBM25(texts []string) *bm25Index {
+	x, total := &bm25Index{docs: make([]bm25Doc, len(texts)), df: map[string]int{}}, 0
 	for i, text := range texts {
 		tokens := lexicalTokens(text)
-		docs[i] = doc{tf: map[string]int{}, length: len(tokens)}
+		x.docs[i] = bm25Doc{tf: map[string]int{}, length: len(tokens)}
 		for _, token := range tokens {
-			if docs[i].tf[token] == 0 {
-				df[token]++
+			if x.docs[i].tf[token] == 0 {
+				x.df[token]++
 			}
-			docs[i].tf[token]++
+			x.docs[i].tf[token]++
 		}
 		total += len(tokens)
 	}
+	x.average = float64(total) / float64(len(x.docs))
+	return x
+}
+
+// top is bm25Top's ranking of the indexed texts for query.
+func (x *bm25Index) top(query string, limit int) []int {
+	docs, df, average := x.docs, x.df, x.average
 	terms, seen := []string{}, map[string]bool{}
 	for _, token := range lexicalTokens(query) {
 		if !seen[token] {
@@ -440,7 +460,6 @@ func bm25Top(texts []string, query string, limit int) []int {
 		}
 	}
 	n := float64(len(docs))
-	average := float64(total) / n
 	type hit struct {
 		i     int
 		id    string

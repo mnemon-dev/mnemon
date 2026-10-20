@@ -352,11 +352,26 @@ func (p *Provider) complete(ctx context.Context, system, prompt string, jsonOnly
 	return result.Choices[0].Message.Content, usage, nil
 }
 
-func (p *Provider) Decide(ctx context.Context, state any, questions map[string]Question) (map[string]float64, Usage, error) {
-	maxQuestions := 80
+// MaxQuestions is the most questions one Decide call takes: 128 for JEV,
+// 80 for a completer answering them.
+func (p *Provider) MaxQuestions() int {
 	if p.config.Kind == "jev" {
-		maxQuestions = 128
+		return 128
 	}
+	return 80
+}
+
+// jevRequest is a decision request as the reference client measures it
+// against maxJEVRequest: JSON.stringify({state, questions}).
+func jevRequest(state any, questions map[string]Question) (string, error) {
+	return stringifyJSON(struct {
+		State     any                 `json:"state"`
+		Questions map[string]Question `json:"questions"`
+	}{state, questions})
+}
+
+func (p *Provider) Decide(ctx context.Context, state any, questions map[string]Question) (map[string]float64, Usage, error) {
+	maxQuestions := p.MaxQuestions()
 	if len(questions) < 1 || len(questions) > maxQuestions {
 		return nil, Usage{}, fmt.Errorf("decision requires 1–%d binary questions", maxQuestions)
 	}
@@ -381,10 +396,7 @@ func (p *Provider) Decide(ctx context.Context, state any, questions map[string]Q
 	}
 	// The request is measured as the author measures it, then sent with the
 	// model first: {"model":…,"state":…,"questions":…}.
-	request, err := stringifyJSON(struct {
-		State     any                 `json:"state"`
-		Questions map[string]Question `json:"questions"`
-	}{state, questions})
+	request, err := jevRequest(state, questions)
 	if err != nil {
 		return nil, Usage{}, errors.New("JEV request contains invalid JSON")
 	}
