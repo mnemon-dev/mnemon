@@ -1,7 +1,6 @@
 package records
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -148,16 +147,11 @@ func TestIndexRoutesGolden(t *testing.T) {
 		return out
 	}
 	got := results()
-	const path = "testdata/index-routes-golden.json"
+	// One response a line (not a .json file: the repository's tracked JSON
+	// is a closed set).
+	const path = "testdata/index-routes.golden"
 	if os.Getenv("RECORDS_UPDATE_GOLDEN") != "" {
-		var raw bytes.Buffer
-		e := json.NewEncoder(&raw)
-		e.SetEscapeHTML(false)
-		e.SetIndent("", " ")
-		if err := e.Encode(got); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, raw.Bytes(), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(strings.Join(got, "\n")+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -165,10 +159,7 @@ func TestIndexRoutesGolden(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var want []string
-	if err := json.Unmarshal(raw, &want); err != nil {
-		t.Fatal(err)
-	}
+	want := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
 	compare := func(label string, got []string) {
 		if len(got) != len(want) {
 			t.Fatalf("%s: %d responses, golden has %d", label, len(got), len(want))
