@@ -100,7 +100,9 @@ dropped. Expansion therefore adds candidates and displaces nothing before it is 
 costs one or two decision calls per read, plus reading the neighbors, the state and the
 evidence (counted in `queryMs`), and embedding the question (the query runtime's cache
 usually holds that vector from the message search). Without `target`, expanded records are
-not asked the need table's questions, so they do not count toward `needs[].hasEvidence`.
+not asked the need table's questions, so they do not count toward `needs[].hasEvidence`,
+except a pooled record `rejudge` proposed: it keeps the need-table answers the loop gave it,
+so when shown it can give a need its evidence.
 `stats.expanded` counts the records judged, `stats.expandedNeeded` those JEV called needed,
 `stats.expandKinds` the judged records per kind that proposed them (one proposed by two
 kinds counts for both) and `stats.expandShown` those the final View shows (after the

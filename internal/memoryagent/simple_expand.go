@@ -12,17 +12,20 @@ import (
 // Evidence-anchored expansion (view.expand), after Jev-Mem's split: code
 // proposes a bounded set of candidates, and JEV decides. Two sources
 // propose them once the shortlist is judged. From the evidence JEV has
-// judged ("seed"): the records JEV calls needed are the seeds, and their
-// neighbors are the records written near them in their session
-// (records.Store.Adjacent) and the records the derived index links them to
-// (records.Store.Links: the writer's and the overlay's links, corrections
-// both ways). From the question ("events"): the records cited by the
-// consolidated events nearest it (simple_events.go). The sources take turns
-// filling the limit; the candidates not already pooled are read, judged
-// with judgeAll's questions, and join the judged list only when JEV calls
-// them needed. They add to what the cue searches found and displace nothing
-// before it is judged; composition then treats them like any judged item
-// (with fusion: judged items the message search may not rank).
+// judged ("seed"): the judged records whose needed answer reaches seedMin
+// are the seeds, and their neighbors are the records written near them in
+// their session (records.Store.Adjacent) and the records the derived index
+// links them to (records.Store.Links: the writer's and the overlay's links,
+// corrections both ways). From the question ("events"): the records cited
+// by the consolidated events nearest it (simple_events.go). The sources
+// take turns filling the limit; the candidates not already pooled (with
+// rejudge: not already judged) are read and judged with judgeAll's
+// questions, beside context peers that are asked nothing, and every judged
+// candidate joins the judged list and composes on its needed answer, as a
+// shortlisted record does (with fusion: a judged item the message search
+// may not rank). They add to what the cue searches found and displace
+// nothing before it is judged. Gate, target and reserve, when set, add
+// Jev-Mem's evaluate-then-expand parts.
 
 // neighbor is one way to reach a record from a seed: the kind that proposes
 // it, its weight (a link's, or 1 for an adjacent record) and its distance
@@ -199,23 +202,27 @@ func linkKind(kind string) bool { return kind != expandAdjacent && kind != expan
 // seedKind reports whether an expansion kind expands from the seeds.
 func seedKind(kind string) bool { return kind != expandEvents }
 
-// expandEvidence returns the judged list with the needed candidates of the
-// expansion added after it. With gate "needs" it first asks whether the
-// evidence is already sufficient (sufficient) and, if so, returns the list
-// as it is. The seed source proposes the neighbors of the best
-// view.expand.seeds needed items, as rankExpansion orders them; the events
-// source the records cited by the events nearest the question
-// (simple_events.go); neither proposes a record already pooled. The sources
-// fill view.expand.limit by turns (alternate). The candidates are read
-// (evidence(), proved against their originals; one without evidence is
-// skipped); with target "needs" they are asked the need table's question
-// for the needs not covered yet (target); then they are judged by judgeAll
-// within the read's decision budget; those judged join the run's items (so
-// fusion keeps what JEV calls no longer current out), and those JEV calls
-// needed join the list. A candidate left unjudged (the budget ran short, or
-// its call failed) is dropped. Reading or judging that falls short degrades
-// the read (expansion) and keeps what was judged; only a canceled read
-// fails. stop is why the need loop stopped.
+// expandEvidence returns the judged list with the expansion's judged
+// candidates added after it. Gate and target first read the needs'
+// coverage of the View compose would show (wouldShow, covered); with gate
+// "needs", a read whose loop stopped covered and whose needs are all
+// covered returns the list as it is. The seed source proposes the
+// neighbors of the best view.expand.seeds judged items whose needed answer
+// reaches seedMin, as rankExpansion orders them; the events source the
+// records cited by the events nearest the question (simple_events.go);
+// neither proposes a record already pooled (with rejudge: already judged).
+// The sources fill view.expand.limit by turns (alternate). The candidates
+// are read (evidence(), proved against their originals; one without
+// evidence is skipped, a pooled one keeps its item); with target "needs"
+// they are asked the need table's question for the needs not covered
+// (target); then judgeExpansions judges them with context peers within the
+// read's decision budget. Every judged candidate joins the run's items (so
+// fusion keeps what JEV calls no longer current out) and the list. A
+// candidate left unjudged (the budget ran short, or its call failed) keeps
+// its values and is dropped. Reading or judging that falls short degrades
+// the read (expansion, or expansion-target for target's need table) and
+// keeps what was judged; only a canceled read fails. stop is why the need
+// loop stopped.
 func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, stop string) ([]*simpleItem, error) {
 	config := r.agent.config.View.Expand
 	// The needs' coverage, of the gate and target alike, is that of the

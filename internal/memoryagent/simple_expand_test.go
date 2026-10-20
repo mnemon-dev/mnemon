@@ -189,8 +189,9 @@ func TestExpandConfig(t *testing.T) {
 		{Kinds: []string{"events"}, EventsTop: 41}, {Kinds: []string{"events"}, EventsTop: -1}, {Kinds: []string{"adjacent"}, EventsTop: 5},
 		{Kinds: []string{"events", "events"}}, {Kinds: []string{"Events"}},
 	} {
-		if _, err = New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &bad}}, both, nil); err == nil {
-			t.Error("invalid expansion accepted", bad)
+		// With the timelines layer, only the settings' own checks refuse.
+		if _, err = New(s, Config{Version: 1, Strategy: "simple", Consolidation: timelines, View: &ViewConfig{Expand: &bad}}, both, nil); err == nil || strings.Contains(err.Error(), "requires timelines") {
+			t.Error("invalid expansion accepted", bad, err)
 		}
 	}
 	// Absent, it stays out of the config's JSON and so out of the policy
