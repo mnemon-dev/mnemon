@@ -46,9 +46,15 @@ func newCompletionServer(t *testing.T, reply string) *completionServer {
 
 // set makes the server answer every request with status and reply.
 func (s *completionServer) set(status int, reply string) {
+	s.respond(func(string) (int, string) { return status, reply })
+}
+
+// respond makes the server answer each request body with answer, which may
+// run concurrently.
+func (s *completionServer) respond(answer func(body string) (int, string)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.answer = func(string) (int, string) { return status, reply }
+	s.answer = answer
 }
 
 func (s *completionServer) received() []string {
@@ -353,9 +359,9 @@ func TestProviderReplaysJEVDecision(t *testing.T) {
 func TestProviderCacheSharedByConcurrentProcesses(t *testing.T) {
 	var replies atomic.Int32
 	server := newCompletionServer(t, "")
-	server.answer = func(string) (int, string) {
+	server.respond(func(string) (int, string) {
 		return http.StatusOK, completionBody(fmt.Sprint("reply ", replies.Add(1)))
-	}
+	})
 	cachePath, budgetPath := filepath.Join(t.TempDir(), "model-cache.db"), filepath.Join(t.TempDir(), "budget.db")
 	// Two serve processes: each its own handles on the shared files.
 	a, _ := meteredProvider(t, server, budgetPath, openTestCache(t, cachePath))
