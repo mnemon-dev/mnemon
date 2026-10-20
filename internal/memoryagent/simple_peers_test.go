@@ -86,6 +86,26 @@ func TestExpansionJudgesWithPeers(t *testing.T) {
 	}
 }
 
+// A candidate reached otherwise (adjacency, two records away) is judged
+// with the peers too: the seed b2, needed, shows b0 is no longer current.
+func TestExpansionPeersShowWhatIsThere(t *testing.T) {
+	s := expandFixture(t)
+	judge := &peerJudge{}
+	expand := &ExpandConfig{Kinds: []string{"adjacent"}, AdjacentWindow: 2}
+	a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: expand}}, Models{Planner: replies("redone\nNOTE: it was redone", "NEED: the answer", "unrelated words"), Judge: judge}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := a.Read(context.Background(), ReadRequest{Question: "What was redone?"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	last := judge.calls[len(judge.calls)-1]
+	if slices.Contains(recordIDs(view.Records), "b0") || !slices.Contains(last, "Melanie: rocket budget review went fine") || last[0] != "Melanie: rocket budget review was redone" {
+		t.Fatal(recordIDs(view.Records), last)
+	}
+}
+
 func TestPeerBatches(t *testing.T) {
 	item := func(id string, needed float64) *simpleItem { return scoredItem(id, needed, 0, id) }
 	peers := []*simpleItem{item("p0", 0.9), item("p1", 0.8)}
