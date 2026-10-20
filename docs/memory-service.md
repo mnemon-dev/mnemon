@@ -140,11 +140,14 @@ is an edge weighted by its probability (two decimals). Every answer, yes or no, 
 in the state, so a pair is asked once per kind; a reset forgets them with the memory.
 Events decided under older candidate rules are decided again under the current ones,
 asking only the pairs never answered. A call that fails for itself (a malformed or
-refused answer) counts a failure against each of its pairs and the asking goes on; a
-pair that failed 3 calls is given up (no edge, and not a "no"). A spent budget, an
-unavailable provider or the job's cancellation ends the asking; the job does not fail
-for it. Pairs left unanswered (not "no") keep their events undecided, and the next edge
-step (a job that changes the memory, or `rebuildEdges`) asks them again. The answers are
+refused answer, a request error, a timeout) marks its pairs failed and the asking goes
+on, unless three calls in a row have failed, which ends the step. The failures count
+against their pairs only in a step in which some call succeeded, so a JEV that fails
+every call (an outage, a missing credential) gives up nothing; a pair whose counted
+failures reach 3 is given up (no edge, and not a "no"). A spent budget, an unavailable
+provider or the job's cancellation ends the asking; the job does not fail for it.
+Pairs left unanswered (not "no") keep their events undecided, and the next edge step
+(a job that changes the memory, or `rebuildEdges`) asks them again. The answers are
 saved in the state after every 32 calls, and when the job is canceled, so a step that is
 cut off resumes where it stopped. Each edge links every record of one event to every
 record of the other with its kind and weight: `temporal` and `causal` both ways,
@@ -161,8 +164,8 @@ consolidation lock, so other edge steps and the scope's jobs wait for them; ever
 stays in the scope's state (about 0.8 KB per event in measured builds). The result adds
 `edgeCalls` (JEV calls, part of `linkUsage`), `edgeAsked` and `edgeYes` (by kind, the
 pairs JEV answered and the edges it made), `edgeFallbacks` (pairs left unanswered
-because JEV failed) and `edgeLexical` (edge steps whose candidates shared words found
-because the embedder failed).
+because JEV failed, asked again later), `edgeGivenUp` (pairs given up) and `edgeLexical`
+(edge steps whose candidates shared words found because the embedder failed).
 
 Native search/show/recall retain their access-count and operation-log effects.
 The new service returns the full typed search/recall structures; existing CLI
