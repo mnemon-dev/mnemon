@@ -15,25 +15,32 @@ AML platform ──HTTPS──▶ Caddy :443 ──HTTP──▶ aml-serve 127.0
  GET  /health            30 MiB body limit        │
                                                   ├─ <data-root>/users/<hash>/   one records store per user_id
                                                   ├─ Ollama 127.0.0.1:11434      nomic-embed-text embeddings
-                                                  ├─ DeepSeek Flash (HTTPS)      cue planner, consolidation
-                                                  └─ JEV 1.13.0 (HTTPS)          judge
+                                                  ├─ DeepSeek Flash (HTTPS)      cue planner, consolidation extraction
+                                                  └─ JEV 1.13.0 (HTTPS)          judge, consolidation links
 ```
 
 - **Add** packs the messages into raw records (no model on the write path), embeds the new
   chunks through Ollama, and, with `--consolidate-on-add`, folds every full batch (10,000
-  characters) of the user's new records into the timelines index with DeepSeek before
-  answering 200. The rest, the tail of the conversation so far, is folded before that user's
-  next Search, as the reference system folds a conversation once it pauses. A retry with the
-  same `request_id` is idempotent.
+  characters) of the user's new records into the consolidation index before answering 200.
+  Layered consolidation folds a batch in two steps: DeepSeek extracts the batch alone (up to
+  four batches at a time), then JEV links what it extracted to the memory so far, in batch
+  order. The rest, the tail of the conversation so far, is folded the same way before that
+  user's next Search, as the reference system folds a conversation once it pauses. A retry
+  with the same `request_id` is idempotent.
 - **Search** (with `--consolidate-on-add`) first folds the user's tail, then runs the planner,
-  the cue searches, the JEV need loop and the RRF fusion of the raw search rank with the JEV
-  rank, and returns the consolidation blocks first, then the selected records in time order
-  (the deployment's `view.order: "time"`, as the reference system delivers its View; without
-  it, in rank order). The selection, and the cut at `top_k` when blocks and records pass it,
-  go by rank. Each item's `score` is `1/(position+1)`. It never returns generated answers. If
-  a model, a budget or the embedder fails, or the read runs past `--search-timeout`, it falls
-  back to the raw hybrid ranking with HTTP 200, cut at `top_k` by rank and delivered in the
-  same order, and logs the fact.
+  the cue searches, the JEV need loop and JEV's final judgement, and returns the judged View:
+  the consolidation blocks first, then the records JEV judged, in time order (the deployment's
+  `view.order: "time"`, as the reference system delivers its View; without it, in rank
+  order). There is no fusion with the plain search ranking, so a record JEV did not judge is
+  not delivered. The View holds the current records of JEV's shortlist (at most 64): those it
+  calls needed, then, when the plan named a need, the rest by its needed answer; and at most
+  8 more that the blocks link to and JEV calls needed. All of them stay within `top_k`
+  records and 240,000 characters, and the View is usually far shorter than `top_k`. The
+  selection, and the cut at `top_k` when blocks and records pass it, go by rank. Each item's
+  `score` is `1/(position+1)`. It never returns generated answers. If a model, a budget or
+  the embedder fails, or the read runs past `--search-timeout`, it falls back to the raw
+  hybrid ranking with HTTP 200, cut at `top_k` by rank and delivered in the same order, and
+  logs the fact.
 - Each `user_id` has its own store: `<data-root>/users/<hex(sha256(user_id))[:32]>`. One user
   can never reach another's records.
 
@@ -66,7 +73,7 @@ logged. Put them in `/etc/mnemon-aml/env`:
 | Variable | Needed | Used for |
 |---|---|---|
 | `AML_API_KEY` | yes | The key the platform sends (`Authorization: Bearer <key>`, `Token <key>` or `X-Api-Key: <key>`). `aml-serve` refuses to start without it. |
-| `TYPESAFE_API_KEY` | yes | JEV judge (`judge.keyEnv`). |
+| `TYPESAFE_API_KEY` | yes | JEV judge (`judge.keyEnv`): the reads' judgements and layered consolidation's linking. |
 | `DEEPSEEK_API_KEY` | yes | DeepSeek Flash planner and consolidator (`planner.keyEnv`, `consolidator.keyEnv`). |
 | `OPENAI_API_KEY` | optional | Only when a model uses `"kind": "openai"` (for example `gpt-4.1-mini` as the planner, with `"baseURL": "https://api.openai.com/v1"` and `"keyEnv": "OPENAI_API_KEY"`). Models outside the built-in price table (`gpt-4.1-mini`, `gpt-4o-mini`) need `priceIn` and `priceOut` (USD per 1M tokens). Not used by the shipped configuration. |
 
@@ -174,20 +181,23 @@ here:
 | Field | Value | Notes |
 |---|---|---|
 | `strategy` | `"simple"` | The read strategy of the paper. `""` would be the older memory-agent/v1 reads. |
-| `view` | `maxItems 100`, `maxCharacters 240000`, `fusion "rrf"` | `top_k` above `maxItems` is clamped to it, never an error. The platform's formal `top_k` is 100. |
-| `consolidation` | `{"mode": "timelines"}` | Other fields keep the author's defaults (10,000-character batches, at most 16 batches per job). A user's records waiting to be folded are bounded by 16 × 10,000 characters; later records wait unread, losing nothing. |
+| `view` | `maxItems 100`, `maxCharacters 240000`, `order "time"` | `top_k` above `maxItems` is clamped to it, never an error. The platform's formal `top_k` is 100. There is no `fusion`: the View is the judged list (JEV's shortlist of at most 64 records and at most 8 linked from the consolidation blocks), so a normal Search stays well under both caps. `order "time"` lists the records after the consolidation blocks in time order, records of one time in the order they were written; selection and the cut at `top_k` go by rank. `"fusion": "rrf"` (not set) would fill the View up to the caps from the plain search ranking. |
+| `consolidation` | `{"mode": "layered"}` | DeepSeek extracts each batch alone, then JEV links it to the memory so far (see Operating notes). It needs the `judge` and the `consolidator`. Other fields keep their defaults: 10,000-character batches, at most 16 batches per job, 4 extractions in flight (`parallel`), 8 stored candidates per linked item (`linkCandidates`). A user's records waiting to be folded are bounded by 16 × 10,000 characters; later records wait unread, losing nothing. `{"mode": "timelines"}` is the reference's sequential fold: the state and the reads are the same. `nativeEdges`, `edgeKinds`, `view.expand` and `index` (memory-service options) are not set. |
 | `planner` | DeepSeek Flash, **no thinking** | Do not add `"thinking": true`. Cue planning is capped at 400 output tokens and need planning at 200; a reasoning model can spend them on reasoning and return an empty plan, which makes Search degrade. |
-| `judge` | `jev` / `jev-1.13.0` | The version is pinned; the endpoint is JEV's official one. |
-| `consolidator` | DeepSeek Flash, no thinking, `timeoutSeconds` 600 | Each fold asks for at most 8,192 output tokens whatever `maxTokens` says. A fold of a full batch can take minutes, so its calls may run 600 s (`timeoutSeconds`, 1–1,800; models without it time out after 90 s). Unset, the planner would fold. |
+| `judge` | `jev` / `jev-1.13.0` | The version is pinned; the endpoint is JEV's official one. It judges the reads and, in layered mode, links the consolidation items, so its budget pays for both. |
+| `consolidator` | DeepSeek Flash, no thinking, `timeoutSeconds` 600 | Each extraction asks for at most 8,192 output tokens whatever `maxTokens` says. The extraction of a full batch can take minutes, so its calls may run 600 s (`timeoutSeconds`, 1–1,800; models without it time out after 90 s). Unset, the planner would extract. |
 | `embedding` | Ollama at `http://127.0.0.1:11434`, `nomic-embed-text` | Prefixes `search_query: ` and `search_document: ` (note the trailing spaces). Changing the model or prefixes after data exists means new vectors: use a fresh data root. |
 | `budgetFile` | `/var/lib/mnemon-aml/model-budget.db` | Absolute, private (0600), shared by all users of the process. Keep one budget file per deployment: two profiles with different caps would overwrite each other's stored cap. |
 | `budgets` | `{"jev": 20, "deepseek": 200}` | **Placeholders: set them before the job.** They are hard caps on spending, in USD for `jev` and `openai` and CNY for `deepseek`. When a cap is reached the model calls stop (see Troubleshooting). Every call holds a reservation while it runs: USD 0.01 for JEV, CNY 0.25 for DeepSeek, more for a large fold (up to about CNY 0.46 for the largest request). A call that never connected or got a non-2xx answer releases it; a call that failed after sending, returned an unreadable reply or was cut by a restart keeps it held, so the usable headroom is a little below the cap. The configured value replaces the stored cap when the service starts (builds before configurable budgets kept the lower of the two); the amount already spent is kept. The `openai` cap is a soft one: a call that costs more than its reservation is recorded at its real price. |
 
 A Search can make several planner calls and up to 128 JEV decision calls (the read budget).
-Consolidation makes one DeepSeek call per fold (more when a reply must be asked again or
-split): during the Add that completes a batch, and before the next Search for the rest.
-Estimate the job's spend from a trial run (read the budget file, below) before choosing the
-caps.
+Layered consolidation makes one DeepSeek extraction call per batch (more when a reply must
+be asked again or split) and, once the user's memory holds anything to link to, a few JEV
+calls per batch: one question per candidate for each new topic (up to 8 stored topics) and
+two per candidate for each new fact (up to 8 stored facts), packed 128 questions to a call.
+Both happen during the Add that completes a batch, and before the next Search for the
+rest, so the `jev` cap pays for consolidation as well as for Searches. Estimate the job's
+spend from a trial run (read the budget file, below) before choosing the caps.
 
 ## Operating notes
 
@@ -218,6 +228,17 @@ caps.
   records' native edges, which are rebuilt once after them when any job left them pending.
   Without the flag the adapter never consolidates (there is no other trigger), and Search
   returns evidence records only.
+- **Layered consolidation** (the shipped `consolidation.mode`) works inside those timing
+  rules and changes what a job does. DeepSeek extracts each batch alone, without the index so
+  far, up to four batches at once, so an Add with several full batches waits for fewer model
+  calls in a row; then JEV links the batches strictly in batch order, saving the index after
+  each one. For every new topic and fact it compares the stored ones nearest to it (by the
+  cosine of the Ollama embeddings, by shared words when the embedder fails) and decides
+  whether it continues one. The three-failures rule above is about the extraction. A batch
+  whose JEV calls fail, or whose JEV budget is spent, is linked without JEV: its topics and
+  facts start new ones instead of continuing stored ones (a fact keeps the history of the
+  stored key of the same name), and the job goes on. The log does not report this; the `jev`
+  account of the budget file shows the spend.
 - **`--search-timeout`** (default `10m`, `1m` to `18m`) bounds a Search's memory read. When it
   expires the Search answers the raw ranking (HTTP 200, counted as degraded). With the tail
   fold's own 10 minutes before it, a Search answers within the platform's 30 minutes.
@@ -253,7 +274,10 @@ sort -k2 -n search.txt | awk '{t[NR]=$2} END{print "p50", t[int(NR*0.5+0.5)], "p
 Raise `C` until the p95 or the share of non-200 answers gets worse, and note the largest `C`
 that stays acceptable. Watch the process memory (`systemctl status aml-serve`), the 503 count
 and `degraded search` lines in the journal, and Ollama's CPU. Do the same for Add with
-distinct `request_id` and `user_id` values.
+distinct `request_id` and `user_id` values. An Add that completes batches also calls
+DeepSeek (up to four extractions at once per job) and JEV (linking), so its latency, and the
+concurrency at which the providers answer `model HTTP 429`, depend on how much conversation
+each Add carries: measure Adds that complete full batches.
 
 ## Health and smoke test
 
@@ -281,10 +305,11 @@ curl -sS -o /dev/null -w '%{http_code}\n' -X POST "$BASE/search" -d '{}'   # 401
 ```
 
 The Search calls the paid models. With `--consolidate-on-add` the smoke test also spends
-DeepSeek on consolidation: the smoke Add is short of a full batch, so the Search folds it
-before it reads. Each item's `score` is its rank score (1 for the first, then 0.5, …). The
-smoke user lives in the real data root: **delete it before the job** (see "User deletion"
-below), or the platform's own users are mixed with it.
+DeepSeek on consolidation (and JEV, once the user's memory holds something to link to): the
+smoke Add is short of a full batch, so the Search folds it before it reads. Each item's
+`score` is its score by position (1 for the first, then 0.5, …). The smoke user lives in
+the real data root: **delete it before the job** (see "User deletion" below), or the
+platform's own users are mixed with it.
 
 ## Logs and monitoring
 
