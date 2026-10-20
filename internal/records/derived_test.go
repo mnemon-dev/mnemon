@@ -492,3 +492,83 @@ func TestDerivedCacheKeepsOneEntryPerGeneration(t *testing.T) {
 		t.Fatal(s.cache.derivedOrder, len(s.cache.derived), s.cache.derivedDocs)
 	}
 }
+
+func TestReplaceDerivedMetadataWritesOnlyChanges(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	if _, err := s.db.Exec(`CREATE TABLE writes(kind TEXT, id TEXT);
+CREATE TRIGGER derived_insert AFTER INSERT ON derived_metadata BEGIN INSERT INTO writes VALUES('insert',new.id); END;
+CREATE TRIGGER derived_update AFTER UPDATE ON derived_metadata BEGIN INSERT INTO writes VALUES('update',new.id); END;
+CREATE TRIGGER derived_delete AFTER DELETE ON derived_metadata BEGIN INSERT INTO writes VALUES('delete',old.id); END;`); err != nil {
+		t.Fatal(err)
+	}
+	writes := func() []string {
+		rows, err := s.db.Query(`SELECT kind||' '||id FROM writes ORDER BY rowid`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		out := []string{}
+		for rows.Next() {
+			var w string
+			rows.Scan(&w)
+			out = append(out, w)
+		}
+		if _, err := s.db.Exec(`DELETE FROM writes`); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	generation := func() string {
+		g, err := derivedGeneration(ctx, s.readDB())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return g
+	}
+	items := map[string]DerivedMetadata{
+		"a": {Version: 1, Entities: []string{"Athena"}},
+		"b": {Version: 1, EventAt: "2020-01-01"},
+		"c": {Version: 1, Aliases: []string{"Owl"}},
+	}
+	if err := s.ReplaceDerivedMetadata(ctx, "consolidation", items); err != nil {
+		t.Fatal(err)
+	}
+	if got := writes(); !slices.Equal(got, []string{"insert a", "insert b", "insert c"}) || generation() != "1" {
+		t.Fatal(got, generation())
+	}
+	// The same rows again: nothing written, the caches keep their generation.
+	if err := s.ReplaceDerivedMetadata(ctx, "consolidation", items); err != nil {
+		t.Fatal(err)
+	}
+	if got := writes(); len(got) != 0 || generation() != "1" {
+		t.Fatal(got, generation())
+	}
+	// One row changed (its version), one gone, one new; another source's
+	// rows are not touched.
+	if err := s.ReplaceDerivedMetadata(ctx, "other", map[string]DerivedMetadata{"a": {Version: 1, Entities: []string{"Zeus"}}}); err != nil {
+		t.Fatal(err)
+	}
+	writes()
+	if err := s.ReplaceDerivedMetadata(ctx, "consolidation", map[string]DerivedMetadata{
+		"a": {Version: 2, Entities: []string{"Athena"}},
+		"b": {Version: 1, EventAt: "2020-01-01"},
+		"d": {Version: 1, EventAt: "2021-01-01"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := writes(); !slices.Equal(got, []string{"update a", "insert d", "delete c"}) || generation() != "3" {
+		t.Fatal(got, generation())
+	}
+	var rows int
+	if err := s.db.QueryRow(`SELECT count(*) FROM derived_metadata`).Scan(&rows); err != nil || rows != 4 {
+		t.Fatal(rows, err)
+	}
+	// No rows for a source: its rows go.
+	if err := s.ReplaceDerivedMetadata(ctx, "consolidation", nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := writes(); !slices.Equal(got, []string{"delete a", "delete b", "delete d"}) || generation() != "4" {
+		t.Fatal(got, generation())
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 )
 
@@ -60,7 +61,10 @@ func (m DerivedMetadata) validate() error {
 }
 
 // ReplaceDerivedMetadata replaces every overlay row of source with items
-// (record id → row), atomically. A refused replace changes nothing.
+// (record id → row), atomically. Only changes are written: a new or changed
+// row is upserted, a row no longer given is deleted, and an unchanged row is
+// left alone; the generation moves only when something changed, so the
+// caches stay warm otherwise. A refused replace changes nothing.
 func (s *Store) ReplaceDerivedMetadata(ctx context.Context, source string, items map[string]DerivedMetadata) error {
 	if s.readonly {
 		return errors.New("records derived metadata is unavailable with --readonly")
@@ -87,17 +91,52 @@ func (s *Store) ReplaceDerivedMetadata(ctx context.Context, source string, items
 		return err
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, "DELETE FROM derived_metadata WHERE source=?", source); err != nil {
+	// The source's rows as stored: id → version and meta.
+	stored := map[string]string{}
+	rows, err := tx.QueryContext(ctx, "SELECT id,version,meta FROM derived_metadata WHERE source=?", source)
+	if err != nil {
 		return err
 	}
+	for rows.Next() {
+		var id, meta string
+		var version int64
+		if err := rows.Scan(&id, &version, &meta); err != nil {
+			rows.Close()
+			return err
+		}
+		stored[id] = fmt.Sprint(version, " ", meta)
+	}
+	err = rows.Err()
+	rows.Close()
+	if err != nil {
+		return err
+	}
+	changed := false
 	for _, id := range ids {
 		raw, err := json.Marshal(items[id])
 		if err != nil {
 			return err
 		}
-		if _, err = tx.ExecContext(ctx, "INSERT INTO derived_metadata VALUES(?,?,?,?)", source, id, items[id].Version, string(raw)); err != nil {
+		old, ok := stored[id]
+		delete(stored, id)
+		if ok && old == fmt.Sprint(items[id].Version, " ", string(raw)) {
+			continue
+		}
+		if _, err = tx.ExecContext(ctx, `INSERT INTO derived_metadata VALUES(?,?,?,?)
+ ON CONFLICT(source,id) DO UPDATE SET version=excluded.version,meta=excluded.meta`, source, id, items[id].Version, string(raw)); err != nil {
 			return err
 		}
+		changed = true
+	}
+	gone := slices.Sorted(maps.Keys(stored))
+	for _, id := range gone {
+		if _, err = tx.ExecContext(ctx, "DELETE FROM derived_metadata WHERE source=? AND id=?", source, id); err != nil {
+			return err
+		}
+		changed = true
+	}
+	if !changed {
+		return nil
 	}
 	if _, err = tx.ExecContext(ctx, "INSERT INTO meta VALUES('derived','1') ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1"); err != nil {
 		return err
