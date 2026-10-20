@@ -45,36 +45,44 @@ func TestInsightSystemPromptVerbatim(t *testing.T) {
 
 func TestInsightStream(t *testing.T) {
 	m := insightMemory()
-	// Events, then each key's values in key order, then the directives; ids
-	// count from 1 in the memory, a value's by key and place in its history.
-	want := []string{
-		"E1 (2024/01/03) [Kayak trip] Booked a kayak for the lake trip.",
-		"E2 (2024/01/04) [Tax return] Filed the tax return.",
-		"E3 (2024/02/01) [Kayak trip] Moved the kayak trip to May 10.",
-		"V1.1 (2024/01/03) kayak trip · date: May 3",
-		"V1.2 (2024/02/01) kayak trip · date: May 10",
-		"V2.1 (2024/01/04) tax · refund: $300",
-		"D1 (2024/01/02) Answer briefly.",
+	// Every unread item in date order; a date's items are the events, then
+	// the values (by key, then history), then the directives. Ids count from
+	// 1 in the memory, a value's by key and place in its history.
+	lines := map[string]string{
+		"E1":   "E1 (2024/01/03) [Kayak trip] Booked a kayak for the lake trip.",
+		"E2":   "E2 (2024/01/04) [Tax return] Filed the tax return.",
+		"E3":   "E3 (2024/02/01) [Kayak trip] Moved the kayak trip to May 10.",
+		"V1.1": "V1.1 (2024/01/03) kayak trip · date: May 3",
+		"V1.2": "V1.2 (2024/02/01) kayak trip · date: May 10",
+		"V2.1": "V2.1 (2024/01/04) tax · refund: $300",
+		"D1":   "D1 (2024/01/02) Answer briefly.",
+	}
+	in := func(ids ...string) []string {
+		out := []string{}
+		for _, id := range ids {
+			out = append(out, lines[id])
+		}
+		return out
 	}
 	stream := insightStream(m, insightRead{})
-	if got := itemLines(stream); !slices.Equal(got, want) {
+	if got := itemLines(stream); !slices.Equal(got, in("D1", "E1", "V1.1", "E2", "V2.1", "E3", "V1.2")) {
 		t.Fatalf("%q", got)
 	}
-	if stream[1].id != "E2" || stream[4].id != "V1.2" || stream[6].id != "D1" || !slices.Equal(stream[1].records, []string{"b", "a"}) || stream[4].date != "2024/02/01" {
+	if stream[3].id != "E2" || stream[6].id != "V1.2" || stream[0].id != "D1" || !slices.Equal(stream[3].records, []string{"b", "a"}) || stream[6].date != "2024/02/01" {
 		t.Fatalf("%+v", stream)
 	}
-	if insightPrompt(stream[:2]) != want[0]+"\n"+want[1] {
+	if insightPrompt(stream[:2]) != lines["D1"]+"\n"+lines["E1"] {
 		t.Fatal(insightPrompt(stream[:2]))
 	}
 	// What L2 has read is not read again; the others keep their ids.
 	read := insightRead{Events: 2, Values: map[string]int{"kayak trip · date": 1}, Directives: 1}
-	if got := itemLines(insightStream(m, read)); !slices.Equal(got, []string{want[2], want[4], want[5]}) {
+	if got := itemLines(insightStream(m, read)); !slices.Equal(got, in("V2.1", "E3", "V1.2")) {
 		t.Fatalf("%q", got)
 	}
-	// Reading moves the position past what was read, each list on its own.
+	// Reading moves each list's position past what was read.
 	var position insightRead
 	position.advance(stream[:4])
-	if !reflect.DeepEqual(position, insightRead{Events: 3, Values: map[string]int{"kayak trip · date": 1}}) {
+	if !reflect.DeepEqual(position, insightRead{Events: 2, Values: map[string]int{"kayak trip · date": 1}, Directives: 1}) {
 		t.Fatalf("%+v", position)
 	}
 	position.advance(stream[4:])
@@ -82,17 +90,17 @@ func TestInsightStream(t *testing.T) {
 		t.Fatalf("%+v", position)
 	}
 	// Items appended later (a new event, a value of a read key, a new key, a
-	// directive) are the next stream, in memory order.
-	m.Events = append(m.Events, event{Thread: "T9", Date: "2024/03/01", Text: "A thread not stored.", Records: []string{"e"}})
+	// directive) are the next stream, in date order.
+	m.Events = append(m.Events, event{Thread: "T9", Date: "2024/03/04", Text: "A thread not stored.", Records: []string{"e"}})
 	m.Facts["kayak trip · date"] = append(m.Facts["kayak trip · date"], factValue{Value: "May 17", Date: "2024/03/01", Records: []string{"e"}})
 	m.Facts["garden · crop"] = []factValue{{Value: "tomatoes", Date: "2024/03/02"}}
 	m.FactOrder = append(m.FactOrder, "garden · crop")
 	m.Directives = append(m.Directives, directive{Text: "Use metric units.", Date: "2024/03/03"})
-	want = []string{
-		"E4 (2024/03/01) [T9] A thread not stored.",
+	want := []string{
 		"V1.3 (2024/03/01) kayak trip · date: May 17",
 		"V3.1 (2024/03/02) garden · crop: tomatoes",
 		"D2 (2024/03/03) Use metric units.",
+		"E4 (2024/03/04) [T9] A thread not stored.",
 	}
 	if got := itemLines(insightStream(m, position)); !slices.Equal(got, want) {
 		t.Fatalf("%q", got)
@@ -100,6 +108,84 @@ func TestInsightStream(t *testing.T) {
 	// A position past a list's end reads nothing of it.
 	if got := insightStream(m, insightRead{Events: 9, Values: map[string]int{"kayak trip · date": 7, "tax · refund": 1, "garden · crop": 1}, Directives: 5}); len(got) != 0 {
 		t.Fatal(itemLines(got))
+	}
+}
+
+func TestInsightStreamDates(t *testing.T) {
+	// Dates that are no days (YYYY/MM/DD) come after every dated item, in
+	// the same order among themselves: events, values, directives, memory
+	// order.
+	m := timelineMemory{
+		Threads: []thread{{ID: "T1", Title: "Trip"}},
+		Events: []event{
+			{Thread: "T1", Date: "soon", Text: "e1"},
+			{Thread: "T1", Date: "2024/05/02", Text: "e2"},
+			{Thread: "T1", Date: "", Text: "e3"},
+			{Thread: "T1", Date: "2024/04/30", Text: "e4"},
+		},
+		Facts:      map[string][]factValue{"b": {{Value: "v", Date: "2024/5/1"}, {Value: "w", Date: "2024/05/02"}}, "a": {{Value: "x", Date: "2024/04/30"}}},
+		FactOrder:  []string{"b", "a"},
+		Directives: []directive{{Text: "d1", Date: "2024/04/29"}, {Text: "d2", Date: "never"}},
+	}
+	ids := func(items []insightItem) []string {
+		out := []string{}
+		for _, item := range items {
+			out = append(out, item.id)
+		}
+		return out
+	}
+	if got := ids(insightStream(m, insightRead{})); !slices.Equal(got, []string{"D1", "E4", "V2.1", "E2", "V1.2", "E1", "E3", "V1.1", "D2"}) {
+		t.Fatal(got)
+	}
+}
+
+func TestInsightReadOutOfListOrder(t *testing.T) {
+	// The later event of the list is the earlier: date order reads it first,
+	// and the position keeps it until the event before it is read.
+	m := timelineMemory{
+		Threads:    []thread{{ID: "T1", Title: "Trip"}},
+		Events:     []event{{Thread: "T1", Date: "2024/05/01", Text: "May"}, {Thread: "T1", Date: "2024/04/01", Text: "April"}, {Thread: "T1", Date: "2024/04/02", Text: "April 2"}},
+		Facts:      map[string][]factValue{"k": {{Value: "late", Date: "2024/06/01"}, {Value: "early", Date: "2024/01/01"}}},
+		FactOrder:  []string{"k"},
+		Directives: []directive{{Text: "later", Date: "2024/03/02"}, {Text: "sooner", Date: "2024/03/01"}},
+	}
+	stream := insightStream(m, insightRead{})
+	if got := itemLines(stream); !slices.Equal(got, []string{"V1.2 (2024/01/01) k: early", "D2 (2024/03/01) sooner", "D1 (2024/03/02) later", "E2 (2024/04/01) [Trip] April", "E3 (2024/04/02) [Trip] April 2", "E1 (2024/05/01) [Trip] May", "V1.1 (2024/06/01) k: late"}) {
+		t.Fatalf("%q", got)
+	}
+	var read insightRead
+	read.advance(stream[:2])
+	if !reflect.DeepEqual(read, insightRead{Values: map[string]int{"k": 0}, ValuesAfter: map[string][]int{"k": {1}}, DirectivesAfter: []int{1}}) {
+		t.Fatalf("%+v", read)
+	}
+	read.advance(stream[2:5])
+	if !reflect.DeepEqual(read, insightRead{EventsAfter: []int{1, 2}, Values: map[string]int{"k": 0}, ValuesAfter: map[string][]int{"k": {1}}, Directives: 2}) {
+		t.Fatalf("%+v", read)
+	}
+	// Nothing read is read again, nor marked twice.
+	read.advance(stream[3:4])
+	if !reflect.DeepEqual(read.EventsAfter, []int{1, 2}) {
+		t.Fatal(read.EventsAfter)
+	}
+	if got := itemLines(insightStream(m, read)); !slices.Equal(got, []string{"E1 (2024/05/01) [Trip] May", "V1.1 (2024/06/01) k: late"}) {
+		t.Fatalf("%q", got)
+	}
+	raw, _ := json.Marshal(read)
+	if string(raw) != `{"events":0,"eventsAfter":[1,2],"values":{"k":0},"valuesAfter":{"k":[1]},"directives":2}` {
+		t.Fatal(string(raw))
+	}
+	// Once the earlier items are read, the positions take in the rest.
+	read.advance(stream[5:])
+	if !reflect.DeepEqual(read, insightRead{Events: 3, Values: map[string]int{"k": 2}, Directives: 2}) || len(insightStream(m, read)) != 0 {
+		t.Fatalf("%+v", read)
+	}
+	// Reading an item twice changes nothing.
+	read.advance(stream[:1])
+	if !reflect.DeepEqual(read, insightRead{Events: 3, Values: map[string]int{"k": 2}, Directives: 2}) {
+		t.Fatalf("%+v", read)
+	}
+	if raw, _ = json.Marshal(read); string(raw) != `{"events":3,"values":{"k":2},"directives":2}` {
+		t.Fatal(string(raw))
 	}
 }
 
@@ -176,8 +262,9 @@ func TestParseInsights(t *testing.T) {
 	if !ok || !reflect.DeepEqual(got, want) {
 		t.Fatalf("%v %+v", ok, got)
 	}
-	// Only the batch's ids count.
-	got, ok = parseInsights(reply, batch[:3])
+	// Only the batch's ids count: of the events alone, one insight cites two.
+	events := slices.DeleteFunc(slices.Clone(batch), func(item insightItem) bool { return item.kind != itemEvent })
+	got, ok = parseInsights(reply, events)
 	if !ok || len(got) != 1 || got[0].Text != "No date at all." {
 		t.Fatalf("%+v", got)
 	}

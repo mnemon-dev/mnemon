@@ -650,3 +650,165 @@ func TestConsolidateInsightsDropModeDropsAWholeHalf(t *testing.T) {
 		t.Fatal(state.Memory.Insights, state.InsightRead)
 	}
 }
+
+var datedRecord = regexp.MustCompile(`(?m)^\[r(\d+)\] (\d{4}/\d{2}/\d{2}) \(session [^)]*\)\n`)
+
+// datedReply is L0 over dated conversation notes: per record, an event on
+// its topic's thread and a value of "<topic> · status", both dated by the
+// record's session.
+func datedReply(prompt string) string {
+	matches := datedRecord.FindAllStringSubmatchIndex(prompt, -1)
+	events, facts := []map[string]any{}, []map[string]any{}
+	for n, m := range matches {
+		end := len(prompt)
+		if n+1 < len(matches) {
+			end = matches[n+1][0]
+		}
+		id, date, text := prompt[m[2]:m[3]], prompt[m[4]:m[5]], strings.TrimSpace(prompt[m[1]:end])
+		topic := "misc"
+		for _, name := range []string{"kayak", "taxes", "garden"} {
+			if strings.Contains(text, name) {
+				topic = name
+				break
+			}
+		}
+		events = append(events, map[string]any{"thread": "new: " + topic, "date": date, "text": text, "records": []string{"r" + id}})
+		facts = append(facts, map[string]any{"key": topic + " · status", "value": text, "date": date, "records": []string{"r" + id}})
+	}
+	raw, _ := json.Marshal(map[string]any{"events": events, "facts": facts, "directives": []any{}})
+	return string(raw)
+}
+
+// seedDated stores, for each day, one conversation note per topic, dated
+// that day of March 2024.
+func seedDated(t *testing.T, s *records.Store, days ...int) {
+	t.Helper()
+	for _, day := range days {
+		for _, topic := range []string{"kayak", "taxes", "garden"} {
+			at := time.Date(2024, 3, day, 9, 0, 0, 0, time.UTC)
+			id := fmt.Sprintf("%s-%02d", topic, day)
+			text := fmt.Sprintf("the %s plan changed on day %d", topic, day)
+			if _, err := WriteConversation(context.Background(), s, ConversationRequest{ID: id, SessionID: id, Messages: []ConversationMessage{{Role: "user", Content: text, At: &at}}}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+// promptDates is the dates of a prompt's lines, in order.
+func promptDates(prompt string) []string {
+	out := []string{}
+	for _, m := range insightLinePattern.FindAllStringSubmatch(prompt, -1) {
+		out = append(out, m[2])
+	}
+	return out
+}
+
+func TestConsolidateInsightsBackfillInDateOrder(t *testing.T) {
+	ctx := context.Background()
+	s, dir := agentStore(t)
+	seedDated(t, s, 1, 2, 3, 4, 5, 6)
+	model := &limitPlanner{reply: func(system, prompt string) (string, error) {
+		if system == insightSystem {
+			return insightReply(prompt), nil
+		}
+		return datedReply(prompt), nil
+	}}
+	judge := insightJudge()
+	off, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 400, Parallel: 1}, model, judge)
+	for range 10 {
+		if result, err := off.Consolidate(ctx, ConsolidateRequest{}); err != nil || result.Remaining == 0 {
+			break
+		}
+	}
+	state := loadState(t, overlay)
+	if len(state.Memory.Events) != 18 || len(state.Pending) != 0 {
+		t.Fatal(len(state.Memory.Events), len(state.Pending))
+	}
+	// The memory lists the events, then the values: L2 reads them by date,
+	// each batch a period with every kind of item of it.
+	on, err := New(s, Config{Version: 1, Policy: &ReadPolicy{Consolidation: true}, Consolidation: &ConsolidationConfig{Mode: "layered", BatchCharacters: 400, Parallel: 1, Insights: true}}, Models{Consolidator: model, Judge: judge}, overlay)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := on.Consolidate(ctx, ConsolidateRequest{})
+	if err != nil || result.InsightBatches < 3 || result.Remaining != 0 {
+		t.Fatalf("%+v %v", result, err)
+	}
+	l2, _ := l2Calls(model)
+	readOnce(t, l2, insightStream(loadState(t, overlay).Memory, insightRead{}))
+	all := []string{}
+	for _, prompt := range l2 {
+		// Each batch holds a day's events and values, events first.
+		kinds := map[string]string{}
+		for _, m := range insightLinePattern.FindAllStringSubmatch(prompt, -1) {
+			kinds[m[2]] += m[1][:1]
+		}
+		mixed := false
+		for _, k := range kinds {
+			mixed = mixed || strings.Contains(k, "EV") && !strings.Contains(k, "VE")
+		}
+		if !mixed {
+			t.Fatalf("no day with its events and values in a batch:\n%s", prompt)
+		}
+		all = append(all, promptDates(prompt)...)
+	}
+	if !slices.IsSorted(all) || len(all) != 36 {
+		t.Fatal("not in date order:", all)
+	}
+	if state = loadState(t, overlay); state.InsightRead.EventsAfter != nil || state.InsightRead.ValuesAfter != nil || state.InsightRead.Events != 18 {
+		t.Fatalf("%+v", state.InsightRead)
+	}
+}
+
+func TestConsolidateInsightsReadOutOfListOrderOnce(t *testing.T) {
+	ctx := context.Background()
+	s, dir := agentStore(t)
+	model := &limitPlanner{reply: func(system, prompt string) (string, error) {
+		if system == insightSystem {
+			return insightReply(prompt), nil
+		}
+		return datedReply(prompt), nil
+	}}
+	a, overlay := insightAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 300}, model, insightJudge())
+	// Later days are written first; earlier days come later, so the later
+	// items of each list are the earlier ones.
+	adds := func(days ...int) {
+		seedDated(t, s, days...)
+		for range 10 {
+			if result, err := a.Consolidate(ctx, ConsolidateRequest{Hold: true}); err != nil {
+				t.Fatal(err)
+			} else if result.Folded == 0 {
+				return
+			}
+		}
+	}
+	adds(20, 21, 22)
+	adds(10, 11, 12)
+	state := loadState(t, overlay)
+	if state.InsightRead.EventsAfter == nil && state.InsightRead.ValuesAfter == nil {
+		t.Fatalf("no item was read out of list order: %+v", state.InsightRead)
+	}
+	adds(5)
+	// The flush folds every rest; nothing was read twice, and the
+	// positions took in every item read out of order.
+	for range 10 {
+		result, err := a.Consolidate(ctx, ConsolidateRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result.Remaining == 0 {
+			break
+		}
+	}
+	state = loadState(t, overlay)
+	l2, _ := l2Calls(model)
+	readOnce(t, l2, insightStream(state.Memory, insightRead{}))
+	read := state.InsightRead
+	if read.EventsAfter != nil || read.ValuesAfter != nil || read.DirectivesAfter != nil || read.Events != len(state.Memory.Events) || len(insightStream(state.Memory, *read)) != 0 {
+		t.Fatalf("%+v", read)
+	}
+	if raw := iddStatePayload(t, overlay); strings.Contains(raw, "After") {
+		t.Fatal(raw)
+	}
+}

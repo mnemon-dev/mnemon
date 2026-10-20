@@ -15,8 +15,10 @@ import (
 // pattern that recurs, a change and what it led to, the reason for a
 // decision, the overall state of an effort). When enough consolidated
 // items have accumulated, L2 reads them, never the raw records, each item
-// exactly once, in batches, and the consolidating model writes such
-// conclusions, each citing the items it rests on; JEV then merges each new
+// exactly once, in date order and in batches, so that a batch holds the
+// events, values and directives of a period, and the consolidating model
+// writes such conclusions, each citing the items it rests on; JEV then
+// merges each new
 // conclusion into a stored one that states the same (as L1 links L0's
 // items). Simple reads show the conclusions as the layer's fifth block
 // (insights_layer.go). Lengths are UTF-16 units.
@@ -30,18 +32,25 @@ type insight struct {
 	Records []string `json:"records"`
 }
 
-// insightRead is L2's read position in the memory: how many of its events,
-// of each key's values and of its directives L2 has read, always the first
-// ones (consolidation only appends to these lists), so that no item is
-// read twice. ModelErrors and FirstModelError count the jobs whose L2 of
-// the head batch ended in a model error, as timelineState's count L0's,
-// for L2's own drop mode.
+// insightRead is L2's read position in the memory, per list: Events,
+// Values (per key) and Directives count the first items of the events, of
+// each key's values and of the directives that L2 has read (consolidation
+// only appends to these lists), and EventsAfter, ValuesAfter and
+// DirectivesAfter the indexes past them it has read too, ascending: L2
+// reads in date order, so a later item of a list can be read before an
+// earlier one. Once the items before it are read, a position takes them in.
+// No item is read twice. ModelErrors and FirstModelError count the jobs
+// whose L2 of the head batch ended in a model error, as timelineState's
+// count L0's, for L2's own drop mode.
 type insightRead struct {
-	Events          int            `json:"events"`
-	Values          map[string]int `json:"values"`
-	Directives      int            `json:"directives"`
-	ModelErrors     int            `json:"modelErrors,omitempty"`
-	FirstModelError int64          `json:"firstModelError,omitempty"`
+	Events          int              `json:"events"`
+	EventsAfter     []int            `json:"eventsAfter,omitempty"`
+	Values          map[string]int   `json:"values"`
+	ValuesAfter     map[string][]int `json:"valuesAfter,omitempty"`
+	Directives      int              `json:"directives"`
+	DirectivesAfter []int            `json:"directivesAfter,omitempty"`
+	ModelErrors     int              `json:"modelErrors,omitempty"`
+	FirstModelError int64            `json:"firstModelError,omitempty"`
 }
 
 // The kinds of consolidated item.
@@ -53,10 +62,12 @@ const (
 
 // insightItem is a consolidated item as L2 reads it: its id (E<i>, the i-th
 // event; V<k>.<j>, the j-th value of the k-th key in FactOrder; D<i>, the
-// i-th directive; all from 1), its line, its date and records, and where it
-// is in the memory (its kind, index in its list, and a value's key).
+// i-th directive; all from 1), its line, its date (dated when it is a day,
+// YYYY/MM/DD) and records, and where it is in the memory (its kind, index
+// in its list, and a value's key).
 type insightItem struct {
 	id, line, date, key string
+	dated               bool
 	kind, index         int
 	records             []string
 }
@@ -64,12 +75,14 @@ type insightItem struct {
 // insightSystem is the L2 consolidation prompt.
 const insightSystem = `You consolidate a person's long-term memory one level up. The input lists items already extracted from their conversations: events of topics, values of facts and standing instructions, each with an id and a date. Write the conclusions that follow only from two or more of these items together and that no single item states: a pattern that recurs, a change over time and what it led to, the reason behind a decision, the overall state of an effort, how the person's preferences or situation evolved. Each conclusion is one sentence, dated with the latest date it rests on, and lists the ids of the items it rests on (at least two). Do not repeat what one item already says, do not go beyond what the items say, and return an empty list when nothing follows. Reply with JSON only: {"insights":[{"text":"...","date":"YYYY/MM/DD","items":["E12","V3.2"]}]}`
 
-// insightStream is the consolidated items L2 has not read, in memory order:
-// the events after those read, then each key's values after those read
-// (keys in FactOrder), then the directives after those read. Lines are
-// "E<i> (<date>) [<thread title>] <text>", "V<k>.<j> (<date>) <key>:
-// <value>" and "D<i> (<date>) <text>"; an event whose thread is not stored
-// shows the thread's id.
+// insightStream is the consolidated items L2 has not read (those of each
+// list past its position and not read past it), in date order: by date,
+// earliest first, and on one date the events, then the values (keys in
+// FactOrder, each key's in its order), then the directives, each in memory
+// order. Items whose date is not a day (YYYY/MM/DD) come after every dated
+// item, in that same order. Lines are "E<i> (<date>) [<thread title>]
+// <text>", "V<k>.<j> (<date>) <key>: <value>" and "D<i> (<date>) <text>";
+// an event whose thread is not stored shows the thread's id.
 func insightStream(m timelineMemory, read insightRead) []insightItem {
 	titles := map[string]string{}
 	for _, t := range m.Threads {
@@ -77,47 +90,103 @@ func insightStream(m timelineMemory, read insightRead) []insightItem {
 			titles[t.ID] = t.Title
 		}
 	}
+	unread := func(position int, after []int, i int) bool {
+		return i >= position && !slices.Contains(after, i)
+	}
 	out := []insightItem{}
-	for i := min(read.Events, len(m.Events)); i < len(m.Events); i++ {
-		e := m.Events[i]
+	add := func(item insightItem) {
+		item.dated = isDay(item.date)
+		out = append(out, item)
+	}
+	for i, e := range m.Events {
+		if !unread(read.Events, read.EventsAfter, i) {
+			continue
+		}
 		title, ok := titles[e.Thread]
 		if !ok {
 			title = e.Thread
 		}
 		id := fmt.Sprintf("E%d", i+1)
-		out = append(out, insightItem{id: id, line: id + " (" + e.Date + ") [" + title + "] " + e.Text, date: e.Date, kind: itemEvent, index: i, records: e.Records})
+		add(insightItem{id: id, line: id + " (" + e.Date + ") [" + title + "] " + e.Text, date: e.Date, kind: itemEvent, index: i, records: e.Records})
 	}
 	for k, key := range m.FactOrder {
-		values := m.Facts[key]
-		for j := min(read.Values[key], len(values)); j < len(values); j++ {
-			v := values[j]
+		for j, v := range m.Facts[key] {
+			if !unread(read.Values[key], read.ValuesAfter[key], j) {
+				continue
+			}
 			id := fmt.Sprintf("V%d.%d", k+1, j+1)
-			out = append(out, insightItem{id: id, line: id + " (" + v.Date + ") " + key + ": " + v.Value, date: v.Date, key: key, kind: itemValue, index: j, records: v.Records})
+			add(insightItem{id: id, line: id + " (" + v.Date + ") " + key + ": " + v.Value, date: v.Date, key: key, kind: itemValue, index: j, records: v.Records})
 		}
 	}
-	for i := min(read.Directives, len(m.Directives)); i < len(m.Directives); i++ {
-		d := m.Directives[i]
+	for i, d := range m.Directives {
+		if !unread(read.Directives, read.DirectivesAfter, i) {
+			continue
+		}
 		id := fmt.Sprintf("D%d", i+1)
-		out = append(out, insightItem{id: id, line: id + " (" + d.Date + ") " + d.Text, date: d.Date, kind: itemDirective, index: i, records: d.Records})
+		add(insightItem{id: id, line: id + " (" + d.Date + ") " + d.Text, date: d.Date, kind: itemDirective, index: i, records: d.Records})
 	}
+	// Built in kind and memory order, which the stable sort keeps on a date.
+	slices.SortStableFunc(out, func(a, b insightItem) int {
+		switch {
+		case a.dated && b.dated:
+			return strings.Compare(a.date, b.date)
+		case a.dated:
+			return -1
+		case b.dated:
+			return 1
+		}
+		return 0
+	})
 	return out
 }
 
-// advance moves the read position past items, read in stream order.
+// advance marks items read: each list's position moves past its items
+// read, and those read past an unread item wait in its After list until
+// the position reaches them.
 func (r *insightRead) advance(items []insightItem) {
 	for _, item := range items {
 		switch item.kind {
 		case itemEvent:
-			r.Events = item.index + 1
+			r.Events, r.EventsAfter = markRead(r.Events, r.EventsAfter, item.index)
 		case itemValue:
 			if r.Values == nil {
 				r.Values = map[string]int{}
 			}
-			r.Values[item.key] = item.index + 1
+			position, after := markRead(r.Values[item.key], r.ValuesAfter[item.key], item.index)
+			r.Values[item.key] = position
+			if after == nil {
+				delete(r.ValuesAfter, item.key)
+			} else {
+				if r.ValuesAfter == nil {
+					r.ValuesAfter = map[string][]int{}
+				}
+				r.ValuesAfter[item.key] = after
+			}
+			if len(r.ValuesAfter) == 0 {
+				r.ValuesAfter = nil
+			}
 		default:
-			r.Directives = item.index + 1
+			r.Directives, r.DirectivesAfter = markRead(r.Directives, r.DirectivesAfter, item.index)
 		}
 	}
+}
+
+// markRead marks item index of a list read, given the list's position (its
+// first items read) and after (the items read past it, ascending), and
+// returns them updated: nil when nothing is read past the position.
+func markRead(position int, after []int, index int) (int, []int) {
+	if index < position || slices.Contains(after, index) {
+		return position, after
+	}
+	after = append(slices.Clone(after), index)
+	slices.Sort(after)
+	for len(after) > 0 && after[0] == position {
+		position, after = position+1, after[1:]
+	}
+	if len(after) == 0 {
+		return position, nil
+	}
+	return position, slices.Clip(after)
 }
 
 // insightBatches cuts the stream into at most max batches, in order, by
