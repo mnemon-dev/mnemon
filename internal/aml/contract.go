@@ -16,6 +16,7 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -458,7 +459,8 @@ func (r SearchRequest) question() string {
 }
 
 // searchItems lists the View for AML: the layer blocks first, then the
-// records, at most topK in all.
+// records in the View's order, at most topK in all; a cut keeps the best
+// ranked records.
 func searchItems(view memoryagent.View, topK int) []SearchItem {
 	items := []SearchItem{}
 	for _, block := range view.Index {
@@ -467,7 +469,17 @@ func searchItems(view memoryagent.View, topK int) []SearchItem {
 		}
 		items = append(items, SearchItem{ID: blockID(block), Content: block.Text})
 	}
-	for _, record := range view.Records {
+	records := view.Records
+	// Delivered in another order than rank (view.order), the records the
+	// cut keeps are still the best ranked.
+	if room := topK - len(items); len(records) > room && view.RankOrder != nil {
+		kept := map[string]bool{}
+		for _, id := range view.RankOrder[:room] {
+			kept[id] = true
+		}
+		records = slices.DeleteFunc(slices.Clone(records), func(record memoryagent.Evidence) bool { return !kept[record.ID] })
+	}
+	for _, record := range records {
 		if len(items) == topK {
 			break
 		}

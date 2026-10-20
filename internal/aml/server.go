@@ -681,7 +681,9 @@ func (s *Server) answer(w http.ResponseWriter, items []SearchItem) {
 
 // rawSearch is the store's own ranking of the query, hybrid when the
 // configuration embeds (words when the embedder fails), hydrated as reads
-// hydrate evidence. It uses no model.
+// hydrate evidence, cut at top_k by rank and listed as the View's order
+// setting lists a read's records (time order with view.order "time"; on a
+// failure to order, rank order, logged). It uses no model.
 func (s *Server) rawSearch(ctx context.Context, user *userEntry, query string, topK int) ([]SearchItem, error) {
 	snapshot, err := user.store.Get(ctx, records.GetRequest{IDs: []string{}})
 	if err != nil {
@@ -699,6 +701,11 @@ func (s *Server) rawSearch(ctx context.Context, user *userEntry, query string, t
 	evidence, err := user.agent.Hydrate(ctx, snapshot.Revision, records.Scope{}, ids[:min(len(ids), topK, 200)])
 	if err != nil {
 		return nil, err
+	}
+	if ordered, err := user.agent.OrderRecords(ctx, snapshot.Revision, evidence); err == nil {
+		evidence = ordered
+	} else {
+		s.log.Printf("degraded search kept rank order (user %s): %v", user.key[:8], err)
 	}
 	items := []SearchItem{}
 	for _, item := range evidence {
