@@ -483,3 +483,168 @@ func TestBrokenModelCacheNeverFailsACall(t *testing.T) {
 		}
 	}
 }
+
+// walOpen reports whether a handle on the SQLite file at path is open: the
+// write-ahead log exists from the first open to the last close.
+func walOpen(t *testing.T, path string) bool {
+	t.Helper()
+	_, err := os.Stat(path + "-wal")
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	return err == nil
+}
+
+func TestOpenModelsSharesOneModelCache(t *testing.T) {
+	local := &ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1"}
+	path := filepath.Join(t.TempDir(), "model-cache.db")
+	models, budget, cache, err := OpenModels(Config{Version: 1, Planner: local, Judge: local, Consolidator: local, ModelCache: path})
+	if err != nil || budget != nil || cache == nil || !walOpen(t, path) {
+		t.Fatal(budget, cache, err)
+	}
+	for _, model := range []any{models.Planner, models.Judge, models.Consolidator} {
+		if p, ok := model.(*Provider); !ok || p.cache != cache {
+			t.Fatal("a provider does not share the config's cache", model)
+		}
+	}
+	// The caller owns the cache.
+	cache.Close()
+	if walOpen(t, path) {
+		t.Fatal("cache still open")
+	}
+	// Without modelCache nothing is opened and every request is sent.
+	models, _, cache, err = OpenModels(Config{Version: 1, Planner: local})
+	if err != nil || cache != nil || models.Planner.(*Provider).cache != nil {
+		t.Fatal(cache, err)
+	}
+	for _, bad := range []string{"relative/model-cache.db", t.TempDir()} {
+		if _, _, _, err = OpenModels(Config{Version: 1, Planner: local, ModelCache: bad, BudgetFile: filepath.Join(t.TempDir(), "budget.db")}); err == nil {
+			t.Fatal("unusable model cache accepted", bad)
+		}
+	}
+	// A model that cannot be built leaves no cache open.
+	path = filepath.Join(t.TempDir(), "model-cache.db")
+	if _, _, _, err = OpenModels(Config{Version: 1, Judge: &ModelConfig{Kind: "nope", Model: "m"}, ModelCache: path}); err == nil || walOpen(t, path) {
+		t.Fatal("a failed OpenModels left its cache open", err)
+	}
+}
+
+func TestModelCacheStaysOutOfPolicy(t *testing.T) {
+	// View.policy names the read policy; a cache only replays its answers.
+	for name, config := range representativeV1Configs() {
+		with := config
+		with.ModelCache = "/eval/model-cache.db"
+		if v1Policy(t, with) != v1Policy(t, config) {
+			t.Error(name, "policy changed with a model cache")
+		}
+	}
+	s, _ := agentStore(t)
+	models := Models{Planner: replies("", "", ""), Judge: decisionFunc(fixtureJudge)}
+	config := Config{Version: 1, Strategy: "simple", ModelCache: "/eval/model-cache.db"}
+	cached, err := New(s, config, models, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := New(s, Config{Version: 1, Strategy: "simple"}, models, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if (&simpleRun{agent: cached}).policy() != (&simpleRun{agent: plain}).policy() || cached.config.ModelCache != "" || config.ModelCache == "" {
+		t.Fatal("the model cache entered the simple policy, or New changed the caller's config")
+	}
+	// Service configs decode strictly (cmd/memory readMemoryConfig).
+	decoder := json.NewDecoder(strings.NewReader(`{"version":1,"modelCache":"/eval/model-cache.db"}`))
+	decoder.DisallowUnknownFields()
+	var decoded Config
+	if err = decoder.Decode(&decoded); err != nil || decoded.ModelCache != "/eval/model-cache.db" {
+		t.Fatal(decoded, err)
+	}
+}
+
+// readEndpoint is an OpenAI-compatible httptest endpoint for whole simple
+// reads: planner prompts get the codename plan and need, decision prompts
+// fixtureJudge's answers.
+func readEndpoint(t *testing.T) *completionServer {
+	t.Helper()
+	server := newCompletionServer(t, "")
+	server.respond(func(body string) (int, string) {
+		var request struct {
+			Messages       []struct{ Content string }
+			ResponseFormat any `json:"response_format"`
+		}
+		if json.Unmarshal([]byte(body), &request) != nil || len(request.Messages) != 2 {
+			return http.StatusBadRequest, "{}"
+		}
+		system, prompt := request.Messages[0].Content, request.Messages[1].Content
+		reply := "NEED: the codename"
+		switch {
+		case request.ResponseFormat != nil:
+			var decision struct {
+				State     any
+				Questions map[string]Question
+			}
+			json.Unmarshal([]byte(prompt), &decision)
+			answers, _, _ := fixtureJudge(context.Background(), decision.State, decision.Questions)
+			raw, _ := json.Marshal(answers)
+			reply = string(raw)
+		case strings.HasPrefix(system, "You plan searches in the notes"):
+			reply = "codename\nNOTE: the codename is ORBIT"
+		}
+		return http.StatusOK, completionBody(reply)
+	})
+	return server
+}
+
+func TestReadReplaysFromModelCache(t *testing.T) {
+	s, dir := agentStore(t)
+	seedNote(t, s, "answer", "codename ORBIT")
+	seedNote(t, s, "other", "the weather was fine")
+	server := readEndpoint(t)
+	t.Setenv("UNIT_OPENAI_CREDENTIAL", "test-only-placeholder")
+	model := &ModelConfig{Kind: "openai", Model: "test-model", BaseURL: server.URL + "/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL", PriceIn: 1, PriceOut: 2}
+	budgetFile, cacheFile := filepath.Join(t.TempDir(), "budget.db"), filepath.Join(t.TempDir(), "model-cache.db")
+	config := Config{Version: 1, Strategy: "simple", Planner: model, Judge: model, BudgetFile: budgetFile, ModelCache: cacheFile}
+	budget, err := OpenBudget(budgetFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer budget.Close()
+	// Each read is another serve process: its own agent, models and handles
+	// on the shared files, closed after the read.
+	read := func() View {
+		t.Helper()
+		a, err := Open(s, dir, config, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer a.Close()
+		view, err := a.Read(context.Background(), ReadRequest{Question: "What is the codename?"})
+		if err != nil || len(view.Records) == 0 {
+			t.Fatal(view, err)
+		}
+		return view
+	}
+	base := read()
+	sent := len(server.received())
+	calls := base.Stats.PlannerCalls + base.Stats.DecisionCalls
+	if sent == 0 || sent != calls || len(budgetAttempts(t, budget)) != sent || base.Stats.Usage.Cached != 0 {
+		t.Fatal("base read", sent, calls, base.Stats)
+	}
+	if walOpen(t, cacheFile) {
+		t.Fatal("the agent's Close left the model cache open")
+	}
+	// The same read replays every model answer: no request, no reservation,
+	// the same View.
+	replay := read()
+	if len(server.received()) != sent || len(budgetAttempts(t, budget)) != sent || replay.Stats.Usage.Cached != calls {
+		t.Fatal("replayed read reached the model or the budget", len(server.received()), replay.Stats)
+	}
+	same := func(v View) string {
+		v.Stats.QueryMS, v.Stats.ModelMS, v.Stats.Usage.Cached = 0, 0, 0
+		raw, _ := json.Marshal(v)
+		return string(raw)
+	}
+	if same(replay) != same(base) {
+		t.Fatalf("replayed read differs:\n%s\n%s", same(base), same(replay))
+	}
+}

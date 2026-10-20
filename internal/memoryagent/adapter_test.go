@@ -92,16 +92,16 @@ func TestOpenWithModelsSharesModels(t *testing.T) {
 	}
 
 	// OpenModels builds the configured providers and their budget.
-	built, budget, err := OpenModels(Config{Version: 1, Planner: &ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1"}})
+	built, budget, _, err := OpenModels(Config{Version: 1, Planner: &ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1"}})
 	if err != nil || built.Planner == nil || built.Judge != nil || built.Consolidator != nil || budget != nil {
 		t.Fatal(built, budget, err)
 	}
-	built, budget, err = OpenModels(Config{Version: 1, BudgetFile: filepath.Join(t.TempDir(), "budget.db")})
+	built, budget, _, err = OpenModels(Config{Version: 1, BudgetFile: filepath.Join(t.TempDir(), "budget.db")})
 	if err != nil || budget == nil || built.Planner != nil {
 		t.Fatal(err)
 	}
 	budget.Close()
-	if _, _, err = OpenModels(Config{Version: 1, Judge: &ModelConfig{Kind: "nope", Model: "m"}}); err == nil {
+	if _, _, _, err = OpenModels(Config{Version: 1, Judge: &ModelConfig{Kind: "nope", Model: "m"}}); err == nil {
 		t.Fatal("unknown provider kind")
 	}
 }

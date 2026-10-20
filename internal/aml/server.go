@@ -76,7 +76,8 @@ type Server struct {
 	key      [sha256.Size]byte // digest of the API key
 	models   memoryagent.Models
 	budget   *memoryagent.Budget
-	maxItems int // the View's record bound; 0 for memory-agent/v1
+	cache    *memoryagent.ModelCache // the models' replay cache (eval only); nil without one
+	maxItems int                     // the View's record bound; 0 for memory-agent/v1
 	// timelines reports consolidation mode "timelines" or "layered": Adds
 	// fold full batches and Searches flush the tail.
 	timelines bool
@@ -126,15 +127,13 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if config.Models != nil {
 		s.models, err = config.Models(config.MemoryConfig)
 	} else {
-		s.models, s.budget, err = memoryagent.OpenModels(config.MemoryConfig)
+		s.models, s.budget, s.cache, err = memoryagent.OpenModels(config.MemoryConfig)
 	}
 	if err != nil {
 		return nil, err
 	}
 	if s.maxItems, err = s.probe(); err != nil {
-		if s.budget != nil {
-			s.budget.Close()
-		}
+		s.closeModels()
 		return nil, err
 	}
 	s.users = newRegistry(config.DataRoot, config.MaxOpenStores, s.openUser)
@@ -186,15 +185,23 @@ func (s *Server) openUser(dir string) (*records.Store, *memoryagent.Agent, func(
 }
 
 // Close closes the user stores (held ones when their request ends) and the
-// models' budget. Stop the HTTP server first.
+// models' budget and model cache. Stop the HTTP server first.
 func (s *Server) Close() error {
 	s.once.Do(func() {
 		s.users.close()
-		if s.budget != nil {
-			s.budget.Close()
-		}
+		s.closeModels()
 	})
 	return nil
+}
+
+// closeModels closes the files the models share, after their last call.
+func (s *Server) closeModels() {
+	if s.budget != nil {
+		s.budget.Close()
+	}
+	if s.cache != nil {
+		s.cache.Close()
+	}
 }
 
 // DegradedSearches counts the Searches answered by raw search because the
