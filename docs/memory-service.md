@@ -97,6 +97,19 @@ the config's JSON and the policy hash, and reads are unchanged byte for byte. Un
 repeated kinds, out-of-range bounds, and `adjacentWindow` or `eventsTop` without their
 kind are refused.
 
+Three further `expand` settings add Jev-Mem's evaluate-then-expand parts (its read loop:
+evaluate the evidence before expanding, score each candidate for new information, and keep
+output slots for expansions). Each is off when absent, and the read is then unchanged:
+
+| Setting | Values | Jev-Mem step | What it does |
+|---|---|---|---|
+| `gate` | `""` (default) or `"needs"` | The sufficiency check before every expansion round, including the first (stop when the current evidence suffices). | Skips the expansion when the need loop stopped as covered and every need is covered: not an ALL need, and given by a record JEV judged needed (≥ 0.5) and current, as the need table says (the screen for a single need). It uses the loop's state and makes no model call; `stats.expandGated` reports a skip. |
+| `target` | `""` (default) or `"needs"` | Scoring each expansion candidate for relevance and new information (what the current evidence lacks). | Before their judgement, the candidates are asked the need table's question, with its rubric, batches of 24 and the read's budget, for each need not covered (as `gate` defines it; an ALL need is never covered). The needs output counts a shown candidate that answers a need (≥ 0.5) as that need's evidence. In compose's order, each expansion that answers no need moves after the last record that answers one (for records the loop tabled: any need), keeping the needed answer it ranks by among those moved. With every need covered nothing is asked. When the budget cannot pay for the need table and the judgement both, or the need table fails, the judgement goes first: no candidate gets a need answer, and `expansion` is named in `stats.degraded`. `stats.expandAnsweredNeeds` counts the uncovered needs answered by an expansion JEV judged needed. |
+| `reserve` | 0–8 (default 0) | The output structure: 40 (50) slots over at most 30 anchors, so expansions always get at least 10. | Holds up to `reserve` View slots (at most the View's items) for expansions: the first needed and current expansions in compose's order (after `target`'s) take their slots and characters first, and the rest of the View composes as without it; slots no expansion takes go back to it. Without fusion the View lists the needed records, held ones included, in compose's order, then the fill. With fusion the fused records that keep their slots come first, in fused order, and the held expansions after them, in compose's order. `stats.expandReserved` counts the slots taken. |
+
+Cost: `gate` makes no call and saves the expansion's calls when it skips; `target` adds one
+need-table call per 24 candidates (one at the default `limit`); `reserve` makes no call.
+
 With `"consolidation": {"mode": "timelines"}` a job reads the records written since the
 last one into a pending list, folds every full batch of `batchCharacters`, and folds the
 short rest only when it reads nothing new and nothing is left unread. `hold: true` folds
