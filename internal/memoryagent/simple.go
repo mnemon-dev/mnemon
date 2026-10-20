@@ -50,7 +50,10 @@ type simpleRun struct {
 	// targeted is set when view.expand's target asked the expansions the
 	// need table's question: compose then orders by it (ordered).
 	targeted bool
-	mu       sync.Mutex // guards stats during concurrent model calls
+	// held is the expansions compose held reserved slots for: the layer's
+	// character trim drops other records first.
+	held map[string]bool
+	mu   sync.Mutex // guards stats during concurrent model calls
 }
 
 // simpleItem is one pooled record and what the models said about it.
@@ -135,6 +138,11 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	}
 	if a.config.View.Expand != nil {
 		view.Stats.ExpandShown = r.expandedShown(view.Records)
+		for _, record := range view.Records {
+			if r.held[record.ID] {
+				view.Stats.ExpandReserved++
+			}
+		}
 	}
 	return view, nil
 }

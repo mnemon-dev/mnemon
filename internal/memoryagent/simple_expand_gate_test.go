@@ -215,42 +215,92 @@ func TestExpansionTargetsUncoveredNeeds(t *testing.T) {
 
 func TestExpansionReserve(t *testing.T) {
 	s := expandFixture(t)
-	// JEV needs the pooled codename notes more than the launch notes the
-	// expansion finds: a2 0.99, a1 0.98, doc-00000 0.97; a3 0.92,
-	// doc-00001 0.91, b1 0.9.
-	judge := func() *scriptedJudge {
-		return needJudge(byWords(map[string]float64{"ORBIT": 0.99, "picked a codename": 0.98, "codename review": 0.97, "launch window": 0.92, "launch checklist": 0.91, "launch moved": 0.9}))
+	// JEV needs a2 (0.99); the pooled a1 (0.45) and doc-00000 (0.44) beat
+	// the expansions a3 (0.3), doc-00001 (0.29) and b1 (0.28) on merit.
+	judge := func(a1 float64) *scriptedJudge {
+		return needJudge(byWords(map[string]float64{"ORBIT": 0.99, "picked a codename": a1, "codename review": 0.44, "launch window": 0.3, "launch checklist": 0.29, "launch moved": 0.28}))
 	}
-	read := func(view *ViewConfig) View { return needsRead(t, s, "NEED: the codename", view, judge()) }
+	read := func(view *ViewConfig, a1 float64) View { return needsRead(t, s, "NEED: the codename", view, judge(a1)) }
 	expand := func(reserve int) *ExpandConfig {
 		return &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, Reserve: reserve}
 	}
-	for reserve, want := range map[int][]string{
-		0: {"a2", "a1", "doc-00000"},
-		1: {"a2", "a1", "a3"},
-		2: {"a2", "a3", "doc-00001"},
-		8: {"a3", "doc-00001", "b1"},
+	// The needed record first, then the held expansions (at most half the
+	// View), then the fill; listed in compose's order.
+	for _, tc := range []struct {
+		maxItems, reserve, held int
+		want                    []string
+	}{
+		{3, 0, 0, []string{"a2", "a1", "doc-00000"}},
+		{3, 1, 1, []string{"a2", "a1", "a3"}},
+		{3, 8, 1, []string{"a2", "a1", "a3"}},
+		{4, 0, 0, []string{"a2", "a1", "doc-00000", "a3"}},
+		{4, 2, 2, []string{"a2", "a1", "a3", "doc-00001"}},
 	} {
-		view := read(&ViewConfig{MaxItems: 3, Expand: expand(reserve)})
-		if got := recordIDs(view.Records); !slices.Equal(got, want) || view.Stats.ExpandReserved != min(reserve, 3) {
-			t.Fatal(reserve, got, view.Stats)
+		view := read(&ViewConfig{MaxItems: tc.maxItems, Expand: expand(tc.reserve)}, 0.45)
+		if got := recordIDs(view.Records); !slices.Equal(got, tc.want) || view.Stats.ExpandReserved != tc.held {
+			t.Fatal(tc.maxItems, tc.reserve, got, view.Stats)
 		}
-		if view.Records[len(view.Records)-1].Score != judge().answer(view.Records[len(view.Records)-1].Text, -1) {
+		if view.Records[len(view.Records)-1].Score != judge(0.45).answer(view.Records[len(view.Records)-1].Text, -1) {
 			t.Fatal(view.Records)
 		}
 	}
-	// No needed expansion: the reserved slots go back to the composition.
-	plain := needsRead(t, s, "NEED: the codename", &ViewConfig{MaxItems: 3, Expand: expand(0)}, needJudge(byWords(map[string]float64{"ORBIT": 0.99})))
-	held := needsRead(t, s, "NEED: the codename", &ViewConfig{MaxItems: 3, Expand: expand(2)}, needJudge(byWords(map[string]float64{"ORBIT": 0.99})))
+	// A held slot never displaces a needed record that is not an
+	// expansion: with a1 needed too, two slots stay the evidence's.
+	if view := read(&ViewConfig{MaxItems: 2, Expand: expand(8)}, 0.98); !slices.Equal(recordIDs(view.Records), []string{"a2", "a1"}) || view.Stats.ExpandReserved != 0 || !view.Needs[0].HasEvidence {
+		t.Fatal(recordIDs(view.Records), view.Stats)
+	}
+	// No expansion that could be shown: the slots go back to the
+	// composition.
+	stale := func() *scriptedJudge {
+		j := judge(0.45)
+		j.superseded = func(text string) float64 {
+			if strings.Contains(text, "launch") {
+				return 0.9
+			}
+			return 0
+		}
+		return j
+	}
+	plain := needsRead(t, s, "NEED: the codename", &ViewConfig{MaxItems: 3, Expand: expand(0)}, stale())
+	held := needsRead(t, s, "NEED: the codename", &ViewConfig{MaxItems: 3, Expand: expand(1)}, stale())
 	if !reflect.DeepEqual(held.Records, plain.Records) || held.Stats.ExpandReserved != 0 {
 		t.Fatal(recordIDs(held.Records), recordIDs(plain.Records))
 	}
-	// With fusion the fused records that keep their slots come first, the
-	// reserved expansions after them.
-	fused := read(&ViewConfig{MaxItems: 3, Fusion: "rrf", Expand: expand(0)})
-	reserved := read(&ViewConfig{MaxItems: 3, Fusion: "rrf", Expand: expand(2)})
-	if got := recordIDs(reserved.Records); len(got) != 3 || got[0] != recordIDs(fused.Records)[0] || !slices.Equal(got[1:], []string{"a3", "doc-00001"}) || reserved.Stats.ExpandReserved != 2 {
-		t.Fatal(recordIDs(fused.Records), got)
+	// With fusion: the needed record and the held expansion take their
+	// slots first; the View lists the others in fused order, then the held.
+	fused := read(&ViewConfig{MaxItems: 3, Fusion: "rrf", Expand: expand(1)}, 0.45)
+	if got := recordIDs(fused.Records); len(got) != 3 || got[0] != "a2" || got[2] != "a3" || fused.Stats.ExpandReserved != 1 {
+		t.Fatal(got, fused.Stats)
+	}
+}
+
+// The timelines layer's character trim keeps the needed records, then the
+// held ones, then the others; expandReserved counts the held records the
+// final View shows.
+func TestExpansionReserveSurvivesTheLayer(t *testing.T) {
+	s, overlay := eventsStore(t)
+	judge := func() *scriptedJudge {
+		return needJudge(byWords(map[string]float64{"ORBIT": 0.99, "picked a codename": 0.45, "codename review": 0.44, "launch window": 0.3, "launch checklist": 0.29, "launch moved": 0.28}))
+	}
+	read := func(reserve, chars int) View {
+		view := &ViewConfig{MaxItems: 5, MaxCharacters: chars, Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, Reserve: reserve}}
+		got, err := layerAgent(t, s, overlay, Config{View: view}, replies("codename project\nNOTE: the codename is ORBIT", "NEED: the codename", "codename rocket"), judge()).Read(context.Background(), ReadRequest{Question: "What is the codename?"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	// 584 characters: the blocks leave room for three records.
+	if got := recordIDs(read(0, 584).Records); !slices.Equal(got, []string{"a2", "a1", "doc-00000"}) {
+		t.Fatal(got)
+	}
+	if view := read(2, 584); !slices.Equal(recordIDs(view.Records), []string{"a2", "a3", "doc-00001"}) || view.Stats.ExpandReserved != 2 || view.Stats.ExpandShown != 2 || len(view.Index) == 0 {
+		t.Fatal(recordIDs(view.Records), view.Stats)
+	}
+	// Room for two: a held record gives way, never the needed one, and the
+	// count follows.
+	if view := read(2, 546); !slices.Equal(recordIDs(view.Records), []string{"a2", "a3"}) || view.Stats.ExpandReserved != 1 {
+		t.Fatal(recordIDs(view.Records), view.Stats)
 	}
 }
 

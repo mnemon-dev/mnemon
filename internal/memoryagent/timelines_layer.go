@@ -422,13 +422,36 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 	threadOrder, valueOrder := layerOrder(topics, values, lit, threadScore, valueScore)
 	blocks := composeLayer(m, threadOrder, valueOrder, lit)
 
+	// With records the reserve held (r.held), the trim keeps by compose's
+	// priority: the needed records that are not expansions, then the held
+	// ones, then the others, each in View order.
 	used, kept, cut := 0, []Evidence{}, false
 	for _, block := range blocks {
 		used += jsLen(block.Text)
 	}
+	priority := func(record Evidence) int {
+		if len(r.held) == 0 {
+			return 0
+		}
+		if item := r.items[record.ID]; item != nil && !item.Expanded && current(item) && item.Needed >= 0.5 {
+			return 0
+		}
+		if r.held[record.ID] {
+			return 1
+		}
+		return 2
+	}
+	keep := map[string]bool{}
+	for pass := 0; pass < 3; pass++ {
+		for _, record := range view.Records {
+			if n := jsLen(record.Text); priority(record) == pass && used+n <= r.agent.config.View.MaxCharacters {
+				keep[record.ID], used = true, used+n
+			}
+		}
+	}
 	for _, record := range view.Records {
-		if n := jsLen(record.Text); used+n <= r.agent.config.View.MaxCharacters {
-			kept, used = append(kept, record), used+n
+		if keep[record.ID] {
+			kept = append(kept, record)
 		} else {
 			cut = true
 		}
