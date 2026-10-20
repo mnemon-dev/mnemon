@@ -209,9 +209,11 @@ caps.
   searchable, the failure is logged, and the next request of that user carries on. When the
   provider fails three times on the same batch over at least ten minutes (not counting a
   spent budget), the next attempt splits it once and leaves a half that fails again out of
-  the index (`consolidation dropped …` in the log; the records stay searchable). Without the
-  flag the adapter never consolidates (there is no other trigger), and Search returns
-  evidence records only.
+  the index (`consolidation dropped …` in the log; the records stay searchable). With
+  `consolidation.nativeEdges` the jobs of an Add, and of a Search's flush, defer the
+  records' native edges, which are rebuilt once after them when any job left them pending.
+  Without the flag the adapter never consolidates (there is no other trigger), and Search
+  returns evidence records only.
 - **`--search-timeout`** (default `10m`, `1m` to `18m`) bounds a Search's memory read. When it
   expires the Search answers the raw ranking (HTTP 200, counted as degraded). With the tail
   fold's own 10 minutes before it, a Search answers within the platform's 30 minutes.
@@ -294,6 +296,8 @@ logged; a user appears as the first eight hex digits of its store hash.
 | `hybrid search failed, searching words (user …)` | The embedder was down during a degraded search. |
 | `consolidation failed (user …): <error>` | Consolidation stopped during an Add; the Add still succeeded and the next request of the user retries. |
 | `flush failed (user …): <error>` | Folding the tail before a Search failed or ran past 10 minutes; the Search read what was consolidated. |
+| `consolidation native edges failed (user …): <error>`, `flush native edges failed …` | Rebuilding the records' native edges (`nativeEdges`) after the jobs failed; reads use the edges built before, and the next request retries. |
+| `consolidation left native edges pending (user …)`, `flush left …` | The request's window ended before the edges were rebuilt; the next request rebuilds them. |
 | `consolidation dropped N records (user …): <reason>` | The index leaves out N records whose fold the provider refused or timed out on for at least 10 minutes, whose fold request was too large, or whose reply never parsed. Outages, rate limits (429), 5xx and credential or balance refusals (401/402/403) never drop records. The records stay searchable. |
 | `consolidation left to a queued Add (user …)` | Another Add of the user was waiting; it consolidates instead. |
 | `consolidation skipped: the Add's window has passed (user …)` | The Add waited 25 minutes for its user; the next request consolidates. |

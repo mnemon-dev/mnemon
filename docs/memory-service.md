@@ -14,7 +14,7 @@ while the service runs. No old data needs conversion.
 | `memory.write` | `text`, optional `id`, `source`, `at`, `scope`, `workspaceId`, `sessionId` | Committed revision, original-document reference and block references. |
 | `memory.writeConversation` | `messages` (`role`, `content`, optional RFC 3339 `at`), `sessionId`, optional `id`, `source`, `scope`, `workspaceId` | Same as `memory.write`. |
 | `memory.read` | `question`, optional `recent`, `scope`, `revision`, `maxItems` | Original-evidence View, index hints, needs, stop reason and resource use. |
-| `memory.consolidate` | Optional `scope`, `maxBatches` (1–4 for memory-agent/v1, 1–64 for timelines and layered), `reset`, `hold` (timelines and layered), `rebuildEdges` (`nativeEdges`) | Background job progress and usage. |
+| `memory.consolidate` | Optional `scope`, `maxBatches` (1–4 for memory-agent/v1, 1–64 for timelines and layered), `reset`, `hold` (timelines and layered), `deferEdges`, `rebuildEdges` | Background job progress and usage. |
 
 `maxItems` caps the records of a `"strategy": "simple"` View: 0 or absent takes the
 configured `view.maxItems`, and more than it is an error. memory-agent/v1 reads have no
@@ -25,7 +25,9 @@ final judgement failed or found the budget spent; JEV's screen stands in), `laye
 (the consolidated state did not load; no layer), `layer-lexical` (the layer's embedding
 failed; shared words rank the topics), `layer` (the layer's judgement failed) and `expand`
 (linked records could not be read or judged). It is absent when nothing fell back, and
-always for memory-agent/v1.
+always for memory-agent/v1. With an `index` setting, a simple read's `stats.indexRoutes`
+counts, for each native route (`lexical`, `entities`, `relations`, `temporal`,
+`supersedes`), the read's searches in which that route found a candidate.
 
 With `"consolidation": {"mode": "timelines"}` a job reads the records written since the
 last one into a pending list, folds every full batch of `batchCharacters`, and folds the
@@ -84,11 +86,19 @@ shared words found because the embedder failed). Extractions run in parallel, so
 With `"nativeEdges": true` (timelines or layered mode) the consolidated state also
 feeds the records' native indexes ([records-indexes.md](records-indexes.md)): after
 every job that changed the memory since they were last built (also one that ended in a
-model error, not a canceled one), and on `rebuildEdges: true`, which folds nothing, the
-job replaces the records' derived metadata of source `consolidation` with what every
-stored scope state says. A record's `entities` are the names of the events and values
-citing it (layered extraction names them; timelines names none) and its `aliases` the
-other names of their clusters: each new name is compared, one JEV question each, with
+model error or a reset, not a canceled one), and on `rebuildEdges: true`, which folds
+nothing, the job replaces the records' derived metadata of source `consolidation` with
+what every stored scope state says (writing only the rows that changed). A job with
+`deferEdges: true` skips that step; its result then reports `edgesPending`, and one later
+job or `rebuildEdges` builds the edges of many (the AML adapter defers its jobs and
+rebuilds once after them). A failed edge step does not fail the job: it reports
+`edgeError` and `edgesPending`, and the next job retries. Without `nativeEdges`,
+`rebuildEdges` removes the consolidation's derived metadata. A record's `entities` are
+the names of the events and values citing it (layered extraction names them; timelines
+names none) and its `aliases` the other names of their clusters, then the words a query
+can name a multi-word name by (each capitalized word of three letters or more that is no
+stopword, month, weekday, role or first-person word: "Greg Hall" gives "Greg" and "Hall"):
+each new name is compared, one JEV question each, with
 up to `linkCandidates` (8 in timelines mode) names known before it whose contexts (the
 name and its first three texts) are nearest, as linking finds candidates, and joins the
 cluster of its best yes (at least 0.5); the decision is kept in the state, so each name

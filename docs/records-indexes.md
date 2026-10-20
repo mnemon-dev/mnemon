@@ -57,12 +57,14 @@ service's consolidation with `nativeEdges`) keeps it beside them, in the
 `derived_metadata` table of `records.db`, never in the records. Each source owns
 one row per record, `{"version":1,"entities":[…],"aliases":[…],"links":[…],"eventAt":"…"}`,
 and replaces all its rows at once (Go: `Store.ReplaceDerivedMetadata`; readonly
-stores refuse). A row has at most 64 entities, 64 aliases and 50 links, with the
+stores refuse), writing only the rows that changed. A row has at most 64 entities, 64 aliases and 50 links, with the
 link rules above. It applies only while its record has the row's `version` (the
 record JSON's version, which links also bind), and only adds to the writer's
-`data`: its entities and aliases join the writer's, its links follow the writer's
+`data`: its entities and aliases join the writer's (the entity index takes them
+after the writer's entities and aliases and the names extracted from the text,
+within the same 64), its links follow the writer's
 and, whatever their type, are advisory hints (a derived `supersedes` link expands
-but never demotes), and its `eventAt` counts only when the writer gave none. Each
-replace bumps a generation that keys the enhanced caches, so no query is served
-a replaced overlay. Without rows, every response keeps its bytes; records-v1
+but never demotes), and its `eventAt` counts only when the writer gave none. A
+replace that changes anything bumps a generation that keys the enhanced caches, so
+no query is served a replaced overlay, and one that changes nothing keeps them. Without rows, every response keeps its bytes; records-v1
 queries never read the table. A store opened for writing gains the table.
