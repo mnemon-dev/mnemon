@@ -23,11 +23,11 @@ are unchanged. Indexes are derived in memory for an immutable, scoped selection.
 | `temporal` | `data.eventAt`, then `date`, then `createdAt`, parsed as absolute time. Inclusive `since` and `until` constrain all routes. Only explicit `input.timeOrder: "oldest"` or `"newest"` reorders anchors by event time; lexical WHEN intent alone keeps relevance order. |
 | `supersedes` | Follow explicit corrections in both directions; current queries place retained, explicitly superseded evidence behind current evidence. `input.history: true`, explicit IDs and an `until` bound retain historical ranking. |
 | `recency` | Native Smart Recall's recency anchor signal: the twenty newest records of the selection by index time (`data.eventAt`, then `date`, then `createdAt`), ties by ID. It is a seed list, fused with the base, `lexical` and `entities` lists before `relations`, `supersedes`, `temporal` and `traversal` read the seeds. |
-| `traversal` | Native Smart Recall's beam search from the twenty best fused seeds over the valid links (writer and derived-metadata links, as `relations` reads them; `supersedes` links are not traversed). See below. |
+| `traversal` | Native Smart Recall from the twenty best fused seeds: beam search over the valid links (writer and derived-metadata links, as `relations` reads them; `supersedes` links are not traversed), multi-factor re-ranking of every record collected, and for WHY causes before effects. See below. |
 
 ### Traversal
 
-`traversal` ports native recall's beam search (`internal/memory/search/recall.go`,
+`traversal` ports native recall's steps 3–5 (`internal/memory/search/recall.go`,
 [Smart Recall](design/05-pipelines.md#52-read-pipeline-smart-recall)). Each anchor starts
 with its reciprocal-rank fusion score divided by the best anchor's. A step along a link
 adds `1.0 × link weight × intent weight + 0.4 × cosine` to the path's score, where the
@@ -52,10 +52,32 @@ of each level and stops at native's budgets (the anchor counts as visited):
 | ENTITY | 10 | 4 | 400 |
 | GENERAL | 10 | 4 | 500 |
 
-Every record keeps its best path score; scores add up along a path, so a deeper record
-can outrank the one it was reached through, as in native recall. The route returns the
-reached records that are not anchors, best first (ties by ID), at most `candidateLimit`.
-The intent is `input.intent` when given, else detected from `input.query`, as for
+Every record keeps its best path score (an anchor its own unless a path beats it);
+scores add up along a path. The path score is not the route's order: every collected
+record, anchors included, is re-ranked by four signals in [0, 1]:
+
+- keyword: the share of the query's tokens in the record's search text (the `lexical`
+  tokenizer);
+- entity: the query's entities, as the `entities` route resolves them (known names in the
+  query, then `input.entities`), that the record names, over max(1, their number);
+- similarity: the cosine of the stored vectors, as in the beam (0 without them);
+- graph: the path score, min-max normalized over the collected records (0 when all equal).
+
+The final score is the intent-weighted sum of the design's table (the native code itself
+weighs by whether embeddings exist, not by intent):
+
+| Intent | keyword | entity | similarity | graph |
+|---|---|---|---|---|
+| WHY | 0.10 | 0.10 | 0.30 | 0.50 |
+| WHEN | 0.15 | 0.15 | 0.30 | 0.40 |
+| ENTITY | 0.20 | 0.40 | 0.20 | 0.20 |
+| GENERAL | 0.25 | 0.25 | 0.25 | 0.25 |
+
+The route is the best `candidateLimit` records by final score (ties by ID). For WHY,
+Kahn's algorithm then orders them along the causal links among them, a link's source (the
+cause) before its target: the best ranked record whose causes are placed goes next, and
+records on a causal cycle follow in rank order. An index with `traversal` also builds the
+word and entity indexes for these signals. The intent is `input.intent` when given, else detected from `input.query`, as for
 `relations`. Causal and temporal links are followed in their stated direction only (native
 recall follows its edges both ways); entity and semantic links are mutual.
 
