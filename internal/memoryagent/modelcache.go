@@ -25,10 +25,12 @@ import (
 // replies, which quote the evidence they were given.
 //
 // A reply is keyed by the request exactly as it would be sent (replayKey).
-// Only replies the call returned are recorded: never errors, refusals,
-// unreadable or cut-off replies. Several processes share one file (WAL, with
-// a busy timeout): two that miss the same request at once both call the
-// model and both store, and the last write wins.
+// Only replies a call returns are recorded: never errors or refusals, nor a
+// reply the call rejects (unreadable, unmetered, cut off at the output limit
+// when the call accepts no cut reply, or a decision that fails validation).
+// Several processes share one file (WAL, with a busy timeout): two that miss
+// the same request at once both call the model and both store, and the last
+// write wins.
 type ModelCache struct {
 	db *sql.DB
 }

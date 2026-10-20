@@ -394,14 +394,15 @@ limit or model is a miss that calls the model. A recorded reply answers as the p
 would, without a request, a reservation or a settlement; its usage reports the recorded
 tokens and price as before and counts the call in `usage.cached`, so a read's
 `stats.usage.cached` says how many of its calls were replayed (absent when none were). A
-live reply is recorded only when the call returns it: errors, non-2xx refusals, unreadable,
-unmetered or cut-off replies and decisions that fail validation never are. The file is
-private like the budget file, and several processes can share it (WAL, 10-second busy
-timeout); two that miss the same request at once both call the model, and the last reply
-stored wins. A cache that cannot be read or written never fails a call: the call goes to
-the model. The setting stays out of `View.policy`. An identical retry is replayed as well:
-a consolidation fold that asks the same batch again after an unparsable reply gets the same
-reply, so the batch splits at once.
+live reply is recorded only when the call returns it: errors and non-2xx refusals never
+are, nor unreadable or unmetered replies, replies cut at the output limit by a call that
+accepts no cut reply, or decisions that fail validation. The file is private like the budget
+file, and several processes can share it (WAL, 10-second busy timeout); two that miss the
+same request at once both call the model, and the last reply stored wins. A cache that
+cannot be read or written never fails a call: the call goes to the model. The setting stays
+out of `View.policy`. An identical retry is replayed as well: a consolidation fold that asks
+for the same batch again after a reply that did not parse gets the same reply, so it goes on
+at once to splitting the batch (or dropping the half) instead of trying a second live reply.
 
 Interfaces and prices were checked against the [JEV API](https://docs.typesafe.ai/api),
 [JEV models](https://docs.typesafe.ai/models) and
