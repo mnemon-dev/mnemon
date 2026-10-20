@@ -21,20 +21,24 @@ import (
 // may not rank).
 
 // neighbor is one way to reach a record from a seed: the kind that proposes
-// it and its weight (a link's, or 1 for an adjacent record).
+// it, its weight (a link's, or 1 for an adjacent record) and its distance
+// (an adjacent record's records away; 1 for a link).
 type neighbor struct {
 	id, kind string
 	weight   float64
+	distance int
 }
 
 // expansionCandidate is a proposed neighbor: its best score over the seeds
 // (seed needed × weight), the rank of the first seed that gave that score,
-// and every kind that proposed it, in the order they did.
+// the shortest distance it gave it at, and every kind that proposed it, in
+// the order they did.
 type expansionCandidate struct {
-	id    string
-	score float64
-	seed  int
-	kinds []string
+	id       string
+	score    float64
+	seed     int
+	distance int
+	kinds    []string
 }
 
 // expansionSeeds is the judged items JEV calls needed (≥ 0.5, whether or not
@@ -50,8 +54,8 @@ func expansionSeeds(scored []*simpleItem, n int) []*simpleItem {
 }
 
 // rankExpansion orders the neighbors of the seeds that known does not hold
-// by their best score, then the rank of the seed that gave it, then id, and
-// keeps at most limit.
+// by their best score, then the rank of the seed that gave it, then the
+// distance it gave it at, then id, and keeps at most limit.
 func rankExpansion(seeds []*simpleItem, neighbors map[string][]neighbor, known func(string) bool, limit int) []expansionCandidate {
 	byID, list := map[string]*expansionCandidate{}, []*expansionCandidate{}
 	for rank, seed := range seeds {
@@ -61,12 +65,15 @@ func rankExpansion(seeds []*simpleItem, neighbors map[string][]neighbor, known f
 			}
 			score := seed.Needed * n.weight
 			c := byID[n.id]
-			if c == nil {
-				c = &expansionCandidate{id: n.id, score: score, seed: rank}
+			switch {
+			case c == nil:
+				c = &expansionCandidate{id: n.id, score: score, seed: rank, distance: n.distance}
 				byID[n.id] = c
 				list = append(list, c)
-			} else if score > c.score {
-				c.score, c.seed = score, rank
+			case score > c.score:
+				c.score, c.seed, c.distance = score, rank, n.distance
+			case score == c.score && rank == c.seed && n.distance < c.distance:
+				c.distance = n.distance
 			}
 			if !slices.Contains(c.kinds, n.kind) {
 				c.kinds = append(c.kinds, n.kind)
@@ -80,6 +87,9 @@ func rankExpansion(seeds []*simpleItem, neighbors map[string][]neighbor, known f
 		if a.seed != b.seed {
 			return a.seed - b.seed
 		}
+		if a.distance != b.distance {
+			return a.distance - b.distance
+		}
 		return strings.Compare(a.id, b.id)
 	})
 	out := []expansionCandidate{}
@@ -90,8 +100,9 @@ func rankExpansion(seeds []*simpleItem, neighbors map[string][]neighbor, known f
 }
 
 // neighbors reads the seeds' neighbors of the configured kinds at the read's
-// revision and scope: adjacent records with weight 1, links with theirs.
-func (r *simpleRun) neighbors(ctx context.Context, seeds []*simpleItem, kinds []string) (map[string][]neighbor, error) {
+// revision and scope: the records within the adjacent window with weight 1
+// at their distance, links with their weight at distance 1.
+func (r *simpleRun) neighbors(ctx context.Context, seeds []*simpleItem, config *ExpandConfig) (map[string][]neighbor, error) {
 	start := time.Now()
 	defer func() {
 		r.mu.Lock()
@@ -102,15 +113,15 @@ func (r *simpleRun) neighbors(ctx context.Context, seeds []*simpleItem, kinds []
 	for _, seed := range seeds {
 		ids = append(ids, seed.ID)
 	}
-	out := map[string][]neighbor{}
+	kinds, out := config.Kinds, map[string][]neighbor{}
 	if slices.Contains(kinds, expandAdjacent) {
-		adjacent, err := r.agent.store.Adjacent(ctx, r.revision, r.req.Scope, ids, 1)
+		adjacent, err := r.agent.store.Adjacent(ctx, r.revision, r.req.Scope, ids, config.AdjacentWindow)
 		if err != nil {
 			return nil, err
 		}
 		for _, id := range ids {
 			for _, near := range adjacent[id] {
-				out[id] = append(out[id], neighbor{near.ID, expandAdjacent, 1})
+				out[id] = append(out[id], neighbor{near.ID, expandAdjacent, 1, max(near.Offset, -near.Offset)})
 			}
 		}
 	}
@@ -122,7 +133,7 @@ func (r *simpleRun) neighbors(ctx context.Context, seeds []*simpleItem, kinds []
 		for _, id := range ids {
 			for _, link := range links[id] {
 				if slices.Contains(kinds, link.Type) {
-					out[id] = append(out[id], neighbor{link.ID, link.Type, link.Weight})
+					out[id] = append(out[id], neighbor{link.ID, link.Type, link.Weight, 1})
 				}
 			}
 		}
@@ -156,7 +167,7 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem) ([
 	if r.decisionsLeft() == 0 {
 		return short()
 	}
-	neighbors, err := r.neighbors(ctx, seeds, config.Kinds)
+	neighbors, err := r.neighbors(ctx, seeds, config)
 	if err != nil {
 		return short()
 	}

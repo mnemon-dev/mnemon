@@ -151,11 +151,11 @@ func TestExpandConfig(t *testing.T) {
 	// Defaults fill in the agent's copy, not the caller's.
 	expand := &ExpandConfig{Kinds: []string{"adjacent", "supersedes"}}
 	a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: expand}}, both, nil)
-	if err != nil || !reflect.DeepEqual(*a.config.View.Expand, ExpandConfig{Kinds: []string{"adjacent", "supersedes"}, Limit: 24, Seeds: 16}) || expand.Limit != 0 || expand.Seeds != 0 {
+	if err != nil || !reflect.DeepEqual(*a.config.View.Expand, ExpandConfig{Kinds: []string{"adjacent", "supersedes"}, Limit: 24, Seeds: 16, AdjacentWindow: 1}) || expand.Limit != 0 || expand.Seeds != 0 || expand.AdjacentWindow != 0 {
 		t.Fatal(a, err, expand)
 	}
 	every := []string{"adjacent", "temporal", "semantic", "causal", "entity", "supersedes"}
-	for _, good := range []ExpandConfig{{Kinds: every, Limit: 64, Seeds: 32}, {Kinds: []string{"entity"}, Limit: 1, Seeds: 1}} {
+	for _, good := range []ExpandConfig{{Kinds: every, Limit: 64, Seeds: 32, AdjacentWindow: 5}, {Kinds: []string{"entity"}, Limit: 1, Seeds: 1}} {
 		if _, err = New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &good}}, both, nil); err != nil {
 			t.Error("valid expansion refused", good, err)
 		}
@@ -164,6 +164,7 @@ func TestExpandConfig(t *testing.T) {
 		{}, {Kinds: []string{}}, {Kinds: []string{"Adjacent"}}, {Kinds: []string{"related"}}, {Kinds: []string{"temporal", "temporal"}},
 		{Kinds: []string{"adjacent"}, Limit: 65}, {Kinds: []string{"adjacent"}, Limit: -1},
 		{Kinds: []string{"adjacent"}, Seeds: 33}, {Kinds: []string{"adjacent"}, Seeds: -1},
+		{Kinds: []string{"adjacent"}, AdjacentWindow: 6}, {Kinds: []string{"adjacent"}, AdjacentWindow: -1}, {Kinds: []string{"causal"}, AdjacentWindow: 2},
 	} {
 		if _, err = New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &bad}}, both, nil); err == nil {
 			t.Error("invalid expansion accepted", bad)
@@ -174,10 +175,10 @@ func TestExpandConfig(t *testing.T) {
 	if raw, _ := json.Marshal(ViewConfig{MaxItems: 16, MaxCharacters: 12000}); strings.Contains(string(raw), "expand") {
 		t.Fatal(string(raw))
 	}
-	decoder := json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"expand":{"kinds":["adjacent","temporal"],"limit":8,"seeds":4}}}`))
+	decoder := json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"expand":{"kinds":["adjacent","temporal"],"limit":8,"seeds":4,"adjacentWindow":2}}}`))
 	decoder.DisallowUnknownFields()
 	var decoded Config
-	if err = decoder.Decode(&decoded); err != nil || !reflect.DeepEqual(*decoded.View.Expand, ExpandConfig{Kinds: []string{"adjacent", "temporal"}, Limit: 8, Seeds: 4}) {
+	if err = decoder.Decode(&decoded); err != nil || !reflect.DeepEqual(*decoded.View.Expand, ExpandConfig{Kinds: []string{"adjacent", "temporal"}, Limit: 8, Seeds: 4, AdjacentWindow: 2}) {
 		t.Fatal(decoded, err)
 	}
 	decoder = json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"expand":{"kinds":["adjacent"],"depth":2}}}`))
@@ -232,20 +233,20 @@ func TestExpansionSeedsAreNeededItems(t *testing.T) {
 func TestRankExpansion(t *testing.T) {
 	seeds := []*simpleItem{scoredItem("s0", 0.9, 0, ""), scoredItem("s1", 0.8, 0, ""), scoredItem("s2", 0.8, 0, "")}
 	neighbors := map[string][]neighbor{
-		"s0": {{"x", "temporal", 0.5}, {"pooled", "adjacent", 1}, {"y", "adjacent", 1}, {"x", "semantic", 0.25}},
-		"s1": {{"x", "causal", 1}, {"z", "entity", 1}, {"w", "supersedes", 0.5}},
-		"s2": {{"v", "semantic", 1}, {"w", "temporal", 0.5}},
+		"s0": {{"x", "temporal", 0.5, 1}, {"pooled", "adjacent", 1, 1}, {"y", "adjacent", 1, 1}, {"x", "semantic", 0.25, 1}},
+		"s1": {{"x", "causal", 1, 1}, {"z", "entity", 1, 1}, {"w", "supersedes", 0.5, 1}},
+		"s2": {{"v", "semantic", 1, 1}, {"w", "temporal", 0.5, 1}},
 	}
 	known := func(id string) bool { return id == "pooled" || id == "s1" }
 	got := rankExpansion(seeds, neighbors, known, 64)
 	// y 0.9 (s0); x max(0.45, 0.225, 0.8) = 0.8 by s1; v, z 0.8 (z's seed
 	// ranks first); w 0.4 (s1 before s2). Kinds collect over every seed.
 	want := []expansionCandidate{
-		{id: "y", score: 0.9, seed: 0, kinds: []string{"adjacent"}},
-		{id: "x", score: 0.8, seed: 1, kinds: []string{"temporal", "semantic", "causal"}},
-		{id: "z", score: 0.8, seed: 1, kinds: []string{"entity"}},
-		{id: "v", score: 0.8, seed: 2, kinds: []string{"semantic"}},
-		{id: "w", score: 0.4, seed: 1, kinds: []string{"supersedes", "temporal"}},
+		{id: "y", score: 0.9, seed: 0, distance: 1, kinds: []string{"adjacent"}},
+		{id: "x", score: 0.8, seed: 1, distance: 1, kinds: []string{"temporal", "semantic", "causal"}},
+		{id: "z", score: 0.8, seed: 1, distance: 1, kinds: []string{"entity"}},
+		{id: "v", score: 0.8, seed: 2, distance: 1, kinds: []string{"semantic"}},
+		{id: "w", score: 0.4, seed: 1, distance: 1, kinds: []string{"supersedes", "temporal"}},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("%+v", got)
@@ -253,6 +254,22 @@ func TestRankExpansion(t *testing.T) {
 	if got := rankExpansion(seeds, neighbors, known, 2); !reflect.DeepEqual(got, want[:2]) {
 		t.Fatalf("%+v", got)
 	}
+	// A wider adjacent window: at one score, the nearer first, then by id;
+	// a link counts as one step. Reached twice by one seed, a record keeps
+	// its nearer place.
+	window := map[string][]neighbor{"s0": {{"p2", "adjacent", 1, 2}, {"p1", "adjacent", 1, 1}, {"n1", "adjacent", 1, 1}, {"n2", "adjacent", 1, 2}, {"l", "temporal", 1, 1}, {"p2", "semantic", 1, 1}}}
+	got = rankExpansion(seeds[:1], window, known, 64)
+	if !slices.Equal(candidateIDs(got), []string{"l", "n1", "p1", "p2", "n2"}) || got[3].distance != 1 || !slices.Equal(got[3].kinds, []string{"adjacent", "semantic"}) {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func candidateIDs(list []expansionCandidate) []string {
+	out := []string{}
+	for _, c := range list {
+		out = append(out, c.id)
+	}
+	return out
 }
 
 func TestReadSimpleExpandsFromNeededEvidence(t *testing.T) {
@@ -497,5 +514,23 @@ func TestExpansionWithinTheDecisionBudget(t *testing.T) {
 	scored[0].Needed = 0.4
 	if got, err = r.expandEvidence(ctx, scored); err != nil || len(got) != 1 || judge.count() != 0 || r.stats.Degraded != nil || r.stats.QueryMS != 0 {
 		t.Fatal(len(got), err, judge.count(), r.stats)
+	}
+}
+
+func TestReadSimpleExpandsAdjacentWindow(t *testing.T) {
+	s := expandFixture(t)
+	judge := expandJudge()
+	// a2's session is a0 a1 a2 a3 a4, a1 pooled: a3 is one step away, a0
+	// and a4 two (by id at the same distance). JEV needs a3 alone.
+	view := expandRead(t, s, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent"}, AdjacentWindow: 2}}, judge)
+	last, texts := judge.calls[len(judge.calls)-1], []string{}
+	for _, candidate := range last.State.Candidates {
+		texts = append(texts, candidate.Text)
+	}
+	if !slices.Equal(texts, []string{"Melanie: launch window opens Friday at dawn", "Caroline: good morning, how was your weekend", "Caroline: sounds great, see you there"}) {
+		t.Fatal(texts)
+	}
+	if got := recordIDs(view.Records); !slices.Equal(got, []string{"a2", "a3", "a1", "doc-00000"}) || view.Stats.Expanded != 3 || view.Stats.ExpandedNeeded != 1 || !reflect.DeepEqual(view.Stats.ExpandKinds, map[string]int{"adjacent": 3}) {
+		t.Fatal(got, view.Stats)
 	}
 }

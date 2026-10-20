@@ -114,11 +114,13 @@ type ViewConfig struct {
 // before and after in the same session) and the link types "temporal",
 // "semantic", "causal", "entity" and "supersedes". Limit bounds the
 // neighbors judged (24 by default, 1–64), Seeds the needed records expanded
-// from (16 by default, 1–32).
+// from (16 by default, 1–32). AdjacentWindow (with adjacent) is how many
+// records on each side are adjacent (1 by default, 1–5).
 type ExpandConfig struct {
-	Kinds []string `json:"kinds"`
-	Limit int      `json:"limit,omitempty"`
-	Seeds int      `json:"seeds,omitempty"`
+	Kinds          []string `json:"kinds"`
+	Limit          int      `json:"limit,omitempty"`
+	Seeds          int      `json:"seeds,omitempty"`
+	AdjacentWindow int      `json:"adjacentWindow,omitempty"`
 }
 
 // expandKinds are the neighbors view.expand may follow.
@@ -321,6 +323,18 @@ func (e *ExpandConfig) normalize() error {
 	}
 	if e.Limit < 1 || e.Limit > 64 || e.Seeds < 1 || e.Seeds > 32 {
 		return errors.New("view expand requires limit 1–64 and seeds 1–32")
+	}
+	if !slices.Contains(e.Kinds, expandAdjacent) {
+		if e.AdjacentWindow != 0 {
+			return errors.New("view expand adjacentWindow requires kind adjacent")
+		}
+		return nil
+	}
+	if e.AdjacentWindow == 0 {
+		e.AdjacentWindow = 1
+	}
+	if e.AdjacentWindow < 1 || e.AdjacentWindow > 5 {
+		return errors.New("view expand requires adjacentWindow 1–5")
 	}
 	return nil
 }
