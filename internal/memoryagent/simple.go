@@ -68,7 +68,9 @@ type simpleItem struct {
 	Superseded float64
 	Judged     bool
 	FirstSeen  int // position in pool order
-	// Expanded marks a judged record view.expand proposed (not pooled).
+	// Expanded marks a record view.expand proposed and JEV judged: one the
+	// read had not pooled, or with rejudge one it had pooled and never
+	// judged.
 	Expanded bool
 }
 
@@ -120,8 +122,9 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		}
 		r.degrade("judge")
 	}
-	// With view.expand, the needed items' neighbors are judged the same way
-	// and the needed ones join the list (simple_expand.go).
+	// With view.expand, the neighbors of the judged items that seed it (and
+	// the events nearest the question) are judged the same way, and every
+	// one judged joins the list (simple_expand.go).
 	if a.config.View.Expand != nil {
 		if scored, err = r.expandEvidence(ctx, scored, stop); err != nil {
 			return View{}, err

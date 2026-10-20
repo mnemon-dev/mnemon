@@ -109,10 +109,11 @@ type ViewConfig struct {
 	// (native recall's intent detection), and gives it to every records
 	// search; "" lets each search detect its own from its text.
 	Intent string `json:"intent,omitempty"`
-	// Expand, when set, expands from the records JEV judged needed to their
-	// neighbors after the judgement, judges those the same way and composes
-	// them on their merit (simple_expand.go). Unset, it stays out of the
-	// policy hash and the read is unchanged.
+	// Expand, when set, expands after the judgement from the judged records
+	// whose needed answer reaches its seedMin to their neighbors, and from
+	// the question to the events nearest it, judges those candidates the
+	// same way and composes them on their merit (simple_expand.go). Unset,
+	// it stays out of the policy hash and the read is unchanged.
 	Expand *ExpandConfig `json:"expand,omitempty"`
 	// Order "time" lists the View's records in time order once the View is
 	// composed (simple_order.go); "" keeps the rank order.
@@ -120,21 +121,21 @@ type ViewConfig struct {
 }
 
 // ExpandConfig sets the evidence expansion of a simple read. Kinds names the
-// candidates proposed, each once: from the needed records (the seeds),
-// "adjacent" (the records written just before and after in the same
-// session) and the link types "temporal", "semantic", "causal", "entity"
-// and "supersedes"; from the question, "events" (the records cited by the
-// consolidated events nearest it). Limit bounds the candidates judged (24
-// by default, 1–64), Seeds the needed records expanded from (16 by default,
-// 1–32). AdjacentWindow (with adjacent) is how many records on each side
-// are adjacent (1 by default, 1–5); EventsTop (with events) how many events
-// are taken (10 by default, 1–40). Gate, Target and Reserve are Jev-Mem's
-// evaluate-then-expand parts (simple_expand.go): Gate "needs" skips the
-// expansion when the need table finds the evidence sufficient, Target
-// "needs" asks the candidates the need table's question for the needs not
-// covered yet and ranks those that answer one first, and Reserve (0–8)
-// holds View slots for needed expansions. Unset, each leaves the read as
-// it was.
+// candidates proposed, each once: from the seeds (judged records whose
+// needed answer reaches SeedMin), "adjacent" (the records written just
+// before and after in the same session) and the link types "temporal",
+// "semantic", "causal", "entity" and "supersedes"; from the question,
+// "events" (the records cited by the consolidated events nearest it). Limit
+// bounds the candidates judged (24 by default, 1–64), Seeds the seeds
+// expanded from (16 by default, 1–32). AdjacentWindow (with adjacent) is
+// how many records on each side are adjacent (1 by default, 1–5);
+// EventsTop (with events) how many events are taken (10 by default, 1–40).
+// Gate, Target and Reserve are Jev-Mem's evaluate-then-expand parts
+// (simple_expand.go): Gate "needs" skips the expansion when the need table
+// finds the evidence sufficient, Target "needs" asks the candidates the
+// need table's question for the needs not covered yet and ranks those that
+// answer one first, and Reserve (0–8) holds View slots for expansions.
+// Unset, each leaves the read as it was.
 type ExpandConfig struct {
 	Kinds          []string `json:"kinds"`
 	Limit          int      `json:"limit,omitempty"`
@@ -216,11 +217,14 @@ type ReadStats struct {
 	// (the layer's judgement failed or found the budget spent), expand
 	// (records linked from the layer could not be read or judged),
 	// expansion (view.expand could not read or judge every candidate it
-	// chose, or its events' state did not load), expansion-lexical (the
-	// events' embedding failed or left vectors missing: shared words ranked
-	// them) and expansion-target (target's need table was skipped for the
-	// budget or failed). Empty for a read that fell back nowhere, and for
-	// memory-agent/v1.
+	// chose, its events' state did not load, or gate and target could not
+	// read the View whose coverage of the needs they check: nothing counts
+	// as covered), expansion-lexical (the events' embedding failed or left
+	// vectors missing: shared words ranked them), expansion-target
+	// (target's need table was skipped for the budget or failed) and order
+	// (view.order could not read the records' write positions: the View
+	// stays in rank order). Empty for a read that fell back nowhere, and
+	// for memory-agent/v1.
 	Degraded []string `json:"degraded,omitempty"`
 	// IndexRoutes counts, for each native index route of the records
 	// (Config.Index), the searches of a simple read in which it found a
