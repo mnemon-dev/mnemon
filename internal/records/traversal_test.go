@@ -185,28 +185,28 @@ func TestRecallReranks(t *testing.T) {
 		}
 		return got
 	}
-	// GENERAL weighs the four signals equally. Graph scores, min-max
-	// normalized: a 0, b 0.5, c 1; keyword: a 1, b 1, c 0. So b 0.375
-	// beats the deeper c 0.25 (ties by id: a before c).
+	// Without vectors native weighs keyword 0.45, entity 0.25, graph 0.30.
+	// Graph scores, min-max normalized: a 0, b 0.5, c 1; keyword: a 1, b 1,
+	// c 0. So b 0.60 beats a 0.45 and the deeper c 0.30.
 	if got := route(retrieval.IntentGeneral, nil); !slices.Equal(got, []string{"b", "a", "c"}) {
 		t.Fatal("GENERAL", got)
 	}
-	// Similarity from stored vectors counts too: without the word, b's
-	// cosine still lifts it over c.
+	// Similarity from stored vectors counts too (keyword 0.30, entity 0.15,
+	// similarity 0.35, graph 0.20): without the word, b's cosine still lifts
+	// it over c.
 	index.words = nil
 	similar := func([]string) (map[string]float64, error) { return map[string]float64{"b": 0.9, "c": -0.4}, nil }
 	if got := route(retrieval.IntentGeneral, similar); !slices.Equal(got, []string{"b", "c", "a"}) {
 		t.Fatal("similarity", got)
 	}
-	// WHY weighs the graph most: re-ranked c, b, a. The causal order then
-	// puts causes first: a, b, c.
+	// The weights do not depend on the intent; WHY's causal order then puts
+	// causes first: re-ranked b, a, c becomes a, b, c.
 	index.words = map[string][]string{"outage": {"a", "b"}}
 	if got := route(retrieval.IntentWhy, nil); !slices.Equal(got, []string{"a", "b", "c"}) {
 		t.Fatal("WHY", got)
 	}
 	// The query's entities, as the index resolves them, match the records'
-	// entities: ENTITY ranks the named neighbor first (the ids sort the other
-	// way).
+	// entities: the named neighbor ranks first (the ids sort the other way).
 	index = &derivedIndex{
 		links: map[string][]Link{"a": {edge("x", "entity", 1), edge("y", "entity", 1)}},
 		named: map[string][]string{"y": {"Athena"}},
@@ -217,7 +217,7 @@ func TestRecallReranks(t *testing.T) {
 	}
 }
 
-func TestRecallRerankWeightsPerIntent(t *testing.T) {
+func TestRecallRerankWeights(t *testing.T) {
 	// One signal each; gr has the highest raw path score, so the only
 	// nonzero graph score.
 	candidates := map[string]recallSignals{
@@ -226,26 +226,35 @@ func TestRecallRerankWeightsPerIntent(t *testing.T) {
 		"sim": {similarity: 1, graph: 1},
 		"gr":  {graph: 2},
 	}
-	for intent, want := range map[retrieval.Intent][]string{
-		retrieval.IntentWhy:     {"gr", "sim", "ent", "kw"}, // 0.50, 0.30, 0.10, 0.10
-		retrieval.IntentWhen:    {"gr", "sim", "ent", "kw"}, // 0.40, 0.30, 0.15, 0.15
-		retrieval.IntentEntity:  {"ent", "gr", "kw", "sim"}, // 0.40, then 0.20 each
-		retrieval.IntentGeneral: {"ent", "gr", "kw", "sim"}, // 0.25 each
-		"OTHER":                 {"ent", "gr", "kw", "sim"}, // GENERAL's
-	} {
-		if got := rerankRecall(candidates, intent); !slices.Equal(got, want) {
-			t.Errorf("%s: %v", intent, got)
-		}
+	// Native's weights: with vectors 0.30/0.15/0.35/0.20, without them
+	// 0.45/0.25/0/0.30 (keyword/entity/similarity/graph).
+	if got := rerankRecall(candidates, true); !slices.Equal(got, []string{"sim", "kw", "gr", "ent"}) {
+		t.Error("with vectors", got)
 	}
-	// WHEN against WHY: a record with keyword and similarity against one
-	// with the graph alone. WHY: 0.10+0.30 < 0.50; WHEN: 0.15+0.30 > 0.40.
-	candidates = map[string]recallSignals{"both": {keyword: 1, similarity: 1, graph: 1}, "graph": {graph: 2}}
-	if why, when := rerankRecall(candidates, retrieval.IntentWhy), rerankRecall(candidates, retrieval.IntentWhen); !slices.Equal(why, []string{"graph", "both"}) || !slices.Equal(when, []string{"both", "graph"}) {
-		t.Fatal(why, when)
+	if got := rerankRecall(candidates, false); !slices.Equal(got, []string{"kw", "gr", "ent", "sim"}) {
+		t.Error("without vectors", got)
+	}
+	// Entity against graph flips between the two: 0.25 > 0.30×0.8 without
+	// vectors, 0.15 < 0.20×0.8 with them.
+	candidates = map[string]recallSignals{"p": {entity: 1, graph: 0}, "q": {graph: 0.8}, "r": {graph: 1}}
+	if without, with := rerankRecall(candidates, false), rerankRecall(candidates, true); !slices.Equal(without, []string{"r", "p", "q"}) || !slices.Equal(with, []string{"r", "q", "p"}) {
+		t.Fatal(without, with)
 	}
 	// Equal raw scores: no graph signal at all.
-	if got := rerankRecall(map[string]recallSignals{"b": {graph: 3}, "a": {graph: 3}}, retrieval.IntentWhy); !slices.Equal(got, []string{"a", "b"}) {
+	if got := rerankRecall(map[string]recallSignals{"b": {graph: 3}, "a": {graph: 3}}, true); !slices.Equal(got, []string{"a", "b"}) {
 		t.Fatal(got)
+	}
+	// "With vectors" means a stored vector was read for some record, as
+	// native's means it loaded some embedding.
+	none := &similarities{read: func([]string) (map[string]float64, error) { return map[string]float64{}, nil }}
+	some := &similarities{read: func([]string) (map[string]float64, error) { return map[string]float64{"b": -0.2}, nil }}
+	for _, s := range []*similarities{nil, {}, none, some} {
+		if err := s.load([]string{"a", "b"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if (*similarities)(nil).stored() || (&similarities{}).stored() || none.stored() || !some.stored() {
+		t.Fatal("stored vectors misreported")
 	}
 }
 

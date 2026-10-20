@@ -63,15 +63,18 @@ record, anchors included, is re-ranked by four signals in [0, 1]:
 - similarity: the cosine of the stored vectors, as in the beam (0 without them);
 - graph: the path score, min-max normalized over the collected records (0 when all equal).
 
-The final score is the intent-weighted sum of the design's table (the native code itself
-weighs by whether embeddings exist, not by intent):
+The final score is the weighted sum native recall's code runs
+(`internal/memory/search/recall.go`), which depends on whether vectors are available, not
+on the intent:
 
-| Intent | keyword | entity | similarity | graph |
+| Vectors | keyword | entity | similarity | graph |
 |---|---|---|---|---|
-| WHY | 0.10 | 0.10 | 0.30 | 0.50 |
-| WHEN | 0.15 | 0.15 | 0.30 | 0.40 |
-| ENTITY | 0.20 | 0.40 | 0.20 | 0.20 |
-| GENERAL | 0.25 | 0.25 | 0.25 | 0.25 |
+| a stored vector was read for some collected record (hybrid query) | 0.30 | 0.15 | 0.35 | 0.20 |
+| none | 0.45 | 0.25 | 0 | 0.30 |
+
+The intent-weighted re-ranking table in
+[Smart Recall](design/05-pipelines.md#52-read-pipeline-smart-recall) step 4 is outdated
+relative to native's code and is not used.
 
 The route is the best `candidateLimit` records by final score (ties by ID). For WHY,
 Kahn's algorithm then orders them along the causal links among them, a link's source (the

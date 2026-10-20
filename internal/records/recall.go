@@ -53,17 +53,15 @@ var traversalBudgets = map[retrieval.Intent]traversalBudget{
 // rerankWeights weighs the four re-ranking signals.
 type rerankWeights struct{ keyword, entity, similarity, graph float64 }
 
-// recallRerankWeights is the intent-weighted re-ranking table of native
-// Smart Recall's step 4 (docs/design/05-pipelines.md §5.2, "Multi-Factor
-// Re-Ranking"). internal/memory/search/recall.go weighs by embedding
-// availability instead (rerank*WithEmbed, rerank*NoEmbed); this port follows
-// the design's intent table.
-var recallRerankWeights = map[retrieval.Intent]rerankWeights{
-	retrieval.IntentWhy:     {keyword: 0.10, entity: 0.10, similarity: 0.30, graph: 0.50},
-	retrieval.IntentWhen:    {keyword: 0.15, entity: 0.15, similarity: 0.30, graph: 0.40},
-	retrieval.IntentEntity:  {keyword: 0.20, entity: 0.40, similarity: 0.20, graph: 0.20},
-	retrieval.IntentGeneral: {keyword: 0.25, entity: 0.25, similarity: 0.25, graph: 0.25},
-}
+// The re-ranking weights native Smart Recall runs
+// (internal/memory/search/recall.go rerank*WithEmbed, rerank*NoEmbed): they
+// depend on whether embeddings are available, not on the intent; without
+// them the similarity share goes to the other signals. The intent table of
+// docs/design/05-pipelines.md §5.2 step 4 is not what native's code does.
+var (
+	recallRerankWithVectors    = rerankWeights{keyword: 0.30, entity: 0.15, similarity: 0.35, graph: 0.20}
+	recallRerankWithoutVectors = rerankWeights{keyword: 0.45, entity: 0.25, similarity: 0, graph: 0.30}
+)
 
 // newest is native's recency anchor signal: the indexed records by index
 // time (eventAt, else the record date, else createdAt), newest first, ties
@@ -139,7 +137,12 @@ func (s *Store) storedSimilarity(ctx context.Context, index *derivedIndex, cfg E
 type similarities struct {
 	read  func([]string) (map[string]float64, error)
 	known map[string]float64
+	any   bool // some record read had a stored vector
 }
+
+// stored reports whether some record read had a stored vector: native's
+// "embeddings are available", which selects its re-ranking weights.
+func (s *similarities) stored() bool { return s != nil && s.any }
 
 // load reads the cosines of ids not read yet, in one call.
 func (s *similarities) load(ids []string) error {
@@ -166,6 +169,7 @@ func (s *similarities) load(ids []string) error {
 	for _, id := range missing {
 		s.known[id] = found[id]
 	}
+	s.any = s.any || len(found) > 0
 	return nil
 }
 
@@ -240,7 +244,7 @@ func (index *derivedIndex) recall(ctx context.Context, anchors []scored, q recal
 		}
 		candidates[id] = signals
 	}
-	ranked := rerankRecall(candidates, q.intent)
+	ranked := rerankRecall(candidates, similar.stored())
 	ranked = ranked[:min(q.limit, len(ranked))]
 	if q.intent == retrieval.IntentWhy {
 		ranked = index.causalOrder(ranked)
@@ -254,11 +258,12 @@ type recallSignals struct{ keyword, entity, similarity, graph float64 }
 
 // rerankRecall is native's multi-factor re-ranking: the graph score min-max
 // normalized over the candidates (all 0 when they are equal), then the
-// intent-weighted sum; best first, ties by id.
-func rerankRecall(candidates map[string]recallSignals, intent retrieval.Intent) []string {
-	w, ok := recallRerankWeights[intent]
-	if !ok {
-		w = recallRerankWeights[retrieval.IntentGeneral]
+// weighted sum, with native's weights for whether vectors were available;
+// best first, ties by id.
+func rerankRecall(candidates map[string]recallSignals, withVectors bool) []string {
+	w := recallRerankWithoutVectors
+	if withVectors {
+		w = recallRerankWithVectors
 	}
 	first := true
 	var low, high float64
