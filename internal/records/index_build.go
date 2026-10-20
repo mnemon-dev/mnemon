@@ -52,6 +52,10 @@ func (s *Store) derived(ctx context.Context, rev int64, hash string, all []recor
 	key = searchKey(hash, req)
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	// Another build from that generation may have published it meanwhile.
+	if existing := c.derived[key]; existing != nil {
+		return existing, nil
+	}
 	if c.derived == nil {
 		c.derived = map[string]*derivedIndex{}
 	}

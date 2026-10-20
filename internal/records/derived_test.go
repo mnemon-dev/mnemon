@@ -441,3 +441,54 @@ func TestNoDerivedRowsKeepsResultsByteIdentical(t *testing.T) {
 		t.Fatal("cached results differ")
 	}
 }
+
+func TestDerivedCacheKeepsOneEntryPerGeneration(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	s.cache = newQueryCache()
+	if _, err := s.Put(ctx, PutRequest{Upsert: []Upsert{indexedRecord("x", "x notes", nil)}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReplaceDerivedMetadata(ctx, "consolidation", map[string]DerivedMetadata{"x": {Version: 1, Entities: []string{"Pallas"}}}); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := derivedGeneration(ctx, s.readDB())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReplaceDerivedMetadata(ctx, "consolidation", map[string]DerivedMetadata{"x": {Version: 1, Entities: []string{"Hermes"}}}); err != nil {
+		t.Fatal(err)
+	}
+	rev, hash, err := revision(ctx, s.readDB(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.queryRecords(ctx, rev, hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Two queries that read the generation before the replace both build
+	// from the newer overlay: one cache entry, under the newer generation.
+	req := indexRequest("x", &IndexPolicy{Version: 1, Entities: true})
+	req.derived = stale
+	for range 2 {
+		index, err := s.derived(ctx, rev, hash, all, req)
+		if err != nil || index.generation == stale {
+			t.Fatal(index.generation, err)
+		}
+	}
+	if len(s.cache.derivedOrder) != 1 || len(s.cache.derived) != 1 || s.cache.derivedDocs != 1 {
+		t.Fatal(s.cache.derivedOrder, len(s.cache.derived), s.cache.derivedDocs)
+	}
+	// Eviction past four policies finds every entry it removes.
+	for _, policy := range []IndexPolicy{{Version: 1, Lexical: true}, {Version: 1, Relations: true}, {Version: 1, Temporal: true}, {Version: 1, Supersedes: true}, {Version: 1, Lexical: true, Entities: true}} {
+		req := indexRequest("x", &policy)
+		req.derived = stale
+		if _, err := s.derived(ctx, rev, hash, all, req); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(s.cache.derivedOrder) != 4 || len(s.cache.derived) != 4 || s.cache.derivedDocs != 4 {
+		t.Fatal(s.cache.derivedOrder, len(s.cache.derived), s.cache.derivedDocs)
+	}
+}
