@@ -168,6 +168,7 @@ CREATE TABLE IF NOT EXISTS lexical_documents(version_id INTEGER PRIMARY KEY, tok
 CREATE VIRTUAL TABLE IF NOT EXISTS lexical_fts USING fts5(tokens, content='lexical_documents', content_rowid='version_id',
  tokenize="unicode61 remove_diacritics 0 categories 'L* N* M* S* Co Cn' tokenchars '-_:'");
 CREATE VIRTUAL TABLE IF NOT EXISTS lexical_terms USING fts5vocab(lexical_fts, 'instance');
+` + derivedSchema + `
 INSERT OR IGNORE INTO meta VALUES('schema','1'),('tokenizer','ts-v1'),('revision','0'),('seq','0'),
  ('digest','` + emptyRevision + `'),('revision/` + emptyRevision + `','0');`)
 	return err

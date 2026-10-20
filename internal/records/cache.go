@@ -75,6 +75,9 @@ func searchKey(hash string, req QueryRequest) string {
 	raw, _ := json.Marshal([]any{hash, trueValue(in["archived"]), in["id"], ids, in["kind"], in["date"], in["status"], in["since"], in["until"], req.Scope, present})
 	if req.Index.Enabled() {
 		raw, _ = json.Marshal([]any{string(raw), req.Index})
+		if req.derived != "" {
+			raw, _ = json.Marshal([]any{string(raw), req.derived})
+		}
 	}
 	return string(raw)
 }

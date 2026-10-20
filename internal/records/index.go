@@ -85,6 +85,7 @@ type indexDocument struct {
 }
 
 type derivedIndex struct {
+	generation   string // of the derived metadata it was built from
 	docs         []record
 	meta         map[string]indexDocument
 	entities     map[string][]string
@@ -102,10 +103,16 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 	if limit == 0 {
 		limit = 200
 	}
+	var err error
+	if req.derived, err = derivedGeneration(ctx, s.readDB()); err != nil {
+		return QueryResult{}, err
+	}
 	hash, index, selection, err := s.indexedSelection(ctx, req)
 	if err != nil {
 		return QueryResult{}, err
 	}
+	// Later caches are keyed by the overlay the index was built from.
+	req.derived = index.generation
 	result, err := s.rankSelection(ctx, hash, req, selection)
 	if err != nil {
 		return QueryResult{}, err
@@ -286,6 +293,7 @@ func (s *Store) indexedSelection(ctx context.Context, req QueryRequest) (string,
 	if err != nil {
 		return "", nil, nil, err
 	}
+	req.derived = index.generation
 	key := searchKey(hash, req)
 	if c := s.cache; c != nil {
 		c.mu.Lock()

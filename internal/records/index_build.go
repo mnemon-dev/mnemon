@@ -46,6 +46,10 @@ func (s *Store) derived(ctx context.Context, rev int64, hash string, all []recor
 	if err != nil || len(index.docs) > 200000 {
 		return index, err
 	}
+	// A replace between reading the generation and building: keep the index
+	// under the generation it was built from.
+	req.derived = index.generation
+	key = searchKey(hash, req)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.derived == nil {
@@ -72,10 +76,11 @@ func (s *Store) buildDerived(ctx context.Context, rev int64, all []record, req Q
 	}
 	docs := candidates(all, input, "", true)
 	index := &derivedIndex{meta: map[string]indexDocument{}, entities: map[string][]string{}, known: map[string]bool{}, words: map[string][]string{}, links: map[string][]Link{}, replacements: map[string][]Link{}}
-	metadata, err := s.indexMetadata(ctx, rev, docs)
+	metadata, generation, err := s.indexMetadata(ctx, rev, docs, req.derived)
 	if err != nil {
 		return nil, err
 	}
+	index.generation = generation
 	since, until, err := timeBounds(input.Input)
 	if req.Index.Temporal {
 		since, until, err = timeBounds(req.Input)
@@ -116,7 +121,10 @@ func (s *Store) buildDerived(ctx context.Context, rev int64, all []record, req Q
 	return index, nil
 }
 
-func (s *Store) indexMetadata(ctx context.Context, rev int64, docs []record) (map[string]indexMetadata, error) {
+// indexMetadata is the index metadata of docs at rev: the record writer's,
+// merged with the derived-metadata rows that apply (derived.go) unless
+// generation is "" (no overlay). It returns the overlay generation it read.
+func (s *Store) indexMetadata(ctx context.Context, rev int64, docs []record, generation string) (map[string]indexMetadata, string, error) {
 	wanted := make(map[string]bool, len(docs))
 	for _, r := range docs {
 		wanted[r.ID] = true
@@ -132,14 +140,14 @@ func (s *Store) indexMetadata(ctx context.Context, rev int64, docs []record) (ma
 'eventAt',json_extract(record_json,'$.data.eventAt'))
 FROM record_versions WHERE rev_from<=? AND (rev_to IS NULL OR rev_to>?) ORDER BY seq`, rev, rev)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	defer rows.Close()
 	out := make(map[string]indexMetadata, len(docs))
 	for rows.Next() {
 		var id, raw string
 		if err = rows.Scan(&id, &raw); err != nil {
-			return nil, err
+			rows.Close()
+			return nil, "", err
 		}
 		if wanted[id] {
 			var meta indexMetadata
@@ -149,7 +157,28 @@ FROM record_versions WHERE rev_from<=? AND (rev_to IS NULL OR rev_to>?) ORDER BY
 			}
 		}
 	}
-	return out, rows.Err()
+	err = rows.Err()
+	rows.Close() // before the next statement: without a runtime, one connection
+	if err != nil || generation == "" {
+		return out, "", err
+	}
+	generation, overlay, err := s.derivedRows(ctx, wanted)
+	if err != nil {
+		return nil, "", err
+	}
+	for id, list := range overlay {
+		meta, ok := out[id]
+		if !ok {
+			continue // its version is unknown
+		}
+		for _, row := range list {
+			if row.Version >= 1 && row.Version == meta.Version {
+				meta.merge(row)
+			}
+		}
+		out[id] = meta
+	}
+	return out, generation, nil
 }
 
 func (index *derivedIndex) buildLinks() {

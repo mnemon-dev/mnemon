@@ -18,6 +18,9 @@ type QueryRequest struct {
 	Embedding      *EmbeddingConfig           `json:"embedding,omitempty"`
 	Index          *IndexPolicy               `json:"index,omitempty"`
 	CandidateLimit int                        `json:"candidateLimit,omitempty"`
+	// derived is the derived-metadata generation an indexed query reads
+	// (derived.go); the caches of indexed queries are keyed by it.
+	derived string
 }
 type QueryResult struct {
 	IDs       []string     `json:"ids"`
