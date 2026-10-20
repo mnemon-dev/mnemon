@@ -67,10 +67,11 @@ type linkState struct {
 // linkCounts is what linking one batch did: its threads that continued a
 // stored thread or started one, its keys that joined a stored key or
 // started one, the joined keys whose values JEV found contradict the stored
-// latest, and whether JEV failed (Fallback).
+// latest, whether JEV failed (Fallback), and whether the embedder failed,
+// so that shared words found the candidates (Lexical).
 type linkCounts struct {
 	ThreadsLinked, ThreadsNew, KeysLinked, KeysNew, Conflicts int
-	Fallback                                                  bool
+	Fallback, Lexical                                         bool
 }
 
 // addLinks adds a linked batch's counts to the job's.
@@ -82,6 +83,9 @@ func (r *ConsolidateResult) addLinks(c linkCounts) {
 	r.Conflicts += c.Conflicts
 	if c.Fallback {
 		r.LinkFallbacks++
+	}
+	if c.Lexical {
+		r.LinkLexical++
 	}
 }
 
@@ -169,14 +173,15 @@ func (l *linker) link(ctx context.Context, state *timelineState, batch timelineM
 			keyQueries = append(keyQueries, latestText(key, batch.Facts[key]))
 		}
 	}
-	threadRanks, err := l.rank(ctx, threadQueries, threadDocs)
+	threadRanks, threadsLexical, err := l.rank(ctx, threadQueries, threadDocs)
 	if err != nil {
 		return timelineMemory{}, linkCounts{}, err
 	}
-	keyRanks, err := l.rank(ctx, keyQueries, keyDocs)
+	keyRanks, keysLexical, err := l.rank(ctx, keyQueries, keyDocs)
 	if err != nil {
 		return timelineMemory{}, linkCounts{}, err
 	}
+	counts := linkCounts{Lexical: threadsLexical || keysLexical}
 	pairs := []*linkPair{}
 	threadPairs, keyPairs := make([][]*linkPair, len(newThreads)), make([][]*linkPair, len(batch.FactOrder))
 	for i, ranked := range threadRanks {
@@ -196,7 +201,6 @@ func (l *linker) link(ctx context.Context, state *timelineState, batch timelineM
 		}
 		pairs = append(pairs, keyPairs[j]...)
 	}
-	counts := linkCounts{}
 	if err := l.judge(ctx, news, cands, pairs, state, result); err != nil {
 		if ctx.Err() != nil {
 			return timelineMemory{}, linkCounts{}, err
@@ -291,13 +295,14 @@ func freshThreadID(m timelineMemory) string {
 // rank returns, for each query, the indexes of the l.k docs most similar to
 // it, best first: by the cosine of their document vectors when the agent has
 // an embedder (queries and docs both embedded as documents, through the
-// layer's vector cache), ties in doc order; else, or when embedding fails,
-// by shared words (BM25, as the layer falls back to). A doc with no
-// similarity at all (a cosine of 0 or less, no shared word) is not ranked.
-func (l *linker) rank(ctx context.Context, queries, docs []string) ([][]int, error) {
+// layer's vector cache), ties in doc order; else, or when embedding fails
+// (lexical), by shared words (BM25, as the layer falls back to). A doc with
+// no similarity at all (a cosine of 0 or less, no shared word) is not
+// ranked.
+func (l *linker) rank(ctx context.Context, queries, docs []string) (ranks [][]int, lexical bool, err error) {
 	out := make([][]int, len(queries))
 	if len(queries) == 0 || len(docs) == 0 {
-		return out, nil
+		return out, false, nil
 	}
 	if vectors, ok := l.embed(ctx, append(slices.Clone(queries), docs...)); ok {
 		docVectors := vectors[len(queries):]
@@ -311,16 +316,16 @@ func (l *linker) rank(ctx context.Context, queries, docs []string) ([][]int, err
 			slices.SortStableFunc(order, func(a, b int) int { return probabilityOrder(score[a], score[b]) })
 			out[i] = order[:min(l.k, len(order))]
 		}
-		return out, nil
+		return out, false, nil
 	}
 	if ctx.Err() != nil {
-		return nil, ctx.Err()
+		return nil, false, ctx.Err()
 	}
 	index := newBM25(docs)
 	for i, query := range queries {
 		out[i] = index.top(query, l.k)
 	}
-	return out, nil
+	return out, l.agent.config.Embedding != nil, nil
 }
 
 // embed is the document vector of each text, from the job's own cache or

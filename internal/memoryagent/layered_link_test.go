@@ -477,8 +477,8 @@ func TestLinkCandidatesByEmbedding(t *testing.T) {
 	judge := &linkJudge{}
 	a := linkAgent(t, judge, 1, embedding)
 	batch := timelineMemory{Threads: []thread{{ID: "T1", Title: "Boat outing"}}, Events: []event{{Thread: "T1", Date: "2024/02/01", Text: "Rented a kayak."}}, Facts: map[string][]factValue{}}
-	if _, _, err := a.newLinker().link(context.Background(), linkState0(storedMemory()), batch, &ConsolidateResult{}); err != nil {
-		t.Fatal(err)
+	if _, counts, err := a.newLinker().link(context.Background(), linkState0(storedMemory()), batch, &ConsolidateResult{}); err != nil || counts.Lexical {
+		t.Fatal(counts, err)
 	}
 	// By meaning the garden is nearest (shared words would pick the trip);
 	// one candidate, as configured.
@@ -502,10 +502,22 @@ func TestLinkCandidatesByEmbedding(t *testing.T) {
 	server.mu.Unlock()
 	judge = &linkJudge{}
 	a = linkAgent(t, judge, 1, embedding)
-	if _, _, err := a.newLinker().link(context.Background(), linkState0(storedMemory()), batch, &ConsolidateResult{}); err != nil {
-		t.Fatal(err)
+	_, counts, err := a.newLinker().link(context.Background(), linkState0(storedMemory()), batch, &ConsolidateResult{})
+	if err != nil || !counts.Lexical {
+		t.Fatal(counts, err)
 	}
 	if judge.count() != 1 || judge.calls[0].State.Candidates[0].ID != "T1" {
 		t.Fatal(judge.calls)
+	}
+	// The job counts such batches; shared words without an embedder are no
+	// fallback (TestLinkBatchDecisions: Lexical stays false).
+	var result ConsolidateResult
+	result.addLinks(counts)
+	result.addLinks(linkCounts{ThreadsNew: 1})
+	if result.LinkLexical != 1 {
+		t.Fatal(result.LinkLexical)
+	}
+	if raw, _ := json.Marshal(ConsolidateResult{}); strings.Contains(string(raw), "linkLexical") {
+		t.Fatal(string(raw))
 	}
 }

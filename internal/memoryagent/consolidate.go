@@ -44,7 +44,8 @@ type ConsolidateResult struct {
 	// of the keys, KeysLinked joined a stored key and KeysNew started one;
 	// Conflicts counts the joined keys whose new value JEV found contradicts
 	// the stored latest; LinkFallbacks counts the batches linked without
-	// JEV because it failed.
+	// JEV because it failed, and LinkLexical those whose candidates shared
+	// words found because the configured embedder failed.
 	LinkCalls     int    `json:"linkCalls,omitempty"`
 	LinkUsage     *Usage `json:"linkUsage,omitempty"`
 	ThreadsLinked int    `json:"threadsLinked,omitempty"`
@@ -53,6 +54,7 @@ type ConsolidateResult struct {
 	KeysNew       int    `json:"keysNew,omitempty"`
 	Conflicts     int    `json:"conflicts,omitempty"`
 	LinkFallbacks int    `json:"linkFallbacks,omitempty"`
+	LinkLexical   int    `json:"linkLexical,omitempty"`
 }
 
 // ConsolidateDrop is records a timelines job gave up on: they stay
