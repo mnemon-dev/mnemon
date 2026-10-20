@@ -281,9 +281,10 @@ func longLaunchMemory() timelineMemory {
 }
 
 // layerReads reads "What is the codename?" from a store with memory under
-// each view, with a recording judge, and returns the Views and the requests
-// each read made of the judge and the planner.
-func layerReads(t *testing.T, memory timelineMemory, consolidation string, needs string, views ...ViewConfig) (out []View, judged, planned [][]string) {
+// each view, with a recording judge around a new judge from judge, and
+// returns the Views and the requests each read made of the judge and the
+// planner.
+func layerReads(t *testing.T, memory timelineMemory, consolidation string, needs string, judge func() *scriptedJudge, views ...ViewConfig) (out []View, judged, planned [][]string) {
 	t.Helper()
 	s, overlay := layerStore(t)
 	ctx := context.Background()
@@ -296,13 +297,13 @@ func layerReads(t *testing.T, memory timelineMemory, consolidation string, needs
 		t.Fatal(err)
 	}
 	for _, view := range views {
-		judge, planner := &recordingJudge{inner: layerJudge()}, codenamePlanner(needs)
-		a := layerAgent(t, s, overlay, Config{View: &view, Consolidation: &ConsolidationConfig{Mode: consolidation}}, planner, judge)
+		recording, planner := &recordingJudge{inner: judge()}, codenamePlanner(needs)
+		a := layerAgent(t, s, overlay, Config{View: &view, Consolidation: &ConsolidationConfig{Mode: consolidation}}, planner, recording)
 		got, err := a.Read(ctx, ReadRequest{Question: "What is the codename?"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		out, judged, planned = append(out, got), append(judged, judge.requests()), append(planned, plannerRequests(planner))
+		out, judged, planned = append(out, got), append(judged, recording.requests()), append(planned, plannerRequests(planner))
 	}
 	return out, judged, planned
 }
@@ -315,7 +316,7 @@ func TestReadSimpleScaledLayerMakesTheSameRequests(t *testing.T) {
 		// judged, and it is linked from what both Views show.
 		"nothing stored is needed",
 	} {
-		views, judged, planned := layerReads(t, longLaunchMemory(), "timelines", needs, ViewConfig{MaxItems: 6, MaxCharacters: 24000}, ViewConfig{MaxItems: 6, MaxCharacters: 24000, Layer: "scaled"})
+		views, judged, planned := layerReads(t, longLaunchMemory(), "timelines", needs, layerJudge, ViewConfig{MaxItems: 6, MaxCharacters: 24000}, ViewConfig{MaxItems: 6, MaxCharacters: 24000, Layer: "scaled"})
 		reference, scaled := views[0], views[1]
 		if !slices.Equal(judged[0], judged[1]) || !slices.Equal(planned[0], planned[1]) || len(judged[0]) < 3 {
 			t.Fatal(needs, len(judged[0]), len(judged[1]))

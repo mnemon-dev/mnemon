@@ -123,6 +123,10 @@ type ViewConfig struct {
 	// (timelines_layer.go); "" keeps the reference's budgets. What the layer
 	// selects is the same either way.
 	Layer string `json:"layer,omitempty"`
+	// Profiles adds the timelines layer's entity profiles
+	// (timelines_profiles.go): the events and values the chosen entities
+	// name, which JEV chooses in a call of its own.
+	Profiles bool `json:"profiles,omitempty"`
 }
 
 // ExpandConfig sets the evidence expansion of a simple read. Kinds names the
@@ -222,7 +226,9 @@ type ReadStats struct {
 	// (the judgement failed or found the budget spent: the screen stands
 	// in), layer-state (the consolidated state did not load: no layer),
 	// layer-lexical (the layer's embedding failed: shared words rank), layer
-	// (the layer's judgement failed or found the budget spent), expand
+	// (the layer's judgement failed or found the budget spent),
+	// layer-profiles (view.profiles' judgement failed or could not be paid
+	// for: no profiles), expand
 	// (records linked from the layer could not be read or judged),
 	// expansion (view.expand could not read or judge every candidate it
 	// chose, its events' state did not load, or gate and target could not
@@ -271,6 +277,9 @@ type ReadStats struct {
 	// expanded from.
 	ExpandShown int `json:"expandShown,omitempty"`
 	ExpandSeeds int `json:"expandSeeds,omitempty"`
+	// LayerProfiles counts the entity profiles the View shows
+	// (view.profiles); absent at zero.
+	LayerProfiles int `json:"layerProfiles,omitempty"`
 }
 
 type View struct {
@@ -375,10 +384,10 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	if own.View != nil && own.View.Expand != nil && slices.Contains(own.View.Expand.Kinds, expandEvents) && !(own.Consolidation.Timelines() && own.Policy.Consolidation) {
 		return nil, errors.New("view expand kind events requires timelines or layered consolidation, with the policy's consolidation on")
 	}
-	// The layer setting shapes the timelines layer: without it the setting
-	// could only ever be inert.
-	if own.View != nil && own.View.Layer != "" && !(own.Consolidation.Timelines() && own.Policy.Consolidation) {
-		return nil, errors.New("view layer requires timelines or layered consolidation, with the policy's consolidation on")
+	// The layer and profiles settings shape the timelines layer: without it
+	// they could only ever be inert.
+	if own.View != nil && (own.View.Layer != "" || own.View.Profiles) && !(own.Consolidation.Timelines() && own.Policy.Consolidation) {
+		return nil, errors.New("view layer and profiles require timelines or layered consolidation, with the policy's consolidation on")
 	}
 	return &Agent{store: store, config: own, models: models, overlay: overlay, now: time.Now}, nil
 }

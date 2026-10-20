@@ -2,6 +2,7 @@ package memoryagent
 
 import (
 	"cmp"
+	"context"
 	"fmt"
 	"regexp"
 	"slices"
@@ -352,4 +353,90 @@ func composeProfiles(m timelineMemory, x entityIndex, order []string, lit litSet
 		}
 	}
 	return IndexItem{ID: "5-profiles", Kind: "5-profiles", Text: profilesHead + text, Records: refs}, shown
+}
+
+// entitySource is the source the profiles' judgement gives its candidates.
+const entitySource = "entity"
+
+// profiles is the block 5-profiles of a read with view.profiles, or none.
+// The candidates are the entities the View's records light up (anchors),
+// by anchor links (ties in the order they first lit up), then the 12
+// entities nearest the last user message (nearestEntities), each once. JEV
+// judges them, by their entity texts, in a call of its own (judgeNeeded,
+// source "entity"), so the topics' and values' call is the same with
+// profiles and without. The chosen are those it calls needed (≥ 0.5), by
+// its answer (ties in candidate order), then the lit entities below 0.5 by
+// anchor links, as layerOrder chooses topics. A judgement that fails, or
+// that the read's decision budget cannot pay for, shows no profiles and
+// degrades the read (layer-profiles). A memory whose events and values name
+// no entity (a timelines state) shows none and asks nothing. Only a
+// canceled read is an error.
+func (r *simpleRun) profiles(ctx context.Context, m timelineMemory, lit litSets, anchors map[string]bool, message string, lexical bool, b layerBudgets) ([]IndexItem, error) {
+	x := memoryEntities(m)
+	if len(x.list) == 0 {
+		return nil, nil
+	}
+	keys, texts := []string{}, []string{}
+	for _, e := range x.list {
+		keys, texts = append(keys, e.key), append(texts, entityText(m, e))
+	}
+	litKeys, counts := litEntities(m, x, lit, anchors)
+	near := r.nearestEntities(ctx, message, texts, lexical)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	candidates, _ := layerCandidates(litSets{Threads: rankedEntities(litKeys, counts)}, keys, nil, near, nil)
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	text := map[string]string{}
+	for i, key := range keys {
+		text[key] = texts[i]
+	}
+	judged := []judgeCandidate{}
+	for _, key := range candidates {
+		judged = append(judged, judgeCandidate{Source: entitySource, Text: text[key]})
+	}
+	if calls := (len(judged) + judgeBatch - 1) / judgeBatch; r.decisionsLeft() < calls {
+		r.degrade("layer-profiles")
+		return nil, nil
+	}
+	scores, err := r.judgeNeeded(ctx, judged)
+	if err != nil {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		r.degrade("layer-profiles")
+		return nil, nil
+	}
+	score := map[string]float64{}
+	for i, key := range candidates {
+		score[key] = scores[i]
+	}
+	order, _ := layerOrder(candidates, nil, litSets{Threads: litKeys, Counts: counts}, score, nil)
+	block, shown := composeProfiles(m, x, order, lit, b)
+	if shown == 0 {
+		return nil, nil
+	}
+	r.mu.Lock()
+	r.stats.LayerProfiles = shown
+	r.mu.Unlock()
+	return []IndexItem{block}, nil
+}
+
+// nearestEntities is the indexes of the 12 entity texts nearest the message,
+// best first, as nearest ranks the topics: by meaning with an embedder (the
+// texts' document vectors, stored like the topics'), else, or when that
+// fails (layer-lexical), by shared words. When the topics fell back to
+// shared words (lexical), so do the entities, embedding nothing.
+func (r *simpleRun) nearestEntities(ctx context.Context, message string, texts []string, lexical bool) []int {
+	if !lexical {
+		if query, vectors, _, ok := r.layerVectors(ctx, message, texts, nil); ok {
+			return byDot(query, vectors, layerNearThreads)
+		}
+		if r.agent.config.Embedding != nil && ctx.Err() == nil {
+			r.degrade("layer-lexical")
+		}
+	}
+	return bm25Top(texts, message, layerNearThreads)
 }
