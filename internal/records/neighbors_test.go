@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"sync"
 	"testing"
 )
 
@@ -169,4 +170,32 @@ func TestAdjacentFollowsSessionsInStoreOrder(t *testing.T) {
 	if _, err = s.Adjacent(ctx, "nonsense", Scope{}, ids); err == nil {
 		t.Fatal("unknown revision accepted")
 	}
+}
+
+// Concurrent readers of the cached index never write into its slices: x has
+// three links (a slice with room for a fourth) and a correction.
+func TestLinksConcurrentReadersShareTheIndex(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	s.cache = newQueryCache()
+	_, err := s.Put(ctx, PutRequest{Upsert: []Upsert{
+		indexedRecord("x", "x", map[string]any{"links": []any{neighborLink("p", "temporal", 1), neighborLink("q", "temporal", 1), neighborLink("r", "temporal", 1)}}),
+		indexedRecord("p", "p", nil), indexedRecord("q", "q", nil), indexedRecord("r", "r", nil),
+		indexedRecord("y", "y", map[string]any{"mnemonSupersedes": map[string]any{"id": "x", "version": 1}}),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			got, err := s.Links(ctx, "", Scope{}, []string{"x"})
+			if err != nil || len(got["x"]) != 4 || got["x"][3] != (Link{ID: "y", Version: 1, Type: "supersedes", Weight: 1}) {
+				t.Error(got, err)
+			}
+		}()
+	}
+	wg.Wait()
 }

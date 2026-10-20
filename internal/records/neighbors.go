@@ -46,9 +46,12 @@ func (s *Store) Links(ctx context.Context, revisionHash string, scope Scope, ids
 		if _, done := out[id]; done {
 			continue
 		}
+		// Copied: the cached index's slices are shared by every reader.
 		links := []Link{}
-		for _, link := range append(index.links[id], index.replacements[id]...) {
-			links = append(links, Link{ID: link.ID, Version: link.Version, Type: link.Type, Weight: link.Weight})
+		for _, list := range [][]Link{index.links[id], index.replacements[id]} {
+			for _, link := range list {
+				links = append(links, Link{ID: link.ID, Version: link.Version, Type: link.Type, Weight: link.Weight})
+			}
 		}
 		if len(links) > 0 {
 			out[id] = links
