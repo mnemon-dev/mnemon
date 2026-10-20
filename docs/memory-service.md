@@ -95,26 +95,26 @@ Nearness is by meaning, the embedding of each entity's text, built like a topic'
 (`<name>: N events, <first> to <last>. Latest: …`, its latest three events; for an entity
 only values name, its last three keys' latest values), or by shared words without an
 embedder, when embedding fails, or when the topics were ranked by shared words. JEV judges
-the candidates in a call of its own (source `entity`, 40 a call), so the topics' and
-values' call is the same request with profiles or without: profiles add one JEV call to
-each read whose memory names an entity, and none to one that names none (a timelines state,
-which shows no profiles). The block shows, under
-`Profiles of the people and things this concerns:` and separated by a blank line, the
-profiles of the entities JEV calls needed (at least 0.5), best first, then of the other lit
-entities by their anchor links: `Profile: <name>`, then after `- Facts:` a line
-`<key>: <latest value> (<date>, earlier <n> values)` per key (the date of its latest value,
-and the count of its other values when it had some), then `- <date>: <text>` per event, by
-date. The block takes 3,500 characters, each profile at most 1,500 of what is left and none
-begun with less than 300 left (with `layer` `"scaled"`, 3,500 × s and 1,500 × s; the floor
-stays), the header outside them; a profile over its room keeps the lines of the lit keys
-and events first, then the newest lines that fit, shown in order. Like the other blocks it
-counts toward `maxCharacters`, and the records of the latest values and events it shows
-join the linked records the layer may add. `stats.layerProfiles` counts the profiles shown.
-A judgement that fails, or that the read's decision budget cannot pay for whole, shows no
-profiles and names `layer-profiles` in `stats.degraded`. `WarmLayer` embeds the entity
-texts with the layer's. Absent or false, reads and the policy hash are unchanged; the
-setting is refused without timelines or layered consolidation and the policy's
-`consolidation`.
+the candidates in a judgement of its own (source `entity`), so the topics' and values' call
+is the same request with profiles or without: profiles add one JEV call per 40 candidates
+(the lit entities are not capped, as the lit topics are not) to each read whose memory
+names an entity, and none to one that names none (a timelines state, which shows no
+profiles). The block shows, under `Profiles of the people and things this concerns:` and
+separated by a blank line, the profiles of the entities JEV calls needed (at least 0.5),
+best first, then of the other lit entities by their anchor links: `Profile: <name>`, then
+after `- Facts:` a line `<key>: <latest value> (<date>, earlier <n> values)` per key (the
+date of its latest value, and the count of its other values when it had some), then
+`- <date>: <text>` per event, by date. The block takes 3,500 characters, each profile at
+most 1,500 of what is left and none begun with less than 300 left (with `layer` `"scaled"`,
+3,500 × s and 1,500 × s; the floor stays), the header outside them; a profile over its room
+keeps the lines of the lit keys and events first, then the newest lines that fit, shown in
+order. Like the other blocks it counts toward `maxCharacters`, and the records of the
+latest values and events it shows join the linked records the layer may add.
+`stats.layerProfiles` counts the profiles shown. A judgement that fails, or that the read's
+decision budget cannot pay for whole, shows no profiles and names `layer-profiles` in
+`stats.degraded`. `WarmLayer` embeds the entity texts with the layer's. Absent or false,
+reads and the policy hash are unchanged; the setting is refused without timelines or
+layered consolidation and the policy's `consolidation`.
 
 `"view": {"expand": {"kinds": ["adjacent", "causal", "events"], "limit": 24, "seeds": 16}}`
 adds evidence-anchored expansion to a simple read. The cue searches, the pool, the need loop
