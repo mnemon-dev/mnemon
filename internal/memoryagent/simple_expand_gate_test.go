@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -463,5 +464,79 @@ func TestExpansionAnsweredNeedsAreCurrent(t *testing.T) {
 	}
 	if view := needsRead(t, s, needs, targeted, judge(0.7)); view.Stats.ExpandAnsweredNeeds != 0 || view.Needs[1].HasEvidence {
 		t.Fatal(view.Stats, view.Needs)
+	}
+}
+
+// splitJudge answers the screen and the need table by screen, the
+// judgement's needed question by needed (both screen and judgement ask
+// n<i>; the state type tells them apart), and nothing is superseded.
+type splitJudge struct{ screen, needed func(string) float64 }
+
+func (j splitJudge) Decide(_ context.Context, state any, questions map[string]Question) (map[string]float64, Usage, error) {
+	raw, _ := json.Marshal(state)
+	var s struct{ Candidates []struct{ Text string } }
+	json.Unmarshal(raw, &s)
+	_, judging := state.(batchState)
+	out := map[string]float64{}
+	for key := range questions {
+		var i, k int
+		switch {
+		case func() bool { _, err := fmt.Sscanf(key, "c%dq%d", &i, &k); return err == nil }():
+			out[key] = j.screen(s.Candidates[i].Text)
+		case func() bool { _, err := fmt.Sscanf(key, "s%d", &i); return err == nil }():
+			out[key] = 0
+		default:
+			fmt.Sscanf(key, "n%d", &i)
+			if judging {
+				out[key] = j.needed(s.Candidates[i].Text)
+			} else {
+				out[key] = j.screen(s.Candidates[i].Text)
+			}
+		}
+	}
+	return out, Usage{}, nil
+}
+
+// The fix round review's case: under fusion with a reserve, compose takes
+// the needed records first, so the View of two shows a1 and doc-00000 and
+// not a2, the one record that gives the codename (screen 0.9, needed 0.3).
+// The gate must see that View: no skip, and the evidence keeps its slots.
+func TestExpansionGateMirrorsReservedFusion(t *testing.T) {
+	s := expandFixture(t)
+	judge := splitJudge{
+		screen: func(text string) float64 {
+			if strings.Contains(text, "the codename is ORBIT") {
+				return 0.9
+			}
+			return 0.2
+		},
+		needed: func(text string) float64 {
+			switch {
+			case strings.Contains(text, "the codename is ORBIT"):
+				return 0.3
+			case strings.Contains(text, "codename"):
+				return 0.9
+			}
+			return 0.1
+		},
+	}
+	view := needsRead(t, s, "NEED: the codename", &ViewConfig{MaxItems: 2, Fusion: "rrf", Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, Gate: "needs", Reserve: 1}}, judge)
+	if view.StopReason != "covered" || view.Stats.ExpandGated || view.Stats.Expanded == 0 || !slices.Equal(recordIDs(view.Records), []string{"a1", "doc-00000"}) {
+		t.Fatal(recordIDs(view.Records), view.Stats)
+	}
+}
+
+// A coverage read that fails (fusion reads the raw hits' evidence) degrades
+// the expansion instead of failing the read; nothing counts as covered.
+func TestExpansionCoverageFailureDegrades(t *testing.T) {
+	r, scored := expansionRunWith(t, expandJudge(), &ExpandConfig{Kinds: []string{"temporal"}, Gate: "needs"})
+	r.agent.config.View.Fusion = "rrf"
+	r.needs = []Need{{Text: "the codename"}}
+	scored[0].Row = []float64{0.9}
+	r.searches = []*cueSearch{{Cue: cue{"What is the codename?", "message"}, IDs: []string{"seed", "n00"}}}
+	r.revision = "nonsense"
+	got, err := r.expandEvidence(context.Background(), scored, stopCovered)
+	if err != nil || len(got) != 1 || r.stats.ExpandGated || !slices.Equal(r.stats.Degraded, []string{"expansion"}) {
+		t.Fatal(err, len(got), r.stats)
 	}
 }

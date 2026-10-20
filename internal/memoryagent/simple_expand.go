@@ -224,7 +224,11 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 	if config.Gate == expandNeeds || config.Target == expandNeeds {
 		shown, err := r.wouldShow(ctx, scored)
 		if err != nil {
-			return nil, err
+			// Unknown, so nothing covered: the gate does not skip.
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
+			r.degrade("expansion")
 		}
 		covered = r.covered(shown)
 	}

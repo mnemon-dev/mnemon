@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 )
 
 // The end of the simple read (author N:978-1044 in simple mode): the
@@ -296,33 +297,24 @@ func (r *simpleRun) ordered(scored []*simpleItem) []*simpleItem {
 
 // wouldShow is the records compose would show without the expansion, as
 // far as the read can tell before the timelines layer: compose's selection
-// (fusion's when set) of the judged list, and with the layer only the
-// leading records the layer's character trim can never drop, those within
-// the View's characters less the most the layer's blocks can take
-// (layerBlocksMax). It makes no model call.
+// of the judged list (selection, the very selection compose makes), and
+// with the layer only the leading records the layer's character trim can
+// never drop, those within the View's characters less the most the
+// layer's blocks can take (layerBlocksMax). It makes no model call; under
+// fusion it reads the evidence of raw hits not pooled, as compose does,
+// and that time counts in queryMs.
 func (r *simpleRun) wouldShow(ctx context.Context, scored []*simpleItem) ([]*simpleItem, error) {
-	maxItems, maxChars := r.req.MaxItems, r.agent.config.View.MaxCharacters
-	var shown []*simpleItem
-	if r.agent.config.View.Fusion == "rrf" {
-		candidates, _, err := r.fused(ctx, scored)
-		if err != nil {
-			return nil, err
-		}
-		v := newViewFill(maxItems, maxChars)
-		for _, item := range candidates {
-			if v.fits(item) {
-				v.take(item)
-			}
-		}
-		shown = v.selected
-	} else {
-		shown = composed(scored, r.needless, maxItems, maxChars).selected
+	start := time.Now()
+	v, _, _, _, err := r.selection(ctx, scored)
+	r.queryTime(start)
+	if err != nil {
+		return nil, err
 	}
 	if !r.agent.layerOn() {
-		return shown, nil
+		return v.selected, nil
 	}
-	room, kept := maxChars-layerBlocksMax, []*simpleItem{}
-	for _, item := range shown {
+	room, kept := r.agent.config.View.MaxCharacters-layerBlocksMax, []*simpleItem{}
+	for _, item := range v.selected {
 		if room -= jsLen(item.Evidence.Text); room < 0 {
 			break
 		}
@@ -434,41 +426,9 @@ func (r *simpleRun) fused(ctx context.Context, scored []*simpleItem) ([]*simpleI
 // cut for want of items or characters. Withdrawn items have no place in the
 // View and are dropped.
 func (r *simpleRun) compose(ctx context.Context, stop string, scored []*simpleItem) (View, error) {
-	maxItems, maxChars := r.req.MaxItems, r.agent.config.View.MaxCharacters
-	var v *viewFill
-	var candidates, held []*simpleItem
-	score := map[string]float64{}
-	if r.agent.config.View.Fusion == "rrf" {
-		var err error
-		if candidates, score, err = r.fused(ctx, scored); err != nil {
-			return View{}, err
-		}
-		// With a reserve, the needed records that are not expansions, then
-		// the held expansions, take their slots first; the View lists the
-		// records that are not held in fused order, then the held ones.
-		v = newViewFill(maxItems, maxChars)
-		reserve := r.reserve()
-		if reserve > 0 {
-			takeEvidence(v, candidates)
-			held = heldExpansions(v, r.ordered(scored), reserve, r.needless)
-		}
-		for _, item := range candidates {
-			if v.fits(item) {
-				v.take(item)
-			}
-		}
-		if reserve > 0 {
-			listed := slices.DeleteFunc(slices.Clone(candidates), func(item *simpleItem) bool {
-				return !slices.Contains(v.selected, item) || slices.Contains(held, item)
-			})
-			v.selected = append(listed, held...)
-		}
-	} else {
-		v, held = composedFrom(r.ordered(scored), r.reserve(), r.needless, maxItems, maxChars)
-		candidates = eligible(scored, r.needless)
-		for _, item := range v.selected {
-			score[item.ID] = item.Needed
-		}
+	v, candidates, score, held, err := r.selection(ctx, scored)
+	if err != nil {
+		return View{}, err
 	}
 	r.held = map[string]bool{}
 	for _, item := range held {
@@ -479,6 +439,48 @@ func (r *simpleRun) compose(ctx context.Context, stop string, scored []*simpleIt
 		return View{}, err
 	}
 	return View{Revision: r.revision, Policy: r.policy(), Records: records, Needs: r.viewNeeds(records), StopReason: stop, Truncated: v.cut(candidates), Stats: r.statsNow()}, nil
+}
+
+// selection is what compose shows of the judged list: the filled View (its
+// items in View order), the candidates whose cut marks the View truncated,
+// the shown items' scores and the expansions held reserved slots.
+// composeSimple's selection scored by Needed, or with fusion the fused order
+// filled by the same fit, scored by the fused score. With a reserve the
+// current needed records that are not expansions take their slots first,
+// then the held expansions (composedFrom; under fusion the View lists the
+// records that are not held in fused order, then the held ones). Under
+// fusion it reads the evidence of raw hits not pooled.
+func (r *simpleRun) selection(ctx context.Context, scored []*simpleItem) (v *viewFill, candidates []*simpleItem, score map[string]float64, held []*simpleItem, err error) {
+	maxItems, maxChars := r.req.MaxItems, r.agent.config.View.MaxCharacters
+	score = map[string]float64{}
+	if r.agent.config.View.Fusion != "rrf" {
+		v, held = composedFrom(r.ordered(scored), r.reserve(), r.needless, maxItems, maxChars)
+		for _, item := range v.selected {
+			score[item.ID] = item.Needed
+		}
+		return v, eligible(scored, r.needless), score, held, nil
+	}
+	if candidates, score, err = r.fused(ctx, scored); err != nil {
+		return nil, nil, nil, nil, err
+	}
+	v = newViewFill(maxItems, maxChars)
+	reserve := r.reserve()
+	if reserve > 0 {
+		takeEvidence(v, candidates)
+		held = heldExpansions(v, r.ordered(scored), reserve, r.needless)
+	}
+	for _, item := range candidates {
+		if v.fits(item) {
+			v.take(item)
+		}
+	}
+	if reserve > 0 {
+		listed := slices.DeleteFunc(slices.Clone(candidates), func(item *simpleItem) bool {
+			return !slices.Contains(v.selected, item) || slices.Contains(held, item)
+		})
+		v.selected = append(listed, held...)
+	}
+	return v, candidates, score, held, nil
 }
 
 // viewNeeds is the plan's needs as a View of records reports them: covered
