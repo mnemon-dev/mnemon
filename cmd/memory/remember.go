@@ -181,6 +181,9 @@ var rememberCmd = &cobra.Command{
 			return enc.Encode(output)
 		}
 
+		// Like the embedding, ask the extraction model before the transaction.
+		modelEntities := newEntityExtractor().entities(content, entities, entityMode)
+
 		// 3. All DB writes in a single atomic transaction
 		var (
 			edgeStats graph.EdgeStats
@@ -205,7 +208,10 @@ var rememberCmd = &cobra.Command{
 			}
 
 			// Run graph edge engine (includes auto semantic edges when embedded)
-			engine := graph.NewEngineWithEntityMode(db, embedCache, entityMode)
+			engine := graph.NewEngineWithOptions(db, embedCache, graph.EngineOptions{
+				EntityMode:    entityMode,
+				ModelEntities: modelEntities,
+			})
 			edgeStats = engine.OnInsightCreated(insight)
 
 			// Update entities extracted by the engine

@@ -17,6 +17,7 @@ Mnemon runs locally and stores data in `~/.mnemon/`. Key security considerations
 - **SQLite database** — contains all stored insights; protected by filesystem permissions (`0644`).
 - **Hook scripts** — shell scripts executed by the LLM CLI at lifecycle events; written with `0755` permissions.
 - **Embedding provider connection** — optional requests send insight or query text to the configured Ollama or OpenAI-compatible server. The default local Ollama endpoint does not use TLS. If `MNEMON_EMBED_ENDPOINT` points outside a trusted local network, use HTTPS to protect content and any `MNEMON_EMBED_API_KEY` bearer token in transit.
+- **Entity extraction model connection** — only when `MNEMON_EXTRACT_MODEL` is set, `remember` and `import` send the full text of each memory stored without entities to `MNEMON_EXTRACT_ENDPOINT`. A cloud endpoint therefore receives that text. Use HTTPS to protect content and the `MNEMON_EXTRACT_API_KEY` bearer token.
 
 ## Supported Versions
 

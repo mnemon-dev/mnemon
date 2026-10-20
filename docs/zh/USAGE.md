@@ -375,6 +375,10 @@ open graph.html
 | `MNEMON_EMBED_API_KEY` | （无） | OpenAI 兼容服务器的 Bearer 令牌 |
 | `MNEMON_EMBED_KEEP_ALIVE` | 30m | 每次请求后 Ollama 保持嵌入模型加载的时长 |
 | `MNEMON_EMBED_DIMENSIONS` | (原生维度) | 嵌入向量维度；可设置截断值（例如 Matryoshka 模型使用 `256`） |
+| `MNEMON_EXTRACT_MODEL` | （空 = 禁用） | 抽取模型（如 `clairic`）；`remember` 与 `import` 对未带实体的记忆调用它抽取实体，只保留在记忆中完整出现的名称，并以之取代全大写缩写猜测 |
+| `MNEMON_EXTRACT_ENDPOINT` | （无，必填） | 抽取请求 POST 的完整 URL；云端端点会收到这些记忆的全文 |
+| `MNEMON_EXTRACT_API_KEY` | （无） | 抽取端点的 Bearer 令牌 |
+| `MNEMON_EXTRACT_TIMEOUT` | `15s` | 单次抽取的时间预算（Go duration） |
 | `MNEMON_MAX_INSIGHTS` | `1000` | 触发自动清理的活跃洞察数量上限；设为 `0` 可关闭自动清理 |
 | `MNEMON_AUTO_PRUNE_MIN_AGE` | `24h` | 可被自动清理前的最短存活时间；支持 `24h`、整数天 `7d`，设为 `0` 可关闭保护期 |
 

@@ -37,13 +37,21 @@ func ValidEntityMode(mode EntityMode) bool {
 	}
 }
 
+var (
+	// acronymPattern matches ALLCAPS acronyms 2-6 chars (e.g., API, HTTP, SQL).
+	// It is the one pattern that guesses whether a token names something, so
+	// model-extracted entities replace it (see ResolveEntitiesWithModel).
+	acronymPattern = regexp.MustCompile(`\b([A-Z]{2,6})\b`)
+	// filePathPattern matches file paths and dotted names (e.g., ./cmd/root.go,
+	// /etc/config.yml, example.org). Its matches must also pass looksLikePath.
+	filePathPattern = regexp.MustCompile(`(?:^|[\s"'(])([.\w/-]+\.\w{1,10})(?:[\s"'),.]|$)`)
+)
+
 var entityPatterns = []*regexp.Regexp{
 	// CamelCase identifiers (e.g., MyClass, HttpServer)
 	regexp.MustCompile(`\b([A-Z][a-z]+(?:[A-Z][a-z]+)+)\b`),
-	// ALLCAPS acronyms 2-6 chars (e.g., API, HTTP, gRPC, SQL)
-	regexp.MustCompile(`\b([A-Z]{2,6})\b`),
-	// File paths (e.g., ./cmd/root.go, /etc/config.yml)
-	regexp.MustCompile(`(?:^|[\s"'(])([.\w/-]+\.\w{1,10})(?:[\s"'),.]|$)`),
+	acronymPattern,
+	filePathPattern,
 	// URLs
 	regexp.MustCompile(`https?://[^\s"'<>)]+`),
 	// @mentions
@@ -102,7 +110,12 @@ var techDictionary = map[string]bool{
 	"MAGMA": true, "MCP": true, "RLM": true,
 }
 
-// acronymStopwords filters out common English acronyms that aren't tech entities.
+// acronymStopwords filters out all-caps tokens that aren't tech entities:
+// short common English words, and ordinary words written in capitals for
+// emphasis or as labels (NEVER, ONLY, NOTE, FIXED). In a real store the latter
+// were among the most frequent "entities" and linked unrelated memories.
+// Words that double as technical names (HEAD, POST, PATH, HOME, REST, DELETE,
+// LINE) are deliberately absent.
 var acronymStopwords = map[string]bool{
 	"IN": true, "ON": true, "AT": true, "TO": true, "BY": true,
 	"OR": true, "AN": true, "IF": true, "IS": true, "IT": true,
@@ -117,16 +130,42 @@ var acronymStopwords = map[string]bool{
 	"SHE": true, "TWO": true, "USE": true, "BOY": true, "DID": true,
 	"GET": true, "HIM": true, "HIS": true, "LET": true, "PUT": true,
 	"TOP": true, "TOO": true, "ANY": true,
+	// Ordinary words written in capitals for emphasis or as labels.
+	"OK": true, "YES": true, "TRUE": true, "FALSE": true,
+	"ONLY": true, "BOTH": true, "NEVER": true, "ALWAYS": true, "MUST": true,
+	"STILL": true, "SAME": true, "ALSO": true, "EVERY": true, "OTHER": true,
+	"OWN": true, "REAL": true, "WORTH": true, "HARD": true, "FULL": true,
+	"EMPTY": true, "ZERO": true, "KEEP": true, "SKIP": true, "LEFT": true,
+	"WITH": true, "FROM": true, "THAT": true, "THIS": true, "THAN": true,
+	"WHAT": true, "WHY": true, "DOES": true, "CANNOT": true, "NEEDS": true,
+	"BEFORE": true, "AFTER": true, "FIRST": true, "SECOND": true, "THIRD": true,
+	"FINAL": true, "THREE": true, "FOUR": true, "FIVE": true, "HIGH": true,
+	"PASS": true, "FAIL": true, "FAILED": true, "FIX": true, "FIXED": true,
+	"DONE": true, "WRONG": true, "STALE": true, "ARMED": true, "OPEN": true,
+	"CLOSED": true, "FOUND": true, "SENT": true, "SAFE": true, "CLEAN": true,
+	"VERIFY": true, "CHECK": true, "REVIEW": true, "DRAFT": true, "PROOF": true,
+	"NOTE": true, "NOTES": true, "LESSON": true, "RULE": true, "FACT": true,
+	"FACTS": true, "DEFECT": true, "CAUSE": true, "GOTCHA": true, "TRAP": true,
+	"BUG": true, "ISSUE": true, "ERROR": true,
 }
 
 // ExtractEntities extracts named entities from text using regex patterns
 // and a technology dictionary for common terms regex would miss.
 func ExtractEntities(text string) []string {
+	return extractEntities(text, true)
+}
+
+// extractEntities runs the regex and dictionary paths. guessAcronyms selects
+// acronymPattern; callers holding model-extracted entities leave it out.
+func extractEntities(text string, guessAcronyms bool) []string {
 	seen := make(map[string]bool)
 	var entities []string
 
 	// 1. Regex-based extraction
 	for _, pat := range entityPatterns {
+		if pat == acronymPattern && !guessAcronyms {
+			continue
+		}
 		matches := pat.FindAllStringSubmatch(text, -1)
 		for _, m := range matches {
 			entity := m[len(m)-1]
@@ -135,6 +174,9 @@ func ExtractEntities(text string) []string {
 			}
 			// Filter acronym stopwords
 			if acronymStopwords[entity] {
+				continue
+			}
+			if pat == filePathPattern && !looksLikePath(entity) {
 				continue
 			}
 			seen[entity] = true
@@ -152,6 +194,22 @@ func ExtractEntities(text string) []string {
 	}
 
 	return entities
+}
+
+// looksLikePath reports whether a file-path match could name a file or
+// domain. The path pattern also matches numbers, versions, and addresses with
+// no letter (0.52, 127.0.0.1) and dotted single letters (e.g, i.e, J.Y, p.4);
+// in a real store those were thousands of entities that named nothing.
+func looksLikePath(s string) bool {
+	if !strings.ContainsFunc(s, func(r rune) bool { return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') }) {
+		return false
+	}
+	for _, segment := range strings.Split(s, ".") {
+		if len(segment) > 1 {
+			return true
+		}
+	}
+	return false
 }
 
 // ResolveEntities returns the final entity list for a content/provided pair.
@@ -178,7 +236,13 @@ func ResolveEntities(content string, provided []string, mode EntityMode) []strin
 // ExtractEntities. Callers without DB access can pass nil to get the
 // pre-existing semantics.
 func ExtractEntitiesIndexed(text string, knownEntities map[string]bool) []string {
-	entities := ExtractEntities(text)
+	return extractEntitiesIndexed(text, knownEntities, true)
+}
+
+// extractEntitiesIndexed is ExtractEntitiesIndexed with the acronym guess
+// optional (see extractEntities).
+func extractEntitiesIndexed(text string, knownEntities map[string]bool, guessAcronyms bool) []string {
+	entities := extractEntities(text, guessAcronyms)
 	if len(knownEntities) == 0 {
 		return entities
 	}
@@ -226,6 +290,35 @@ func ResolveEntitiesIndexed(content string, provided []string, mode EntityMode, 
 	default:
 		return mergeEntities(provided, ExtractEntitiesIndexed(content, knownEntities))
 	}
+}
+
+// ReliesOnExtraction reports whether resolving entities for mode and provided
+// uses automatic extraction alone: auto mode, or merge mode with nothing
+// provided. Only then is an extraction model worth asking, because entities a
+// caller provides already name what the memory is about.
+func ReliesOnExtraction(mode EntityMode, provided []string) bool {
+	switch mode {
+	case EntityModeAuto:
+		return true
+	case EntityModeMerge:
+		return len(provided) == 0
+	default:
+		return false
+	}
+}
+
+// ResolveEntitiesWithModel is ResolveEntitiesIndexed for content an extraction
+// model has read. When resolution relies on extraction alone (see
+// ReliesOnExtraction), the model's entities replace the acronym guess, while
+// the exact paths (CamelCase, file paths, URLs, @mentions, title marks,
+// dictionary) and the known-entity index still apply. A nil modelEntities
+// means no model ran and is identical to ResolveEntitiesIndexed; an empty,
+// non-nil one means the model found nothing.
+func ResolveEntitiesWithModel(content string, provided []string, mode EntityMode, knownEntities map[string]bool, modelEntities []string) []string {
+	if modelEntities == nil || !ReliesOnExtraction(mode, provided) {
+		return ResolveEntitiesIndexed(content, provided, mode, knownEntities)
+	}
+	return mergeEntities(modelEntities, extractEntitiesIndexed(content, knownEntities, false))
 }
 
 // splitWords splits text into ASCII-alphanumeric words preserving original casing.

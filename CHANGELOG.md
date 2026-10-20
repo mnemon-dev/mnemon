@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   directory and the legacy `~/.mavis/` directory migrated by current releases.
 - `mnemon setup --eject --target minimax-code` removes only the Mnemon skill
   while preserving other MiniMax Code skills.
+- Optional entity extraction model. With `MNEMON_EXTRACT_MODEL` and
+  `MNEMON_EXTRACT_ENDPOINT` set (for example Cloudflare Clairic on Workers AI),
+  `remember` and `import` ask the model for the entities of memories stored
+  without any, keep only names that appear in the memory as whole tokens, and
+  use them in place of the all-caps acronym guess. A missing or failing model
+  falls back to heuristic extraction with a one-line warning.
 
 ### Tests
 
@@ -46,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   cleanup.
 - Added MiniMax Code coverage for skill installation, current and legacy data
   directory detection, and scoped eject cleanup.
+- Added extraction client coverage for the Workers AI and bare response
+  shapes, whole-token grounding, limits, and error redaction, plus CLI coverage
+  for `remember` and `import` with a working, skipped, and failing model.
 
 ### Note
 
@@ -59,6 +68,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   stanza. `brew` commands that load the cask printed "Calling `postflight` is
   deprecated! Use `postflight_steps` instead." on every invocation. The
   quarantine strip now runs through the declarative `postflight_steps` DSL.
+- Entity extraction no longer treats numbers, versions, and addresses with no
+  letter (`0.52`, `127.0.0.1`) or dotted abbreviations (`e.g`, `i.e`) as file
+  paths, and no longer admits ordinary words written in capitals (`NEVER`,
+  `ONLY`, `NOTE`, `FIXED`) as acronyms. Such tokens linked unrelated memories
+  through entity edges.
 
 ## [0.2.7] - 2026-09-01
 

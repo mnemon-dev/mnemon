@@ -24,6 +24,7 @@ DETERMINISTIC_PKGS := \
 	./internal/agency/authority \
 	./internal/agency/artifact \
 	./internal/memory/embed \
+	./internal/memory/extract \
 	./internal/memory/graph \
 	./internal/memory/importdraft \
 	./internal/memory/internal/topk \
