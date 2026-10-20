@@ -783,32 +783,33 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 		if foldErr, err = a.foldLayered(ctx, model, req, &state, &token, flush, &dirty, &result); err != nil {
 			return result, err
 		}
-	}
-	for n := 0; n < req.MaxBatches && !layered; n++ {
-		batch := nextBatch(state.Pending, settings.BatchCharacters, flush)
-		if batch == nil {
-			break
+	} else {
+		for n := 0; n < req.MaxBatches; n++ {
+			batch := nextBatch(state.Pending, settings.BatchCharacters, flush)
+			if batch == nil {
+				break
+			}
+			memory, batches, failed, drops := cloneMemory(state.Memory), state.Batches, state.Failed, len(result.Drops)
+			dirty = true
+			if n == 0 && a.dropDue(state) {
+				foldErr = a.foldDropping(ctx, model, timelinesFold, &state, batch, &result)
+			} else {
+				foldErr = a.foldTimelines(ctx, model, timelinesFold, &state, batch, true, &result)
+			}
+			if foldErr != nil {
+				state.Memory, state.Batches, state.Failed = memory, batches, failed
+				result.keepDrops(drops)
+				a.countError(ctx, &state, foldErr)
+				break
+			}
+			state.Pending = state.Pending[len(batch):]
+			state.ModelErrors, state.FirstModelError = 0, 0
+			result.Folded++
+			if token, err = a.overlay.saveTimelines(ctx, req.Scope, token, state); err != nil {
+				return result, err
+			}
+			dirty = false
 		}
-		memory, batches, failed, drops := cloneMemory(state.Memory), state.Batches, state.Failed, len(result.Drops)
-		dirty = true
-		if n == 0 && a.dropDue(state) {
-			foldErr = a.foldDropping(ctx, model, timelinesFold, &state, batch, &result)
-		} else {
-			foldErr = a.foldTimelines(ctx, model, timelinesFold, &state, batch, true, &result)
-		}
-		if foldErr != nil {
-			state.Memory, state.Batches, state.Failed = memory, batches, failed
-			result.keepDrops(drops)
-			a.countError(ctx, &state, foldErr)
-			break
-		}
-		state.Pending = state.Pending[len(batch):]
-		state.ModelErrors, state.FirstModelError = 0, 0
-		result.Folded++
-		if token, err = a.overlay.saveTimelines(ctx, req.Scope, token, state); err != nil {
-			return result, err
-		}
-		dirty = false
 	}
 	if dirty {
 		// After a model error, a canceled job still keeps what it read and
