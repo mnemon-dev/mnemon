@@ -97,8 +97,8 @@ may do (see step 6 below).
    next Search, as the reference implementation folds a conversation once it pauses.
 7. **Search returns evidence only.** The response lists the consolidation blocks first, then
    the stored record texts of the View (verbatim, with the conversation heading and date) in
-   time order, as the reference system delivers its View (`view.order: "time"`); records of
-   one time keep the order they were written in. The records are selected, and cut at
+   time order, earlier first (`view.order: "time"`); records of one time keep the order they
+   were written in. The records are selected, and cut at
    `top_k`, by rank. Each item's `score` is `1/(position+1)`. No answer is generated. If a
    model, a budget or the embedder fails, or the read runs past its timeout, Search still
    answers with the plain hybrid ranking, cut at `top_k` by rank and delivered in time order,
@@ -148,10 +148,10 @@ external model APIs, and add their data-retention terms if the rules require the
 5. **Smaller deliberate deviations.**
    - Search pages are 20 whole records; the reference implementation's 12,000-character page cut
      is not used.
-   - The records are delivered in the reference's time order, earlier first. Where the
-     reference breaks ties between records of one time by random identifiers, this system
-     uses the order they were written in (a document's chunks in their order), so a run
-     repeats its order.
+   - The records are delivered in time order, earlier first, records of one time in the order
+     they were written (a document's chunks in their order), so a run repeats its order. The
+     reference implementation delivers the items it selected in composition order or, in its
+     stable delivery, sorted by source and resource identifier; neither follows the dates.
    - The consolidation layer asks JEV only the "needed" question per candidate, since the
      "superseded" answer is never used.
    - JEV request size is limited in UTF-16 units of the JSON body, as the reference client does.

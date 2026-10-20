@@ -8,11 +8,10 @@ import (
 	"time"
 )
 
-// The View's order (view.order): the reference system delivers its judged
-// View to the answer model in time order, while a read selects, cuts and
-// trims by rank. With "time" the records of a composed View (after the
-// expansion and the timelines layer) are listed in time order; the index
-// blocks keep their place and each record its score.
+// The View's order (view.order): a read selects, cuts and trims by rank, and
+// with "time" the records of the composed View (after the expansion and the
+// timelines layer) are then listed in time order for the answer model; the
+// index blocks keep their place and each record its score.
 
 const viewOrderTime = "time"
 

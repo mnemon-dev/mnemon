@@ -78,8 +78,7 @@ func TestIndustrialConfigLoadsAndStarts(t *testing.T) {
 		Strategy: "simple",
 		// The judged View: no fusion with the plain search ranking, so the
 		// View is the records JEV judged (maxItems and maxCharacters only
-		// cap it), delivered in the reference system's time order after
-		// the consolidation blocks.
+		// cap it), delivered in time order after the consolidation blocks.
 		View: &memoryagent.ViewConfig{MaxItems: 100, MaxCharacters: 240000, Order: "time"},
 		// Layered consolidation: DeepSeek extracts each batch alone, JEV
 		// links it into the memory. No native edges, no expansion, no index

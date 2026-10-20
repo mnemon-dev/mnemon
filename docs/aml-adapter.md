@@ -30,9 +30,8 @@ AML platform ──HTTPS──▶ Caddy :443 ──HTTP──▶ aml-serve 127.0
 - **Search** (with `--consolidate-on-add`) first folds the user's tail, then runs the planner,
   the cue searches, the JEV need loop and JEV's final judgement, and returns the judged View:
   the consolidation blocks first, then the records JEV judged, in time order (the deployment's
-  `view.order: "time"`, as the reference system delivers its View; without it, in rank
-  order). There is no fusion with the plain search ranking, so a record JEV did not judge is
-  not delivered. The View holds the current records of JEV's shortlist (at most 64): those it
+  `view.order: "time"`; without it, in rank order). There is no fusion with the plain search
+  ranking, so a record JEV did not judge is not delivered. The View holds the current records of JEV's shortlist (at most 64): those it
   calls needed, then, when the plan named a need, the rest by its needed answer; and at most
   8 more that the blocks link to and JEV calls needed. All of them stay within `top_k`
   records and 240,000 characters, and the View is usually far shorter than `top_k`. The
