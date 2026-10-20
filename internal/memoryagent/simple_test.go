@@ -492,3 +492,60 @@ func TestReadSimpleCountsIndexRoutes(t *testing.T) {
 		t.Fatal(string(raw))
 	}
 }
+
+func TestReadSimpleQuestionIntent(t *testing.T) {
+	s, _ := agentStore(t)
+	seedNote(t, s, "anchor", "outage report ORBIT")
+	seedNote(t, s, "after", "weather was fine")
+	// A temporal link, which the relations route follows for WHEN only.
+	if err := s.ReplaceDerivedMetadata(context.Background(), "consolidation", map[string]records.DerivedMetadata{"anchor": {Version: 1, Links: []records.Link{{ID: "after", Version: 1, Type: "temporal", Weight: 1}}}}); err != nil {
+		t.Fatal(err)
+	}
+	planner := completeFunc(func(_ context.Context, system, _ string) (string, Usage, error) {
+		if strings.HasPrefix(system, "You plan searches in the notes") {
+			return "outage\nNOTE: outage report", Usage{}, nil
+		}
+		return "NEED: the outage time", Usage{}, nil
+	})
+	read := func(view *ViewConfig) View {
+		config := Config{Version: 1, Strategy: "simple", Index: &records.IndexPolicy{Version: 1, Lexical: true, Relations: true}, View: view}
+		a, err := New(s, config, Models{Planner: planner, Judge: decisionFunc(fixtureJudge)}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := a.Read(context.Background(), ReadRequest{Question: "When did the outage happen?"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	// Each search detects its own intent: only the message's is WHEN.
+	view := read(nil)
+	raw, _ := json.Marshal(view.Stats)
+	if view.Stats.Searches != 3 || !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"lexical": 3, "relations": 1}) || view.Stats.Intent != "" || strings.Contains(string(raw), `"intent"`) {
+		t.Fatal(string(raw))
+	}
+	// The question's intent goes with every search: the note and the search
+	// follow the temporal link too.
+	view = read(&ViewConfig{Intent: "question"})
+	if view.Stats.Searches != 3 || !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"lexical": 3, "relations": 3}) || view.Stats.Intent != "WHEN" {
+		t.Fatal(view.Stats)
+	}
+	// An unknown setting is refused; the default stays out of the config's
+	// JSON, and so out of the policy hash.
+	both := Models{Planner: planner, Judge: decisionFunc(fixtureJudge)}
+	for _, bad := range []string{"WHEN", "message", "Question"} {
+		if _, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Intent: bad}}, both, nil); err == nil {
+			t.Error("view intent accepted", bad)
+		}
+	}
+	if raw, _ := json.Marshal(ViewConfig{MaxItems: 16, MaxCharacters: 12000}); strings.Contains(string(raw), "intent") {
+		t.Fatal(string(raw))
+	}
+	decoder := json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"intent":"question"}}`))
+	decoder.DisallowUnknownFields()
+	var decoded Config
+	if err := decoder.Decode(&decoded); err != nil || decoded.View.Intent != "question" {
+		t.Fatal(decoded, err)
+	}
+}

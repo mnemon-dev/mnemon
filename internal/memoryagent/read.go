@@ -92,7 +92,13 @@ type ViewConfig struct {
 	// Fusion "rrf" orders the View by reciprocal-rank fusion of the judged
 	// order and the message search; "" keeps the judged order.
 	Fusion string `json:"fusion,omitempty"`
+	// Intent "question" detects the read's intent once, from the question
+	// (native recall's intent detection), and gives it to every records
+	// search; "" lets each search detect its own from its text.
+	Intent string `json:"intent,omitempty"`
 }
+
+const viewIntentQuestion = "question"
 
 const strategySimple = "simple"
 
@@ -141,6 +147,9 @@ type ReadStats struct {
 	// (Config.Index), the searches of a simple read in which it found a
 	// candidate. Absent when none did, and for memory-agent/v1.
 	IndexRoutes map[string]int `json:"indexRoutes,omitempty"`
+	// Intent is the intent a simple read with view intent "question" gave
+	// its searches (WHY, WHEN, ENTITY or GENERAL); absent otherwise.
+	Intent string `json:"intent,omitempty"`
 }
 
 type View struct {
@@ -240,6 +249,9 @@ func (v *ViewConfig) normalize() error {
 	}
 	if v.MaxItems < 1 || v.MaxItems > 200 || v.MaxCharacters < 1 || v.MaxCharacters > 1000000 || v.Fusion != "" && v.Fusion != "rrf" {
 		return errors.New("memory view requires maxItems 1–200, maxCharacters 1–1000000 and fusion \"\" or \"rrf\"")
+	}
+	if v.Intent != "" && v.Intent != viewIntentQuestion {
+		return errors.New("memory view requires intent \"\" or \"question\"")
 	}
 	return nil
 }
