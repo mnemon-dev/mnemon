@@ -298,6 +298,12 @@ func TestReadSimpleExpandsFromNeededEvidence(t *testing.T) {
 	if got := recordIDs(temporal.Records); !slices.Equal(got, []string{"a2", "b1", "a1", "doc-00000"}) || !reflect.DeepEqual(temporal.Stats.ExpandKinds, map[string]int{"temporal": 1}) {
 		t.Fatal(got, temporal.Stats)
 	}
+	// Adjacent alone: a2's session neighbors are a1 (pooled) and a3; the
+	// document written the same day is another session.
+	adjacent := expandRead(t, s, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent"}}}, expandJudge())
+	if got := recordIDs(adjacent.Records); !slices.Equal(got, []string{"a2", "a3", "a1", "doc-00000"}) || adjacent.Stats.Expanded != 1 {
+		t.Fatal(got, adjacent.Stats)
+	}
 	// The stats are absent without expansion.
 	if raw, _ := json.Marshal(plain.Stats); strings.Contains(string(raw), "expand") {
 		t.Fatal(string(raw))
