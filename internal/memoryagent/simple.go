@@ -139,6 +139,9 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	return view, nil
 }
 
+// pooled reports whether a record is in the read's pool.
+func (r *simpleRun) pooled(id string) bool { return r.items[id] != nil }
+
 // expandedShown counts the records shown that view.expand proposed.
 func (r *simpleRun) expandedShown(records []Evidence) int {
 	n := 0

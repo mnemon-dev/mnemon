@@ -43,12 +43,13 @@ type expansionCandidate struct {
 	kinds    []string
 }
 
-// expansionSeeds is the judged items JEV calls needed (≥ 0.5, whether or not
-// still current), best first, ties in shortlist order, at most n.
-func expansionSeeds(scored []*simpleItem, n int) []*simpleItem {
+// expansionSeeds is the judged items whose needed answer is at least min
+// (whether or not still current), best first, ties in shortlist order, at
+// most n.
+func expansionSeeds(scored []*simpleItem, n int, min float64) []*simpleItem {
 	seeds := []*simpleItem{}
 	for _, item := range judgedOrder(scored) {
-		if item.Needed >= 0.5 && len(seeds) < n {
+		if item.Needed >= min && len(seeds) < n {
 			seeds = append(seeds, item)
 		}
 	}
@@ -217,10 +218,13 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 		r.mu.Unlock()
 		return scored, nil
 	}
-	seeds := expansionSeeds(scored, config.Seeds)
+	seeds := expansionSeeds(scored, config.Seeds, config.seedMin())
 	if !slices.ContainsFunc(config.Kinds, seedKind) {
 		seeds = nil
 	}
+	r.mu.Lock()
+	r.stats.ExpandSeeds = len(seeds)
+	r.mu.Unlock()
 	events := slices.Contains(config.Kinds, expandEvents)
 	if len(seeds) == 0 && !events {
 		return scored, nil
@@ -235,7 +239,16 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 	if r.decisionsLeft() == 0 {
 		return short()
 	}
+	// Records already pooled are not proposed; with rejudge, those JEV
+	// judged (the shortlist) are not.
 	known := func(id string) bool { return r.items[id] != nil }
+	if config.Rejudge {
+		judged := map[string]bool{}
+		for _, item := range scored {
+			judged[item.ID] = true
+		}
+		known = func(id string) bool { return judged[id] }
+	}
 	var fromSeeds, fromEvents []expansionCandidate
 	if len(seeds) > 0 {
 		// Neighbors that cannot be read degrade the read; the events, if
@@ -251,7 +264,7 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 	}
 	if events {
 		var err error
-		if fromEvents, err = r.eventCandidates(ctx, config.EventsTop); err != nil {
+		if fromEvents, err = r.eventCandidates(ctx, config.EventsTop, known); err != nil {
 			return nil, err
 		}
 	}
@@ -259,9 +272,12 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 	if len(candidates) == 0 {
 		return scored, nil
 	}
+	// A pooled record (rejudge) keeps its item; the others are read.
 	ids := []string{}
 	for _, c := range candidates {
-		ids = append(ids, c.id)
+		if r.items[c.id] == nil {
+			ids = append(ids, c.id)
+		}
 	}
 	values, err := evidence(ctx, r.agent.store, r.revision, r.req.Scope, ids)
 	if err != nil {
@@ -273,7 +289,9 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 	}
 	items, kinds := []*simpleItem{}, [][]string{}
 	for _, c := range candidates {
-		if value, ok := found[c.id]; ok {
+		if item := r.items[c.id]; item != nil {
+			items, kinds = append(items, item), append(kinds, c.kinds)
+		} else if value, ok := found[c.id]; ok {
 			items, kinds = append(items, &simpleItem{ID: c.id, Evidence: value}), append(kinds, c.kinds)
 		}
 	}
@@ -365,12 +383,28 @@ func (r *simpleRun) target(ctx context.Context, items []*simpleItem, covered []b
 		r.degrade("expansion")
 		return nil
 	}
-	if err := r.askNeeds(ctx, items, asked, func(item *simpleItem, row []float64) { item.Row = row }); err != nil {
+	// A pooled record (rejudge) keeps the answers the loop tabled for the
+	// other needs; a failure gives every candidate its rows back.
+	before := map[*simpleItem][]float64{}
+	for _, item := range items {
+		before[item] = item.Row
+	}
+	set := func(item *simpleItem, row []float64) {
+		if old := before[item]; old != nil {
+			merged := slices.Clone(old)
+			for _, k := range asked {
+				merged[k] = row[k]
+			}
+			row = merged
+		}
+		item.Row = row
+	}
+	if err := r.askNeeds(ctx, items, asked, set); err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
 		for _, item := range items {
-			item.Row = nil
+			item.Row = before[item]
 		}
 		r.degrade("expansion")
 		return nil

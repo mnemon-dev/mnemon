@@ -97,7 +97,7 @@ func TestEventCandidatesRankByMeaning(t *testing.T) {
 	// The Friday event (cosine 1), then the Monday one (0.8, its records in
 	// their order); the others (0) in memory order, a2 pooled, the repeated
 	// and the unsourced events left out.
-	got, err := r.eventCandidates(ctx, 10)
+	got, err := r.eventCandidates(ctx, 10, r.pooled)
 	if err != nil || !slices.Equal(candidateIDs(got), []string{"a3", "b1", "doc-00001", "a0", "b2", "b0", "doc-00002"}) || !slices.Equal(got[0].kinds, []string{"events"}) {
 		t.Fatalf("%+v %v", got, err)
 	}
@@ -119,7 +119,7 @@ func TestEventCandidatesRankByMeaning(t *testing.T) {
 	}
 	// eventsTop bounds the events; the next read embeds nothing.
 	r = eventsRun(t, s, overlay, embedding, "When is the launch?")
-	if got, err = r.eventCandidates(ctx, 2); err != nil || !slices.Equal(candidateIDs(got), []string{"a3", "b1", "doc-00001"}) {
+	if got, err = r.eventCandidates(ctx, 2, r.pooled); err != nil || !slices.Equal(candidateIDs(got), []string{"a3", "b1", "doc-00001"}) {
 		t.Fatalf("%+v %v", got, err)
 	}
 	if len(documents(server)) != len(texts) || r.stats.ExpandEventsEmbedded != 0 {
@@ -128,7 +128,7 @@ func TestEventCandidatesRankByMeaning(t *testing.T) {
 	// A message that is only a date line asks nothing, as it gives no
 	// message search.
 	r = eventsRun(t, s, overlay, embedding, "Current date: 2023/05/10\n  ")
-	if got, err = r.eventCandidates(ctx, 10); err != nil || len(got) != 0 {
+	if got, err = r.eventCandidates(ctx, 10, r.pooled); err != nil || len(got) != 0 {
 		t.Fatal(got, err)
 	}
 }
@@ -139,7 +139,7 @@ func TestEventCandidatesFallBackToSharedWords(t *testing.T) {
 	// Without an embedder shared words rank them (BM25): only the launch
 	// events share "launch", the Monday one the shorter, so first.
 	r := eventsRun(t, s, overlay, nil, "When is the launch?")
-	got, err := r.eventCandidates(ctx, 10)
+	got, err := r.eventCandidates(ctx, 10, r.pooled)
 	if err != nil || !slices.Equal(candidateIDs(got), []string{"b1", "doc-00001", "a3"}) || !r.stats.ExpandEventsLexical || r.stats.Degraded != nil {
 		t.Fatalf("%+v %v %+v", got, err, r.stats)
 	}
@@ -147,7 +147,7 @@ func TestEventCandidatesFallBackToSharedWords(t *testing.T) {
 	server := &embeddingServer{fail: true}
 	embedding := &records.EmbeddingConfig{URL: server.start(t, eventVectors), Model: "test", QueryPrefix: "search_query: ", DocumentPrefix: "search_document: "}
 	r = eventsRun(t, s, overlay, embedding, "When is the launch?")
-	got, err = r.eventCandidates(ctx, 10)
+	got, err = r.eventCandidates(ctx, 10, r.pooled)
 	if err != nil || !slices.Equal(candidateIDs(got), []string{"b1", "doc-00001", "a3"}) || !r.stats.ExpandEventsLexical || !slices.Equal(r.stats.Degraded, []string{"expansion-lexical"}) {
 		t.Fatalf("%+v %v %+v", got, err, r.stats)
 	}
@@ -155,7 +155,7 @@ func TestEventCandidatesFallBackToSharedWords(t *testing.T) {
 	canceled, cancel := context.WithCancel(ctx)
 	cancel()
 	r = eventsRun(t, s, overlay, embedding, "When is the launch?")
-	if _, err = r.eventCandidates(canceled, 10); err == nil {
+	if _, err = r.eventCandidates(canceled, 10, r.pooled); err == nil {
 		t.Fatal("canceled read went on")
 	}
 }
@@ -172,12 +172,12 @@ func TestEventCandidatesFillVectorsWithinABound(t *testing.T) {
 	// shared words, degraded; the second stores the other two and ranks by
 	// meaning.
 	r := eventsRun(t, s, overlay, embedding, "When is the launch?")
-	got, err := r.eventCandidates(ctx, 10)
+	got, err := r.eventCandidates(ctx, 10, r.pooled)
 	if err != nil || !slices.Equal(candidateIDs(got), []string{"b1", "doc-00001", "a3"}) || r.stats.ExpandEventsEmbedded != 4 || !r.stats.ExpandEventsLexical || !slices.Equal(r.stats.Degraded, []string{"expansion-lexical"}) {
 		t.Fatalf("%+v %v %+v", got, err, r.stats)
 	}
 	r = eventsRun(t, s, overlay, embedding, "When is the launch?")
-	got, err = r.eventCandidates(ctx, 10)
+	got, err = r.eventCandidates(ctx, 10, r.pooled)
 	if err != nil || candidateIDs(got)[0] != "a3" || r.stats.ExpandEventsEmbedded != 2 || r.stats.ExpandEventsLexical || r.stats.Degraded != nil || len(documents(server)) != 6 {
 		t.Fatalf("%+v %v %+v", got, err, r.stats)
 	}
@@ -196,7 +196,7 @@ func TestEventCandidatesNeedAState(t *testing.T) {
 	defer overlay.Close()
 	for _, o := range []*Overlay{overlay, nil} {
 		r := eventsRun(t, s, o, embedding, "When is the launch?")
-		if got, err := r.eventCandidates(ctx, 10); err != nil || len(got) != 0 || r.stats.Degraded != nil || r.stats.ExpandEventsLexical {
+		if got, err := r.eventCandidates(ctx, 10, r.pooled); err != nil || len(got) != 0 || r.stats.Degraded != nil || r.stats.ExpandEventsLexical {
 			t.Fatal(got, err, r.stats)
 		}
 	}
@@ -209,7 +209,7 @@ func TestEventCandidatesNeedAState(t *testing.T) {
 	} {
 		config.Embedding = embedding
 		r := testRun(layerAgent(t, s, overlay, config, completeFunc(nil), expandJudge()), user("When is the launch?"))
-		if got, err := r.eventCandidates(ctx, 10); err != nil || len(got) != 0 {
+		if got, err := r.eventCandidates(ctx, 10, r.pooled); err != nil || len(got) != 0 {
 			t.Fatal(got, err)
 		}
 	}
@@ -221,7 +221,7 @@ func TestEventCandidatesNeedAState(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := eventsRun(t, s, overlay, embedding, "When is the launch?")
-	if got, err := r.eventCandidates(ctx, 10); err != nil || len(got) != 0 || !slices.Equal(r.stats.Degraded, []string{"expansion"}) {
+	if got, err := r.eventCandidates(ctx, 10, r.pooled); err != nil || len(got) != 0 || !slices.Equal(r.stats.Degraded, []string{"expansion"}) {
 		t.Fatal(got, err, r.stats)
 	}
 }
@@ -249,7 +249,7 @@ func TestWarmLayerEmbedsEventTexts(t *testing.T) {
 		t.Fatal(got, layer, documents(server))
 	}
 	r := testRun(a, user("When is the launch?"))
-	if got, err := r.eventCandidates(ctx, 1); err != nil || !slices.Equal(candidateIDs(got), []string{"a3"}) || r.stats.ExpandEventsEmbedded != 0 || len(documents(server)) != layer+6 {
+	if got, err := r.eventCandidates(ctx, 1, r.pooled); err != nil || !slices.Equal(candidateIDs(got), []string{"a3"}) || r.stats.ExpandEventsEmbedded != 0 || len(documents(server)) != layer+6 {
 		t.Fatal(got, err, r.stats)
 	}
 }

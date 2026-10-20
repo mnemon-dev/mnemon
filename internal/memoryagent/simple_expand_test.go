@@ -234,13 +234,13 @@ func expandAsk(t *testing.T, s *records.Store, question, cues string, view *View
 func TestExpansionSeedsAreNeededItems(t *testing.T) {
 	scored := []*simpleItem{scoredItem("a", 0.9, 0, "a"), scoredItem("b", 0.4, 0, "b"), scoredItem("c", 0.5, 0.8, "c"), scoredItem("d", 0.9, 0, "d"), scoredItem("e", 0.95, 0, "e")}
 	// Best needed first, ties in shortlist order; a superseded seed counts.
-	if got := itemIDs(expansionSeeds(scored, 16)); !slices.Equal(got, []string{"e", "a", "d", "c"}) {
+	if got := itemIDs(expansionSeeds(scored, 16, 0.5)); !slices.Equal(got, []string{"e", "a", "d", "c"}) {
 		t.Fatal(got)
 	}
-	if got := itemIDs(expansionSeeds(scored, 2)); !slices.Equal(got, []string{"e", "a"}) {
+	if got := itemIDs(expansionSeeds(scored, 2, 0.5)); !slices.Equal(got, []string{"e", "a"}) {
 		t.Fatal(got)
 	}
-	if got := expansionSeeds([]*simpleItem{scoredItem("b", 0.49, 0, "b")}, 16); len(got) != 0 {
+	if got := expansionSeeds([]*simpleItem{scoredItem("b", 0.49, 0, "b")}, 16, 0.5); len(got) != 0 {
 		t.Fatal(itemIDs(got))
 	}
 }
@@ -601,8 +601,8 @@ func TestReadSimpleExpandsAdjacentWindow(t *testing.T) {
 
 // Reads with view.expand but none of stage 4b's settings (gate, target,
 // reserve), pinned by hash: taken at f330d564 and re-pinned only where a
-// change was meant (every judged expansion composes on merit, and
-// stats.expandShown), so nothing else moves them.
+// change was meant (every judged expansion composes on merit, and the
+// stats expandShown and expandSeeds), so nothing else moves them.
 func TestReadSimpleExpandWithoutStage4bUnchanged(t *testing.T) {
 	s := expandFixture(t)
 	events, overlay := eventsStore(t)
@@ -613,10 +613,10 @@ func TestReadSimpleExpandWithoutStage4bUnchanged(t *testing.T) {
 		view    *ViewConfig
 		want    string
 	}{
-		"judged":  {s, nil, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, AdjacentWindow: 2}}, "b2be452b616b7b8d1281089ed574aa8538abd30374faf16142507de11bf60006"},
-		"fusion":  {s, nil, &ViewConfig{MaxItems: 5, Fusion: "rrf", Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}}}, "d29cb344f04e74ab2e54b459a28d2a6c6d899c99897188747349203818cf4b28"},
-		"events":  {events, overlay, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "events"}, EventsTop: 3}}, "2157e4c5e704353741e663e1e27cbf82933dc4fadbb43da099b552c234f187ef"},
-		"limited": {s, nil, &ViewConfig{MaxItems: 3, Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, Limit: 2}}, "1cec11e29ff55e1dfb0140f0bdd49abbc2391864062c6d16d6a542eda00bad78"},
+		"judged":  {s, nil, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, AdjacentWindow: 2}}, "74fe5af0b399b23e9176072133f4b3809e6809e8aeda2d593feac02e2f755104"},
+		"fusion":  {s, nil, &ViewConfig{MaxItems: 5, Fusion: "rrf", Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}}}, "955786d4c0b9807e82d67fb41b83e6c8c34b122146818e814a93e117f284b61a"},
+		"events":  {events, overlay, &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "events"}, EventsTop: 3}}, "e0f34fb34e2cd8485de43eaaeda8d345b6fad5774e57a7b3de9cba6fdfb602d7"},
+		"limited": {s, nil, &ViewConfig{MaxItems: 3, Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, Limit: 2}}, "1cc2667408962c0c51fdbbeb1ef2a095b8e8290ee5485effb1da904ab7fa5e75"},
 	} {
 		config := Config{View: tc.view}
 		var a *Agent
@@ -658,5 +658,91 @@ func TestAdjacencySpansConversationAdds(t *testing.T) {
 	near, err := s.Adjacent(ctx, "", records.Scope{}, ids[1:2], 1)
 	if err != nil || len(near[ids[1]]) != 2 || near[ids[1]][0].ID != ids[0] || near[ids[1]][1].ID != ids[2] {
 		t.Fatal(near, err)
+	}
+}
+
+func TestExpandSeedMinAndRejudgeConfig(t *testing.T) {
+	s, _ := agentStore(t)
+	both := Models{Planner: expandPlanner(), Judge: expandJudge()}
+	zero, half, bad := 0.0, 0.5, 1.5
+	// Absent and a present 0 differ: seedMin is a pointer.
+	for _, tc := range []struct {
+		raw  string
+		want *float64
+	}{{`{"kinds":["adjacent"]}`, nil}, {`{"kinds":["adjacent"],"seedMin":0}`, &zero}, {`{"kinds":["adjacent"],"seedMin":0.5,"rejudge":true}`, &half}} {
+		var expand ExpandConfig
+		decoder := json.NewDecoder(strings.NewReader(tc.raw))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&expand); err != nil || (expand.SeedMin == nil) != (tc.want == nil) || tc.want != nil && *expand.SeedMin != *tc.want {
+			t.Fatal(tc.raw, expand, err)
+		}
+		a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &expand}}, both, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, _ := json.Marshal(a.config.View.Expand)
+		if strings.Contains(string(raw), "seedMin") != (tc.want != nil) || strings.Contains(string(raw), "rejudge") != expand.Rejudge {
+			t.Fatal(string(raw))
+		}
+	}
+	negative := -0.1
+	for _, seedMin := range []*float64{&bad, &negative} {
+		if _, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent"}, SeedMin: seedMin}}}, both, nil); err == nil {
+			t.Error("seedMin accepted", *seedMin)
+		}
+	}
+}
+
+func TestExpansionSeedMin(t *testing.T) {
+	s := expandFixture(t)
+	// The pool is a2 (0.9), a1 and doc-00000 (0.2). By default a2 alone
+	// seeds; with seedMin 0 the three do, by needed, ties in shortlist
+	// order: a1 adds a0 (the record before it), doc-00000 adds doc-00001.
+	adjacent := func(seedMin *float64) *ViewConfig {
+		return &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent"}, SeedMin: seedMin}}
+	}
+	view := expandRead(t, s, adjacent(nil), expandJudge())
+	if view.Stats.ExpandSeeds != 1 || view.Stats.Expanded != 1 {
+		t.Fatal(view.Stats)
+	}
+	zero := 0.0
+	view = expandRead(t, s, adjacent(&zero), expandJudge())
+	if got := recordIDs(view.Records); view.Stats.ExpandSeeds != 3 || view.Stats.Expanded != 3 || !slices.Equal(got, []string{"a2", "a3", "doc-00001", "a1", "doc-00000", "a0"}) {
+		t.Fatal(got, view.Stats)
+	}
+	seeds := []*simpleItem{scoredItem("x", 0.0, 0, ""), scoredItem("y", 0.3, 0.9, ""), scoredItem("z", 0.3, 0, "")}
+	if got := itemIDs(expansionSeeds(seeds, 16, 0)); !slices.Equal(got, []string{"y", "z", "x"}) {
+		t.Fatal(got)
+	}
+	if got := itemIDs(expansionSeeds(seeds, 16, 0.3)); !slices.Equal(got, []string{"y", "z"}) {
+		t.Fatal(got)
+	}
+}
+
+func TestExpansionRejudgesPooledRecords(t *testing.T) {
+	ctx := context.Background()
+	// n00 and n01 are pooled but were never judged (not on the shortlist).
+	setup := func(rejudge bool) (*simpleRun, []*simpleItem) {
+		r, scored := expansionRunWith(t, expandJudge(), &ExpandConfig{Kinds: []string{"temporal"}, Limit: 64, Rejudge: rejudge})
+		values, err := evidence(ctx, r.agent.store, r.revision, records.Scope{}, []string{"n00", "n01"})
+		if err != nil || len(values) != 2 {
+			t.Fatal(values, err)
+		}
+		for i, value := range values {
+			r.items[value.ID] = &simpleItem{ID: value.ID, Evidence: value, Screen: 0.3, HasScreen: true, FirstSeen: i + 1}
+			r.order = append(r.order, value.ID)
+		}
+		return r, scored
+	}
+	r, scored := setup(false)
+	got, err := r.expandEvidence(ctx, scored, stopRounds)
+	if err != nil || r.stats.Expanded != 48 || slices.ContainsFunc(got, func(item *simpleItem) bool { return item.ID == "n00" }) {
+		t.Fatal(err, r.stats.Expanded)
+	}
+	r, scored = setup(true)
+	pooled := r.items["n00"]
+	got, err = r.expandEvidence(ctx, scored, stopRounds)
+	if err != nil || r.stats.Expanded != 50 || got[1] != pooled || !pooled.Judged || !pooled.Expanded || pooled.Needed != 0.9 {
+		t.Fatal(err, r.stats.Expanded, got[1].ID)
 	}
 }

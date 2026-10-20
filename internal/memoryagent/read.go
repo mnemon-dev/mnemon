@@ -141,6 +141,22 @@ type ExpandConfig struct {
 	Gate           string   `json:"gate,omitempty"`
 	Target         string   `json:"target,omitempty"`
 	Reserve        int      `json:"reserve,omitempty"`
+	// SeedMin is the least needed answer a seed may have, 0–1; absent
+	// (nil), 0.5. A pointer, so that a present 0 (any judged record may
+	// seed, as Jev-Mem's first frontier is its unjudged anchors) differs
+	// from absent.
+	SeedMin *float64 `json:"seedMin,omitempty"`
+	// Rejudge lets a pooled record JEV never judged (not on the shortlist)
+	// be proposed and judged; without it pooled records are not proposed.
+	Rejudge bool `json:"rejudge,omitempty"`
+}
+
+// seedMin is the least needed answer a seed may have: SeedMin, else 0.5.
+func (e *ExpandConfig) seedMin() float64 {
+	if e.SeedMin == nil {
+		return 0.5
+	}
+	return *e.SeedMin
 }
 
 // expandKinds are the candidates view.expand may propose.
@@ -233,8 +249,10 @@ type ReadStats struct {
 	ExpandAnsweredNeeds int  `json:"expandAnsweredNeeds,omitempty"`
 	ExpandReserved      int  `json:"expandReserved,omitempty"`
 	// ExpandShown counts the records view.expand proposed that the final
-	// View shows (after the timelines layer).
+	// View shows (after the timelines layer); ExpandSeeds the records it
+	// expanded from.
 	ExpandShown int `json:"expandShown,omitempty"`
+	ExpandSeeds int `json:"expandSeeds,omitempty"`
 }
 
 type View struct {
@@ -391,6 +409,9 @@ func (e *ExpandConfig) normalize() error {
 		if *setting.value < 1 || *setting.value > setting.limit {
 			return fmt.Errorf("view expand requires %s 1–%d", setting.name, setting.limit)
 		}
+	}
+	if e.SeedMin != nil && !(*e.SeedMin >= 0 && *e.SeedMin <= 1) {
+		return errors.New("view expand requires seedMin 0–1")
 	}
 	if e.Gate != "" && e.Gate != expandNeeds || e.Target != "" && e.Target != expandNeeds || e.Reserve < 0 || e.Reserve > 8 {
 		return errors.New("view expand requires gate \"\" or \"needs\", target \"\" or \"needs\" and reserve 0–8")

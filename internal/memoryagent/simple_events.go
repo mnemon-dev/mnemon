@@ -65,11 +65,11 @@ func (a *Agent) expandsEvents() bool {
 // eventCandidates is the events source: the records cited by the best top
 // events for the message (its last message without a date line, as the
 // message search reads it), in event rank order, then each event's record
-// order; records pooled are left out, each record once. Without the
-// timelines layer, a message, or a state with events it proposes nothing; a
-// state that does not load degrades the read (expansion). Only a canceled
-// read is an error.
-func (r *simpleRun) eventCandidates(ctx context.Context, top int) ([]expansionCandidate, error) {
+// order; records known (pooled, or with rejudge judged) are left out, each
+// record once. Without the timelines layer, a message, or a state with
+// events it proposes nothing; a state that does not load degrades the read
+// (expansion). Only a canceled read is an error.
+func (r *simpleRun) eventCandidates(ctx context.Context, top int, known func(string) bool) ([]expansionCandidate, error) {
 	query := jsSlice(lastMessage(r.dialogue), 0, 1000)
 	if !r.agent.layerOn() || query == "" {
 		return nil, nil
@@ -101,7 +101,7 @@ func (r *simpleRun) eventCandidates(ctx context.Context, top int) ([]expansionCa
 	out, seen := []expansionCandidate{}, map[string]bool{}
 	for _, i := range order {
 		for _, id := range events[i].records {
-			if !seen[id] && r.items[id] == nil {
+			if !seen[id] && !known(id) {
 				seen[id] = true
 				out = append(out, expansionCandidate{id: id, kinds: []string{expandEvents}})
 			}
