@@ -188,3 +188,13 @@ func TestConsolidationDropsAndPanicsAreLogged(t *testing.T) {
 		t.Fatal("the timelines lock stayed held after a panic")
 	}
 }
+
+func TestLayeredModeFoldsLikeTimelines(t *testing.T) {
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &memoryagent.ConsolidationConfig{Mode: "layered", BatchCharacters: 300}
+		config.ConsolidateOnAdd = true
+	})
+	if !h.server.timelines {
+		t.Fatal("layered mode does not fold full batches on Add and flush on Search")
+	}
+}

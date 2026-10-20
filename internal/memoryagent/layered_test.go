@@ -1,6 +1,7 @@
 package memoryagent
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"strings"
@@ -88,5 +89,76 @@ func TestApplyReplyEntities(t *testing.T) {
 	layered.Facts["demo · day"][0].Entities = nil
 	if again, _ := json.Marshal(layered); string(again) != string(raw) {
 		t.Fatalf("entities changed more than themselves:\n%s\n%s", again, raw)
+	}
+}
+
+func TestLayeredConsolidationConfig(t *testing.T) {
+	s, _ := agentStore(t)
+	planner := &limitPlanner{reply: func(string, string) (string, error) { return "{}", nil }}
+	judge := decisionFunc(fixtureJudge)
+	models := Models{Planner: planner, Judge: judge}
+	a, err := New(s, Config{Version: 1, Policy: &ReadPolicy{Consolidation: true}, Consolidation: &ConsolidationConfig{Mode: "layered"}}, models, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := ConsolidationConfig{Mode: "layered", BatchCharacters: 10000, AssistantCharacters: 240, MaxBatches: 16, LinkCandidates: 8, Parallel: 4}
+	if got := *a.config.Consolidation; got != want {
+		t.Fatalf("defaults %+v", got)
+	}
+	if !a.layerOn() || !a.config.Consolidation.Timelines() {
+		t.Fatal("layered mode does not keep the timelines layer")
+	}
+	for _, good := range []ConsolidationConfig{
+		{Mode: "layered", LinkCandidates: 1, Parallel: 1},
+		{Mode: "layered", LinkCandidates: 32, Parallel: 16, BatchCharacters: 100, MaxBatches: 64},
+	} {
+		if _, err := New(s, Config{Version: 1, Policy: &ReadPolicy{}, Consolidation: &good}, models, nil); err != nil {
+			t.Fatal(good, err)
+		}
+	}
+	for _, bad := range []ConsolidationConfig{
+		{Mode: "layered", LinkCandidates: 33},
+		{Mode: "layered", LinkCandidates: -1},
+		{Mode: "layered", Parallel: 17},
+		{Mode: "layered", Parallel: -1},
+		{Mode: "layered", BatchCharacters: 99},
+		{Mode: "layered", MaxBatches: 65},
+		{Mode: "timelines", LinkCandidates: 8},
+		{Mode: "timelines", Parallel: 4},
+		{LinkCandidates: 8},
+		{Parallel: 4},
+	} {
+		if _, err := New(s, Config{Version: 1, Policy: &ReadPolicy{}, Consolidation: &bad}, models, nil); err == nil {
+			t.Fatalf("accepted %+v", bad)
+		}
+	}
+	// Layered consolidation needs a decision model and a completion model.
+	layered := Config{Version: 1, Policy: &ReadPolicy{}, Consolidation: &ConsolidationConfig{Mode: "layered"}}
+	for _, missing := range []Models{{Planner: planner}, {Judge: judge}} {
+		if _, err := New(s, layered, missing, nil); err == nil || !strings.Contains(err.Error(), "layered consolidation requires") {
+			t.Fatal("accepted models", missing, err)
+		}
+	}
+	if _, err := New(s, layered, Models{Consolidator: planner, Judge: judge}, nil); err != nil {
+		t.Fatal(err)
+	}
+	// A consolidator model may fold either timelines mode.
+	layered.Consolidator = &ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1"}
+	if _, err := New(s, layered, models, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Timelines settings keep their bytes.
+	raw, _ := json.Marshal(ConsolidationConfig{Mode: "timelines", BatchCharacters: 10000, AssistantCharacters: 240, MaxBatches: 16})
+	if string(raw) != `{"mode":"timelines","batchCharacters":10000,"assistantCharacters":240,"maxBatches":16}` {
+		t.Fatal(string(raw))
+	}
+	for config, want := range map[*ConsolidationConfig]bool{nil: false, {}: false, {Mode: "timelines"}: true, {Mode: "layered"}: true} {
+		if config.Timelines() != want {
+			t.Fatal(config, want)
+		}
+	}
+	// Without an overlay store there is nothing to consolidate into.
+	if _, err := a.Consolidate(context.Background(), ConsolidateRequest{}); err == nil || !strings.Contains(err.Error(), "requires an overlay store") {
+		t.Fatal(err)
 	}
 }

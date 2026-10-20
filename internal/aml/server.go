@@ -77,8 +77,8 @@ type Server struct {
 	models   memoryagent.Models
 	budget   *memoryagent.Budget
 	maxItems int // the View's record bound; 0 for memory-agent/v1
-	// timelines reports consolidation mode "timelines": Adds fold full
-	// batches and Searches flush the tail.
+	// timelines reports consolidation mode "timelines" or "layered": Adds
+	// fold full batches and Searches flush the tail.
 	timelines bool
 	users     *registry
 	log       *log.Logger
@@ -117,7 +117,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	}
 	consolidation := config.MemoryConfig.Consolidation
 	s := &Server{config: config, key: sha256.Sum256([]byte(config.AuthKey)), log: config.Logger,
-		timelines: consolidation != nil && consolidation.Mode == "timelines",
+		timelines: consolidation.Timelines(),
 		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout}
 	if s.log == nil {
 		s.log = log.New(os.Stderr, "aml: ", log.LstdFlags|log.LUTC)

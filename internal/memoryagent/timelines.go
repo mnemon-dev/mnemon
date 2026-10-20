@@ -717,6 +717,9 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	if a.store.ReadOnly() || a.overlay.readonly {
 		return ConsolidateResult{}, errors.New("consolidation is unavailable with readonly storage")
 	}
+	if settings.Mode == consolidationLayered {
+		return ConsolidateResult{}, errors.New("layered consolidation is not available yet")
+	}
 	if req.MaxBatches == 0 {
 		req.MaxBatches = settings.MaxBatches
 	}

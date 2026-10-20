@@ -340,9 +340,9 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 }
 
 // layerOn reports whether simple reads add the timelines layer: in
-// timelines mode unless the policy turns consolidation off.
+// timelines or layered mode unless the policy turns consolidation off.
 func (a *Agent) layerOn() bool {
-	return a.config.Consolidation != nil && a.config.Consolidation.Mode == consolidationTimelines && a.config.Policy.Consolidation
+	return a.config.Consolidation.Timelines() && a.config.Policy.Consolidation
 }
 
 // layer puts the consolidated layer before the composed View's records

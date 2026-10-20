@@ -42,23 +42,40 @@ type Config struct {
 	// View bounds the simple strategy's View; New fills its defaults.
 	View *ViewConfig `json:"view,omitempty"`
 	// Consolidation selects the consolidation job: unset or mode "" is the
-	// memory-agent/v1 fold, "timelines" the reference system's (timelines.go).
+	// memory-agent/v1 fold, "timelines" the reference system's (timelines.go),
+	// "layered" its extraction and JEV linking split in two (layered.go).
 	Consolidation *ConsolidationConfig `json:"consolidation,omitempty"`
-	// Consolidator is the timelines folding model. Unset, the planner folds;
-	// either way every fold asks for at most 8192 output tokens.
+	// Consolidator is the timelines or layered folding model. Unset, the
+	// planner folds; either way every fold asks for at most 8192 output
+	// tokens.
 	Consolidator *ModelConfig `json:"consolidator,omitempty"`
 }
 
-const consolidationTimelines = "timelines"
+const (
+	consolidationTimelines = "timelines"
+	consolidationLayered   = "layered"
+)
 
-// ConsolidationConfig sets the timelines consolidation. Zero fields take the
-// reference system's defaults: batches of 10000 characters of readable text,
-// 240 characters of an assistant message, 16 batches per job.
+// ConsolidationConfig sets the timelines or layered consolidation. Zero
+// fields take the reference system's defaults: batches of 10000 characters
+// of readable text, 240 characters of an assistant message, 16 batches per
+// job. LinkCandidates and Parallel are layered settings: the existing
+// threads (and keys) JEV compares each new thread (and key) with, 8 by
+// default, and the extraction calls a job keeps in flight, 4 by default.
 type ConsolidationConfig struct {
 	Mode                string `json:"mode,omitempty"`
 	BatchCharacters     int    `json:"batchCharacters,omitempty"`
 	AssistantCharacters int    `json:"assistantCharacters,omitempty"`
 	MaxBatches          int    `json:"maxBatches,omitempty"`
+	LinkCandidates      int    `json:"linkCandidates,omitempty"`
+	Parallel            int    `json:"parallel,omitempty"`
+}
+
+// Timelines reports whether the mode keeps a timelines state ("timelines"
+// or "layered"): its jobs fold batches of pending records, and simple reads
+// add its layer.
+func (c *ConsolidationConfig) Timelines() bool {
+	return c != nil && (c.Mode == consolidationTimelines || c.Mode == consolidationLayered)
 }
 
 // ViewConfig bounds what a simple read returns. Zero fields take the
@@ -172,8 +189,11 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	default:
 		return nil, fmt.Errorf("unknown memory strategy %q", config.Strategy)
 	}
-	if config.Consolidator != nil && (config.Consolidation == nil || config.Consolidation.Mode != consolidationTimelines) {
-		return nil, errors.New("a consolidator model requires consolidation mode \"timelines\"")
+	if config.Consolidator != nil && !config.Consolidation.Timelines() {
+		return nil, errors.New("a consolidator model requires consolidation mode \"timelines\" or \"layered\"")
+	}
+	if config.Consolidation != nil && config.Consolidation.Mode == consolidationLayered && (models.Judge == nil || models.Consolidator == nil && models.Planner == nil) {
+		return nil, errors.New("layered consolidation requires a decision model and a completion model (consolidator or planner)")
 	}
 	// Config and its nested pointers belong to this service, never its caller.
 	raw, _ := json.Marshal(config)
@@ -211,16 +231,29 @@ func (v *ViewConfig) normalize() error {
 	return nil
 }
 
-// normalize fills the timelines defaults and checks the bounds. Mode "" is
-// the v1 fold, which takes no settings.
+// normalize fills the timelines (and layered) defaults and checks the
+// bounds. Mode "" is the v1 fold, which takes no settings.
 func (c *ConsolidationConfig) normalize() error {
 	switch c.Mode {
 	case "":
 		if *c != (ConsolidationConfig{}) {
-			return errors.New("consolidation settings require mode \"timelines\"")
+			return errors.New("consolidation settings require mode \"timelines\" or \"layered\"")
 		}
 		return nil
 	case consolidationTimelines:
+		if c.LinkCandidates != 0 || c.Parallel != 0 {
+			return errors.New("linkCandidates and parallel require consolidation mode \"layered\"")
+		}
+	case consolidationLayered:
+		if c.LinkCandidates == 0 {
+			c.LinkCandidates = 8
+		}
+		if c.Parallel == 0 {
+			c.Parallel = 4
+		}
+		if c.LinkCandidates < 1 || c.LinkCandidates > 32 || c.Parallel < 1 || c.Parallel > 16 {
+			return errors.New("layered consolidation requires linkCandidates 1–32 and parallel 1–16")
+		}
 	default:
 		return fmt.Errorf("unknown consolidation mode %q", c.Mode)
 	}
