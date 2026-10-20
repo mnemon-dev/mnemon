@@ -102,7 +102,29 @@ type ViewConfig struct {
 	// (native recall's intent detection), and gives it to every records
 	// search; "" lets each search detect its own from its text.
 	Intent string `json:"intent,omitempty"`
+	// Expand, when set, expands from the records JEV judged needed to their
+	// neighbors after the judgement, judges those the same way and composes
+	// them on their merit (simple_expand.go). Unset, it stays out of the
+	// policy hash and the read is unchanged.
+	Expand *ExpandConfig `json:"expand,omitempty"`
 }
+
+// ExpandConfig sets the evidence expansion of a simple read. Kinds names the
+// neighbors followed, each once: "adjacent" (the records written just
+// before and after in the same session) and the link types "temporal",
+// "semantic", "causal", "entity" and "supersedes". Limit bounds the
+// neighbors judged (24 by default, 1–64), Seeds the needed records expanded
+// from (16 by default, 1–32).
+type ExpandConfig struct {
+	Kinds []string `json:"kinds"`
+	Limit int      `json:"limit,omitempty"`
+	Seeds int      `json:"seeds,omitempty"`
+}
+
+// expandKinds are the neighbors view.expand may follow.
+var expandKinds = []string{expandAdjacent, "temporal", "semantic", "causal", "entity", "supersedes"}
+
+const expandAdjacent = "adjacent"
 
 const viewIntentQuestion = "question"
 
@@ -261,6 +283,34 @@ func (v *ViewConfig) normalize() error {
 	}
 	if v.Intent != "" && v.Intent != viewIntentQuestion {
 		return errors.New("memory view requires intent \"\" or \"question\"")
+	}
+	if v.Expand != nil {
+		return v.Expand.normalize()
+	}
+	return nil
+}
+
+// normalize fills the expansion defaults and checks the kinds and bounds.
+func (e *ExpandConfig) normalize() error {
+	if len(e.Kinds) == 0 {
+		return errors.New("view expand requires kinds")
+	}
+	for i, kind := range e.Kinds {
+		if !slices.Contains(expandKinds, kind) {
+			return fmt.Errorf("unknown expand kind %q: kinds lists adjacent, temporal, semantic, causal, entity or supersedes", kind)
+		}
+		if slices.Contains(e.Kinds[:i], kind) {
+			return fmt.Errorf("expand kind %q is listed twice", kind)
+		}
+	}
+	if e.Limit == 0 {
+		e.Limit = 24
+	}
+	if e.Seeds == 0 {
+		e.Seeds = 16
+	}
+	if e.Limit < 1 || e.Limit > 64 || e.Seeds < 1 || e.Seeds > 32 {
+		return errors.New("view expand requires limit 1–64 and seeds 1–32")
 	}
 	return nil
 }

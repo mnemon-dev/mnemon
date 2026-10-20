@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"maps"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -138,5 +139,53 @@ func TestReadSimpleWithoutExpandUnchanged(t *testing.T) {
 			raw, _ := json.Marshal(view)
 			t.Errorf("%s: %s\n%s", name, got, raw)
 		}
+	}
+}
+
+func TestExpandConfig(t *testing.T) {
+	s, _ := agentStore(t)
+	both := Models{Planner: expandPlanner(), Judge: expandJudge()}
+	// Defaults fill in the agent's copy, not the caller's.
+	expand := &ExpandConfig{Kinds: []string{"adjacent", "supersedes"}}
+	a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: expand}}, both, nil)
+	if err != nil || !reflect.DeepEqual(*a.config.View.Expand, ExpandConfig{Kinds: []string{"adjacent", "supersedes"}, Limit: 24, Seeds: 16}) || expand.Limit != 0 || expand.Seeds != 0 {
+		t.Fatal(a, err, expand)
+	}
+	every := []string{"adjacent", "temporal", "semantic", "causal", "entity", "supersedes"}
+	for _, good := range []ExpandConfig{{Kinds: every, Limit: 64, Seeds: 32}, {Kinds: []string{"entity"}, Limit: 1, Seeds: 1}} {
+		if _, err = New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &good}}, both, nil); err != nil {
+			t.Error("valid expansion refused", good, err)
+		}
+	}
+	for _, bad := range []ExpandConfig{
+		{}, {Kinds: []string{}}, {Kinds: []string{"Adjacent"}}, {Kinds: []string{"related"}}, {Kinds: []string{"temporal", "temporal"}},
+		{Kinds: []string{"adjacent"}, Limit: 65}, {Kinds: []string{"adjacent"}, Limit: -1},
+		{Kinds: []string{"adjacent"}, Seeds: 33}, {Kinds: []string{"adjacent"}, Seeds: -1},
+	} {
+		if _, err = New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &bad}}, both, nil); err == nil {
+			t.Error("invalid expansion accepted", bad)
+		}
+	}
+	// Absent, it stays out of the config's JSON and so out of the policy
+	// hash (TestReadSimpleWithoutExpandUnchanged pins the policies).
+	if raw, _ := json.Marshal(ViewConfig{MaxItems: 16, MaxCharacters: 12000}); strings.Contains(string(raw), "expand") {
+		t.Fatal(string(raw))
+	}
+	decoder := json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"expand":{"kinds":["adjacent","temporal"],"limit":8,"seeds":4}}}`))
+	decoder.DisallowUnknownFields()
+	var decoded Config
+	if err = decoder.Decode(&decoded); err != nil || !reflect.DeepEqual(*decoded.View.Expand, ExpandConfig{Kinds: []string{"adjacent", "temporal"}, Limit: 8, Seeds: 4}) {
+		t.Fatal(decoded, err)
+	}
+	decoder = json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"expand":{"kinds":["adjacent"],"depth":2}}}`))
+	decoder.DisallowUnknownFields()
+	if err = decoder.Decode(&decoded); err == nil {
+		t.Fatal("unknown expansion field accepted")
+	}
+	// A set expansion is part of the policy.
+	plain, _ := New(s, Config{Version: 1, Strategy: "simple"}, both, nil)
+	expanded, _ := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent"}}}}, both, nil)
+	if (&simpleRun{agent: plain}).policy() == (&simpleRun{agent: expanded}).policy() {
+		t.Fatal("expansion left out of the policy")
 	}
 }
