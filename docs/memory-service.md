@@ -113,6 +113,42 @@ with the `index` setting. The result adds `edgeRecords` and `edgeLinks` (rows wr
 and their links by type), `aliasCalls` (JEV calls, part of `linkUsage`), `aliasMerges`
 and `aliasFallbacks` (names that joined a cluster, or stayed alone because JEV failed).
 
+With `"edgeKinds"` (any of `semantic`, `temporal`, `causal` and `entity`, each once;
+requires `nativeEdges` and a decision model) the links between events are JEV's
+decisions instead of the thread rule above (the 4 nearest events and the previous and
+next one): every event edge is a yes to a question about two events, and no similarity
+threshold ever creates one. After the aliases, the edge step takes each event with
+records that is not yet decided for a kind (the events added since the last step, and
+those a failed call left undecided; an event's id is its date, text and records, so it
+survives rebuilds and thread changes) and compares it with up to `linkCandidates` (8 in
+timelines mode) events before it (an earlier session day, or the same day or no date
+and stored earlier), chosen by the kind; similarity (the cosine of the event texts'
+embeddings, else shared words) only picks and orders them:
+
+| Kind | Candidates | JEV is asked whether … |
+| --- | --- | --- |
+| `semantic` | the most similar events, any thread | the two are about the same specific matter, so that one helps to answer a question about the other |
+| `temporal` | events of its thread or naming an entity of the same cluster, nearest day first, then by similarity | it is a later development (follow-up, change, completion, report) of the same matter |
+| `causal` | events of its thread by similarity, then similar events of other threads | the earlier event caused, enabled or prevented it, as the records state or clearly imply |
+| `entity` | events naming an entity of the same cluster (the alias decisions), by similarity | both are about the same particular person, organization, place, product or document |
+
+A yes (at least 0.5) is an edge weighted by its probability (two decimals). Every
+answer, yes or no, is kept in the state, so a pair is asked once per kind; a reset
+forgets them with the memory. A call that fails or finds the budget spent ends the
+asking: its pairs stay undecided (not "no") and the next edge step (a job that changes
+the memory, or `rebuildEdges`) asks them again; the job does not fail. Each edge links
+every record of one event to every record of the other with its kind and weight:
+`temporal` and `causal` both ways, `semantic` and `entity` (which the index reads both
+ways) once a pair, on the record with fewer links. Each record keeps its `supersedes`
+links, then its heaviest links, 50 in all. Entities, aliases, `supersedes` and `eventAt`
+are as without `edgeKinds`; absent or empty, nothing changes. Cost: at most
+`linkCandidates` questions per new event and kind, packed 128 a call (96,000 UTF-16
+units), about one JEV call per 16 new events and kind at the default, plus embeddings of
+the new event texts; listing a kind for an existing memory asks about all its events
+once. The result adds `edgeCalls` (JEV calls, part of `linkUsage`), `edgeAsked` and
+`edgeYes` (by kind, the pairs JEV answered and the edges it made) and `edgeFallbacks`
+(pairs left undecided because JEV failed).
+
 Native search/show/recall retain their access-count and operation-log effects.
 The new service returns the full typed search/recall structures; existing CLI
 projections are unchanged. `--readonly` keeps native immutable-snapshot behavior
