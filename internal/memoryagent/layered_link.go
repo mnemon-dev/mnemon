@@ -482,11 +482,7 @@ func packLinks(news, cands []linkItem, pairs []*linkPair, limit int) []*linkRequ
 // another, and sets the pairs' answers; calls counts the calls. The first
 // failed call ends the judging with its error.
 func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*linkPair, state *timelineState, result *ConsolidateResult, calls *int) error {
-	limit := 128
-	if limited, ok := l.agent.models.Judge.(interface{ MaxQuestions() int }); ok {
-		limit = min(limit, limited.MaxQuestions())
-	}
-	for _, call := range packLinks(news, cands, pairs, limit) {
+	for _, call := range packLinks(news, cands, pairs, l.questionLimit()) {
 		answers, err := l.decide(ctx, call.state, call.questions, state, result, calls)
 		if err != nil {
 			return err
@@ -499,8 +495,6 @@ func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*lin
 				p.same, p.contradicts = answers[fmt.Sprintf("i%d", j)], answers[fmt.Sprintf("x%d", j)]
 			case linkAlias:
 				p.same = answers[fmt.Sprintf("a%d", j)]
-			case linkSemantic, linkTemporal, linkCausal, linkEntity:
-				p.same = answers[edgeKindOf(p.kind).key+strconv.Itoa(j)]
 			default:
 				p.contradicts = answers[fmt.Sprintf("x%d", j)]
 			}
@@ -508,6 +502,15 @@ func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*lin
 		}
 	}
 	return nil
+}
+
+// questionLimit is the questions a linking call may ask: 128, or fewer
+// when the judge states fewer.
+func (l *linker) questionLimit() int {
+	if limited, ok := l.agent.models.Judge.(interface{ MaxQuestions() int }); ok {
+		return min(128, limited.MaxQuestions())
+	}
+	return 128
 }
 
 // decide makes one linking call and meters it: its usage is the job's and

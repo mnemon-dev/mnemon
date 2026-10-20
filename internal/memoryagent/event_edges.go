@@ -11,6 +11,7 @@ import (
 	"maps"
 	"math"
 	"slices"
+	"strconv"
 	"time"
 )
 
@@ -167,20 +168,55 @@ func dayDistance(a, b string) int {
 	return max(days, -days)
 }
 
+// Hot clusters: a cluster named by more than hotShare of a memory's events,
+// and by at least hotEvents of them (the speakers of a conversation), says
+// nothing about which events go together.
+const (
+	hotShare  = 0.25
+	hotEvents = 8
+)
+
+// hotClusters is the clusters named by more than a quarter of the nodes
+// and by at least 8 of them. A frequency stop-list, not a similarity
+// threshold: it never links two events, only keeps a speaker from making
+// every event a candidate of every other.
+func hotClusters(nodes []eventNode) map[string]bool {
+	counts := map[string]int{}
+	for _, n := range nodes {
+		for _, c := range n.clusters {
+			counts[c]++
+		}
+	}
+	hot := map[string]bool{}
+	for c, count := range counts {
+		if count >= hotEvents && float64(count) > hotShare*float64(len(nodes)) {
+			hot[c] = true
+		}
+	}
+	return hot
+}
+
+// sharesCluster reports whether f and e name a cluster in common that is
+// not hot.
+func sharesCluster(f, e eventNode, hot map[string]bool) bool {
+	return slices.ContainsFunc(f.clusters, func(c string) bool { return !hot[c] && slices.Contains(e.clusters, c) })
+}
+
 // edgeCandidates is the up to limit nodes the i-th node is asked about for
 // kind, best first, among the nodes that precede it; similar is each
 // node's rank by similarity to it (0 the most similar), -1 for no
-// similarity. Similarity only selects and orders candidates:
+// similarity; hot the clusters that never count as shared (hotClusters).
+// Similarity only selects and orders candidates:
 //
 //   - semantic: the similar nodes, by similarity, of any thread;
-//   - temporal: the nodes of its thread or sharing a cluster with it, the
-//     nearest day first, then by similarity;
+//   - temporal: the nodes of its thread, then the nodes sharing a cluster
+//     with it, each the nearest day first, then by similarity;
 //   - causal: the nodes of its thread, by similarity, then the similar
 //     nodes of other threads, by similarity;
 //   - entity: the nodes sharing a cluster with it, by similarity.
 //
 // Ties go to the node nearer in the memory.
-func edgeCandidates(kind string, nodes []eventNode, i int, similar []int, limit int) []int {
+func edgeCandidates(kind string, nodes []eventNode, i int, similar []int, hot map[string]bool, limit int) []int {
 	type candidate struct{ node, group, distance, rank int }
 	e, found := nodes[i], []candidate{}
 	for j, f := range nodes {
@@ -188,7 +224,6 @@ func edgeCandidates(kind string, nodes []eventNode, i int, similar []int, limit 
 			continue
 		}
 		thread := f.event.Thread == e.event.Thread
-		shared := slices.ContainsFunc(f.clusters, func(c string) bool { return slices.Contains(e.clusters, c) })
 		c := candidate{node: j, rank: similar[j]}
 		if c.rank < 0 {
 			c.rank = math.MaxInt
@@ -199,8 +234,11 @@ func edgeCandidates(kind string, nodes []eventNode, i int, similar []int, limit 
 				continue
 			}
 		case "temporal":
-			if !thread && !shared {
-				continue
+			if !thread {
+				if !sharesCluster(f, e, hot) {
+					continue
+				}
+				c.group = 1
 			}
 			c.distance = dayDistance(f.day, e.day)
 		case "causal":
@@ -211,7 +249,7 @@ func edgeCandidates(kind string, nodes []eventNode, i int, similar []int, limit 
 				c.group = 1
 			}
 		case "entity":
-			if !shared {
+			if !sharesCluster(f, e, hot) {
 				continue
 			}
 		default:
@@ -229,14 +267,34 @@ func edgeCandidates(kind string, nodes []eventNode, i int, similar []int, limit 
 	return out
 }
 
-// eventEdges is JEV's decisions about the events of a memory, by kind:
-// Decided lists the events (eventID) whose candidates were all answered,
-// in the order decided; Answers holds, for each event asked about, each
+const (
+	// eventEdgeRules versions the candidate rules (edgeCandidates): the
+	// events decided under other rules are decided again, asking only the
+	// pairs never answered. Version 1 added the hot-cluster stop-list.
+	eventEdgeRules = 1
+	// pairAttempts is the failed calls after which a pair is given up:
+	// never asked again, and no edge.
+	pairAttempts = 3
+	// edgeChunkCalls is the calls a step makes between commits of its
+	// answers.
+	edgeChunkCalls = 32
+	// itemNames bounds the names of an event as JEV reads it, so that one
+	// pair always fits a call.
+	itemNames = 16
+)
+
+// eventEdges is JEV's decisions about the events of a memory. Rules is
+// the candidate rules they were made under; by kind, Decided lists the
+// events (eventID) whose candidate pairs were all answered or given up, in
+// the order decided; Answers holds, for each event asked about, each
 // candidate's answer: the edge's weight, its yes probability to two
-// decimals (at least 0.5), or 0 for no.
+// decimals (at least 0.5), or 0 for no; Failures the failed calls of each
+// pair not answered, given up at pairAttempts.
 type eventEdges struct {
-	Decided map[string][]string                      `json:"decided,omitempty"`
-	Answers map[string]map[string]map[string]float64 `json:"answers,omitempty"`
+	Rules    int                                      `json:"rules,omitempty"`
+	Decided  map[string][]string                      `json:"decided,omitempty"`
+	Answers  map[string]map[string]map[string]float64 `json:"answers,omitempty"`
+	Failures map[string]map[string]map[string]int     `json:"failures,omitempty"`
 }
 
 // answered reports whether JEV answered whether kind joins events from and
@@ -249,14 +307,52 @@ func (e *eventEdges) answered(kind, from, to string) bool {
 	return ok
 }
 
-// eventItem is an event as JEV reads it, under id.
+// givenUp reports whether the pair failed pairAttempts calls.
+func (e *eventEdges) givenUp(kind, from, to string) bool {
+	return e != nil && e.Failures[kind][from][to] >= pairAttempts
+}
+
+// nested is m[kind][from], made when missing.
+func nested[V any](m *map[string]map[string]map[string]V, kind, from string) map[string]V {
+	if *m == nil {
+		*m = map[string]map[string]map[string]V{}
+	}
+	if (*m)[kind] == nil {
+		(*m)[kind] = map[string]map[string]V{}
+	}
+	if (*m)[kind][from] == nil {
+		(*m)[kind][from] = map[string]V{}
+	}
+	return (*m)[kind][from]
+}
+
+// answer keeps JEV's answer about a pair and forgets its failures.
+func (e *eventEdges) answer(kind, from, to string, weight float64) {
+	nested(&e.Answers, kind, from)[to] = weight
+	if e.Failures[kind][from] == nil {
+		return
+	}
+	delete(e.Failures[kind][from], to)
+	if len(e.Failures[kind][from]) == 0 {
+		delete(e.Failures[kind], from)
+	}
+	if len(e.Failures[kind]) == 0 {
+		delete(e.Failures, kind)
+	}
+	if len(e.Failures) == 0 {
+		e.Failures = nil
+	}
+}
+
+// eventItem is an event as JEV reads it, under id: its date, thread title,
+// text and first itemNames names, each cut to simpleListing units.
 func eventItem(id string, n eventNode, titles map[string]string) linkItem {
 	title, ok := titles[n.event.Thread]
 	if !ok {
 		title = n.event.Thread
 	}
 	var names []string
-	for _, name := range n.event.Entities[:min(maxEdgeNames, len(n.event.Entities))] {
+	for _, name := range n.event.Entities[:min(itemNames, len(n.event.Entities))] {
 		names = append(names, authorExcerpt(name, simpleListing))
 	}
 	return linkItem{ID: id, Date: authorExcerpt(n.event.Date, simpleListing), Thread: authorExcerpt(title, simpleListing), Text: authorExcerpt(n.event.Text, simpleListing), Entities: names}
@@ -264,38 +360,52 @@ func eventItem(id string, n eventNode, titles map[string]string) linkItem {
 
 // decideEventEdges asks JEV, for each of kinds, about the events of the
 // state's memory not yet decided for that kind (eventNodes; new since the
-// last step, or left undecided by a failed call), and keeps every answer
-// in state.EventEdges. An event is compared with its candidates
-// (edgeCandidates, up to LinkCandidates, 8 in timelines mode), found by
-// the similarity of event texts: the cosine of their document vectors (the
-// decided events' kept in the derived vector cache, the new ones' not),
-// else, or when embedding fails, shared words (rankWith). A pair answered
-// before is not asked again. The questions of all kinds are packed into
-// few calls (judge); JEV reads each event as its date, thread title, text
-// and names (eventItem), the new ones in "new", their candidates in
-// "candidates". A yes (at least 0.5) is an edge weighted by its
-// probability, to two decimals; a no is kept as 0. A pair whose call failed
-// (an error or a spent budget, which ends the asking, or no decision model)
-// stays undecided, counted in EdgeFallbacks, and its event with it, to be
-// asked again by the next step; the step goes on. Only a canceled job is an
-// error, and it decides nothing. changed reports whether a decision was
-// kept.
-func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kinds []string, result *ConsolidateResult) (changed bool, err error) {
+// last step, or left undecided by a failed call, or all of them when the
+// candidate rules changed), and keeps every answer in state.EventEdges. An
+// event is compared with its candidates (edgeCandidates, up to
+// LinkCandidates, 8 in timelines mode; the memory's hot clusters never
+// count as shared), found by the similarity of event texts: the cosine of
+// their document vectors (the decided events' kept in the derived vector
+// cache, the new ones' not), else, or when embedding fails (EdgeLexical),
+// shared words (rankWith). A pair answered or given up before is not asked
+// again. The questions of all kinds are packed into few calls (packLinks);
+// JEV reads each event as eventItem does, the new ones in "new", their
+// candidates in "candidates". A yes (at least 0.5) is an edge weighted by
+// its probability, to two decimals; a no is kept as 0.
+//
+// A call that fails for itself (countedError) counts a failure against
+// each of its pairs and the asking goes on; a pair is given up at its
+// pairAttempts-th failure. A spent budget, an unavailable provider or no
+// decision model ends the asking, counting nothing; the step goes on. The
+// pairs left unanswered (EdgeFallbacks) keep their events undecided, to be
+// asked again by the next step. After every edgeChunkCalls calls, and
+// when the job is canceled, the answers so far go into the state and
+// commit (when not nil) saves it, the latter with a context that is not
+// canceled, so a step cut off resumes where it stopped; a canceled job
+// then returns its error. changed reports whether the state changed.
+func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kinds []string, result *ConsolidateResult, commit func(context.Context) error) (changed bool, err error) {
 	nodes := eventNodes(*state)
+	hot := hotClusters(nodes)
 	asked := []eventEdgeKind{}
 	for _, k := range eventEdgeKinds {
 		if slices.Contains(kinds, k.name) {
 			asked = append(asked, k)
 		}
 	}
+	edges := state.EventEdges
+	if edges == nil {
+		edges = &eventEdges{Rules: eventEdgeRules}
+	}
+	// Decided under other candidate rules, every event is decided again.
+	reset := edges.Rules != eventEdgeRules
 	// open[k][i]: node i is undecided for the k-th kind asked; each such
 	// node's text is a query.
 	open, queryOf, queries := make([][]bool, len(asked)), map[int]int{}, []string{}
 	for k, kind := range asked {
 		open[k] = make([]bool, len(nodes))
 		decided := map[string]bool{}
-		if state.EventEdges != nil {
-			for _, id := range state.EventEdges.Decided[kind.name] {
+		if !reset {
+			for _, id := range edges.Decided[kind.name] {
 				decided[id] = true
 			}
 		}
@@ -309,16 +419,19 @@ func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kin
 			}
 		}
 	}
-	if len(queries) == 0 {
-		return false, nil
-	}
-	docs := make([]string, len(nodes))
-	for i, n := range nodes {
-		docs[i] = n.event.Text
-	}
-	ranks, _, err := l.rankWith(ctx, queries, docs, len(docs), true)
-	if err != nil {
-		return false, err
+	var ranks [][]int
+	if len(queries) > 0 {
+		docs := make([]string, len(nodes))
+		for i, n := range nodes {
+			docs[i] = n.event.Text
+		}
+		var lexical bool
+		if ranks, lexical, err = l.rankWith(ctx, queries, docs, len(docs), true); err != nil {
+			return false, err
+		}
+		if lexical {
+			result.EdgeLexical++
+		}
 	}
 	limit := l.k
 	if limit < 1 {
@@ -329,13 +442,19 @@ func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kin
 		titles[t.ID] = t.Title
 	}
 	// The new events n1, n2, … and their candidates c1, c2, …, each once;
-	// for each event and kind, its candidates and the pairs to ask.
-	type decision struct {
-		kind, node int
-		pairs      []*linkPair
+	// for each event and kind, the questions to ask.
+	type question struct {
+		pair         *linkPair
+		to           string
+		failed, kept bool
 	}
-	news, cands, newOf, candOf, candNode := []linkItem{}, []linkItem{}, map[int]int{}, map[int]int{}, []int{}
-	decisions, pairs := []*decision{}, []*linkPair{}
+	type decision struct {
+		kind, from string
+		questions  []*question
+		marked     bool
+	}
+	news, cands, newOf, candOf := []linkItem{}, []linkItem{}, map[int]int{}, map[int]int{}
+	decisions, pairs, questionOf := []*decision{}, []*linkPair{}, map[*linkPair]*question{}
 	for i, n := range nodes {
 		q, ok := queryOf[i]
 		if !ok {
@@ -352,9 +471,10 @@ func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kin
 			if !open[k][i] {
 				continue
 			}
-			d := &decision{kind: k, node: i}
-			for _, j := range edgeCandidates(kind.name, nodes, i, similar, limit) {
-				if state.EventEdges.answered(kind.name, n.id, nodes[j].id) {
+			d := &decision{kind: kind.name, from: n.id}
+			for _, j := range edgeCandidates(kind.name, nodes, i, similar, hot, limit) {
+				to := nodes[j].id
+				if edges.answered(kind.name, n.id, to) || edges.givenUp(kind.name, n.id, to) {
 					continue
 				}
 				if _, ok := newOf[i]; !ok {
@@ -363,71 +483,110 @@ func (l *linker) decideEventEdges(ctx context.Context, state *timelineState, kin
 				}
 				if _, ok := candOf[j]; !ok {
 					candOf[j] = len(cands)
-					candNode = append(candNode, j)
 					cands = append(cands, eventItem(fmt.Sprintf("c%d", len(cands)+1), nodes[j], titles))
 				}
-				d.pairs = append(d.pairs, &linkPair{kind: kind.pair, item: newOf[i], candidate: candOf[j]})
+				p := &linkPair{kind: kind.pair, item: newOf[i], candidate: candOf[j]}
+				questionOf[p] = &question{pair: p, to: to}
+				d.questions = append(d.questions, questionOf[p])
+				pairs = append(pairs, p)
 			}
-			decisions, pairs = append(decisions, d), append(pairs, d.pairs...)
+			decisions = append(decisions, d)
 		}
 	}
-	if len(pairs) > 0 {
-		err := errors.New("no decision model")
-		if l.agent.models.Judge != nil {
-			err = l.judge(ctx, news, cands, pairs, state, result, &result.EdgeCalls)
+	// apply keeps what the calls so far answered or failed, and marks the
+	// events whose pairs are all answered or given up; it reports whether
+	// that changed the state.
+	apply := func() (dirty bool) {
+		if reset {
+			edges.Rules, edges.Decided, reset, dirty = eventEdgeRules, nil, false, true
 		}
-		if err != nil && ctx.Err() != nil {
-			return false, err
+		for _, d := range decisions {
+			complete := true
+			for _, q := range d.questions {
+				switch {
+				case q.kept:
+				case q.pair.answered:
+					weight := 0.0
+					if q.pair.same >= 0.5 {
+						weight = math.Round(q.pair.same*100) / 100
+						count(&result.EdgeYes, d.kind)
+					}
+					count(&result.EdgeAsked, d.kind)
+					edges.answer(d.kind, d.from, q.to, weight)
+					q.kept, dirty = true, true
+				case q.failed:
+					nested(&edges.Failures, d.kind, d.from)[q.to]++
+					q.kept, dirty = true, true
+				}
+				if !q.pair.answered && !edges.givenUp(d.kind, d.from, q.to) {
+					complete = false
+				}
+			}
+			if complete && !d.marked {
+				if edges.Decided == nil {
+					edges.Decided = map[string][]string{}
+				}
+				edges.Decided[d.kind] = append(edges.Decided[d.kind], d.from)
+				d.marked, dirty = true, true
+			}
 		}
-	}
-	edges := state.EventEdges
-	if edges == nil {
-		edges = &eventEdges{}
-	}
-	count := func(counts *map[string]int, kind string) {
-		if *counts == nil {
-			*counts = map[string]int{}
+		if dirty {
+			state.EventEdges, changed = edges, true
 		}
-		(*counts)[kind]++
+		return dirty
 	}
-	for _, d := range decisions {
-		kind, from, complete := asked[d.kind].name, nodes[d.node].id, true
-		for _, p := range d.pairs {
+	defer func() {
+		for _, p := range pairs {
 			if !p.answered {
-				complete = false
 				result.EdgeFallbacks++
+			}
+		}
+	}()
+	calls := packLinks(news, cands, pairs, l.questionLimit())
+	if len(calls) == 0 {
+		apply()
+		return changed, nil
+	}
+	var stop error
+	if l.agent.models.Judge == nil {
+		stop = errors.New("no decision model")
+	}
+	for start := 0; start < len(calls) && stop == nil; start += edgeChunkCalls {
+		for _, call := range calls[start:min(start+edgeChunkCalls, len(calls))] {
+			answers, err := l.decide(ctx, call.state, call.questions, state, result, &result.EdgeCalls)
+			if err != nil {
+				if !countedError(ctx, err) {
+					stop = err
+					break
+				}
+				for _, p := range call.pairs {
+					questionOf[p].failed = true
+				}
 				continue
 			}
-			weight := 0.0
-			if p.same >= 0.5 {
-				weight = math.Round(p.same*100) / 100
-				count(&result.EdgeYes, kind)
+			for j, p := range call.pairs {
+				p.same, p.answered = answers[edgeKindOf(p.kind).key+strconv.Itoa(j)], true
 			}
-			count(&result.EdgeAsked, kind)
-			if edges.Answers == nil {
-				edges.Answers = map[string]map[string]map[string]float64{}
-			}
-			if edges.Answers[kind] == nil {
-				edges.Answers[kind] = map[string]map[string]float64{}
-			}
-			if edges.Answers[kind][from] == nil {
-				edges.Answers[kind][from] = map[string]float64{}
-			}
-			edges.Answers[kind][from][nodes[candNode[p.candidate]].id] = weight
-			changed = true
 		}
-		if complete {
-			if edges.Decided == nil {
-				edges.Decided = map[string][]string{}
+		if apply() && commit != nil {
+			saveCtx := ctx
+			if ctx.Err() != nil {
+				saveCtx = context.WithoutCancel(ctx)
 			}
-			edges.Decided[kind] = append(edges.Decided[kind], from)
-			changed = true
+			if err := commit(saveCtx); err != nil {
+				return changed, err
+			}
 		}
 	}
-	if changed {
-		state.EventEdges = edges
+	return changed, ctx.Err()
+}
+
+// count adds one to counts[kind], making counts when nil.
+func count(counts *map[string]int, kind string) {
+	if *counts == nil {
+		*counts = map[string]int{}
 	}
-	return changed, nil
+	(*counts)[kind]++
 }
 
 // judgedLink is a record link an event edge gives: from source to target,
@@ -445,14 +604,17 @@ func mirrored(kind string) bool {
 // the builder's kinds: each yes links every record of one event to every
 // record of the other, with the edge's kind and weight, both ways (a
 // mirrored kind once per pair). A pair of records keeps the highest weight
-// any edge gives it.
+// any edge gives it. An entity edge counts only while its events share a
+// cluster that is not hot (hotClusters, of the memory as it is now), so
+// the overlay never joins events by a speaker alone; its decision stays.
 func (b *edgeBuilder) addEventEdges(state timelineState) {
 	if state.EventEdges == nil {
 		return
 	}
-	cited := map[string][]string{}
-	for _, e := range state.Memory.Events {
-		cited[eventID(e)] = e.Records
+	nodes := eventNodes(state)
+	hot, node := hotClusters(nodes), map[string]eventNode{}
+	for _, n := range nodes {
+		node[n.id] = n
 	}
 	keep := func(l judgedLink, weight float64) {
 		if weight > b.judged[l] {
@@ -462,11 +624,11 @@ func (b *edgeBuilder) addEventEdges(state timelineState) {
 	for _, kind := range b.kinds {
 		for from, answers := range state.EventEdges.Answers[kind] {
 			for to, weight := range answers {
-				if weight < 0.5 {
+				if weight < 0.5 || kind == "entity" && !sharesCluster(node[from], node[to], hot) {
 					continue
 				}
-				for _, x := range cited[from] {
-					for _, y := range cited[to] {
+				for _, x := range node[from].event.Records {
+					for _, y := range node[to].event.Records {
 						switch {
 						case x == y:
 						case mirrored(kind):

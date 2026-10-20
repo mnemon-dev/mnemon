@@ -172,6 +172,10 @@ func TestEventEdgeCandidates(t *testing.T) {
 	state := emptyTimelineState()
 	state.Memory, state.EntityClusters = candidateMemory(), candidateClusters()
 	nodes := eventNodes(state)
+	hot := hotClusters(nodes)
+	if len(hot) != 0 {
+		t.Fatal(hot)
+	}
 	// similar ranks the nodes by similarity to node i: order[0] most.
 	similar := func(i int, order ...int) []int {
 		out := make([]int, len(nodes))
@@ -191,48 +195,48 @@ func TestEventEdgeCandidates(t *testing.T) {
 	for kind, want := range map[string][]int{
 		// By similarity, any thread; the start at Acme (1) is not similar.
 		"semantic": {3, 2, 5, 0},
-		// Same thread or a shared cluster (Cabin Co): the nearest day
-		// first, the more similar of the 5th first, the undated last.
-		"temporal": {3, 2, 0, 5},
+		// Its thread first, the nearest day first, the undated last; then
+		// the other events sharing a cluster (Cabin Co).
+		"temporal": {2, 0, 5, 3},
 		// The same thread first, then by similarity.
 		"causal": {2, 5, 0, 3},
 		// A shared cluster, by similarity.
 		"entity": {3, 2},
 	} {
-		if got := edgeCandidates(kind, nodes, 6, deposit, 8); !reflect.DeepEqual(got, want) {
+		if got := edgeCandidates(kind, nodes, 6, deposit, hot, 8); !reflect.DeepEqual(got, want) {
 			t.Errorf("%s: %v, want %v", kind, got, want)
 		}
 	}
-	if got := edgeCandidates("semantic", nodes, 6, deposit, 2); !reflect.DeepEqual(got, []int{3, 2}) {
+	if got := edgeCandidates("semantic", nodes, 6, deposit, hot, 2); !reflect.DeepEqual(got, []int{3, 2}) {
 		t.Fatal("limit", got)
 	}
-	if got := edgeCandidates("temporal", nodes, 6, deposit, 2); !reflect.DeepEqual(got, []int{3, 2}) {
+	if got := edgeCandidates("temporal", nodes, 6, deposit, hot, 2); !reflect.DeepEqual(got, []int{2, 0}) {
 		t.Fatal("limit", got)
 	}
 	// Greg Hall's booking (node 2) shares a cluster with Greg's suggestion
 	// (0) by the alias decision, not by a word; nothing is similar.
 	none := similar(2)
-	if got := edgeCandidates("entity", nodes, 2, none, 8); !reflect.DeepEqual(got, []int{0}) {
+	if got := edgeCandidates("entity", nodes, 2, none, hot, 8); !reflect.DeepEqual(got, []int{0}) {
 		t.Fatal(got)
 	}
-	if got := edgeCandidates("semantic", nodes, 2, none, 8); len(got) != 0 {
+	if got := edgeCandidates("semantic", nodes, 2, none, hot, 8); len(got) != 0 {
 		t.Fatal(got)
 	}
-	if got := edgeCandidates("causal", nodes, 2, none, 8); !reflect.DeepEqual(got, []int{0}) {
+	if got := edgeCandidates("causal", nodes, 2, none, hot, 8); !reflect.DeepEqual(got, []int{0}) {
 		t.Fatal(got)
 	}
 	// The undated check (node 5) is compared with the events stored
 	// before it, the nearest in the memory first when nothing else tells.
-	if got := edgeCandidates("temporal", nodes, 5, similar(5), 8); !reflect.DeepEqual(got, []int{4, 2, 0}) {
+	if got := edgeCandidates("temporal", nodes, 5, similar(5), hot, 8); !reflect.DeepEqual(got, []int{4, 2, 0}) {
 		t.Fatal(got)
 	}
 	// The packing (node 7) follows the deposit of the same day (6).
-	if got := edgeCandidates("temporal", nodes, 7, similar(7), 8); !reflect.DeepEqual(got, []int{6, 2, 0, 5}) {
+	if got := edgeCandidates("temporal", nodes, 7, similar(7), hot, 8); !reflect.DeepEqual(got, []int{6, 2, 0, 5}) {
 		t.Fatal(got)
 	}
 	// The first event has nothing before it.
 	for _, kind := range []string{"semantic", "temporal", "causal", "entity"} {
-		if got := edgeCandidates(kind, nodes, 0, similar(0, 1, 2, 3), 8); len(got) != 0 {
+		if got := edgeCandidates(kind, nodes, 0, similar(0, 1, 2, 3), hot, 8); len(got) != 0 {
 			t.Fatal(kind, got)
 		}
 	}
@@ -293,7 +297,7 @@ func TestEventEdgeQuestionsVerbatim(t *testing.T) {
 	judge := edgeAnswers(nil)
 	a := linkAgent(t, judge, 8, nil)
 	state, result := linkState0(cabinMemory()), &ConsolidateResult{}
-	if _, err := a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result); err != nil {
+	if _, err := a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result, nil); err != nil {
 		t.Fatal(err)
 	}
 	// The first event has nothing before it; the second is asked about the
@@ -330,7 +334,7 @@ func TestEventEdgeQuestionsVerbatim(t *testing.T) {
 	m := cabinMemory()
 	m.Events[1].Entities = nil
 	judge = edgeAnswers(nil)
-	if _, err := linkAgent(t, judge, 8, nil).newLinker().decideEventEdges(context.Background(), linkState0(m), []string{"temporal"}, &ConsolidateResult{}); err != nil {
+	if _, err := linkAgent(t, judge, 8, nil).newLinker().decideEventEdges(context.Background(), linkState0(m), []string{"temporal"}, &ConsolidateResult{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if raw := judge.calls[0].Raw; !strings.Contains(raw, `"text":"Greg paid the cabin deposit."}`) || len(judge.calls[0].Questions) != 1 {
@@ -342,7 +346,7 @@ func TestEventEdgeDecisions(t *testing.T) {
 	judge := edgeAnswers(map[string]float64{"semantic": 0.876, "temporal": 0.5, "causal": 0.3, "entity": 0.499})
 	a := linkAgent(t, judge, 8, nil)
 	state, result := linkState0(cabinMemory()), &ConsolidateResult{}
-	changed, err := a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result)
+	changed, err := a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result, nil)
 	if err != nil || !changed {
 		t.Fatal(changed, err)
 	}
@@ -350,6 +354,7 @@ func TestEventEdgeDecisions(t *testing.T) {
 	// At least 0.5 is an edge weighted by its probability, to two decimals;
 	// a no is kept as 0. Both events are decided for every kind.
 	want := &eventEdges{
+		Rules:   eventEdgeRules,
 		Decided: map[string][]string{"semantic": {first, second}, "temporal": {first, second}, "causal": {first, second}, "entity": {first, second}},
 		Answers: map[string]map[string]map[string]float64{
 			"semantic": {second: {first: 0.88}},
@@ -379,7 +384,7 @@ func TestEventEdgeDecisions(t *testing.T) {
 	}
 	// Decided, yes or no, nothing is asked again.
 	again := &ConsolidateResult{}
-	if changed, err := a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, again); err != nil || changed || judge.count() != 1 {
+	if changed, err := a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, again, nil); err != nil || changed || judge.count() != 1 {
 		t.Fatal(changed, err, judge.count())
 	}
 	if raw, _ := json.Marshal(again); strings.Contains(string(raw), "edge") {
@@ -388,7 +393,7 @@ func TestEventEdgeDecisions(t *testing.T) {
 	// The kinds asked are those listed.
 	judge = edgeAnswers(nil)
 	only := linkState0(cabinMemory())
-	if _, err := linkAgent(t, judge, 8, nil).newLinker().decideEventEdges(context.Background(), only, []string{"causal"}, &ConsolidateResult{}); err != nil {
+	if _, err := linkAgent(t, judge, 8, nil).newLinker().decideEventEdges(context.Background(), only, []string{"causal"}, &ConsolidateResult{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := askedPairs(t, judge.calls); !slices.Equal(got, []string{"causal Greg paid the cabin deposit. ~ Greg booked the cabin."}) || len(only.EventEdges.Decided) != 1 {
@@ -400,7 +405,7 @@ func TestEventEdgesIncremental(t *testing.T) {
 	judge := edgeAnswers(map[string]float64{"temporal": 0.9})
 	a := linkAgent(t, judge, 8, nil)
 	state := linkState0(cabinMemory())
-	if _, err := a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, &ConsolidateResult{}); err != nil {
+	if _, err := a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, &ConsolidateResult{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	// A new event is asked about against the events before it; the decided
@@ -408,7 +413,7 @@ func TestEventEdgesIncremental(t *testing.T) {
 	state.Memory.Events = append(state.Memory.Events, event{Thread: "T1", Date: "2024/01/09", Text: "Greg cancelled the cabin.", Records: []string{"r3"}, Entities: []string{"Greg"}})
 	judge.calls = nil
 	result := &ConsolidateResult{}
-	if changed, err := a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result); err != nil || !changed {
+	if changed, err := a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result, nil); err != nil || !changed {
 		t.Fatal(changed, err)
 	}
 	if judge.count() != 1 || len(judge.calls[0].State.New) != 1 || judge.calls[0].State.New[0].Text != "Greg cancelled the cabin." {
@@ -431,7 +436,7 @@ func TestEventEdgesIncremental(t *testing.T) {
 	}
 	// A kind listed later asks about every event, once.
 	judge.calls = nil
-	if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal", "causal"}, &ConsolidateResult{}); err != nil || judge.count() != 0 {
+	if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal", "causal"}, &ConsolidateResult{}, nil); err != nil || judge.count() != 0 {
 		t.Fatal(err, judge.count())
 	}
 }
@@ -456,15 +461,18 @@ func TestEventEdgeFailureRetried(t *testing.T) {
 	}
 	a := linkAgent(t, limitedJudge{judge, 2}, 8, nil)
 	state, result := linkState0(cabinMemory()), &ConsolidateResult{}
-	changed, err := a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result)
+	changed, err := a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result, nil)
 	if err != nil || !changed {
 		t.Fatal("a JEV failure failed the step", changed, err)
 	}
 	first, second := eventID(state.Memory.Events[0]), eventID(state.Memory.Events[1])
-	// The answered pairs are kept; the others stay undecided, not "no".
+	// The answered pairs are kept; the others stay undecided, not "no",
+	// their failed attempt counted.
 	want := &eventEdges{
-		Decided: map[string][]string{"semantic": {first, second}, "temporal": {first, second}, "causal": {first}, "entity": {first}},
-		Answers: map[string]map[string]map[string]float64{"semantic": {second: {first: 0.9}}, "temporal": {second: {first: 0.9}}},
+		Rules:    eventEdgeRules,
+		Decided:  map[string][]string{"semantic": {first, second}, "temporal": {first, second}, "causal": {first}, "entity": {first}},
+		Answers:  map[string]map[string]map[string]float64{"semantic": {second: {first: 0.9}}, "temporal": {second: {first: 0.9}}},
+		Failures: map[string]map[string]map[string]int{"causal": {second: {first: 1}}, "entity": {second: {first: 1}}},
 	}
 	if !reflect.DeepEqual(state.EventEdges, want) {
 		t.Fatalf("%+v", state.EventEdges)
@@ -476,13 +484,13 @@ func TestEventEdgeFailureRetried(t *testing.T) {
 	down = false
 	judge.calls = nil
 	result = &ConsolidateResult{}
-	if changed, err = a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result); err != nil || !changed || result.EdgeFallbacks != 0 {
+	if changed, err = a.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result, nil); err != nil || !changed || result.EdgeFallbacks != 0 {
 		t.Fatal(changed, err, result)
 	}
 	if got := askedPairs(t, judge.calls); !slices.Equal(got, []string{"causal Greg paid the cabin deposit. ~ Greg booked the cabin.", "entity Greg paid the cabin deposit. ~ Greg booked the cabin."}) {
 		t.Fatal(got)
 	}
-	if len(state.EventEdges.Decided["causal"]) != 2 || state.EventEdges.Answers["entity"][second][first] != 0.9 {
+	if len(state.EventEdges.Decided["causal"]) != 2 || state.EventEdges.Answers["entity"][second][first] != 0.9 || state.EventEdges.Failures != nil {
 		t.Fatalf("%+v", state.EventEdges)
 	}
 	// An event whose pairs were answered in part asks only the rest.
@@ -497,7 +505,7 @@ func TestEventEdgeFailureRetried(t *testing.T) {
 	a = linkAgent(t, limitedJudge{judge, 2}, 8, nil)
 	state = linkState0(cabinMemory())
 	state.Memory.Events = append(state.Memory.Events, event{Thread: "T1", Date: "2024/01/09", Text: "Greg cancelled the cabin.", Records: []string{"r3"}})
-	if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal"}, &ConsolidateResult{}); err != nil {
+	if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal"}, &ConsolidateResult{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	third := eventID(state.Memory.Events[2])
@@ -506,18 +514,21 @@ func TestEventEdgeFailureRetried(t *testing.T) {
 	}
 	down = false
 	judge.calls = nil
-	if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal"}, &ConsolidateResult{}); err != nil {
+	if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal"}, &ConsolidateResult{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := askedPairs(t, judge.calls); !slices.Equal(got, []string{"temporal Greg cancelled the cabin. ~ Greg booked the cabin."}) || len(state.EventEdges.Decided["temporal"]) != 3 {
 		t.Fatal(got, state.EventEdges)
 	}
-	// Every call failing, or no decision model, decides no pair.
-	judge = edgeAnswers(nil)
-	judge.err = func(context.Context) error { return ErrBudgetCap }
-	state, result = linkState0(cabinMemory()), &ConsolidateResult{}
-	if _, err := linkAgent(t, judge, 8, nil).newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result); err != nil || result.EdgeFallbacks != 4 || result.EdgeCalls != 1 || state.EventEdges.Answers != nil {
-		t.Fatal(err, result, state.EventEdges)
+	// A spent budget or an unavailable provider ends the asking, counting
+	// no failure; so does no decision model.
+	for _, fatal := range []error{ErrBudgetCap, ErrModelUnavailable} {
+		judge = edgeAnswers(nil)
+		judge.err = func(context.Context) error { return fatal }
+		state, result = linkState0(cabinMemory()), &ConsolidateResult{}
+		if _, err := linkAgent(t, limitedJudge{judge, 1}, 8, nil).newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result, nil); err != nil || result.EdgeFallbacks != 4 || result.EdgeCalls != 1 || state.EventEdges.Answers != nil || state.EventEdges.Failures != nil {
+			t.Fatal(fatal, err, result, state.EventEdges)
+		}
 	}
 	s, _ := agentStore(t)
 	none, err := New(s, Config{Version: 1, Policy: &ReadPolicy{}, Consolidation: &ConsolidationConfig{Mode: "timelines"}}, Models{Planner: &limitPlanner{}}, nil)
@@ -525,16 +536,205 @@ func TestEventEdgeFailureRetried(t *testing.T) {
 		t.Fatal(err)
 	}
 	state, result = linkState0(cabinMemory()), &ConsolidateResult{}
-	if _, err := none.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result); err != nil || result.EdgeFallbacks != 4 || result.EdgeCalls != 0 {
+	if _, err := none.newLinker().decideEventEdges(context.Background(), state, allEdgeKinds, result, nil); err != nil || result.EdgeFallbacks != 4 || result.EdgeCalls != 0 {
 		t.Fatal(err, result)
 	}
-	// A canceled job decides nothing.
+	// A job canceled in its first call answers nothing.
 	ctx, cancel := context.WithCancel(context.Background())
 	judge = edgeAnswers(nil)
 	judge.err = func(context.Context) error { cancel(); return context.Canceled }
 	state = linkState0(cabinMemory())
-	if _, err := linkAgent(t, judge, 8, nil).newLinker().decideEventEdges(ctx, state, allEdgeKinds, &ConsolidateResult{}); !errors.Is(err, context.Canceled) || state.EventEdges != nil {
+	if _, err := linkAgent(t, judge, 8, nil).newLinker().decideEventEdges(ctx, state, allEdgeKinds, &ConsolidateResult{}, nil); !errors.Is(err, context.Canceled) || state.EventEdges.Answers != nil || state.EventEdges.Failures != nil {
 		t.Fatal(err, state.EventEdges)
+	}
+}
+
+func TestEventEdgeFailedPairsGiveUp(t *testing.T) {
+	// One call a pair. The judge cannot answer whether the deposit is a
+	// later development of the booking (an invalid probability): the
+	// calls after it are still asked.
+	m := cabinMemory()
+	m.Events = append(m.Events, event{Thread: "T1", Date: "2024/01/09", Text: "Greg cancelled the cabin.", Records: []string{"r3"}, Entities: []string{"Greg"}})
+	judge := &linkJudge{answer: func(kind, newText, candidate string) float64 {
+		if newText == "Greg paid the cabin deposit." {
+			return 2
+		}
+		return 0.9
+	}}
+	a := linkAgent(t, limitedJudge{judge, 1}, 8, nil)
+	state := linkState0(m)
+	first, second := eventID(m.Events[0]), eventID(m.Events[1])
+	for attempt := 1; attempt <= 3; attempt++ {
+		judge.calls = nil
+		result := &ConsolidateResult{}
+		if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal"}, result, nil); err != nil || result.EdgeFallbacks != 1 {
+			t.Fatal(attempt, err, result)
+		}
+		want := []string{"temporal Greg paid the cabin deposit. ~ Greg booked the cabin."}
+		if attempt == 1 {
+			want = append(want, "temporal Greg cancelled the cabin. ~ Greg booked the cabin.", "temporal Greg cancelled the cabin. ~ Greg paid the cabin deposit.")
+			slices.Sort(want)
+		}
+		if got := askedPairs(t, judge.calls); !slices.Equal(got, want) {
+			t.Fatal(attempt, got)
+		}
+		if got := state.EventEdges.Failures["temporal"][second][first]; got != attempt {
+			t.Fatal(attempt, got)
+		}
+		// Undecided until it fails a third time: then given up, not "no".
+		if decided := slices.Contains(state.EventEdges.Decided["temporal"], second); decided != (attempt == 3) || state.EventEdges.answered("temporal", second, first) {
+			t.Fatal(attempt, state.EventEdges)
+		}
+	}
+	judge.calls = nil
+	if changed, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"temporal"}, &ConsolidateResult{}, nil); err != nil || changed || judge.count() != 0 {
+		t.Fatal("a given-up pair was asked again", changed, err, judge.count())
+	}
+	// A given-up pair is no edge.
+	versions := map[string]int64{"r1": 1, "r2": 1, "r3": 1}
+	if links := buildEdges([]timelineState{*state}, versions, []string{"temporal"})["r2"].Links; !reflect.DeepEqual(links, []records.Link{edgeLink("r3", 1, "temporal", 0.9)}) {
+		t.Fatal(links)
+	}
+}
+
+func TestEventEdgeCancelKeepsAnswers(t *testing.T) {
+	// One call a pair; the job is canceled in the third. The answers of
+	// the first two are kept, and committed with a context that still
+	// runs.
+	m := cabinMemory()
+	m.Events = append(m.Events, event{Thread: "T1", Date: "2024/01/09", Text: "Greg cancelled the cabin.", Records: []string{"r3"}, Entities: []string{"Greg"}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	judge := edgeAnswers(map[string]float64{"temporal": 0.9})
+	judge.err = func(context.Context) error {
+		if judge.count() == 3 {
+			cancel()
+			return context.Canceled
+		}
+		return nil
+	}
+	state := linkState0(m)
+	commits := []int{}
+	commit := func(saveCtx context.Context) error {
+		if saveCtx.Err() != nil {
+			t.Fatal("committed with a canceled context")
+		}
+		commits = append(commits, len(state.EventEdges.Answers["temporal"]))
+		return nil
+	}
+	_, err := linkAgent(t, limitedJudge{judge, 1}, 8, nil).newLinker().decideEventEdges(ctx, state, []string{"temporal"}, &ConsolidateResult{}, commit)
+	if !errors.Is(err, context.Canceled) || !slices.Equal(commits, []int{2}) {
+		t.Fatal(err, commits)
+	}
+	first, second, third := eventID(m.Events[0]), eventID(m.Events[1]), eventID(m.Events[2])
+	if !reflect.DeepEqual(state.EventEdges.Answers["temporal"], map[string]map[string]float64{second: {first: 0.9}, third: {second: 0.9}}) || !slices.Equal(state.EventEdges.Decided["temporal"], []string{first, second}) || state.EventEdges.Failures != nil {
+		t.Fatalf("%+v", state.EventEdges)
+	}
+}
+
+func TestEventEdgeChunkCommits(t *testing.T) {
+	// Ten similar events, one call a pair: 45 calls, committed after the
+	// first 32 and after the rest.
+	m := timelineMemory{Threads: []thread{{ID: "T1", Title: "Cabin trip"}}, Facts: map[string][]factValue{}, FactOrder: []string{}, Directives: []directive{}}
+	for i := range 10 {
+		m.Events = append(m.Events, event{Thread: "T1", Date: fmt.Sprintf("2024/01/%02d", i+1), Text: fmt.Sprintf("cabin %d", i), Records: []string{fmt.Sprintf("r%d", i)}})
+	}
+	judge := edgeAnswers(map[string]float64{"semantic": 0.9})
+	state := linkState0(m)
+	commits := []int{}
+	commit := func(context.Context) error {
+		n := 0
+		for _, answers := range state.EventEdges.Answers["semantic"] {
+			n += len(answers)
+		}
+		commits = append(commits, n)
+		return nil
+	}
+	result := &ConsolidateResult{}
+	if _, err := linkAgent(t, limitedJudge{judge, 1}, 32, nil).newLinker().decideEventEdges(context.Background(), state, []string{"semantic"}, result, commit); err != nil {
+		t.Fatal(err)
+	}
+	if result.EdgeCalls != 45 || !slices.Equal(commits, []int{32, 45}) || len(state.EventEdges.Decided["semantic"]) != 10 {
+		t.Fatal(result.EdgeCalls, commits, state.EventEdges.Decided)
+	}
+	// A failing commit fails the step.
+	state = linkState0(m)
+	if _, err := linkAgent(t, limitedJudge{edgeAnswers(nil), 1}, 32, nil).newLinker().decideEventEdges(context.Background(), state, []string{"semantic"}, &ConsolidateResult{}, func(context.Context) error { return errors.New("disk full") }); err == nil || err.Error() != "disk full" {
+		t.Fatal(err)
+	}
+}
+
+func TestEventEdgeRulesReevaluate(t *testing.T) {
+	// Decisions made under the first candidate rules (before the hot
+	// stop-list): the last event was decided against Caroline's events.
+	state := linkState0(speakerMemory())
+	ids := nodeIDs(eventNodes(*state))
+	state.EventEdges = &eventEdges{
+		Decided: map[string][]string{"temporal": ids, "entity": ids},
+		Answers: map[string]map[string]map[string]float64{
+			"temporal": {ids[11]: {ids[0]: 0.8, ids[1]: 0}},
+			"entity":   {ids[11]: {ids[0]: 0.9, ids[5]: 0.7}},
+		},
+	}
+	judge := edgeAnswers(map[string]float64{"temporal": 0.6, "entity": 0.6})
+	result := &ConsolidateResult{}
+	changed, err := linkAgent(t, judge, 8, nil).newLinker().decideEventEdges(context.Background(), state, []string{"temporal", "entity"}, result, nil)
+	if err != nil || !changed || state.EventEdges.Rules != eventEdgeRules {
+		t.Fatal(changed, err, state.EventEdges.Rules)
+	}
+	// Every event is decided again under the current rules, asking only
+	// the pairs never answered; the old answers stay.
+	asked := []string{}
+	for _, pair := range askedPairs(t, judge.calls) {
+		if strings.Contains(pair, " event 11 ~") {
+			asked = append(asked, pair)
+		}
+	}
+	if !slices.Equal(asked, []string{"entity event 11 ~ event 2", "temporal event 11 ~ event 10", "temporal event 11 ~ event 2", "temporal event 11 ~ event 5", "temporal event 11 ~ event 8", "temporal event 11 ~ event 9"}) {
+		t.Fatal(asked)
+	}
+	if got := state.EventEdges.Answers["temporal"][ids[11]]; got[ids[0]] != 0.8 || got[ids[10]] != 0.6 || len(state.EventEdges.Decided["temporal"]) != 12 || len(state.EventEdges.Decided["entity"]) != 12 {
+		t.Fatalf("%+v", state.EventEdges)
+	}
+	judge.calls = nil
+	if changed, err := linkAgent(t, judge, 8, nil).newLinker().decideEventEdges(context.Background(), state, []string{"temporal", "entity"}, &ConsolidateResult{}, nil); err != nil || changed || judge.count() != 0 {
+		t.Fatal(changed, err, judge.count())
+	}
+	// The overlay drops the old entity edge that only Caroline joins (the
+	// events share no other cluster) and keeps the temporal one: hotness
+	// is recomputed when the edges are built.
+	versions := map[string]int64{}
+	for i := range 12 {
+		versions[fmt.Sprintf("r%d", i)] = 1
+	}
+	links := buildEdges([]timelineState{*state}, versions, []string{"temporal", "entity"})
+	has := func(a, b, kind string) bool {
+		return slices.ContainsFunc(links[a].Links, func(l records.Link) bool { return l.ID == b && l.Type == kind }) ||
+			slices.ContainsFunc(links[b].Links, func(l records.Link) bool { return l.ID == a && l.Type == kind })
+	}
+	if has("r11", "r0", "entity") || !has("r11", "r5", "entity") || !has("r11", "r2", "entity") || !has("r11", "r0", "temporal") {
+		t.Fatal(links["r11"], links["r0"], links["r5"])
+	}
+	if state.EventEdges.Answers["entity"][ids[11]][ids[0]] != 0.9 {
+		t.Fatal("the decision was dropped from the state")
+	}
+}
+
+func TestEventEdgeLexicalFallback(t *testing.T) {
+	server := &embeddingServer{fail: true}
+	url := server.start(t, func(string) []float64 { return []float64{1, 0} })
+	embedding := &records.EmbeddingConfig{URL: url, Model: "test", QueryPrefix: "search_query: ", DocumentPrefix: "search_document: "}
+	result := &ConsolidateResult{}
+	if _, err := linkAgent(t, edgeAnswers(nil), 8, embedding).newLinker().decideEventEdges(context.Background(), linkState0(cabinMemory()), []string{"semantic"}, result, nil); err != nil || result.EdgeLexical != 1 {
+		t.Fatal(err, result.EdgeLexical)
+	}
+	// Shared words without an embedder are no fallback.
+	result = &ConsolidateResult{}
+	if _, err := linkAgent(t, edgeAnswers(nil), 8, nil).newLinker().decideEventEdges(context.Background(), linkState0(cabinMemory()), []string{"semantic"}, result, nil); err != nil || result.EdgeLexical != 0 {
+		t.Fatal(err, result.EdgeLexical)
+	}
+	if raw, _ := json.Marshal(ConsolidateResult{EdgeLexical: 1}); !strings.Contains(string(raw), `"edgeLexical":1`) {
+		t.Fatal(string(raw))
 	}
 }
 
@@ -560,12 +760,12 @@ func TestEventEdgeCandidatesBySimilarity(t *testing.T) {
 	judge := edgeAnswers(nil)
 	a := linkAgent(t, judge, 1, embedding)
 	state := linkState0(m)
-	if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"semantic"}, &ConsolidateResult{}); err != nil {
+	if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"semantic"}, &ConsolidateResult{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	state.Memory.Events = append(state.Memory.Events, event{Thread: "T3", Date: "2024/01/05", Text: "Rented a boat for the lake.", Records: []string{"r3"}})
 	judge.calls = nil
-	if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"semantic"}, &ConsolidateResult{}); err != nil {
+	if _, err := a.newLinker().decideEventEdges(context.Background(), state, []string{"semantic"}, &ConsolidateResult{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := askedPairs(t, judge.calls); !slices.Equal(got, []string{"semantic Rented a boat for the lake. ~ Booked a kayak."}) {
@@ -582,7 +782,7 @@ func TestEventEdgeCandidatesBySimilarity(t *testing.T) {
 	server.fail = true
 	server.mu.Unlock()
 	judge = edgeAnswers(nil)
-	if _, err := linkAgent(t, judge, 1, embedding).newLinker().decideEventEdges(context.Background(), linkState0(state.Memory), []string{"semantic"}, &ConsolidateResult{}); err != nil {
+	if _, err := linkAgent(t, judge, 1, embedding).newLinker().decideEventEdges(context.Background(), linkState0(state.Memory), []string{"semantic"}, &ConsolidateResult{}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if got := askedPairs(t, judge.calls); !slices.Contains(got, "semantic Rented a boat for the lake. ~ Planted tomatoes by the lake.") || slices.Contains(got, "semantic Rented a boat for the lake. ~ Booked a kayak.") {
@@ -828,18 +1028,24 @@ func TestEdgeKindsOffKeepsTheState(t *testing.T) {
 }
 
 func TestEventEdgePackingBounds(t *testing.T) {
-	// Forty long events of one thread, all naming Greg, every kind: each
-	// event after the eighth has eight candidates a kind, and the questions
-	// take many calls, each within 128 questions and 96,000 units, each
-	// question naming items its call holds.
+	// Forty long events of one thread, every kind: each event after the
+	// eighth has eight candidates for semantic, temporal and causal, and
+	// those of its group of five for entity (Greg and the rest name every
+	// event: hot). The questions take many calls, each within 128 questions
+	// and 96,000 units, each question naming items its call holds, each
+	// event naming at most 16 names.
 	m := timelineMemory{Threads: []thread{{ID: "T1", Title: "Cabin trip"}}, Facts: map[string][]factValue{}, FactOrder: []string{}, Directives: []directive{}}
 	long := strings.Repeat("渡し舟の予定 cabin ", 100)
 	for i := range 40 {
-		m.Events = append(m.Events, event{Thread: "T1", Date: fmt.Sprintf("2024/%02d/%02d", i/28+1, i%28+1), Text: fmt.Sprintf("event %d %s", i, long), Records: []string{fmt.Sprintf("r%d", i)}, Entities: []string{"Greg", strings.Repeat("Name ", 200)}})
+		names := []string{"Greg", strings.Repeat("Name ", 200), fmt.Sprintf("Group %d", i/5)}
+		for n := range 17 {
+			names = append(names, fmt.Sprintf("Name %d", n))
+		}
+		m.Events = append(m.Events, event{Thread: "T1", Date: fmt.Sprintf("2024/%02d/%02d", i/28+1, i%28+1), Text: fmt.Sprintf("event %d %s", i, long), Records: []string{fmt.Sprintf("r%d", i)}, Entities: names})
 	}
 	judge := edgeAnswers(nil)
 	result := &ConsolidateResult{}
-	if _, err := linkAgent(t, judge, 8, nil).newLinker().decideEventEdges(context.Background(), linkState0(m), allEdgeKinds, result); err != nil || result.EdgeFallbacks != 0 {
+	if _, err := linkAgent(t, judge, 8, nil).newLinker().decideEventEdges(context.Background(), linkState0(m), allEdgeKinds, result, nil); err != nil || result.EdgeFallbacks != 0 {
 		t.Fatal(err, result)
 	}
 	questions := 0
@@ -848,8 +1054,8 @@ func TestEventEdgePackingBounds(t *testing.T) {
 			t.Fatal("call over the limits", len(call.Questions), call.Size)
 		}
 		for _, item := range append(slices.Clone(call.State.New), call.State.Candidates...) {
-			if jsLen(item.Text) > 600 || jsLen(item.Entities[1]) > 600 {
-				t.Fatal("a text was not cut", jsLen(item.Text))
+			if jsLen(item.Text) > 600 || jsLen(item.Entities[1]) > 600 || len(item.Entities) != 16 || item.Entities[15] != "Name 12" {
+				t.Fatal("a text was not cut", jsLen(item.Text), item.Entities)
 			}
 		}
 		questions += len(call.Questions)
@@ -858,9 +1064,75 @@ func TestEventEdgePackingBounds(t *testing.T) {
 	for _, n := range result.EdgeAsked {
 		asked += n
 	}
-	// 4 kinds × (0+1+…+8 + 31×8) = 4 × 284.
-	if questions != 1136 || asked != questions || judge.count() != result.EdgeCalls || judge.count() <= 1136/128 {
+	// 3 kinds × (0+1+…+8 + 31×8) + 8 groups × (0+1+2+3+4).
+	if questions != 3*284+80 || asked != questions || judge.count() != result.EdgeCalls || judge.count() <= questions/128 {
 		t.Fatal(questions, asked, judge.count(), result.EdgeCalls)
 	}
 	askedPairs(t, judge.calls)
+}
+
+// speakerMemory is twelve events, a day apart, on three threads of four:
+// Caroline names nine of them (all but the fourth), Melanie the third, the
+// sixth and the last.
+func speakerMemory() timelineMemory {
+	m := timelineMemory{Threads: []thread{{ID: "T1", Title: "Group"}, {ID: "T2", Title: "Painting"}, {ID: "T3", Title: "Pottery"}}, Facts: map[string][]factValue{}, FactOrder: []string{}, Directives: []directive{}}
+	for i := range 12 {
+		names := []string{"Caroline"}
+		if i == 3 {
+			names = nil
+		}
+		if i == 2 || i == 5 || i == 11 {
+			names = append(names, "Melanie")
+		}
+		m.Events = append(m.Events, event{Thread: fmt.Sprintf("T%d", i/4+1), Date: fmt.Sprintf("2024/01/%02d", i+1), Text: fmt.Sprintf("event %d", i), Records: []string{fmt.Sprintf("r%d", i)}, Entities: names})
+	}
+	return m
+}
+
+func TestHotClusters(t *testing.T) {
+	state := emptyTimelineState()
+	state.Memory = speakerMemory()
+	nodes := eventNodes(state)
+	// Caroline names 9 of 12 events: more than a quarter, and at least 8.
+	if got := hotClusters(nodes); !reflect.DeepEqual(got, map[string]bool{"Caroline": true}) {
+		t.Fatal(got)
+	}
+	// Fewer than 8 events naming it is never hot; a quarter is not more
+	// than a quarter.
+	if got := hotClusters(nodes[:8]); len(got) != 0 {
+		t.Fatal(got)
+	}
+	quarter := []eventNode{}
+	for i := range 32 {
+		n := eventNode{id: fmt.Sprint(i)}
+		if i < 8 {
+			n.clusters = []string{"X"}
+		}
+		if i < 9 {
+			n.clusters = append(n.clusters, "Y")
+		}
+		quarter = append(quarter, n)
+	}
+	if got := hotClusters(quarter); !reflect.DeepEqual(got, map[string]bool{"Y": true}) {
+		t.Fatal(got)
+	}
+	// A hot cluster never counts as shared: the last event (Caroline,
+	// Melanie) shares Melanie with the third and the sixth only.
+	none := make([]int, len(nodes))
+	for i := range none {
+		none[i] = -1
+	}
+	hot := hotClusters(nodes)
+	if got := edgeCandidates("entity", nodes, 11, none, hot, 8); !reflect.DeepEqual(got, []int{5, 2}) {
+		t.Fatal(got)
+	}
+	// Temporal: its thread first, nearest day first, then the events of a
+	// shared cluster that is not hot.
+	if got := edgeCandidates("temporal", nodes, 11, none, hot, 8); !reflect.DeepEqual(got, []int{10, 9, 8, 5, 2}) {
+		t.Fatal(got)
+	}
+	// Without the stop-list Caroline would bring every event.
+	if got := edgeCandidates("entity", nodes, 11, none, nil, 20); len(got) != 10 {
+		t.Fatal(got)
+	}
 }

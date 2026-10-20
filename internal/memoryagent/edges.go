@@ -538,7 +538,17 @@ func (a *Agent) nativeEdges(ctx context.Context, scope records.Scope, state *tim
 	}
 	kinds := a.config.Consolidation.EdgeKinds
 	if len(kinds) > 0 {
-		judged, err := link.decideEventEdges(ctx, state, kinds, result)
+		// The decisions are saved as they are made, so a step cut off
+		// keeps what it paid for; the marker stays until the records are
+		// replaced.
+		commit := func(saveCtx context.Context) error {
+			saved, err := a.overlay.saveTimelines(saveCtx, scope, *token, *state)
+			if err == nil {
+				*token = saved
+			}
+			return err
+		}
+		judged, err := link.decideEventEdges(ctx, state, kinds, result, commit)
 		if err != nil {
 			return err
 		}
