@@ -23,9 +23,10 @@ stages that fell back instead of failing the read, each once and in order: `scan
 and `loop-budget` (the decision budget ran out and the need loop stopped), `judge` (the
 final judgement failed or found the budget spent; JEV's screen stands in), `layer-state`
 (the consolidated state did not load; no layer), `layer-lexical` (the layer's embedding
-failed; shared words rank the topics), `layer` (the layer's judgement failed) and `expand`
-(linked records could not be read or judged). It is absent when nothing fell back, and
-always for memory-agent/v1. With an `index` setting, a simple read's `stats.indexRoutes`
+failed; shared words rank the topics), `layer` (the layer's judgement failed), `expand`
+(records linked from the layer could not be read or judged) and `expansion` (the
+`view.expand` neighbors could not all be read or judged; see below). It is absent when
+nothing fell back, and always for memory-agent/v1. With an `index` setting, a simple read's `stats.indexRoutes`
 counts, for each native route (`lexical`, `entities`, `relations`, `temporal`,
 `supersedes`, `recency`, `traversal`), the read's searches in which that route found a
 candidate, and under `traversal+` the searches whose traversal reached a record over a link
@@ -38,6 +39,39 @@ loop's, so the `relations` and `traversal` routes weigh links by what was asked 
 than by each search's own words; `stats.intent` reports it. Absent or `""`, each search
 detects its intent from its own text, as before, and `stats.intent` is absent. Other
 values are refused. The setting changes nothing without an `index` that reads intent.
+
+`"view": {"expand": {"kinds": ["adjacent", "temporal"], "limit": 24, "seeds": 16}}` adds
+evidence-anchored expansion to a simple read. The cue searches, the pool, the need loop and
+the final judgement run as without it; then the records JEV judged needed (needed ≥ 0.5,
+current or not), best first, at most `seeds` (16 by default, 1–32), are the seeds. Their
+neighbors of the listed `kinds` (each at most once; required) are proposed:
+
+| Kind | Neighbors | Weight |
+|---|---|---|
+| `adjacent` | The records written just before and just after the seed in its session, in store order: the same place (scope, workspace, session) and the same original document when the record belongs to one, otherwise the same day of its `data.eventAt` (else of its `date`) in the writer's own offset. Never across sessions; a record with no document and no day has no neighbors. | 1 |
+| `temporal`, `semantic`, `causal`, `entity` | The seed's links of that type in the records' derived index, the writer's and the derived-metadata overlay's (for example consolidation's `nativeEdges` and `edgeKinds`), as the `relations` route reads them: semantic and entity links both ways, temporal and causal as written. | the link's |
+| `supersedes` | Corrections, both ways: the record the seed corrects and the record that corrects it. | the link's |
+
+Records already pooled are left out. A neighbor scores the seed's needed answer times the
+weight, its best over every seed that reaches it; the best `limit` (24 by default, 1–64),
+ties by the better seed, then by id, are read as evidence (chunks proved against their
+originals; ids without evidence are skipped) and judged with the final judgement's
+questions and batches of 40 (needed and no longer current), within the read's 128 decision
+calls: when fewer calls are left than batches, the first batches are judged and the rest
+dropped. A judged neighbor that JEV calls needed joins the judged list after the shortlist
+and is composed like any judged record: it enters only on its needed answer, never through
+the fill, and with fusion it is ranked in the judged order (the message search's ranking
+is unchanged). Expansion therefore adds candidates after JEV has judged the evidence that
+anchors them and displaces nothing before it is judged; it costs one or two decision calls
+per read, plus reading the neighbors and their evidence. Neighbors are not asked the need table's questions, so they
+do not count toward `needs[].hasEvidence`. `stats.expanded` counts the neighbors judged,
+`stats.expandedNeeded` those JEV called needed, and `stats.expandKinds` the judged neighbors
+per kind that proposed them (a neighbor proposed by two kinds counts for both); all three
+are absent when nothing was judged. Reading the neighbors or judging them that falls short
+(an error, or a spent budget) names `expansion` in `stats.degraded`, keeps what was judged
+and never fails the read; only a canceled read fails. Absent, `expand` stays out of the
+config's JSON and the policy hash, and reads are unchanged byte for byte. Unknown or repeated
+kinds and out-of-range bounds are refused.
 
 With `"consolidation": {"mode": "timelines"}` a job reads the records written since the
 last one into a pending list, folds every full batch of `batchCharacters`, and folds the

@@ -117,6 +117,22 @@ All features are opt-in. See the workspace experiment report for measured
 single-feature and combined effects; an enabled route is not evidence that a
 particular corpus benefits from it.
 
+## Neighbors (Go)
+
+`Store.Links(ctx, revision, scope, ids)` returns, for each record that has any, the links
+the derived index follows from it at that revision and scope (the writer's and the
+derived-metadata overlay's, validated, at most 50 a record, mirrored as above: semantic and
+entity both ways, temporal and causal as written), plus corrections both ways
+(`supersedes`, from the correcting and from the corrected record). A target can appear
+twice, as a writer and an overlay link or as a link and its mirror. It reads through the
+cached derived index of `{"version": 1, "relations": true}`.
+`Store.Adjacent(ctx, revision, scope, ids)` returns the records written just before and
+just after each record in its session: among active, visible records other than original
+documents and index items, in store order, those of the same place (scope, workspace,
+session) and the same `data.documentID`, or without one the same day of `data.eventAt`
+(else `date`) in the writer's offset. The memory service's `view.expand` reads both;
+neither ranks, embeds nor calls a model.
+
 ## Derived metadata
 
 A process that derives index metadata from the records (for example the memory
