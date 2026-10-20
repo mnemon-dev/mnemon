@@ -70,6 +70,32 @@ func recordTime(date string) (at time.Time, ok bool) {
 	return time.Time{}, false
 }
 
+// orderView lists a composed View's records in time order when view.order is
+// "time" (timeOrder), keeping their rank order in RankOrder, and returns
+// the View as it is otherwise. When the records' write positions cannot be
+// read the View stays in rank order with RankOrder unset, and the read is
+// degraded (order); only a canceled read fails.
+func (r *simpleRun) orderView(ctx context.Context, view View) (View, error) {
+	if r.agent.config.View.Order != viewOrderTime {
+		return view, nil
+	}
+	ranked := []string{}
+	for _, record := range view.Records {
+		ranked = append(ranked, record.ID)
+	}
+	ordered, err := r.agent.timeOrder(ctx, r.revision, view.Records)
+	if err != nil {
+		if ctx.Err() != nil {
+			return View{}, ctx.Err()
+		}
+		r.degrade("order")
+		view.Stats.Degraded = r.statsNow().Degraded
+		return view, nil
+	}
+	view.Records, view.RankOrder = ordered, ranked
+	return view, nil
+}
+
 // OrderRecords lists records as the View's order setting lists a read's
 // records: in time order with view.order "time" (timeOrder), else as
 // given. revision is the one they were read at. The AML adapter's raw

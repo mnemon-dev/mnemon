@@ -3,6 +3,7 @@ package memoryagent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"slices"
 	"strings"
@@ -137,5 +138,58 @@ func TestTimeOrderAfterTheLayer(t *testing.T) {
 		if a, d := slices.Index(timedIDs, "a2"), slices.Index(timedIDs, "doc-00000"); a < 0 || d >= 0 && d < a {
 			t.Fatal(chars, timedIDs)
 		}
+	}
+}
+
+// A read whose records' write positions cannot be read keeps its rank
+// order, has no RankOrder and names order in stats.degraded, whatever was
+// degraded before; the rest of the View is as composed. A canceled read
+// fails instead of degrading.
+func TestTimeOrderFailureKeepsRankOrder(t *testing.T) {
+	s := orderStore(t)
+	ctx := context.Background()
+	ranked := orderRead(t, s, nil)
+	composed := ranked
+	composed.Stats.ExpandShown = 2
+	agent := func(view *ViewConfig) *Agent {
+		a, err := New(s, Config{Version: 1, Strategy: "simple", View: view}, Models{Planner: expandPlanner(), Judge: orderJudge()}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+	timed := agent(&ViewConfig{Order: "time"})
+	// The read's own revision gives the positions.
+	view, err := (&simpleRun{agent: timed, revision: ranked.Revision}).orderView(ctx, composed)
+	if err != nil || view.Stats.Degraded != nil || !slices.Equal(view.RankOrder, recordIDs(ranked.Records)) || slices.Equal(recordIDs(view.Records), recordIDs(ranked.Records)) {
+		t.Fatal(recordIDs(view.Records), view.RankOrder, view.Stats.Degraded, err)
+	}
+	// A revision the store does not hold: the positions cannot be read.
+	lost := &simpleRun{agent: timed, revision: "no such revision"}
+	lost.degrade("layer")
+	kept, err := lost.orderView(ctx, composed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(kept.Stats.Degraded, []string{"layer", "order"}) {
+		t.Fatal(kept.Stats.Degraded)
+	}
+	if kept.RankOrder != nil || !reflect.DeepEqual(kept.Records, ranked.Records) {
+		t.Fatal(recordIDs(kept.Records), kept.RankOrder)
+	}
+	kept.Stats.Degraded = nil
+	if !reflect.DeepEqual(kept, composed) {
+		t.Fatal(kept, composed)
+	}
+	// A canceled read fails; it is not degraded.
+	canceled, cancel := context.WithCancel(ctx)
+	cancel()
+	if _, err = (&simpleRun{agent: timed, revision: ranked.Revision}).orderView(canceled, composed); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	// Without view.order the View is as composed and no position is read.
+	plain, err := (&simpleRun{agent: agent(nil), revision: "no such revision"}).orderView(ctx, composed)
+	if err != nil || !reflect.DeepEqual(plain, composed) {
+		t.Fatal(plain, err)
 	}
 }
