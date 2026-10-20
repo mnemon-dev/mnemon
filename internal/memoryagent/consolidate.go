@@ -94,6 +94,9 @@ type ConsolidateResult struct {
 	EdgeFallbacks  int            `json:"edgeFallbacks,omitempty"`
 	EdgeGivenUp    int            `json:"edgeGivenUp,omitempty"`
 	EdgeLexical    int            `json:"edgeLexical,omitempty"`
+	// With consolidation.insights (insights.go), InsightLinkCalls counts
+	// the JEV calls of a layered job's L2 linking (part of LinkUsage).
+	InsightLinkCalls int `json:"insightLinkCalls,omitempty"`
 }
 
 // ConsolidateDrop is records a timelines job gave up on: they stay

@@ -100,7 +100,8 @@ func (r *ConsolidateResult) addLinks(c linkCounts) {
 // a stored one, and does its value contradict it; does a new key's value
 // contradict the stored key of the same name; do two entity names name the
 // same one (edges.go); does a kind of event edge join a new event and an
-// earlier one (event_edges.go).
+// earlier one (event_edges.go); does a new insight state the same
+// conclusion as a stored one (insights.go).
 const (
 	linkThread = iota
 	linkKey
@@ -110,6 +111,7 @@ const (
 	linkTemporal
 	linkCausal
 	linkEntity
+	linkInsight
 )
 
 // linkPair is a new item (an index into the new items) and a candidate (an
@@ -390,7 +392,8 @@ func (l *linker) embed(ctx context.Context, texts []string, store bool) ([][]flo
 
 // linkRequest is one packed linking call: its state, its questions and the
 // pairs they ask about, in order (pair j asks t<j>, or i<j> and x<j>, or
-// x<j>, or a<j>, or an event edge kind's key and j), and the request's size
+// x<j>, or a<j>, or an event edge kind's key and j, or g<j>), and the
+// request's size
 // so far, as JEV's client measures it, plus at most one unit per list item.
 type linkRequest struct {
 	state     linkState
@@ -415,6 +418,8 @@ func pairQuestions(p *linkPair, news, cands []linkItem, j int) map[string]Questi
 	case linkSemantic, linkTemporal, linkCausal, linkEntity:
 		k := edgeKindOf(p.kind)
 		return map[string]Question{k.key + strconv.Itoa(j): {Type: "noul", Instructions: k.question(n, c), Criteria: map[string]string{"true": k.yes, "false": k.no}}}
+	case linkInsight:
+		return map[string]Question{fmt.Sprintf("g%d", j): {Type: "noul", Instructions: sameInsightQuestion(n, c), Criteria: map[string]string{"true": sameInsightYes, "false": sameInsightNo}}}
 	}
 	return map[string]Question{fmt.Sprintf("x%d", j): contradicts}
 }
@@ -495,6 +500,8 @@ func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*lin
 				p.same, p.contradicts = answers[fmt.Sprintf("i%d", j)], answers[fmt.Sprintf("x%d", j)]
 			case linkAlias:
 				p.same = answers[fmt.Sprintf("a%d", j)]
+			case linkInsight:
+				p.same = answers[fmt.Sprintf("g%d", j)]
 			default:
 				p.contradicts = answers[fmt.Sprintf("x%d", j)]
 			}

@@ -25,8 +25,9 @@ type linkCall struct {
 
 // linkJudge answers the linking questions by the texts they name: kind is
 // "thread", "identity", "contradiction", "alias" (which gets the two
-// names), or an event edge kind ("semantic", "temporal", "causal",
-// "entity"). It records every call; err, when set, may fail a call.
+// names), an event edge kind ("semantic", "temporal", "causal",
+// "entity"), or "insight". It records every call; err, when set, may fail
+// a call.
 type linkJudge struct {
 	mu     sync.Mutex
 	calls  []linkCall
@@ -87,6 +88,8 @@ func (j *linkJudge) Decide(ctx context.Context, state any, questions map[string]
 			refs[0], refs[1] = refs[1], refs[0]
 		case strings.HasPrefix(q.Instructions, "Are the new event"):
 			kind = "entity"
+		case strings.HasPrefix(q.Instructions, "Does the new insight"):
+			kind = "insight"
 		}
 		n, c := item(call.State.New, refs[0][1]), item(call.State.Candidates, refs[1][1])
 		newText, candidateText := n.Text, c.Text

@@ -1,9 +1,12 @@
 package memoryagent
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"reflect"
 	"slices"
 	"strings"
@@ -202,5 +205,147 @@ func TestParseInsights(t *testing.T) {
 	raw, _ := json.Marshal(got[2])
 	if string(raw) != `{"text":"c","date":"2023/12/31","records":[]}` {
 		t.Fatal(string(raw))
+	}
+}
+
+// storedInsights are three conclusions L2 drew before.
+func storedInsights() []insight {
+	return []insight{
+		{Text: "The kayak trip keeps moving later in May.", Date: "2024/02/01", Records: []string{"a", "d"}},
+		{Text: "Taxes are filed early every year.", Date: "2024/01/04", Records: []string{"b"}},
+		{Text: "The garden grows tomatoes each spring.", Date: "2024/03/02", Records: []string{"g"}},
+	}
+}
+
+// sameConclusion says yes when the new insight and the candidate are about
+// the same subject, their first word other than "The".
+func sameConclusion() *linkJudge {
+	subject := func(text string) string {
+		words := strings.Fields(text)
+		if words[0] == "The" {
+			return words[1]
+		}
+		return words[0]
+	}
+	return &linkJudge{answer: func(kind, newText, candidate string) float64 {
+		if kind == "insight" && subject(newText) == subject(candidate) {
+			return 0.8
+		}
+		return 0.2
+	}}
+}
+
+func TestLinkInsights(t *testing.T) {
+	judge := sameConclusion()
+	a := linkAgent(t, judge, 8, nil)
+	state, result := linkState0(insightMemory()), &ConsolidateResult{}
+	state.Memory.Insights = storedInsights()
+	fresh := []insight{
+		{Text: "The kayak trip moved twice, from May 3 to May 17.", Date: "2024/03/01", Records: []string{"e", "a", "f"}},
+		{Text: "Rent rose every year since 2021.", Date: "2024/01/09", Records: []string{"r"}},
+		{Text: "Taxes come with a refund each time.", Date: "2023/12/01", Records: []string{"b", "c"}},
+	}
+	linked, counts, err := a.newLinker().linkInsights(context.Background(), state, fresh, result)
+	if err != nil || counts != (insightCounts{New: 1, Merged: 2}) {
+		t.Fatal(counts, err)
+	}
+	// A merged insight keeps its text, takes the later date and appends the
+	// new records it lacks; a new one is added after the stored ones.
+	want := []insight{
+		{Text: "The kayak trip keeps moving later in May.", Date: "2024/03/01", Records: []string{"a", "d", "e", "f"}},
+		{Text: "Taxes are filed early every year.", Date: "2024/01/04", Records: []string{"b", "c"}},
+		{Text: "The garden grows tomatoes each spring.", Date: "2024/03/02", Records: []string{"g"}},
+		{Text: "Rent rose every year since 2021.", Date: "2024/01/09", Records: []string{"r"}},
+	}
+	if !reflect.DeepEqual(linked, want) {
+		t.Fatalf("%+v", linked)
+	}
+	if !reflect.DeepEqual(state.Memory.Insights, storedInsights()) {
+		t.Fatal("linking changed the stored insights in place")
+	}
+	// One call: every new insight against the stored ones that share words
+	// with it, one question a pair, worded as the brief words it.
+	if judge.count() != 1 || result.InsightLinkCalls != 1 || result.LinkCalls != 0 || result.Usage.InputTokens != 100 || state.Usage.InputTokens != 100 || result.LinkUsage == nil || result.LinkUsage.InputTokens != 100 {
+		t.Fatalf("%d %+v %+v", judge.count(), result, state.Usage)
+	}
+	call := judge.calls[0]
+	if !reflect.DeepEqual(call.State.New[0], linkItem{ID: "n1", Date: "2024/03/01", Text: fresh[0].Text}) || !slices.ContainsFunc(call.State.Candidates, func(c linkItem) bool {
+		return reflect.DeepEqual(c, linkItem{ID: "I2", Date: "2024/01/04", Text: "Taxes are filed early every year."})
+	}) {
+		t.Fatalf("%+v", call.State)
+	}
+	for key, q := range call.Questions {
+		refs := linkRef.FindAllStringSubmatch(q.Instructions, -1)
+		want := Question{Type: "noul", Instructions: "Does the new insight whose `id` is \"" + refs[0][1] + "\" state the same conclusion as the candidate whose `id` is \"" + refs[1][1] + "\"?",
+			Criteria: map[string]string{"true": "Both draw the same conclusion about the same thing, even if worded differently.", "false": "They concern different things, or draw different conclusions."}}
+		if !strings.HasPrefix(key, "g") || !reflect.DeepEqual(q, want) {
+			t.Fatalf("%s: %+v", key, q)
+		}
+	}
+	// Each new insight is compared with at most LinkCandidates stored ones,
+	// the nearest: with one, the kayak trip is asked about its own
+	// conclusion only.
+	judge = sameConclusion()
+	if _, _, err = linkAgent(t, judge, 1, nil).newLinker().linkInsights(context.Background(), state, fresh[:1], &ConsolidateResult{}); err != nil || len(judge.calls[0].Questions) != 1 || judge.calls[0].State.Candidates[0].ID != "I1" {
+		t.Fatal(err, judge.calls)
+	}
+	// A merge never writes into the room behind a stored insight's records.
+	roomy := append(make([]string, 0, 8), "a", "d")
+	state.Memory.Insights[0].Records = roomy
+	if _, _, err = a.newLinker().linkInsights(context.Background(), state, fresh[:1], &ConsolidateResult{}); err != nil || roomy[:3][2] != "" {
+		t.Fatal("linking wrote into a stored insight's records", roomy[:3], err)
+	}
+}
+
+func TestLinkInsightsWithoutJudgement(t *testing.T) {
+	fresh := []insight{
+		{Text: "The kayak trip moved twice.", Date: "2024/03/01", Records: []string{"e"}},
+		{Text: "Rent rose every year.", Date: "2024/01/09", Records: []string{"r"}},
+	}
+	// Nothing stored: every insight is new, and JEV is not asked.
+	judge := sameConclusion()
+	a := linkAgent(t, judge, 8, nil)
+	state := linkState0(insightMemory())
+	linked, counts, err := a.newLinker().linkInsights(context.Background(), state, fresh, &ConsolidateResult{})
+	if err != nil || judge.count() != 0 || counts != (insightCounts{New: 2}) || !reflect.DeepEqual(linked, fresh) {
+		t.Fatal(counts, err, linked)
+	}
+	// A failed or unaffordable judgement adds every new insight (fallback).
+	judge.err = func(context.Context) error { return fmt.Errorf("jev: %w", ErrBudgetCap) }
+	state.Memory.Insights = storedInsights()
+	result := &ConsolidateResult{}
+	linked, counts, err = a.newLinker().linkInsights(context.Background(), state, fresh, result)
+	if err != nil || counts != (insightCounts{New: 2, Fallback: true}) || !reflect.DeepEqual(linked, append(storedInsights(), fresh...)) || result.InsightLinkCalls != 1 || state.Usage.InputTokens != 3 {
+		t.Fatal(counts, err, linked, result.InsightLinkCalls)
+	}
+	// So does a judgement that fails after a call that said yes: 40 new
+	// insights, each with three candidates, take two calls.
+	many, stored := []insight{}, []insight{}
+	for i := range 40 {
+		many = append(many, insight{Text: fmt.Sprintf("The topic%d grew again.", i), Date: "2024/02/01"})
+		stored = append(stored, insight{Text: fmt.Sprintf("The topic%d grew. topic%d grew. topic%d.", i, (i+1)%40, (i+2)%40), Date: "2024/01/01"})
+	}
+	state.Memory.Insights = stored
+	calls := 0
+	judge.err = func(context.Context) error {
+		if calls++; calls == 2 {
+			return errors.New("jev: malformed decision")
+		}
+		return nil
+	}
+	linked, counts, err = a.newLinker().linkInsights(context.Background(), state, many, &ConsolidateResult{})
+	if err != nil || calls != 2 || counts != (insightCounts{New: 40, Fallback: true}) || len(linked) != 80 {
+		t.Fatal(calls, counts, err, len(linked))
+	}
+	// A canceled job returns its cancellation.
+	ctx, cancel := context.WithCancel(context.Background())
+	judge.err = func(ctx context.Context) error { cancel(); return ctx.Err() }
+	if _, _, err := a.newLinker().linkInsights(ctx, state, fresh, &ConsolidateResult{}); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	// No new insight: the stored ones as they are.
+	state.Memory.Insights = storedInsights()
+	if linked, counts, err = a.newLinker().linkInsights(context.Background(), state, nil, &ConsolidateResult{}); err != nil || counts != (insightCounts{}) || !reflect.DeepEqual(linked, storedInsights()) {
+		t.Fatal(linked, counts, err)
 	}
 }

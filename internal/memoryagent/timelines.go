@@ -77,13 +77,15 @@ type directive struct {
 
 // timelineMemory is the author's Consolidated (C:30). Facts keeps each key's
 // value history; FactOrder lists the keys in the order they were first added,
-// as the author's object keys are.
+// as the author's object keys are. Insights are the conclusions L2 drew from
+// the other items (consolidation.insights, insights.go); none without it.
 type timelineMemory struct {
 	Threads    []thread               `json:"threads"`
 	Events     []event                `json:"events"`
 	Facts      map[string][]factValue `json:"facts"`
 	FactOrder  []string               `json:"factOrder"`
 	Directives []directive            `json:"directives"`
+	Insights   []insight              `json:"insights,omitempty"`
 }
 
 // timelineState is one scope's consolidation (C:32-39). Watermark is the
@@ -1061,7 +1063,7 @@ func (a *Agent) completeFold(ctx context.Context, model Completer, system, promp
 
 func cloneMemory(m timelineMemory) timelineMemory {
 	out := timelineMemory{Threads: slices.Clone(m.Threads), Events: slices.Clone(m.Events), Facts: make(map[string][]factValue, len(m.Facts)),
-		FactOrder: slices.Clone(m.FactOrder), Directives: slices.Clone(m.Directives)}
+		FactOrder: slices.Clone(m.FactOrder), Directives: slices.Clone(m.Directives), Insights: slices.Clone(m.Insights)}
 	for key, values := range m.Facts {
 		out.Facts[key] = slices.Clone(values)
 	}

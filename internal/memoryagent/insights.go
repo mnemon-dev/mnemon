@@ -1,6 +1,7 @@
 package memoryagent
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -217,4 +218,96 @@ func parseInsights(reply string, batch []insightItem) ([]insight, bool) {
 		out = append(out, insight{Text: text, Date: date, Records: records})
 	}
 	return out, true
+}
+
+// The L2 linking question, in the style of the linking questions
+// (layered_link.go).
+
+func sameInsightQuestion(n, c string) string {
+	return "Does the new insight whose `id` is \"" + n + "\" state the same conclusion as the candidate whose `id` is \"" + c + "\"?"
+}
+
+const (
+	sameInsightYes = "Both draw the same conclusion about the same thing, even if worded differently."
+	sameInsightNo  = "They concern different things, or draw different conclusions."
+)
+
+// insightCounts is what linking one L2 batch did: its insights added and
+// merged into stored ones, and whether JEV failed (Fallback).
+type insightCounts struct {
+	New, Merged int
+	Fallback    bool
+}
+
+// insightItemOf is an insight as JEV reads it.
+func insightItemOf(id string, in insight) linkItem {
+	return linkItem{ID: id, Date: in.Date, Text: authorExcerpt(in.Text, simpleListing)}
+}
+
+// linkInsights returns the stored insights (state.Memory.Insights) with an
+// L2 batch's new insights linked into them, in batch order, leaving the
+// stored ones unchanged, and what linking did. Each new insight, n1, n2, …,
+// is compared with up to LinkCandidates stored insights, I<j> (the j-th,
+// from 1), nearest to it by the texts (rank: embeddings, else shared
+// words); JEV answers whether each pair states the same conclusion, the
+// questions packed into few calls (judge). A new insight merges into its
+// best yes (bestLink: at least 0.5, ties to the nearer): the stored one
+// keeps its text, takes the later date and appends the new records it
+// lacks; otherwise it is added. A failed or unaffordable JEV call adds
+// every new insight (Fallback). Every JEV call's usage is the state's and
+// the job's (decide); only a canceled job is an error.
+func (l *linker) linkInsights(ctx context.Context, state *timelineState, fresh []insight, result *ConsolidateResult) ([]insight, insightCounts, error) {
+	stored := state.Memory.Insights
+	out, counts := slices.Clone(stored), insightCounts{}
+	queries, docs := make([]string, len(fresh)), make([]string, len(stored))
+	news, cands := make([]linkItem, len(fresh)), make([]linkItem, len(stored))
+	for i, in := range fresh {
+		queries[i], news[i] = in.Text, insightItemOf(fmt.Sprintf("n%d", i+1), in)
+	}
+	for j, in := range stored {
+		docs[j], cands[j] = in.Text, insightItemOf(fmt.Sprintf("I%d", j+1), in)
+	}
+	ranks, _, err := l.rank(ctx, queries, docs)
+	if err != nil {
+		return nil, insightCounts{}, err
+	}
+	pairs, all := make([][]*linkPair, len(fresh)), []*linkPair{}
+	for i, ranked := range ranks {
+		for _, j := range ranked {
+			pairs[i] = append(pairs[i], &linkPair{kind: linkInsight, item: i, candidate: j})
+		}
+		all = append(all, pairs[i]...)
+	}
+	if len(all) > 0 {
+		if err := l.judge(ctx, news, cands, all, state, result, &result.InsightLinkCalls); err != nil {
+			if ctx.Err() != nil {
+				return nil, insightCounts{}, err
+			}
+			counts.Fallback = true
+		}
+	}
+	for i, in := range fresh {
+		answers := []float64{}
+		for _, p := range pairs[i] {
+			answers = append(answers, p.same)
+		}
+		if b := bestLink(answers); b >= 0 && !counts.Fallback {
+			merged := out[pairs[i][b].candidate]
+			if in.Date > merged.Date {
+				merged.Date = in.Date
+			}
+			merged.Records = slices.Clone(merged.Records)
+			for _, record := range in.Records {
+				if !slices.Contains(merged.Records, record) {
+					merged.Records = append(merged.Records, record)
+				}
+			}
+			out[pairs[i][b].candidate] = merged
+			counts.Merged++
+			continue
+		}
+		out = append(out, in)
+		counts.New++
+	}
+	return out, counts, nil
 }
