@@ -51,30 +51,36 @@ const (
 )
 
 // layerBudgets is what the layer's blocks may take: each block's budget,
-// and a timeline's (thread). The floor a timeline is begun in is not a
-// budget.
+// and a timeline's or a profile's (thread). The floor a timeline or a
+// profile is begun in is not a budget.
 type layerBudgets struct {
-	instructions, directory, timelines, thread, values int
+	instructions, directory, timelines, thread, values, profiles int
 }
 
-// referenceBudgets are the author's (LAYER, C:183).
-var referenceBudgets = layerBudgets{instructions: layerInstructions, directory: layerDirectory, timelines: layerTimelines, thread: layerThread, values: layerValues}
+// referenceBudgets are the author's (LAYER, C:183), and the profiles
+// block's (timelines_profiles.go).
+var referenceBudgets = layerBudgets{instructions: layerInstructions, directory: layerDirectory, timelines: layerTimelines, thread: layerThread, values: layerValues, profiles: layerProfiles}
 
 // times is every budget multiplied by s.
 func (b layerBudgets) times(s int) layerBudgets {
-	return layerBudgets{instructions: b.instructions * s, directory: b.directory * s, timelines: b.timelines * s, thread: b.thread * s, values: b.values * s}
+	return layerBudgets{instructions: b.instructions * s, directory: b.directory * s, timelines: b.timelines * s, thread: b.thread * s, values: b.values * s, profiles: b.profiles * s}
 }
 
 // blocksMax is the most characters the blocks can take within the budgets:
-// each block's budget, the two headers counted outside theirs, and the
-// "\n\n" before a thread, added after the thread is fitted to the room left,
-// by which the timelines can pass their budget once (by 2).
-func (b layerBudgets) blocksMax() int {
-	return b.instructions + b.directory + b.timelines + 2 + b.values + jsLen(timelinesHead) + jsLen(valuesHead)
+// each block's budget, the headers counted outside theirs, and the "\n\n"
+// before a thread, added after the thread is fitted to the room left, by
+// which the timelines can pass their budget once (by 2); with profiles, the
+// profiles block likewise.
+func (b layerBudgets) blocksMax(profiles bool) int {
+	n := b.instructions + b.directory + b.timelines + 2 + b.values + jsLen(timelinesHead) + jsLen(valuesHead)
+	if profiles {
+		n += b.profiles + 2 + jsLen(profilesHead)
+	}
+	return n
 }
 
-// layerBlocksMax is blocksMax of the reference budgets.
-var layerBlocksMax = referenceBudgets.blocksMax()
+// layerBlocksMax is blocksMax of the reference budgets, without profiles.
+var layerBlocksMax = referenceBudgets.blocksMax(false)
 
 // layerScale is what view.layer "scaled" multiplies the budgets by: the
 // View's characters over layerReference, rounded down, at least 1; without
@@ -94,7 +100,7 @@ func (a *Agent) layerBudgets() layerBudgets {
 // layerBound is the most characters the layer's blocks can take in the
 // agent's Views.
 func (a *Agent) layerBound() int {
-	return a.layerBudgets().blocksMax()
+	return a.layerBudgets().blocksMax(false)
 }
 
 // eventThreads is the author's threadsOf (C:184-188) as event indexes, and

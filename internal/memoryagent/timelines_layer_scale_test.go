@@ -71,18 +71,18 @@ func TestLayerScale(t *testing.T) {
 		a := scaleAgent(t, ViewConfig{MaxCharacters: tc.chars, Layer: tc.layer})
 		s := a.layerScale()
 		budgets := a.layerBudgets()
-		want := layerBudgets{instructions: 1500 * s, directory: 1500 * s, timelines: 3500 * s, thread: 1500 * s, values: 1500 * s}
+		want := layerBudgets{instructions: 1500 * s, directory: 1500 * s, timelines: 3500 * s, thread: 1500 * s, values: 1500 * s, profiles: 3500 * s}
 		if s != tc.scale || budgets != want {
 			t.Error(tc, s, budgets)
 		}
 		// The bound gate and target read follows the budgets: the four
 		// budgets, the timelines' 2 over, and the two headers.
-		if bound := a.layerBound(); bound != 8000*s+59 || bound != budgets.blocksMax() {
+		if bound := a.layerBound(); bound != 8000*s+59 || bound != budgets.blocksMax(false) {
 			t.Error(tc, bound)
 		}
 	}
 	// The reference budgets and their bound are the author's.
-	if referenceBudgets != (layerBudgets{1500, 1500, 3500, 1500, 1500}) || layerBlocksMax != 8059 || referenceBudgets.blocksMax() != layerBlocksMax {
+	if referenceBudgets != (layerBudgets{1500, 1500, 3500, 1500, 1500, 3500}) || layerBlocksMax != 8059 || referenceBudgets.blocksMax(false) != layerBlocksMax {
 		t.Fatal(referenceBudgets, layerBlocksMax)
 	}
 }
