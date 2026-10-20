@@ -1136,3 +1136,47 @@ func TestHotClusters(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestRebuildEdgesCanceledKeepsAnswers(t *testing.T) {
+	s, dir := agentStore(t)
+	m := cabinMemory()
+	m.Events = append(m.Events, event{Thread: "T1", Date: "2024/01/09", Text: "Greg cancelled the cabin.", Records: []string{"r3"}, Entities: []string{"Greg"}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	judge := edgeAnswers(map[string]float64{"temporal": 0.9})
+	judge.err = func(context.Context) error {
+		if judge.count() == 2 {
+			cancel()
+			return context.Canceled
+		}
+		return nil
+	}
+	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{NativeEdges: true, EdgeKinds: []string{"temporal"}}, &limitPlanner{}, limitedJudge{judge, 1})
+	stored := emptyTimelineState()
+	stored.Mode, stored.Memory = "layered", m
+	if _, err := overlay.saveTimelines(context.Background(), records.Scope{}, "", stored); err != nil {
+		t.Fatal(err)
+	}
+	// Canceled in its second call, the rebuild keeps the first answer in
+	// the stored state; the records are not replaced, nor the state marked
+	// built.
+	if _, err := a.Consolidate(ctx, ConsolidateRequest{RebuildEdges: true}); !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	state := loadState(t, overlay)
+	if state.EventEdges == nil || !state.EventEdges.answered("temporal", eventID(m.Events[1]), eventID(m.Events[0])) || state.EdgesMemory != "" {
+		t.Fatalf("%+v %q", state.EventEdges, state.EdgesMemory)
+	}
+	if rows, _ := derivedOverlay(t, dir); rows != 0 {
+		t.Fatal(rows)
+	}
+	// The next rebuild asks only the rest.
+	judge.err, judge.calls = nil, nil
+	result, err := a.Consolidate(context.Background(), ConsolidateRequest{RebuildEdges: true})
+	if err != nil || result.EdgeCalls != 2 || result.EdgeAsked["temporal"] != 2 {
+		t.Fatal(result, err)
+	}
+	if state := loadState(t, overlay); state.EdgesMemory != edgesDigest(state.Memory) || len(state.EventEdges.Decided["temporal"]) != 3 {
+		t.Fatalf("%+v", state)
+	}
+}
