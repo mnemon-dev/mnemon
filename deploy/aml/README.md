@@ -31,11 +31,11 @@ with [`docs/aml-adapter.md`](../../docs/aml-adapter.md).
 
 The system stores every conversation as raw, verbatim records and keeps the model work for
 reading. Storing a conversation needs no language model; only the optional consolidation layer
-uses one. Reading plans a few searches with a small model,
-judges the hits with a fast decision model (JEV), and returns the stored records themselves, in
-a ranked list that fuses the plain search order with the judged order. A consolidation job
-(run while conversations are added and before a user's next Search) adds a compact layer of
-topics, timelines and value histories next to the evidence. Search returns evidence only and never an answer.
+uses one. Reading plans a few searches with a small model, judges the hits with a fast decision
+model (JEV), and returns the stored records themselves: the records JEV judged, in time order.
+A consolidation job (run while conversations are added and before a user's next Search) adds a
+compact layer of topics, timelines and value histories next to the evidence. Search returns
+evidence only and never an answer.
 
 ## Method
 
@@ -78,40 +78,47 @@ may do (see step 6 below).
    JEV answers yes for, reads the next page of the search that led to it, or gets a new
    search worded by the planner. Page reads and JEV calls are budgeted (15 pages, 128 JEV
    calls per read).
-5. **Compose and fuse.** The judged View is composed as in the reference implementation. For the
-   long evidence list AML allows, the final order is the reciprocal-rank fusion (k = 60) of the
-   composed rank and the rank of the plain message search, filled up to `top_k` records (at most
-   100) and 240,000 characters.
-6. **Consolidation layer.** Records are folded in batches by a model into threads of dated
-   events, facts with value histories and standing directives (timelines consolidation). At
-   read time JEV selects the topics that matter for the question, and the layer adds blocks
-   (topics, timelines, value histories, directives) with the linked records before the
-   evidence. With `--consolidate-on-add`, an Add folds every full batch (10,000 characters) of
-   the user's new records before it returns, and the rest of the conversation is folded before
-   that user's next Search, as the reference implementation folds a conversation once it
-   pauses.
+5. **Compose.** JEV judges a shortlist of at most 64 records (those the need table gives to a
+   need, then the best screened ones). The View is composed from it as in the reference
+   implementation: the records JEV calls needed and not superseded come first and, when the
+   plan named a need, the other current ones follow by their needed answer, up to `top_k`
+   records (at most 100) and 240,000 characters. The plain message-search ranking is not fused
+   in: a record JEV did not judge is not delivered.
+6. **Consolidation layer.** Records are folded in batches into threads of dated events, facts
+   with value histories and standing directives, in two steps (layered consolidation). A model
+   reads each batch of records on its own and writes its events, facts and directives; then
+   JEV links each batch to the memory so far, in batch order, by asking whether a new thread
+   continues a stored one, whether a new fact is the same attribute of the same thing as a
+   stored fact, and whether its value contradicts the stored one. At read time JEV selects the
+   topics that matter for the question, and the layer adds blocks (topics, timelines, value
+   histories, directives) with the linked records before the evidence. With
+   `--consolidate-on-add`, an Add folds every full batch (10,000 characters) of the user's new
+   records before it returns, and the rest of the conversation is folded before that user's
+   next Search, as the reference implementation folds a conversation once it pauses.
 7. **Search returns evidence only.** The response lists the consolidation blocks first, then
-   the selected stored record texts (verbatim, with the conversation heading and date) in time
-   order (`view.order: "time"`, as the reference system delivers its View); the records are
-   selected, and cut at `top_k`, by rank. Each item's `score` is `1/(position+1)`. No answer is
-   generated. If a model, a budget or the embedder fails, or the read runs past its timeout,
-   Search still answers with the plain hybrid ranking, cut at `top_k` by rank and delivered in
-   time order, and records the fact in its log.
+   the stored record texts of the View (verbatim, with the conversation heading and date) in
+   time order, as the reference system delivers its View (`view.order: "time"`); records of
+   one time keep the order they were written in. The records are selected, and cut at
+   `top_k`, by rank. Each item's `score` is `1/(position+1)`. No answer is generated. If a
+   model, a budget or the embedder fails, or the read runs past its timeout, Search still
+   answers with the plain hybrid ranking, cut at `top_k` by rank and delivered in time order,
+   and records the fact in its log.
 
 ### Models and services
 
 | Role | Model | Where it runs |
 |---|---|---|
 | Planner | DeepSeek Flash (`deepseek-flash`), no reasoning mode | DeepSeek API |
-| Judge | JEV `jev-1.13.0` | JEV API (api.typesafe.ai) |
-| Consolidator | DeepSeek Flash, no reasoning mode | DeepSeek API |
+| Judge; also links the consolidation items | JEV `jev-1.13.0` | JEV API (api.typesafe.ai) |
+| Consolidator (extracts each batch) | DeepSeek Flash, no reasoning mode | DeepSeek API |
 | Embeddings | `nomic-embed-text` (`search_query: ` / `search_document: ` prefixes) | Ollama on the submission host |
 
 During a Search, the question, the planner's searches and candidate record texts go to the
 DeepSeek and JEV APIs; during consolidation (in an Add, or before a user's next Search), the
-conversation text goes to the DeepSeek API. Raw records and vectors stay on the submission host. `<confirm that the track
-rules allow external model APIs, and add their data-retention terms if the rules require
-them>`.
+conversation text goes to the DeepSeek API, and the events and facts it extracts from the
+conversation (topic titles, dated event texts, fact keys and values) go to the JEV API. Raw
+records and vectors stay on the submission host. `<confirm that the track rules allow
+external model APIs, and add their data-retention terms if the rules require them>`.
 
 ## Changes from the reference implementation
 
@@ -119,22 +126,32 @@ them>`.
    its final read path and consolidation (`internal/memoryagent`), with prompts copied
    verbatim and the reference code's numbers, thresholds and budgets (the code wins where the
    paper and the code differ). It needs no Node runtime.
-2. **Fused ranking.** The final list is the reciprocal-rank fusion of the judged order and the
-   plain message-search order. This is not part of the reference method; it is a deliberate
-   change for long evidence lists.
+2. **Layered consolidation.** The reference folds each batch of records with one model call that
+   also receives a summary of the memory so far, so batches fold one after another. Here a
+   model reads each batch on its own, with the reference's prompt less its references to that
+   summary and plus a request to name the entities each event and fact is about; then JEV
+   links the batch to the stored memory, in batch order, by yes/no questions about the stored
+   topics and facts nearest to each new one. The batches are extracted up to four at a time,
+   so they fold in parallel. The stored index and the way reads use it are the reference's;
+   the change is how a batch is joined to the memory, and it costs JEV calls during
+   consolidation.
 3. **AML adapter.** An HTTP service for the Add/Search contract: per-user stores, idempotent
    Add by `request_id`, conversation packing at write time, optional consolidation (full
    batches during Add, the rest before the user's next Search), authentication (`Bearer`,
    `Token` or `X-Api-Key`), unauthenticated health check, graceful degradation of Search, and
    bounded stores kept open.
 4. **Large evidence lists.** Up to 100 records and 240,000 characters per Search (the reference
-   View holds 16 records and 12,000 characters); the records beyond the judged View come from
-   the fused ranking.
+   View holds 16 records and 12,000 characters). The judged list is not capped at 16 records:
+   it is bounded by the shortlist JEV judges (at most 64 records, and at most 8 more linked
+   from the consolidation layer), 100 items and 240,000 characters. Every record comes from
+   the judged list; none is added from the plain search ranking.
 5. **Smaller deliberate deviations.**
    - Search pages are 20 whole records; the reference implementation's 12,000-character page cut
      is not used.
-   - The rendered order of the judged records is the composition order (the reference's stable
-     delivery order depends on random identifiers).
+   - The records are delivered in the reference's time order, earlier first. Where the
+     reference breaks ties between records of one time by random identifiers, this system
+     uses the order they were written in (a document's chunks in their order), so a run
+     repeats its order.
    - The consolidation layer asks JEV only the "needed" question per candidate, since the
      "superseded" answer is never used.
    - JEV request size is limited in UTF-16 units of the JSON body, as the reference client does.
@@ -160,7 +177,7 @@ Fill these from the measurements described in the runbook ("Capacity declaration
 | Stores kept open | 16 (`--max-open-stores`) |
 | Request body limit | 30 MiB |
 | Retries | Add retries with the same `request_id` are idempotent; 503 marks a retryable failure |
-| Model spending caps | JEV USD `<cap>`, DeepSeek CNY `<cap>` (`budgets` in the configuration) |
+| Model spending caps | JEV USD `<cap>` (reads and consolidation links), DeepSeek CNY `<cap>` (planning and extraction); `budgets` in the configuration |
 
 ## Data handling
 
