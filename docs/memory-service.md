@@ -56,6 +56,31 @@ and the stats are those of the ranked View. If the write positions cannot be rea
 stays in rank order and `order` is named in `stats.degraded`. Absent or `""` keeps the rank
 order, and reads and the policy hash are unchanged; other values are refused.
 
+With timelines or layered consolidation, a simple read puts the consolidated layer before
+its records, as `index` blocks: the user's standing instructions (`1-instructions`), a
+directory of the topics (`2-topics`), the timelines of the chosen topics (`3-timelines`)
+and the histories of the chosen values (`4-values`). The records the View shows light up
+the topics and values that cite them; JEV judges those and the 12 topics and 16 values
+nearest the last user message, and the chosen are those it calls needed, best first, then
+the other lit ones. The blocks take the reference system's budgets, sized for its View of
+12,000 characters: 1,500 each for the instructions, the directory and the values, 3,500 for
+the timelines (each topic within 1,500 of them, none begun with less than 300 left), plus
+the timelines' and values' headers. They count toward `maxCharacters` but not toward
+`maxItems`: records give way from the end when the View would pass its characters. Records
+linked from what the blocks show may then join: the first 24 not shown are judged, only
+while 400 characters are left, and at most 8 join.
+
+`"view": {"layer": "scaled"}` multiplies every one of those budgets by the View's scale s =
+max(1, ⌊`maxCharacters` / 12,000⌋), 20 for a View of 240,000 characters: the instructions,
+the directory, the timelines and each topic's timeline, and the values. What the layer
+selects does not change: the same topics and values are judged by the same JEV call and
+chosen in the same order, the 300-character floor and the linked-record limits stay, and
+only what each chosen item may show grows. The linked records are those of what the blocks
+show, so a scaled layer that shows events the reference budgets cut can judge other linked
+records. Absent or `""`, the reference budgets apply and reads and the policy hash are
+unchanged; other values are refused, and so is `"scaled"` without timelines or layered
+consolidation and the policy's `consolidation`.
+
 `"view": {"expand": {"kinds": ["adjacent", "causal", "events"], "limit": 24, "seeds": 16}}`
 adds evidence-anchored expansion to a simple read. The cue searches, the pool, the need loop
 and the final judgement run as without it; then two sources propose more records, of the
@@ -134,8 +159,8 @@ every instance) and a record of the View compose would show without the expansio
 it in the need table (≥ 0.5; the screen for an untabled single need), as `needs[]`
 reports `hasEvidence`. That View is compose's selection (fusion's when set); with the
 timelines layer only its leading records within the View's characters less the most the
-layer's blocks can take (8,059) count, since the layer's character trim, which depends on
-its own model calls, can never drop those. It makes no model call. Under fusion it reads
+layer's blocks can take (8,059; with `layer` `"scaled"`, 8,000 × s + 59) count, since the
+layer's character trim, which depends on its own model calls, can never drop those. It makes no model call. Under fusion it reads
 the evidence of the raw hits that were not pooled, as compose does, and counts that time
 in `queryMs`; when that read fails, `expansion` is named in `stats.degraded`, nothing
 counts as covered, and so the gate does not skip. (`needs[].covered` remains the need
