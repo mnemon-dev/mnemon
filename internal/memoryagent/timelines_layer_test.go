@@ -134,7 +134,7 @@ func TestComposeLayerBudgets(t *testing.T) {
 		}
 		m.Directives = append(m.Directives, directive{Text: text, Date: "2024/03/01", Records: []string{fmt.Sprintf("dir-%d", i%3)}})
 	}
-	blocks := composeLayer(m, nil, nil, litSets{}, referenceBudgets)
+	blocks := composeLayer(m, nil, nil, litSets{})
 	if !slices.Equal(blockIDs(blocks), []string{"1-instructions"}) {
 		t.Fatal(blockIDs(blocks))
 	}
@@ -159,7 +159,7 @@ func TestComposeLayerBudgets(t *testing.T) {
 		},
 		Facts: map[string][]factValue{}, FactOrder: []string{},
 	}
-	blocks = composeLayer(m, []string{"T5", "T4"}, nil, litSets{}, referenceBudgets)
+	blocks = composeLayer(m, []string{"T5", "T4"}, nil, litSets{})
 	want := "Topics of the conversation (first and last date):\n- Alpha (2024/01/01)\n- Gamma (2024/01/05 to 2024/02/05)\n- Delta (2024/01/06)"
 	if !slices.Equal(blockIDs(blocks), []string{"2-topics", "3-timelines"}) || blocks[0].Text != want || len(blocks[0].Records) != 0 {
 		t.Fatalf("%q", blocks)
@@ -185,7 +185,7 @@ func TestComposeLayerBudgets(t *testing.T) {
 		add("C", fmt.Sprintf("2024/03/%02d", i+1), sized(fmt.Sprintf("c%d", i), 200), fmt.Sprintf("rc%d", i))
 	}
 	add("D", "2024/04/01", "tiny", "rd")
-	blocks = composeLayer(m, []string{"A", "B", "C", "D"}, nil, litSets{Events: map[int]bool{5: true}}, referenceBudgets)
+	blocks = composeLayer(m, []string{"A", "B", "C", "D"}, nil, litSets{Events: map[int]bool{5: true}})
 	threadA := "Thread: A\n- 2024/01/01: " + sized("a0", 600) + "\n- 2024/01/01: " + sized("a1", 600)
 	threadB := "Thread: B\n- 2024/02/01: " + sized("b0", 600) + "\n- 2024/02/01: " + sized("b1", 600)
 	threadC := "Thread: C"
@@ -202,7 +202,7 @@ func TestComposeLayerBudgets(t *testing.T) {
 		t.Fatal(linkedIDs(blocks[1]))
 	}
 	// Alone, C fits its room of 1500 and is shown whole.
-	blocks = composeLayer(m, []string{"C"}, nil, litSets{Events: map[int]bool{5: true}}, referenceBudgets)
+	blocks = composeLayer(m, []string{"C"}, nil, litSets{Events: map[int]bool{5: true}})
 	if !strings.Contains(blocks[1].Text, sized("c0", 200)) {
 		t.Fatal("a thread that fits was cut")
 	}
@@ -217,17 +217,17 @@ func TestComposeLayerBudgets(t *testing.T) {
 		},
 		FactOrder: []string{"color", "big", "pet"},
 	}
-	blocks = composeLayer(m, nil, []string{"color", "big", "missing", "pet"}, litSets{}, referenceBudgets)
+	blocks = composeLayer(m, nil, []string{"color", "big", "missing", "pet"}, litSets{})
 	want = "History of values:\n- color: 2024/01/01 red; 2024/02/01 blue (contradicts the earlier value)\n- pet: 2024/03/01 cat"
 	if !slices.Equal(blockIDs(blocks), []string{"4-values"}) || blocks[0].Text != want || !slices.Equal(linkedIDs(blocks[0]), []string{"r1", "r2", "r3"}) {
 		t.Fatalf("%q", blocks)
 	}
 	// 1480 + "\n- big: 2024/01/01 " fits 1500 alone: the header is not counted.
-	blocks = composeLayer(m, nil, []string{"big"}, litSets{}, referenceBudgets)
+	blocks = composeLayer(m, nil, []string{"big"}, litSets{})
 	if len(blocks) != 1 || jsLen(blocks[0].Text) <= 1500 {
 		t.Fatal(blocks)
 	}
-	if blocks := composeLayer(timelineMemory{Facts: map[string][]factValue{}}, []string{"T9"}, []string{"k"}, litSets{}, referenceBudgets); len(blocks) != 0 {
+	if blocks := composeLayer(timelineMemory{Facts: map[string][]factValue{}}, []string{"T9"}, []string{"k"}, litSets{}); len(blocks) != 0 {
 		t.Fatal(blocks)
 	}
 }
@@ -238,7 +238,7 @@ func TestComposeLayerEdges(t *testing.T) {
 	for i := 0; i < 15; i++ {
 		m.Directives = append(m.Directives, directive{Text: sized(fmt.Sprintf("d%02d", i), 80+6*(i/14)), Date: "2024/03/01"})
 	}
-	if blocks := composeLayer(m, nil, nil, litSets{}, referenceBudgets); jsLen(blocks[0].Text) != 1500 {
+	if blocks := composeLayer(m, nil, nil, litSets{}); jsLen(blocks[0].Text) != 1500 {
 		t.Fatal(jsLen(blocks[0].Text))
 	}
 
@@ -253,7 +253,7 @@ func TestComposeLayerEdges(t *testing.T) {
 			m.Events = append(m.Events, event{Thread: id, Date: "2024/01/01", Text: "e"})
 		}
 	}
-	blocks := composeLayer(m, []string{"T5"}, nil, litSets{}, referenceBudgets)
+	blocks := composeLayer(m, []string{"T5"}, nil, litSets{})
 	want := "Topics of the conversation (first and last date):"
 	for _, id := range []string{"T2", "T4", "T5"} {
 		want += "\n- " + sized(id, 400) + " (2024/01/01)"
@@ -270,7 +270,7 @@ func TestComposeLayerEdges(t *testing.T) {
 			m.Threads = append(m.Threads, thread{ID: id, Title: id})
 			m.Events = append(m.Events, event{Thread: id, Date: "2024/01/01", Text: sized(id, size)})
 		}
-		blocks := composeLayer(m, []string{"A", "B", "C", "D"}, nil, litSets{}, referenceBudgets)
+		blocks := composeLayer(m, []string{"A", "B", "C", "D"}, nil, litSets{})
 		return blocks[len(blocks)-1].Text
 	}
 	if text := timelines(172); !strings.HasSuffix(text, "\n\nThread: D\n- 2024/01/01: "+sized("D", 10)) || jsLen(text) != jsLen("Timelines of the topics this concerns:\n")+3200+2+34 {
@@ -286,7 +286,7 @@ func TestComposeLayerEdges(t *testing.T) {
 	for i, size := range []int{100, 800, 800} {
 		m.Events = append(m.Events, event{Thread: "A", Date: fmt.Sprintf("2024/01/0%d", i+1), Text: sized(fmt.Sprintf("e%d", i), size), Records: []string{fmt.Sprintf("r%d", i)}})
 	}
-	blocks = composeLayer(m, []string{"A"}, nil, litSets{}, referenceBudgets)
+	blocks = composeLayer(m, []string{"A"}, nil, litSets{})
 	want = "Timelines of the topics this concerns:\nThread: A\n- 2024/01/01: " + sized("e0", 100) + "\n- 2024/01/03: " + sized("e2", 800)
 	if blocks[1].Text != want || !slices.Equal(linkedIDs(blocks[1]), []string{"r0", "r2"}) {
 		t.Fatalf("%q", blocks[1].Text)

@@ -45,63 +45,13 @@ const (
 	// The headers of the timelines and values blocks, outside their budgets.
 	timelinesHead = "Timelines of the topics this concerns:\n"
 	valuesHead    = "History of values:"
-	// layerReference is the View's characters the budgets are sized for
-	// (the author's View of 12,000).
-	layerReference = 12000
 )
 
-// layerBudgets is what the layer's blocks may take: each block's budget,
-// and a timeline's or a profile's (thread). The floor a timeline or a
-// profile is begun in is not a budget.
-type layerBudgets struct {
-	instructions, directory, timelines, thread, values, profiles int
-}
-
-// referenceBudgets are the author's (LAYER, C:183), and the profiles
-// block's (timelines_profiles.go).
-var referenceBudgets = layerBudgets{instructions: layerInstructions, directory: layerDirectory, timelines: layerTimelines, thread: layerThread, values: layerValues, profiles: layerProfiles}
-
-// times is every budget multiplied by s.
-func (b layerBudgets) times(s int) layerBudgets {
-	return layerBudgets{instructions: b.instructions * s, directory: b.directory * s, timelines: b.timelines * s, thread: b.thread * s, values: b.values * s, profiles: b.profiles * s}
-}
-
-// blocksMax is the most characters the blocks can take within the budgets:
-// each block's budget, the headers counted outside theirs, and the "\n\n"
+// layerBlocksMax is the most characters the layer's blocks can take: each
+// block's budget, the two headers counted outside theirs, and the "\n\n"
 // before a thread, added after the thread is fitted to the room left, by
-// which the timelines can pass their budget once (by 2); with profiles, the
-// profiles block likewise.
-func (b layerBudgets) blocksMax(profiles bool) int {
-	n := b.instructions + b.directory + b.timelines + 2 + b.values + jsLen(timelinesHead) + jsLen(valuesHead)
-	if profiles {
-		n += b.profiles + 2 + jsLen(profilesHead)
-	}
-	return n
-}
-
-// layerBlocksMax is blocksMax of the reference budgets, without profiles.
-var layerBlocksMax = referenceBudgets.blocksMax(false)
-
-// layerScale is what view.layer "scaled" multiplies the budgets by: the
-// View's characters over layerReference, rounded down, at least 1; without
-// "scaled" it is 1.
-func (a *Agent) layerScale() int {
-	if a.config.View == nil || a.config.View.Layer != viewLayerScaled {
-		return 1
-	}
-	return max(1, a.config.View.MaxCharacters/layerReference)
-}
-
-// layerBudgets is the reference budgets times the agent's layer scale.
-func (a *Agent) layerBudgets() layerBudgets {
-	return referenceBudgets.times(a.layerScale())
-}
-
-// layerBound is the most characters the layer's blocks can take in the
-// agent's Views: the profiles block's count only with view.profiles.
-func (a *Agent) layerBound() int {
-	return a.layerBudgets().blocksMax(a.config.View != nil && a.config.View.Profiles)
-}
+// which the timelines can pass their budget once (by 2).
+var layerBlocksMax = layerInstructions + layerDirectory + layerTimelines + 2 + layerValues + jsLen(timelinesHead) + jsLen(valuesHead)
 
 // eventThreads is the author's threadsOf (C:184-188) as event indexes, and
 // the threads that have events, in memory order.
@@ -236,8 +186,7 @@ func layerCandidates(lit litSets, threadIDs, keys []string, nearThreads, nearVal
 }
 
 // composeLayer is the author's composeLayer (C:218-267): the blocks of the
-// consolidated layer, each within its budget of b (the reference's given
-// here; view.layer "scaled" multiplies them), as View.Index items.
+// consolidated layer, each within its budget, as View.Index items.
 //   - 1-instructions: the directives, oldest first, until one would pass
 //     1500 with the header.
 //   - 2-topics: the chosen threads, then the threads by event count, each
@@ -251,7 +200,7 @@ func layerCandidates(lit litSets, threadIDs, keys []string, nearThreads, nearVal
 //
 // Records name the records linked from what each block shows, in order,
 // each once, by id only; the read keeps those its View shows.
-func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSets, b layerBudgets) []IndexItem {
+func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSets) []IndexItem {
 	_, by := eventThreads(m)
 	blocks := []IndexItem{}
 	add := func(id, text string, linked []string) {
@@ -269,7 +218,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 	size, shown := jsLen(text), 0
 	for _, d := range m.Directives {
 		line := "\n- (" + d.Date + ") " + d.Text
-		if size+jsLen(line) > b.instructions {
+		if size+jsLen(line) > layerInstructions {
 			break
 		}
 		text, size, shown = text+line, size+jsLen(line), shown+1
@@ -305,7 +254,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 	size = jsLen(head)
 	for _, id := range ids {
 		i := slices.IndexFunc(spans, func(s span) bool { return s.id == id })
-		if i < 0 || keep[id] || size+jsLen(topicLine(spans[i])) > b.directory {
+		if i < 0 || keep[id] || size+jsLen(topicLine(spans[i])) > layerDirectory {
 			continue
 		}
 		keep[id] = true
@@ -325,7 +274,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 	timelines, linked := "", []string{}
 	size = 0
 	for _, id := range threadOrder {
-		room := min(b.thread, b.timelines-size)
+		room := min(layerThread, layerTimelines-size)
 		if room < layerThreadFloor {
 			break
 		}
@@ -385,7 +334,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 			continue
 		}
 		line := "\n- " + valueText(key, list)
-		if size+jsLen(line) > b.values {
+		if size+jsLen(line) > layerValues {
 			continue
 		}
 		values, size = values+line, size+jsLen(line)
@@ -410,13 +359,10 @@ func (a *Agent) layerOn() bool {
 // or nothing consolidated, the View is unchanged. Anchors are the View's
 // records. The candidates are the lit topics and the 12 nearest the raw last
 // user message, the lit values and the 16 nearest; JEV judges them, the
-// order picks what the blocks show. With view.profiles the entity profiles
-// follow, chosen by a judgement of their own (profiles); with view.layer
-// "scaled" every block's budget is scaled (layerBudgets). The blocks'
-// characters count toward View.MaxCharacters, not toward the items: walking
-// the records in order, one that would pass the characters is dropped. Then
-// linked records may join (expand). A block's Records name the linked
-// records the View shows.
+// order picks what the blocks show. The blocks' characters count toward
+// View.MaxCharacters, not toward the items: walking the records in order,
+// one that would pass the characters is dropped. Then linked records may
+// join (expand). A block's Records name the linked records the View shows.
 // The layer degrades and never fails the read (a state that will not load,
 // an embedder that fails, a judgement that fails or finds the budget spent;
 // each named in ReadStats.Degraded), unless the read is canceled.
@@ -456,7 +402,7 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 			break
 		}
 	}
-	nearThreads, nearValues, lexical := r.nearest(ctx, message, threadList, valueList)
+	nearThreads, nearValues, _ := r.nearest(ctx, message, threadList, valueList)
 	if ctx.Err() != nil {
 		return View{}, ctx.Err()
 	}
@@ -483,17 +429,7 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 		valueScore[key] = scores[len(topics)+i]
 	}
 	threadOrder, valueOrder := layerOrder(topics, values, lit, threadScore, valueScore)
-	budgets := r.agent.layerBudgets()
-	blocks := composeLayer(m, threadOrder, valueOrder, lit, budgets)
-	if r.agent.config.View.Profiles {
-		// The entity profiles come after the values, chosen by a judgement
-		// of their own (timelines_profiles.go).
-		profiles, err := r.profiles(ctx, m, lit, anchors, message, lexical, budgets)
-		if err != nil {
-			return View{}, err
-		}
-		blocks = append(blocks, profiles...)
-	}
+	blocks := composeLayer(m, threadOrder, valueOrder, lit)
 
 	// With records the reserve held (r.held), the trim keeps by compose's
 	// priority: the needed records that are not expansions, then the held
@@ -740,9 +676,8 @@ func (a *Agent) batchDocuments(texts []string, vectors func(part []string) ([][]
 }
 
 // WarmLayer embeds and stores the scope's timelines layer texts, its topics
-// and value histories, with view expand events the event texts
-// (simple_events.go), and with view profiles the entity texts
-// (timelines_profiles.go), which the first read after a consolidation would
+// and value histories, and with view expand events the event texts
+// (simple_events.go), which the first read after a consolidation would
 // otherwise embed while it answers (the reference system embeds them when
 // its consolidation catches up). It does nothing without an embedder, the
 // timelines layer or a consolidated state; an embedding error is returned
@@ -768,11 +703,6 @@ func (a *Agent) WarmLayer(ctx context.Context, scope records.Scope) error {
 	if a.expandsEvents() {
 		for _, e := range expansionEvents(m) {
 			texts = append(texts, e.text)
-		}
-	}
-	if a.config.View != nil && a.config.View.Profiles {
-		for _, e := range memoryEntities(m).list {
-			texts = append(texts, entityText(m, e))
 		}
 	}
 	_, err = a.layerDocuments(ctx, texts)

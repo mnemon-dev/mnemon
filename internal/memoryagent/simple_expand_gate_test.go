@@ -563,7 +563,7 @@ func TestLayerBlocksMax(t *testing.T) {
 		{Thread: "B", Date: "2023/05/08", Text: strings.Repeat("b", 1476)},
 		{Thread: "C", Date: "2023/05/08", Text: strings.Repeat("c", 474)},
 	}
-	blocks := composeLayer(m, []string{"A", "B", "C"}, nil, litSets{Events: map[int]bool{}}, referenceBudgets)
+	blocks := composeLayer(m, []string{"A", "B", "C"}, nil, litSets{Events: map[int]bool{}})
 	timelines := slices.IndexFunc(blocks, func(b IndexItem) bool { return b.ID == "3-timelines" })
 	if timelines < 0 || jsLen(blocks[timelines].Text) != layerTimelines+2+jsLen(timelinesHead) {
 		t.Fatal(blocks)
