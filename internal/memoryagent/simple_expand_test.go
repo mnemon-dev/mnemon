@@ -162,15 +162,23 @@ func TestExpandConfig(t *testing.T) {
 	if err != nil || !reflect.DeepEqual(*a.config.View.Expand, ExpandConfig{Kinds: []string{"adjacent", "supersedes"}, Limit: 24, Seeds: 16, AdjacentWindow: 1}) || expand.Limit != 0 || expand.Seeds != 0 || expand.AdjacentWindow != 0 {
 		t.Fatal(a, err, expand)
 	}
-	// A window and a count of events are settings of their kinds.
-	a, err = New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"events", "causal"}}}}, both, nil)
+	// A window and a count of events are settings of their kinds. The
+	// events kind needs the timelines layer.
+	timelines := &ConsolidationConfig{Mode: "timelines"}
+	a, err = New(s, Config{Version: 1, Strategy: "simple", Consolidation: timelines, View: &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"events", "causal"}}}}, both, nil)
 	if err != nil || !reflect.DeepEqual(*a.config.View.Expand, ExpandConfig{Kinds: []string{"events", "causal"}, Limit: 24, Seeds: 16, EventsTop: 10}) {
 		t.Fatal(a, err)
 	}
 	every := []string{"adjacent", "temporal", "semantic", "causal", "entity", "supersedes", "events"}
 	for _, good := range []ExpandConfig{{Kinds: every, Limit: 64, Seeds: 32, AdjacentWindow: 5, EventsTop: 40}, {Kinds: []string{"entity"}, Limit: 1, Seeds: 1}, {Kinds: []string{"events", "adjacent"}, AdjacentWindow: 1, EventsTop: 1}} {
-		if _, err = New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Expand: &good}}, both, nil); err != nil {
+		if _, err = New(s, Config{Version: 1, Strategy: "simple", Consolidation: timelines, View: &ViewConfig{Expand: &good}}, both, nil); err != nil {
 			t.Error("valid expansion refused", good, err)
+		}
+	}
+	for _, without := range []Config{{}, {Consolidation: &ConsolidationConfig{}}, {Consolidation: timelines, Policy: &ReadPolicy{}}} {
+		without.Version, without.Strategy, without.View = 1, "simple", &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"events"}}}
+		if _, err = New(s, without, both, nil); err == nil || !strings.Contains(err.Error(), "events requires timelines") {
+			t.Error("events without the timelines layer accepted", without.Consolidation, without.Policy, err)
 		}
 	}
 	for _, bad := range []ExpandConfig{

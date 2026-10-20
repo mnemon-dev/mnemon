@@ -347,6 +347,11 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 			return nil, err
 		}
 	}
+	// The events source reads the timelines layer's state: without it the
+	// kind could only ever be inert.
+	if own.View != nil && own.View.Expand != nil && slices.Contains(own.View.Expand.Kinds, expandEvents) && !(own.Consolidation.Timelines() && own.Policy.Consolidation) {
+		return nil, errors.New("view expand kind events requires timelines or layered consolidation, with the policy's consolidation on")
+	}
 	return &Agent{store: store, config: own, models: models, overlay: overlay, now: time.Now}, nil
 }
 

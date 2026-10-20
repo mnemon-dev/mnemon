@@ -160,12 +160,7 @@ func alternate(seed, events []expansionCandidate, limit int) []expansionCandidat
 // revision and scope: the records within the adjacent window with weight 1
 // at their distance, links with their weight at distance 1.
 func (r *simpleRun) neighbors(ctx context.Context, seeds []*simpleItem, config *ExpandConfig) (map[string][]neighbor, error) {
-	start := time.Now()
-	defer func() {
-		r.mu.Lock()
-		r.stats.QueryMS += float64(time.Since(start).Microseconds()) / 1000
-		r.mu.Unlock()
-	}()
+	defer r.queryTime(time.Now())
 	ids := []string{}
 	for _, seed := range seeds {
 		ids = append(ids, seed.ID)
@@ -291,7 +286,9 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 			ids = append(ids, c.id)
 		}
 	}
+	start := time.Now()
 	values, err := evidence(ctx, r.agent.store, r.revision, r.req.Scope, ids)
+	r.queryTime(start)
 	if err != nil {
 		return short()
 	}
@@ -541,4 +538,12 @@ func (r *simpleRun) judgeExpansions(ctx context.Context, batches []peerBatch) er
 		return errCallBudget
 	}
 	return nil
+}
+
+// queryTime adds the time since start to the read's queryMs: the expansion's
+// work that is not a model call (neighbors, events, evidence reads).
+func (r *simpleRun) queryTime(start time.Time) {
+	r.mu.Lock()
+	r.stats.QueryMS += float64(time.Since(start).Microseconds()) / 1000
+	r.mu.Unlock()
 }

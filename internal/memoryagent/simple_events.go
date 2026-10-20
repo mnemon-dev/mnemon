@@ -74,6 +74,7 @@ func (r *simpleRun) eventCandidates(ctx context.Context, top int, known func(str
 	if !r.agent.layerOn() || query == "" {
 		return nil, nil
 	}
+	defer r.queryTime(time.Now())
 	state, _, err := r.agent.overlay.loadTimelines(ctx, r.req.Scope)
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -90,11 +91,7 @@ func (r *simpleRun) eventCandidates(ctx context.Context, top int, known func(str
 	for _, e := range events {
 		texts = append(texts, e.text)
 	}
-	start := time.Now()
 	order, err := r.rankEvents(ctx, query, texts, top)
-	r.mu.Lock()
-	r.stats.QueryMS += float64(time.Since(start).Microseconds()) / 1000
-	r.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}

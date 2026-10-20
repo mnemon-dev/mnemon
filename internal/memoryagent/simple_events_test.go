@@ -203,18 +203,8 @@ func TestEventCandidatesNeedAState(t *testing.T) {
 		}
 	}
 	// Without the timelines layer (no timelines consolidation, or the
-	// policy's consolidation off) the state is not read.
+	// policy's consolidation off) the kind is refused (TestExpandConfig).
 	s, overlay = eventsStore(t)
-	for _, config := range []Config{
-		{Consolidation: &ConsolidationConfig{}, View: &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"events"}}}},
-		{Policy: &ReadPolicy{}, View: &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"events"}}}},
-	} {
-		config.Embedding = embedding
-		r := testRun(layerAgent(t, s, overlay, config, completeFunc(nil), expandJudge()), user("When is the launch?"))
-		if got, err := r.eventCandidates(ctx, 10, r.pooled); err != nil || len(got) != 0 {
-			t.Fatal(got, err)
-		}
-	}
 	if got := requests(server); len(got) != 0 {
 		t.Fatal(got)
 	}
