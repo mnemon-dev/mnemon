@@ -245,15 +245,21 @@ func (s *Store) selectionVectorRank(ctx context.Context, query string, v *queryS
 	if err != nil {
 		return nil, err
 	}
-	values, err := s.selectionVectors(ctx, v, cfg)
-	if err != nil {
-		return nil, err
-	}
-	hits, err := vectorScores(ctx, target, v.docs, values)
+	hits, err := s.selectionCosines(ctx, target, v, cfg)
 	if err != nil {
 		return nil, err
 	}
 	return rank(hits, 200), nil
+}
+
+// selectionCosines is the cosine of every selection record's vector with the
+// target (NaN for a vector of another dimension), in the selection's order.
+func (s *Store) selectionCosines(ctx context.Context, target []float32, v *querySelection, cfg EmbeddingConfig) ([]scored, error) {
+	values, err := s.selectionVectors(ctx, v, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return vectorScores(ctx, target, v.docs, values)
 }
 
 func vectorScores(ctx context.Context, target []float32, docs []record, values [][]float32) ([]scored, error) {

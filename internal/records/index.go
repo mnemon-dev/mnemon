@@ -23,6 +23,12 @@ type IndexPolicy struct {
 	Relations  bool `json:"relations,omitempty"`
 	Temporal   bool `json:"temporal,omitempty"`
 	Supersedes bool `json:"supersedes,omitempty"`
+	// Recency adds native Smart Recall's recency anchor signal: the
+	// selection's newest records by index time (recall.go).
+	Recency bool `json:"recency,omitempty"`
+	// Traversal adds native Smart Recall's beam search over the links from
+	// the fused seeds (recall.go).
+	Traversal bool `json:"traversal,omitempty"`
 }
 
 func (p *IndexPolicy) UnmarshalJSON(raw []byte) error {
@@ -33,7 +39,7 @@ func (p *IndexPolicy) UnmarshalJSON(raw []byte) error {
 }
 
 func (p *IndexPolicy) Enabled() bool {
-	return p != nil && (p.Lexical || p.Entities || p.Relations || p.Temporal || p.Supersedes)
+	return p != nil && (p.Lexical || p.Entities || p.Relations || p.Temporal || p.Supersedes || p.Recency || p.Traversal)
 }
 
 func (p *IndexPolicy) Validate() error {
@@ -96,6 +102,10 @@ type derivedIndex struct {
 	words        map[string][]string
 	links        map[string][]Link
 	replacements map[string][]Link
+	// recent is the recency route of an index with Recency; named each
+	// record's indexed entities, for one with Traversal (recall.go).
+	recent []string
+	named  map[string][]string
 }
 
 func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult, error) {
@@ -116,7 +126,7 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 	}
 	// Later caches are keyed by the overlay the index was built from.
 	req.derived = index.generation
-	result, err := s.rankSelection(ctx, hash, req, selection)
+	result, cosines, err := s.rankSelectionCosines(ctx, hash, req, selection, req.Index.Traversal)
 	if err != nil {
 		return QueryResult{}, err
 	}
@@ -143,7 +153,13 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 	if req.Index.Entities {
 		appendRoute("entities", index.entityRank(query, req.Input["entities"]))
 	}
-	seeds := fuse(lists...)
+	if req.Index.Recency {
+		appendRoute("recency", index.recent)
+	}
+	// The fused seeds, with their reciprocal-rank scores: traversal's anchors
+	// are the first twenty, as native's carry their RRF scores.
+	fused := fuseRanked(lists...)
+	seeds := scoredIDs(fused)
 	intent := retrieval.DetectIntent(query)
 	if raw := stringValue(req.Input["intent"]); raw != "" {
 		intent, err = retrieval.IntentFromString(raw)
@@ -153,6 +169,22 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 	}
 	if req.Index.Relations {
 		appendRoute("relations", index.related(seeds, intent, false, limit))
+	}
+	if req.Index.Traversal {
+		// Semantic scores are the hybrid base route's cosines (none without
+		// one): traversal neither embeds nor reads vectors.
+		q := recallQuery{intent: intent, tokens: retrieval.Tokenize(query), limit: limit}
+		q.entities, _ = index.queryEntities(query, req.Input["entities"])
+		if cosines != nil {
+			q.similar = &similarities{cosines: cosines, at: selection.byID}
+		}
+		route, reached, err := index.recall(ctx, fused[:min(recallAnchors, len(fused))], q)
+		if err != nil {
+			return QueryResult{}, err
+		}
+		appendRoute("traversal", route)
+		// The route's records that links reached, not anchors: real expansion.
+		info.Routes["traversal+"] = reached
 	}
 	if req.Index.Supersedes && !trueValue(req.Input["history"]) && req.Input["until"] == nil {
 		appendRoute("supersedes", index.related(seeds, intent, true, limit))
@@ -184,11 +216,16 @@ func (index *derivedIndex) wordRank(query string) []string {
 	return orderedScores(scores)
 }
 
-func (index *derivedIndex) entityRank(query string, raw json.RawMessage) []string {
-	entities := retrieval.ExtractEntitiesIndexed(query, index.known)
-	var explicit []string
+// queryEntities is the query's entities as the index resolves them (known
+// names in its text, then input.entities), and the explicit ones.
+func (index *derivedIndex) queryEntities(query string, raw json.RawMessage) (entities, explicit []string) {
+	entities = retrieval.ExtractEntitiesIndexed(query, index.known)
 	_ = json.Unmarshal(raw, &explicit)
-	entities = retrieval.MergeEntities(entities, explicit)
+	return retrieval.MergeEntities(entities, explicit), explicit
+}
+
+func (index *derivedIndex) entityRank(query string, raw json.RawMessage) []string {
+	entities, explicit := index.queryEntities(query, raw)
 	scores := map[string]int{}
 	for _, entity := range entities {
 		// Like native indexed extraction, ignore a hot inferred entity. An

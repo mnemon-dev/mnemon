@@ -8,6 +8,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/mnemon-dev/mnemon/internal/retrieval"
 )
 
 // The simple strategy ports the reference system's ("author") final read
@@ -41,7 +43,10 @@ type simpleRun struct {
 	// pageReads counts search pages read, first pages included, against
 	// simplePageBudget.
 	pageReads int
-	mu        sync.Mutex // guards stats during concurrent model calls
+	// intent is the question's intent every search carries (view intent
+	// "question"); "" lets each search detect its own.
+	intent string
+	mu     sync.Mutex // guards stats during concurrent model calls
 }
 
 // simpleItem is one pooled record and what the models said about it.
@@ -63,6 +68,10 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		req.MaxItems = a.config.View.MaxItems
 	}
 	r := &simpleRun{agent: a, req: req, revision: revision, items: map[string]*simpleItem{}}
+	if a.config.View.Intent == viewIntentQuestion {
+		r.intent = string(retrieval.DetectIntent(req.Question))
+		r.stats.Intent = r.intent
+	}
 	// The author's prompts read at most the last six messages (N:348).
 	for _, message := range req.Recent[max(0, len(req.Recent)-5):] {
 		if message.Role != "user" && message.Role != "assistant" {

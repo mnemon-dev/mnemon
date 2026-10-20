@@ -56,6 +56,9 @@ func (r *simpleRun) search(ctx context.Context, c cue) (*cueSearch, error) {
 	if r.agent.config.Embedding != nil {
 		input["match"] = json.RawMessage(`"hybrid"`)
 	}
+	if r.intent != "" {
+		input["intent"], _ = json.Marshal(r.intent)
+	}
 	start := time.Now()
 	result, err := r.agent.store.Query(ctx, records.QueryRequest{Revision: r.revision, Scope: r.req.Scope, Input: input, Embedding: r.agent.config.Embedding, Index: r.agent.config.Index, CandidateLimit: simpleSearchLimit})
 	r.stats.Searches++
