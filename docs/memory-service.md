@@ -28,7 +28,8 @@ failed; shared words rank the topics), `layer` (the layer's judgement failed) an
 always for memory-agent/v1. With an `index` setting, a simple read's `stats.indexRoutes`
 counts, for each native route (`lexical`, `entities`, `relations`, `temporal`,
 `supersedes`, `recency`, `traversal`), the read's searches in which that route found a
-candidate.
+candidate, and under `traversal+` the searches whose traversal reached a record over a link
+(not only its anchors).
 
 `"view": {"intent": "question"}` makes a simple read detect the intent of its `question`
 once (native recall's WHY, WHEN, ENTITY or GENERAL detection) and pass it as `input.intent`

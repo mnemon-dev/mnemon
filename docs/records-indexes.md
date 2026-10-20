@@ -40,9 +40,10 @@ intent weight is native's for the link type:
 | ENTITY | 0.10 | 0.05 | 0.55 | 0.30 |
 | GENERAL | 0.25 | 0.25 | 0.25 | 0.25 |
 
-The cosine term counts only when it is positive, the query is `match: "hybrid"` with an
-`embedding` (so the base route has the query's vector) and the neighbor's vector is
-already stored; traversal never embeds. From each anchor, the beam keeps the best nodes
+The cosine is the one the base route computed when the query is `match: "hybrid"` with an
+`embedding` (for every record of the selection, as native's recall compares every
+embedding); it counts only when positive. Traversal itself neither embeds nor reads
+vectors. From each anchor, the beam keeps the best nodes
 of each level and stops at native's budgets (the anchor counts as visited):
 
 | Intent | Beam width | Max depth | Max visited |
@@ -61,8 +62,9 @@ record, anchors included, is re-ranked by four signals in [0, 1]:
 - keyword: the share of the query's tokens in the record's search text (the `lexical`
   tokenizer);
 - entity: the query's entities, as the `entities` route resolves them (known names in the
-  query, then `input.entities`), that the record names, over max(1, their number);
-- similarity: the cosine of the stored vectors, as in the beam (0 without them);
+  query, then `input.entities`), that the record names, over max(1, their number); names
+  are compared without case and each counts once;
+- similarity: the base route's cosine, as in the beam (0 without one, and when negative);
 - graph: the path score, min-max normalized over the collected records (0 when all equal).
 
 The final score is the weighted sum native recall's code runs
@@ -71,7 +73,7 @@ on the intent:
 
 | Vectors | keyword | entity | similarity | graph |
 |---|---|---|---|---|
-| a stored vector was read for some collected record (hybrid query) | 0.30 | 0.15 | 0.35 | 0.20 |
+| the hybrid base route gave some record a cosine (of any sign) | 0.30 | 0.15 | 0.35 | 0.20 |
 | none | 0.45 | 0.25 | 0 | 0.30 |
 
 The intent-weighted re-ranking table in
@@ -82,8 +84,10 @@ The route is the best `candidateLimit` records by final score (ties by ID). For 
 Kahn's algorithm then orders them along the causal links among them, a link's source (the
 cause) before its target: the best ranked record whose causes are placed goes next, and
 records on a causal cycle follow in rank order. An index with `traversal` also builds the
-word and entity indexes for these signals. The intent is `input.intent` when given, else detected from `input.query`, as for
-`relations`. Causal and temporal links are followed in their stated direction only (native
+word and entity indexes for these signals. Besides the route's count `traversal`, the
+response's `routes` gives `traversal+`: how many of the route's records were reached over
+links rather than being anchors (0 when the anchors have no traversable links). The intent
+is `input.intent` when given, else detected from `input.query`, as for `relations`. Causal and temporal links are followed in their stated direction only (native
 recall follows its edges both ways); entity and semantic links are mutual.
 
 An explicit link in `data.links` is
