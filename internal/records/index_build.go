@@ -3,6 +3,7 @@ package records
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	"github.com/mnemon-dev/mnemon/internal/retrieval"
 )
@@ -106,6 +107,9 @@ func (s *Store) buildDerived(ctx context.Context, rev int64, all []record, req Q
 		if req.Index.Entities {
 			entities := retrieval.MergeEntities(meta.Entities, meta.Aliases)
 			entities = retrieval.ResolveEntities(r.SearchText, entities, retrieval.EntityModeMerge)
+			if len(meta.derivedEntities) > 0 || len(meta.derivedAliases) > 0 {
+				entities = retrieval.MergeEntities(entities, append(slices.Clone(meta.derivedEntities), meta.derivedAliases...))
+			}
 			for _, entity := range entities[:min(64, len(entities))] {
 				if len(entity) <= 200 {
 					index.entities[entity] = append(index.entities[entity], r.ID)

@@ -77,6 +77,9 @@ type indexMetadata struct {
 		ID      string `json:"id"`
 		Version int64  `json:"version"`
 	} `json:"supersedes"`
+	// The derived metadata's names (derived.go), indexed after the writer's
+	// and the extracted ones.
+	derivedEntities, derivedAliases []string
 }
 
 type indexDocument struct {

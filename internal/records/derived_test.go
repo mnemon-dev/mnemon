@@ -71,8 +71,11 @@ func TestDerivedMetadataMerge(t *testing.T) {
 		t.Fatal(err)
 	}
 	meta := mergedMetadata(t, s)
+	// The writer's names stay as they are; the overlay's are kept apart,
+	// for the index to take after them.
 	w := meta["writer"]
-	if !slices.Equal(w.Entities, []string{"Athena", "Pallas"}) || !slices.Equal(w.Aliases, []string{"owl", "Minerva"}) || w.EventAt != "2020-01-01" {
+	if !slices.Equal(w.Entities, []string{"Athena"}) || !slices.Equal(w.Aliases, []string{"owl"}) || w.EventAt != "2020-01-01" ||
+		!slices.Equal(w.derivedEntities, []string{"Athena", "Pallas"}) || !slices.Equal(w.derivedAliases, []string{"Minerva", "owl"}) {
 		t.Fatalf("writer metadata %+v", w)
 	}
 	// Overlay links follow the writer's and never carry authority, even when
@@ -81,7 +84,7 @@ func TestDerivedMetadataMerge(t *testing.T) {
 		t.Fatalf("links %+v", w.Links)
 	}
 	p := meta["plain"]
-	if !slices.Equal(p.Entities, []string{"Plato", "Zeno"}) || p.EventAt != "2019-02-02" || p.Aliases != nil || p.Links != nil {
+	if p.Entities != nil || !slices.Equal(p.derivedEntities, []string{"Plato", "Zeno"}) || p.EventAt != "2019-02-02" || p.derivedAliases != nil || p.Links != nil {
 		t.Fatalf("plain metadata %+v", p)
 	}
 	if c := meta["cause"]; c.Entities != nil || c.EventAt != "" || c.Version != 1 {
@@ -349,8 +352,8 @@ func TestDerivedMetadataBounds(t *testing.T) {
 		t.Fatal("accepted an empty id")
 	}
 	// A refused replace changed nothing.
-	if m := mergedMetadata(t, s)["x"]; len(m.Entities) != 64 || len(m.Links) != 50 {
-		t.Fatal("refused replace changed the overlay", len(m.Entities), len(m.Links))
+	if m := mergedMetadata(t, s)["x"]; len(m.derivedEntities) != 64 || len(m.Links) != 50 {
+		t.Fatal("refused replace changed the overlay", len(m.derivedEntities), len(m.Links))
 	}
 }
 
@@ -570,5 +573,53 @@ CREATE TRIGGER derived_delete AFTER DELETE ON derived_metadata BEGIN INSERT INTO
 	}
 	if got := writes(); !slices.Equal(got, []string{"delete a", "delete b", "delete d"}) || generation() != "4" {
 		t.Fatal(got, generation())
+	}
+}
+
+func TestDerivedNamesComeAfterWriterAndExtracted(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	numbered := func(prefix string, n int) []string {
+		out := []string{}
+		for i := 1; i <= n; i++ {
+			out = append(out, fmt.Sprintf("%s%02d", prefix, i))
+		}
+		return out
+	}
+	writer := map[string]any{"entities": numbered("E", 10), "aliases": numbered("A", 10)}
+	if _, err := s.Put(ctx, PutRequest{Upsert: []Upsert{indexedRecord("x", "HTTP", writer)}}); err != nil {
+		t.Fatal(err)
+	}
+	err := s.ReplaceDerivedMetadata(ctx, "consolidation", map[string]DerivedMetadata{"x": {Version: 1, Entities: numbered("O", 64), Aliases: numbered("P", 64)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rev, hash, err := revision(ctx, s.readDB(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := s.queryRecords(ctx, rev, hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := indexRequest("x", &IndexPolicy{Version: 1, Entities: true})
+	req.derived, _ = derivedGeneration(ctx, s.readDB())
+	index, err := s.buildDerived(ctx, rev, all, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The writer's entities, its aliases and the extracted names keep
+	// their places; the overlay's fill what is left of the 64.
+	for _, name := range append(append(numbered("E", 10), numbered("A", 10)...), "HTTP") {
+		if !slices.Equal(index.entities[name], []string{"x"}) {
+			t.Fatal("pushed out:", name)
+		}
+	}
+	indexed := 0
+	for range index.entities {
+		indexed++
+	}
+	if indexed != 64 || index.entities["O01"] == nil || index.entities["P01"] != nil {
+		t.Fatal(indexed, index.entities["O01"], index.entities["P01"])
 	}
 }

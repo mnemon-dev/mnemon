@@ -187,10 +187,12 @@ UNION ALL SELECT source,id,version,meta FROM derived_metadata ORDER BY 1,2`)
 	return generation, out, rows.Err()
 }
 
-// merge adds an overlay row to a record writer's metadata.
+// merge adds an overlay row to a record writer's metadata. Its names are
+// kept apart: the entity index takes them after the writer's entities and
+// aliases and the names extracted from the text.
 func (m *indexMetadata) merge(row DerivedMetadata) {
-	m.Entities = appendNew(m.Entities, row.Entities)
-	m.Aliases = appendNew(m.Aliases, row.Aliases)
+	m.derivedEntities = appendNew(m.derivedEntities, row.Entities)
+	m.derivedAliases = appendNew(m.derivedAliases, row.Aliases)
 	for _, link := range row.Links {
 		link.authoritative = false
 		m.Links = append(m.Links, link)
