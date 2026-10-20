@@ -102,10 +102,12 @@ type derivedIndex struct {
 	words        map[string][]string
 	links        map[string][]Link
 	replacements map[string][]Link
-	// recent is the recency route of an index with Recency, and position
-	// each record's place in docs for one with Traversal (recall.go).
+	// recent is the recency route of an index with Recency; position each
+	// record's place in docs and named its indexed entities, for one with
+	// Traversal (recall.go).
 	recent   []string
 	position map[string]int
+	named    map[string][]string
 }
 
 func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult, error) {
@@ -174,11 +176,12 @@ func (s *Store) queryIndexed(ctx context.Context, req QueryRequest) (QueryResult
 	if req.Index.Traversal {
 		// Semantic scores need the query's vector, which only a hybrid base
 		// route has, and read stored vectors only: traversal never embeds.
-		var similarity func([]string) (map[string]float64, error)
+		q := recallQuery{intent: intent, tokens: retrieval.Tokenize(query), limit: limit}
+		q.entities, _ = index.queryEntities(query, req.Input["entities"])
 		if vector != nil {
-			similarity = s.storedSimilarity(ctx, index, *req.Embedding, vector)
+			q.similarity = s.storedSimilarity(ctx, index, *req.Embedding, vector)
 		}
-		route, err := index.traverse(ctx, anchors, intent, similarity, limit)
+		route, err := index.recall(ctx, anchors, q)
 		if err != nil {
 			return QueryResult{}, err
 		}
@@ -214,11 +217,16 @@ func (index *derivedIndex) wordRank(query string) []string {
 	return orderedScores(scores)
 }
 
-func (index *derivedIndex) entityRank(query string, raw json.RawMessage) []string {
-	entities := retrieval.ExtractEntitiesIndexed(query, index.known)
-	var explicit []string
+// queryEntities is the query's entities as the index resolves them (known
+// names in its text, then input.entities), and the explicit ones.
+func (index *derivedIndex) queryEntities(query string, raw json.RawMessage) (entities, explicit []string) {
+	entities = retrieval.ExtractEntitiesIndexed(query, index.known)
 	_ = json.Unmarshal(raw, &explicit)
-	entities = retrieval.MergeEntities(entities, explicit)
+	return retrieval.MergeEntities(entities, explicit), explicit
+}
+
+func (index *derivedIndex) entityRank(query string, raw json.RawMessage) []string {
+	entities, explicit := index.queryEntities(query, raw)
 	scores := map[string]int{}
 	for _, entity := range entities {
 		// Like native indexed extraction, ignore a hot inferred entity. An

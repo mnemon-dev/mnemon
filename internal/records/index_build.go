@@ -82,7 +82,7 @@ func (s *Store) buildDerived(ctx context.Context, rev int64, all []record, req Q
 	docs := candidates(all, input, "", true)
 	index := &derivedIndex{meta: map[string]indexDocument{}, entities: map[string][]string{}, known: map[string]bool{}, words: map[string][]string{}, links: map[string][]Link{}, replacements: map[string][]Link{}}
 	if req.Index.Traversal {
-		index.position = map[string]int{}
+		index.position, index.named = map[string]int{}, map[string][]string{}
 	}
 	metadata, generation, err := s.indexMetadata(ctx, rev, docs, req.derived)
 	if err != nil {
@@ -110,7 +110,9 @@ func (s *Store) buildDerived(ctx context.Context, rev int64, all []record, req Q
 		if req.Index.Traversal {
 			index.position[r.ID] = len(index.docs) - 1
 		}
-		if req.Index.Entities {
+		// Traversal's re-ranking reads the entity and word indexes too
+		// (recall.go), and each record's entities.
+		if req.Index.Entities || req.Index.Traversal {
 			entities := retrieval.MergeEntities(meta.Entities, meta.Aliases)
 			entities = retrieval.ResolveEntities(r.SearchText, entities, retrieval.EntityModeMerge)
 			if len(meta.derivedEntities) > 0 || len(meta.derivedAliases) > 0 {
@@ -120,10 +122,13 @@ func (s *Store) buildDerived(ctx context.Context, rev int64, all []record, req Q
 				if len(entity) <= 200 {
 					index.entities[entity] = append(index.entities[entity], r.ID)
 					index.known[entity] = true
+					if req.Index.Traversal {
+						index.named[r.ID] = append(index.named[r.ID], entity)
+					}
 				}
 			}
 		}
-		if req.Index.Lexical {
+		if req.Index.Lexical || req.Index.Traversal {
 			for word := range retrieval.Tokenize(r.SearchText) {
 				index.words[word] = append(index.words[word], r.ID)
 			}

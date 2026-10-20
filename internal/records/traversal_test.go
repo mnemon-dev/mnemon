@@ -18,19 +18,31 @@ func edge(id, kind string, weight float64) Link {
 	return Link{ID: id, Version: 1, Type: kind, Weight: weight}
 }
 
-// traverseOnly runs traversal over the given links from anchors of equal
-// score.
-func traverseOnly(t *testing.T, links map[string][]Link, intent retrieval.Intent, similarity func([]string) (map[string]float64, error), limit int, anchors ...string) []string {
+// beamOnly runs the beam search alone and returns the records it reached
+// that are not anchors, by raw path score (ties by id).
+func beamOnly(t *testing.T, links map[string][]Link, intent retrieval.Intent, similarity func([]string) (map[string]float64, error), anchors ...scored) []string {
+	t.Helper()
+	best, err := (&derivedIndex{links: links}).traverse(context.Background(), anchors, intent, &similarities{read: similarity})
+	if err != nil {
+		t.Fatal(err)
+	}
+	hits := []scored{}
+	for id, score := range best {
+		if !slices.ContainsFunc(anchors, func(a scored) bool { return a.id == id }) {
+			hits = append(hits, scored{id, score})
+		}
+	}
+	return rank(hits, len(hits))
+}
+
+// traverseOnly is beamOnly from anchors of equal score.
+func traverseOnly(t *testing.T, links map[string][]Link, intent retrieval.Intent, similarity func([]string) (map[string]float64, error), anchors ...string) []string {
 	t.Helper()
 	seeds := []scored{}
 	for _, id := range anchors {
 		seeds = append(seeds, scored{id, 1.0 / 60})
 	}
-	got, err := (&derivedIndex{links: links}).traverse(context.Background(), seeds, intent, similarity, limit)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return got
+	return beamOnly(t, links, intent, similarity, seeds...)
 }
 
 func TestTraversalIntentWeights(t *testing.T) {
@@ -46,21 +58,21 @@ func TestTraversalIntentWeights(t *testing.T) {
 		{retrieval.IntentEntity, []string{"w-entity", "x-semantic", "y-causal", "z-temporal"}},
 		{retrieval.IntentGeneral, []string{"w-entity", "x-semantic", "y-causal", "z-temporal"}},
 	} {
-		if got := traverseOnly(t, links, tc.intent, nil, 200, "a"); !slices.Equal(got, tc.want) {
+		if got := traverseOnly(t, links, tc.intent, nil, "a"); !slices.Equal(got, tc.want) {
 			t.Errorf("%s: %v", tc.intent, got)
 		}
 	}
 	// The link weight scales the intent weight: a strong semantic link beats
 	// a weak temporal one even for WHEN (0.10×1 > 0.65×0.1).
 	links = map[string][]Link{"a": {edge("t", "temporal", 0.1), edge("s", "semantic", 1)}}
-	if got := traverseOnly(t, links, retrieval.IntentWhen, nil, 200, "a"); !slices.Equal(got, []string{"s", "t"}) {
+	if got := traverseOnly(t, links, retrieval.IntentWhen, nil, "a"); !slices.Equal(got, []string{"s", "t"}) {
 		t.Error(got)
 	}
 }
 
 func TestTraversalSemanticBreaksTies(t *testing.T) {
 	links := map[string][]Link{"a": {edge("x", "semantic", 0.5), edge("y", "semantic", 0.5), edge("z", "semantic", 0.5)}}
-	if got := traverseOnly(t, links, retrieval.IntentGeneral, nil, 200, "a"); !slices.Equal(got, []string{"x", "y", "z"}) {
+	if got := traverseOnly(t, links, retrieval.IntentGeneral, nil, "a"); !slices.Equal(got, []string{"x", "y", "z"}) {
 		t.Fatal(got)
 	}
 	var asked [][]string
@@ -69,14 +81,14 @@ func TestTraversalSemanticBreaksTies(t *testing.T) {
 		// z has no stored vector; a negative cosine adds nothing, as native.
 		return map[string]float64{"x": -0.5, "y": 0.9}, nil
 	}
-	if got := traverseOnly(t, links, retrieval.IntentGeneral, similarity, 200, "a"); !slices.Equal(got, []string{"y", "x", "z"}) {
+	if got := traverseOnly(t, links, retrieval.IntentGeneral, similarity, "a"); !slices.Equal(got, []string{"y", "x", "z"}) {
 		t.Fatal(got)
 	}
 	if len(asked) != 1 || !slices.Equal(asked[0], []string{"x", "y", "z"}) {
 		t.Fatal("each neighborhood's vectors are read once", asked)
 	}
 	failing := func([]string) (map[string]float64, error) { return nil, errors.New("vectors unreadable") }
-	if _, err := (&derivedIndex{links: links}).traverse(context.Background(), []scored{{"a", 1}}, retrieval.IntentGeneral, failing, 200); err == nil {
+	if _, err := (&derivedIndex{links: links}).traverse(context.Background(), []scored{{"a", 1}}, retrieval.IntentGeneral, &similarities{read: failing}); err == nil {
 		t.Fatal("vector read error swallowed")
 	}
 }
@@ -87,24 +99,24 @@ func TestTraversalIgnoresSupersedesAndAnchors(t *testing.T) {
 		"b": {edge("c", "causal", 1)},
 	}
 	// b is an anchor too: it is not returned, but its neighbor is.
-	if got := traverseOnly(t, links, retrieval.IntentWhy, nil, 200, "a", "b"); !slices.Equal(got, []string{"c"}) {
+	if got := traverseOnly(t, links, retrieval.IntentWhy, nil, "a", "b"); !slices.Equal(got, []string{"c"}) {
 		t.Fatal(got)
 	}
 	// Anchor scores are native's: normalized by the best anchor. A neighbor
 	// of the better anchor ranks first; the ids sort the other way.
 	links = map[string][]Link{"a": {edge("y", "causal", 1)}, "b": {edge("x", "causal", 1)}}
-	got, err := (&derivedIndex{links: links}).traverse(context.Background(), []scored{{"a", 2.0 / 60}, {"b", 1.0 / 60}}, retrieval.IntentWhy, nil, 200)
-	if err != nil || !slices.Equal(got, []string{"y", "x"}) {
-		t.Fatal(got, err)
+	if got := beamOnly(t, links, retrieval.IntentWhy, nil, scored{"a", 2.0 / 60}, scored{"b", 1.0 / 60}); !slices.Equal(got, []string{"y", "x"}) {
+		t.Fatal(got)
 	}
 	// Path scores add up along the path, as native's do: a two-hop node
-	// outranks the one-hop node it was reached through.
+	// has a higher raw score than the one-hop node it was reached through
+	// (the re-ranking decides the route; TestRecallReranks).
 	links = map[string][]Link{"a": {edge("b", "causal", 1)}, "b": {edge("c", "causal", 1)}}
-	if got := traverseOnly(t, links, retrieval.IntentWhy, nil, 200, "a"); !slices.Equal(got, []string{"c", "b"}) {
+	if got := traverseOnly(t, links, retrieval.IntentWhy, nil, "a"); !slices.Equal(got, []string{"c", "b"}) {
 		t.Fatal(got)
 	}
 	// No anchors, no route.
-	if got := traverseOnly(t, links, retrieval.IntentWhy, nil, 200); len(got) != 0 {
+	if got := traverseOnly(t, links, retrieval.IntentWhy, nil); len(got) != 0 {
 		t.Fatal(got)
 	}
 }
@@ -116,7 +128,7 @@ func TestTraversalBudgets(t *testing.T) {
 		chain[fmt.Sprintf("n%d", i)] = []Link{edge(fmt.Sprintf("n%d", i+1), "causal", 1)}
 	}
 	for intent, depth := range map[retrieval.Intent]int{retrieval.IntentWhy: 5, retrieval.IntentWhen: 5, retrieval.IntentEntity: 4, retrieval.IntentGeneral: 4} {
-		if got := traverseOnly(t, chain, intent, nil, 200, "a"); len(got) != depth || got[0] != fmt.Sprintf("n%d", depth) {
+		if got := traverseOnly(t, chain, intent, nil, "a"); len(got) != depth || got[0] != fmt.Sprintf("n%d", depth) {
 			t.Errorf("%s depth: %v", intent, got)
 		}
 	}
@@ -129,7 +141,7 @@ func TestTraversalBudgets(t *testing.T) {
 		wide[child] = []Link{edge(fmt.Sprintf("g%02d", i), "causal", 1)}
 	}
 	for intent, width := range map[retrieval.Intent]int{retrieval.IntentWhy: 15, retrieval.IntentWhen: 10, retrieval.IntentEntity: 10, retrieval.IntentGeneral: 10} {
-		got := traverseOnly(t, wide, intent, nil, 200, "a")
+		got := traverseOnly(t, wide, intent, nil, "a")
 		grandchildren := slices.DeleteFunc(slices.Clone(got), func(id string) bool { return id[0] != 'g' })
 		slices.Sort(grandchildren)
 		if len(got) != 30+width || len(grandchildren) != width || grandchildren[width-1] != fmt.Sprintf("g%02d", width-1) {
@@ -142,14 +154,118 @@ func TestTraversalBudgets(t *testing.T) {
 		star["a"] = append(star["a"], edge(fmt.Sprintf("v%03d", i), "entity", 1))
 	}
 	for intent, visited := range map[retrieval.Intent]int{retrieval.IntentWhy: 500, retrieval.IntentWhen: 400, retrieval.IntentEntity: 400, retrieval.IntentGeneral: 500} {
-		got := traverseOnly(t, star, intent, nil, 2000, "a")
+		got := traverseOnly(t, star, intent, nil, "a")
 		if len(got) != visited-1 || got[len(got)-1] != fmt.Sprintf("v%03d", visited-2) {
 			t.Errorf("%s visited: %d", intent, len(got))
 		}
 	}
-	// The candidate limit bounds the route.
-	if got := traverseOnly(t, star, retrieval.IntentGeneral, nil, 50, "a"); len(got) != 50 || got[49] != "v049" {
-		t.Error("limit", len(got))
+	// The candidate limit bounds the route: the re-ranked children (equal
+	// signals, ids decide), the anchor (lowest graph score) last.
+	got, err := (&derivedIndex{links: star}).recall(context.Background(), []scored{{"a", 1}}, recallQuery{intent: retrieval.IntentGeneral, limit: 50})
+	if err != nil || len(got) != 50 || got[0] != "v000" || got[49] != "v049" {
+		t.Error("limit", got, err)
+	}
+}
+
+func TestRecallReranks(t *testing.T) {
+	ctx := context.Background()
+	// a —causal→ b —causal→ c. Raw path scores: c > b > a. The query's word
+	// is in a and b.
+	index := &derivedIndex{
+		links: map[string][]Link{"a": {edge("b", "causal", 1)}, "b": {edge("c", "causal", 1)}},
+		words: map[string][]string{"outage": {"a", "b"}},
+	}
+	if raw := traverseOnly(t, index.links, retrieval.IntentGeneral, nil, "a"); !slices.Equal(raw, []string{"c", "b"}) {
+		t.Fatal(raw)
+	}
+	route := func(intent retrieval.Intent, similarity func([]string) (map[string]float64, error)) []string {
+		got, err := index.recall(ctx, []scored{{"a", 1.0 / 60}}, recallQuery{intent: intent, tokens: retrieval.Tokenize("outage"), similarity: similarity, limit: 200})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	// GENERAL weighs the four signals equally. Graph scores, min-max
+	// normalized: a 0, b 0.5, c 1; keyword: a 1, b 1, c 0. So b 0.375
+	// beats the deeper c 0.25 (ties by id: a before c).
+	if got := route(retrieval.IntentGeneral, nil); !slices.Equal(got, []string{"b", "a", "c"}) {
+		t.Fatal("GENERAL", got)
+	}
+	// Similarity from stored vectors counts too: without the word, b's
+	// cosine still lifts it over c.
+	index.words = nil
+	similar := func([]string) (map[string]float64, error) { return map[string]float64{"b": 0.9, "c": -0.4}, nil }
+	if got := route(retrieval.IntentGeneral, similar); !slices.Equal(got, []string{"b", "c", "a"}) {
+		t.Fatal("similarity", got)
+	}
+	// WHY weighs the graph most: re-ranked c, b, a. The causal order then
+	// puts causes first: a, b, c.
+	index.words = map[string][]string{"outage": {"a", "b"}}
+	if got := route(retrieval.IntentWhy, nil); !slices.Equal(got, []string{"a", "b", "c"}) {
+		t.Fatal("WHY", got)
+	}
+	// The query's entities, as the index resolves them, match the records'
+	// entities: ENTITY ranks the named neighbor first (the ids sort the other
+	// way).
+	index = &derivedIndex{
+		links: map[string][]Link{"a": {edge("x", "entity", 1), edge("y", "entity", 1)}},
+		named: map[string][]string{"y": {"Athena"}},
+	}
+	got, err := index.recall(ctx, []scored{{"a", 1}}, recallQuery{intent: retrieval.IntentEntity, entities: []string{"athena"}, limit: 200})
+	if err != nil || !slices.Equal(got, []string{"y", "x", "a"}) {
+		t.Fatal("ENTITY", got, err)
+	}
+}
+
+func TestRecallRerankWeightsPerIntent(t *testing.T) {
+	// One signal each; gr has the highest raw path score, so the only
+	// nonzero graph score.
+	candidates := map[string]recallSignals{
+		"kw":  {keyword: 1, graph: 1},
+		"ent": {entity: 1, graph: 1},
+		"sim": {similarity: 1, graph: 1},
+		"gr":  {graph: 2},
+	}
+	for intent, want := range map[retrieval.Intent][]string{
+		retrieval.IntentWhy:     {"gr", "sim", "ent", "kw"}, // 0.50, 0.30, 0.10, 0.10
+		retrieval.IntentWhen:    {"gr", "sim", "ent", "kw"}, // 0.40, 0.30, 0.15, 0.15
+		retrieval.IntentEntity:  {"ent", "gr", "kw", "sim"}, // 0.40, then 0.20 each
+		retrieval.IntentGeneral: {"ent", "gr", "kw", "sim"}, // 0.25 each
+		"OTHER":                 {"ent", "gr", "kw", "sim"}, // GENERAL's
+	} {
+		if got := rerankRecall(candidates, intent); !slices.Equal(got, want) {
+			t.Errorf("%s: %v", intent, got)
+		}
+	}
+	// WHEN against WHY: a record with keyword and similarity against one
+	// with the graph alone. WHY: 0.10+0.30 < 0.50; WHEN: 0.15+0.30 > 0.40.
+	candidates = map[string]recallSignals{"both": {keyword: 1, similarity: 1, graph: 1}, "graph": {graph: 2}}
+	if why, when := rerankRecall(candidates, retrieval.IntentWhy), rerankRecall(candidates, retrieval.IntentWhen); !slices.Equal(why, []string{"graph", "both"}) || !slices.Equal(when, []string{"both", "graph"}) {
+		t.Fatal(why, when)
+	}
+	// Equal raw scores: no graph signal at all.
+	if got := rerankRecall(map[string]recallSignals{"b": {graph: 3}, "a": {graph: 3}}, retrieval.IntentWhy); !slices.Equal(got, []string{"a", "b"}) {
+		t.Fatal(got)
+	}
+}
+
+func TestRecallCausalOrder(t *testing.T) {
+	index := &derivedIndex{links: map[string][]Link{
+		"y": {edge("x", "causal", 1), edge("z", "temporal", 1)},
+		"p": {edge("q", "causal", 1)},
+		"q": {edge("p", "causal", 1), edge("outside", "causal", 1)},
+	}}
+	// y causes x: y first, then the best ready record. Temporal links and
+	// links leaving the results do not order.
+	if got := index.causalOrder([]string{"x", "z", "y"}); !slices.Equal(got, []string{"z", "y", "x"}) {
+		t.Fatal(got)
+	}
+	// A cycle keeps its records, after the ordered ones, in score order.
+	if got := index.causalOrder([]string{"q", "p", "r"}); !slices.Equal(got, []string{"r", "q", "p"}) {
+		t.Fatal(got)
+	}
+	if got := index.causalOrder([]string{"x"}); !slices.Equal(got, []string{"x"}) {
+		t.Fatal(got)
 	}
 }
 
@@ -168,10 +284,10 @@ func TestTraversalRouteReachesTwoHops(t *testing.T) {
 	if got.Index.Policy == related.Index.Policy {
 		t.Fatal("traversal policy shares an identity")
 	}
-	// The correction new → old is not traversed; the supersedes route
-	// follows it.
+	// The correction new → old is not traversed (the route holds the anchor
+	// alone); the supersedes route follows it.
 	got, err = s.Query(ctx, indexRequest("beta", &IndexPolicy{Version: 1, Traversal: true}))
-	if err != nil || !slices.Equal(got.IDs, []string{"new"}) || got.Index.Routes["traversal"] != 0 {
+	if err != nil || !slices.Equal(got.IDs, []string{"new"}) || got.Index.Routes["traversal"] != 1 {
 		t.Fatal(got.IDs, got.Index, err)
 	}
 	got, err = s.Query(ctx, indexRequest("beta", &IndexPolicy{Version: 1, Supersedes: true}))
@@ -188,7 +304,8 @@ func TestTraversalRouteReachesTwoHops(t *testing.T) {
 		}
 	}
 	// An intent override reaches traversal: for WHEN the temporal link
-	// leads, for WHY the causal one.
+	// leads, for WHY the causal one (and the causal order keeps the cause
+	// after the anchor that links to it).
 	order := func(intent string) []string {
 		q := indexRequest("outage Athena", &IndexPolicy{Version: 1, Traversal: true})
 		q.Input["intent"], _ = json.Marshal(intent)
@@ -219,7 +336,8 @@ func TestRecencyAnchorsSeedTraversal(t *testing.T) {
 		t.Fatal(got.IDs, err)
 	}
 	got, err = s.Query(ctx, indexRequest("zzz", &IndexPolicy{Version: 1, Recency: true, Traversal: true}))
-	if err != nil || !slices.Contains(got.IDs, "stale") || got.Index.Routes["traversal"] != 1 {
+	// The route: the twenty anchors and stale, re-ranked.
+	if err != nil || !slices.Contains(got.IDs, "stale") || got.Index.Routes["traversal"] != 21 {
 		t.Fatal(got.IDs, got.Index, err)
 	}
 }
@@ -279,7 +397,8 @@ func TestTraversalSemanticUsesStoredVectorsOnly(t *testing.T) {
 		hybrid.Index = &IndexPolicy{Version: 1, Lexical: true, Traversal: true}
 		before = requests.Load()
 		got, err := s.Query(ctx, hybrid)
-		if err != nil || got.Index.Routes["traversal"] != 2 {
+		// The route: the twenty anchors and the two neighbors, re-ranked.
+		if err != nil || got.Index.Routes["traversal"] != 22 {
 			t.Fatal(got, err)
 		}
 		if requests.Load()-before != warm {
