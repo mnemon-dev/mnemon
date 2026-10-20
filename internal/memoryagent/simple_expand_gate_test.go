@@ -325,12 +325,12 @@ func TestExpansionTargetWithinTheBudget(t *testing.T) {
 		t.Fatal(len(got), err, judge.count(), r.stats)
 	}
 	// One call short: the judgement goes first, the need table is skipped
-	// and the read degraded.
+	// and the read degraded (expansion-target).
 	judge = needJudge(byWords(map[string]float64{"ORBIT": 0.9, "launch": 0.9}))
 	r, scored = setup(judge)
 	r.stats.DecisionCalls = simpleDecisionBudget - 4
 	got, err = r.expandEvidence(ctx, scored, stopGivenUp)
-	if err != nil || len(got) != 51 || needAsked(judge) || judge.count() != 2 || r.stats.ExpandAnsweredNeeds != 0 || !slices.Equal(r.stats.Degraded, []string{"expansion"}) || got[1].Row != nil {
+	if err != nil || len(got) != 51 || needAsked(judge) || judge.count() != 2 || r.stats.ExpandAnsweredNeeds != 0 || !slices.Equal(r.stats.Degraded, []string{"expansion-target"}) || got[1].Row != nil {
 		t.Fatal(len(got), err, judge.count(), r.stats)
 	}
 	// A need table failing at its second batch degrades the same way: no
@@ -344,7 +344,124 @@ func TestExpansionTargetWithinTheBudget(t *testing.T) {
 		return failing.Decide(ctx, state, questions)
 	})
 	got, err = r.expandEvidence(ctx, scored, stopGivenUp)
-	if err != nil || len(got) != 51 || r.stats.ExpandAnsweredNeeds != 0 || !slices.Equal(r.stats.Degraded, []string{"expansion"}) || got[1].Row != nil {
+	if err != nil || len(got) != 51 || r.stats.ExpandAnsweredNeeds != 0 || !slices.Equal(r.stats.Degraded, []string{"expansion-target"}) || got[1].Row != nil {
 		t.Fatal(len(got), err, r.stats)
+	}
+}
+
+// The gate reads the coverage of the View compose would show without the
+// expansion: under fusion a need whose record is not shown is not covered
+// (the stage 4b review's probe), and with the timelines layer only the
+// records its character trim can never drop count.
+func TestExpansionGateReadsTheView(t *testing.T) {
+	s := expandFixture(t)
+	judge := func() *scriptedJudge {
+		return &scriptedJudge{answer: func(text string, _ int) float64 {
+			switch {
+			case strings.Contains(text, "ORBIT"):
+				return 0.9
+			case strings.Contains(text, "launch"):
+				return 0.8
+			}
+			return 0.3
+		}}
+	}
+	gated := func(maxItems int) View {
+		planner := replies("codename project\nNOTE: the codename is ORBIT", "NEED: the codename", "codename rocket")
+		a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{MaxItems: maxItems, Fusion: "rrf", Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, Gate: "needs"}}}, Models{Planner: planner, Judge: judge()}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		view, err := a.Read(context.Background(), ReadRequest{Question: "What was the rocket project called?"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return view
+	}
+	// One slot: the fused order shows a1, which does not give the codename.
+	if view := gated(1); view.StopReason != "covered" || view.Stats.ExpandGated || view.Stats.Expanded == 0 {
+		t.Fatal(recordIDs(view.Records), view.Stats)
+	}
+	// Two slots show a2 as well: covered, so gated.
+	if view := gated(2); !view.Stats.ExpandGated || !view.Needs[0].HasEvidence {
+		t.Fatal(recordIDs(view.Records), view.Stats)
+	}
+	// With the layer, a2 (31 characters) counts while the View's characters
+	// less the most the blocks can take leave room for it.
+	events, overlay := eventsStore(t)
+	layered := func(chars int) View {
+		planner := replies("codename project\nNOTE: the codename is ORBIT", "NEED: the codename", "codename rocket")
+		view := &ViewConfig{MaxCharacters: chars, Expand: &ExpandConfig{Kinds: []string{"adjacent"}, Gate: "needs"}}
+		got, err := layerAgent(t, events, overlay, Config{View: view}, planner, judge()).Read(context.Background(), ReadRequest{Question: "What is the codename?"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got
+	}
+	if view := layered(layerBlocksMax + 31); !view.Stats.ExpandGated {
+		t.Fatal(view.Stats)
+	}
+	if view := layered(layerBlocksMax + 30); view.Stats.ExpandGated {
+		t.Fatal(view.Stats)
+	}
+}
+
+// The pivot of target's order is the last needed, current item that
+// answers a need: a fill record that answers one does not pull the
+// expansions behind it (the stage 4b review's probe).
+func TestOrderedPivotIsANeededItem(t *testing.T) {
+	r := &simpleRun{targeted: true}
+	item := func(id string, needed float64, row []float64, expanded bool) *simpleItem {
+		return &simpleItem{ID: id, Needed: needed, Row: row, Expanded: expanded, Judged: true}
+	}
+	scored := []*simpleItem{
+		item("p-needed", 0.9, []float64{0.9, 0}, false),
+		item("p-fill1", 0.3, []float64{0.1, 0}, false),
+		item("p-fill2", 0.2, []float64{0.8, 0}, false),
+		item("x-greeting", 0.95, []float64{0, 0.1}, true),
+		item("x-answers", 0.6, []float64{0, 0.9}, true),
+	}
+	if got := itemIDs(r.ordered(scored)); !slices.Equal(got, []string{"p-needed", "x-answers", "x-greeting", "p-fill1", "p-fill2"}) {
+		t.Fatal(got)
+	}
+	// An answering item no longer current is no pivot either: p-needed is.
+	scored[4].Superseded = 0.9
+	if got := itemIDs(r.ordered(scored)); !slices.Equal(got, []string{"p-needed", "x-greeting", "x-answers", "p-fill1", "p-fill2"}) {
+		t.Fatal(got)
+	}
+}
+
+// expandAnsweredNeeds counts the answers of current expansions only (the
+// stage 4b review's probe): b1 answers the launch day but was moved.
+func TestExpansionAnsweredNeedsAreCurrent(t *testing.T) {
+	s := expandFixture(t)
+	judge := func(moved float64) *scriptedJudge {
+		return &scriptedJudge{
+			answer: func(text string, need int) float64 {
+				switch {
+				case need < 0 && (strings.Contains(text, "ORBIT") || strings.Contains(text, "launch moved")):
+					return 0.9
+				case need < 0:
+					return 0.2
+				case need == 0 && strings.Contains(text, "ORBIT"), need == 1 && strings.Contains(text, "moved"):
+					return 0.9
+				}
+				return 0.1
+			},
+			superseded: func(text string) float64 {
+				if strings.Contains(text, "moved") {
+					return moved
+				}
+				return 0
+			},
+		}
+	}
+	targeted := &ViewConfig{Expand: &ExpandConfig{Kinds: []string{"adjacent", "temporal", "causal"}, Target: "needs"}}
+	needs := "NEED: the codename\nNEED: the launch day"
+	if view := needsRead(t, s, needs, targeted, judge(0)); view.Stats.ExpandAnsweredNeeds != 1 || !view.Needs[1].HasEvidence {
+		t.Fatal(view.Stats, view.Needs)
+	}
+	if view := needsRead(t, s, needs, targeted, judge(0.7)); view.Stats.ExpandAnsweredNeeds != 0 || view.Needs[1].HasEvidence {
+		t.Fatal(view.Stats, view.Needs)
 	}
 }

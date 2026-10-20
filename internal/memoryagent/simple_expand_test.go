@@ -537,7 +537,7 @@ func expansionRunWith(t *testing.T, judge Decider, expand *ExpandConfig) (*simpl
 		t.Fatal(err)
 	}
 	r := testRun(a, user("What is the codename?"))
-	r.revision = revision
+	r.revision, r.req.MaxItems = revision, 16
 	values, err := evidence(ctx, s, revision, records.Scope{}, []string{"seed"})
 	if err != nil || len(values) != 1 {
 		t.Fatal(values, err)

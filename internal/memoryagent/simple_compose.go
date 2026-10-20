@@ -262,9 +262,10 @@ func heldExpansions(v *viewFill, order []*simpleItem, reserve int, needless bool
 
 // ordered is the judged items in compose's order: judgedOrder (by Needed,
 // best first), and when target asked the expansions the need table's
-// question, each expansion that answers no need moves after the last item
-// that answers one (a need-table answer ≥ 0.5; for the items JEV tabled in
-// the loop, of any need), keeping its order among those moved.
+// question, each expansion that answers no need moves after the last
+// needed (≥ 0.5) current item that answers one (a need-table answer ≥ 0.5;
+// for the items JEV tabled in the loop, of any need), keeping its order
+// among those moved.
 func (r *simpleRun) ordered(scored []*simpleItem) []*simpleItem {
 	order := judgedOrder(scored)
 	if !r.targeted {
@@ -275,7 +276,7 @@ func (r *simpleRun) ordered(scored []*simpleItem) []*simpleItem {
 	}
 	last := -1
 	for i, item := range order {
-		if answers(item) {
+		if answers(item) && item.Needed >= 0.5 && current(item) {
 			last = i
 		}
 	}
@@ -291,6 +292,43 @@ func (r *simpleRun) ordered(scored []*simpleItem) []*simpleItem {
 		}
 	}
 	return out
+}
+
+// wouldShow is the records compose would show without the expansion, as
+// far as the read can tell before the timelines layer: compose's selection
+// (fusion's when set) of the judged list, and with the layer only the
+// leading records the layer's character trim can never drop, those within
+// the View's characters less the most the layer's blocks can take
+// (layerBlocksMax). It makes no model call.
+func (r *simpleRun) wouldShow(ctx context.Context, scored []*simpleItem) ([]*simpleItem, error) {
+	maxItems, maxChars := r.req.MaxItems, r.agent.config.View.MaxCharacters
+	var shown []*simpleItem
+	if r.agent.config.View.Fusion == "rrf" {
+		candidates, _, err := r.fused(ctx, scored)
+		if err != nil {
+			return nil, err
+		}
+		v := newViewFill(maxItems, maxChars)
+		for _, item := range candidates {
+			if v.fits(item) {
+				v.take(item)
+			}
+		}
+		shown = v.selected
+	} else {
+		shown = composed(scored, r.needless, maxItems, maxChars).selected
+	}
+	if !r.agent.layerOn() {
+		return shown, nil
+	}
+	room, kept := maxChars-layerBlocksMax, []*simpleItem{}
+	for _, item := range shown {
+		if room -= jsLen(item.Evidence.Text); room < 0 {
+			break
+		}
+		kept = append(kept, item)
+	}
+	return kept, nil
 }
 
 // reserve is the View slots held for expansions: view.expand.reserve, at

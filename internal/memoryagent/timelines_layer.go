@@ -42,7 +42,14 @@ const (
 	layerLinked = 24
 	layerSlack  = 400
 	layerExpand = 8
+	// The headers of the timelines and values blocks, outside their budgets.
+	timelinesHead = "Timelines of the topics this concerns:\n"
+	valuesHead    = "History of values:"
 )
+
+// layerBlocksMax is the most characters the layer's blocks can take: each
+// block's budget, and the two headers counted outside theirs.
+var layerBlocksMax = layerInstructions + layerDirectory + layerTimelines + layerValues + jsLen(timelinesHead) + jsLen(valuesHead)
 
 // eventThreads is the author's threadsOf (C:184-188) as event indexes, and
 // the threads that have events, in memory order.
@@ -314,7 +321,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 		timelines, size = timelines+part, size+jsLen(part)
 	}
 	if timelines != "" {
-		add("3-timelines", "Timelines of the topics this concerns:\n"+timelines, linked)
+		add("3-timelines", timelinesHead+timelines, linked)
 	}
 
 	values, linked := "", []string{}
@@ -334,7 +341,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 		}
 	}
 	if values != "" {
-		add("4-values", "History of values:"+values, linked)
+		add("4-values", valuesHead+values, linked)
 	}
 	return blocks
 }

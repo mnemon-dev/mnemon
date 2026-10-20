@@ -218,7 +218,16 @@ func seedKind(kind string) bool { return kind != expandEvents }
 // fails. stop is why the need loop stopped.
 func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, stop string) ([]*simpleItem, error) {
 	config := r.agent.config.View.Expand
-	covered := r.covered(scored)
+	// The needs' coverage, of the gate and target alike, is that of the
+	// View compose would show without the expansion.
+	var covered []bool
+	if config.Gate == expandNeeds || config.Target == expandNeeds {
+		shown, err := r.wouldShow(ctx, scored)
+		if err != nil {
+			return nil, err
+		}
+		covered = r.covered(shown)
+	}
 	if config.Gate == expandNeeds && sufficient(stop, covered) {
 		r.mu.Lock()
 		r.stats.ExpandGated = true
@@ -318,7 +327,7 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 	// candidate the seeds a correction links it to.
 	batches := peerBatches(items, expansionPeers(scored, seeds), partners)
 	if config.Target == expandNeeds {
-		if err = r.target(ctx, items, covered, len(batches)); err != nil {
+		if err = r.target(ctx, items, uncovered(covered), len(batches)); err != nil {
 			return nil, err
 		}
 	}
@@ -348,8 +357,12 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 		scored = append(scored, item)
 		if item.Needed >= 0.5 {
 			r.stats.ExpandedNeeded++
-			for k, answer := range item.Row {
-				answered[k] = answered[k] || answer >= 0.5
+		}
+		// An answer counts from a current candidate, for a need target
+		// asked.
+		if r.targeted && current(item) {
+			for _, k := range uncovered(covered) {
+				answered[k] = answered[k] || item.Row[k] >= 0.5
 			}
 		}
 	}
@@ -361,16 +374,25 @@ func (r *simpleRun) expandEvidence(ctx context.Context, scored []*simpleItem, st
 	return scored, nil
 }
 
-// covered reports, for each need, whether the evidence judged so far gives
-// it: the need is not an ALL need (one wants every instance), and an item
-// JEV judged needed (≥ 0.5) and current answers it in the need table
-// (≥ 0.5).
-func (r *simpleRun) covered(scored []*simpleItem) []bool {
+// covered reports, for each need, whether the shown records give it: the
+// need is not an ALL need (one wants every instance), and a shown record
+// answers it in the need table (≥ 0.5; the screen for an untabled single
+// need), as the View's needs report hasEvidence.
+func (r *simpleRun) covered(shown []*simpleItem) []bool {
 	out := make([]bool, len(r.needs))
 	for k, need := range r.needs {
-		out[k] = !need.All && slices.ContainsFunc(scored, func(item *simpleItem) bool {
-			return item.Needed >= 0.5 && current(item) && r.answer(item.ID, k) >= 0.5
-		})
+		out[k] = !need.All && slices.ContainsFunc(shown, func(item *simpleItem) bool { return r.answer(item.ID, k) >= 0.5 })
+	}
+	return out
+}
+
+// uncovered is the indexes of the needs not covered.
+func uncovered(covered []bool) []int {
+	out := []int{}
+	for k, done := range covered {
+		if !done {
+			out = append(out, k)
+		}
 	}
 	return out
 }
@@ -385,24 +407,18 @@ func sufficient(stop string, covered []bool) bool {
 
 // target is target "needs", Jev-Mem's new-information question: before
 // their judgement, the candidates are asked the need table's question
-// (askNeeds) for each need not covered, and their rows are set; compose then
-// ranks those that answer one first (ordered). With every need covered it
-// asks nothing. The judgement comes first: when the budget cannot pay for
-// the need table and the judgement both, or the need table fails, the
-// candidates go without rows and the read is degraded (expansion). Only a
-// canceled read is an error.
-func (r *simpleRun) target(ctx context.Context, items []*simpleItem, covered []bool, judgeCalls int) error {
-	asked := []int{}
-	for k, done := range covered {
-		if !done {
-			asked = append(asked, k)
-		}
-	}
+// (askNeeds) for each asked need (those not covered), and their rows are
+// set; compose then ranks those that answer one first (ordered). With no
+// need to ask it asks nothing. The judgement comes first: when the budget
+// cannot pay for the need table and the judgement both, or the need table
+// fails, the candidates keep the rows they had and the read is degraded
+// (expansion-target). Only a canceled read is an error.
+func (r *simpleRun) target(ctx context.Context, items []*simpleItem, asked []int, judgeCalls int) error {
 	if len(asked) == 0 || len(items) == 0 {
 		return nil
 	}
 	if calls := (len(items)+tableBatch-1)/tableBatch + judgeCalls; r.decisionsLeft() < calls {
-		r.degrade("expansion")
+		r.degrade("expansion-target")
 		return nil
 	}
 	// A pooled record (rejudge) keeps the answers the loop tabled for the
@@ -428,7 +444,7 @@ func (r *simpleRun) target(ctx context.Context, items []*simpleItem, covered []b
 		for _, item := range items {
 			item.Row = before[item]
 		}
-		r.degrade("expansion")
+		r.degrade("expansion-target")
 		return nil
 	}
 	r.targeted = true
