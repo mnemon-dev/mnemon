@@ -27,7 +27,16 @@ failed; shared words rank the topics), `layer` (the layer's judgement failed) an
 (linked records could not be read or judged). It is absent when nothing fell back, and
 always for memory-agent/v1. With an `index` setting, a simple read's `stats.indexRoutes`
 counts, for each native route (`lexical`, `entities`, `relations`, `temporal`,
-`supersedes`), the read's searches in which that route found a candidate.
+`supersedes`, `recency`, `traversal`), the read's searches in which that route found a
+candidate.
+
+`"view": {"intent": "question"}` makes a simple read detect the intent of its `question`
+once (native recall's WHY, WHEN, ENTITY or GENERAL detection) and pass it as `input.intent`
+to every records search it sends, the message's, the note's, the planner's and the
+loop's, so the `relations` and `traversal` routes weigh links by what was asked rather
+than by each search's own words; `stats.intent` reports it. Absent or `""`, each search
+detects its intent from its own text, as before, and `stats.intent` is absent. Other
+values are refused. The setting changes nothing without an `index` that reads intent.
 
 With `"consolidation": {"mode": "timelines"}` a job reads the records written since the
 last one into a pending list, folds every full batch of `batchCharacters`, and folds the

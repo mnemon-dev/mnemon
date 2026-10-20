@@ -22,6 +22,42 @@ are unchanged. Indexes are derived in memory for an immutable, scoped selection.
 | `relations` | At most five valid links from each of at most twenty query anchors. Native question intent selects causal/entity, temporal/entity, or entity/semantic links. `input.intent` overrides lexical intent. |
 | `temporal` | `data.eventAt`, then `date`, then `createdAt`, parsed as absolute time. Inclusive `since` and `until` constrain all routes. Only explicit `input.timeOrder: "oldest"` or `"newest"` reorders anchors by event time; lexical WHEN intent alone keeps relevance order. |
 | `supersedes` | Follow explicit corrections in both directions; current queries place retained, explicitly superseded evidence behind current evidence. `input.history: true`, explicit IDs and an `until` bound retain historical ranking. |
+| `recency` | Native Smart Recall's recency anchor signal: the twenty newest records of the selection by index time (`data.eventAt`, then `date`, then `createdAt`), ties by ID. It is a seed list, fused with the base, `lexical` and `entities` lists before `relations`, `supersedes`, `temporal` and `traversal` read the seeds. |
+| `traversal` | Native Smart Recall's beam search from the twenty best fused seeds over the valid links (writer and derived-metadata links, as `relations` reads them; `supersedes` links are not traversed). See below. |
+
+### Traversal
+
+`traversal` ports native recall's beam search (`internal/memory/search/recall.go`,
+[Smart Recall](design/05-pipelines.md#52-read-pipeline-smart-recall)). Each anchor starts
+with its reciprocal-rank fusion score divided by the best anchor's. A step along a link
+adds `1.0 × link weight × intent weight + 0.4 × cosine` to the path's score, where the
+intent weight is native's for the link type:
+
+| Intent | causal | temporal | entity | semantic |
+|---|---|---|---|---|
+| WHY | 0.70 | 0.20 | 0.05 | 0.05 |
+| WHEN | 0.15 | 0.65 | 0.10 | 0.10 |
+| ENTITY | 0.10 | 0.05 | 0.55 | 0.30 |
+| GENERAL | 0.25 | 0.25 | 0.25 | 0.25 |
+
+The cosine term counts only when it is positive, the query is `match: "hybrid"` with an
+`embedding` (so the base route has the query's vector) and the neighbor's vector is
+already stored; traversal never embeds. From each anchor, the beam keeps the best nodes
+of each level and stops at native's budgets (the anchor counts as visited):
+
+| Intent | Beam width | Max depth | Max visited |
+|---|---|---|---|
+| WHY | 15 | 5 | 500 |
+| WHEN | 10 | 5 | 400 |
+| ENTITY | 10 | 4 | 400 |
+| GENERAL | 10 | 4 | 500 |
+
+Every record keeps its best path score; scores add up along a path, so a deeper record
+can outrank the one it was reached through, as in native recall. The route returns the
+reached records that are not anchors, best first (ties by ID), at most `candidateLimit`.
+The intent is `input.intent` when given, else detected from `input.query`, as for
+`relations`. Causal and temporal links are followed in their stated direction only (native
+recall follows its edges both ways); entity and semantic links are mutual.
 
 An explicit link in `data.links` is
 `{"id":"target","version":1,"type":"causal","weight":1}`.
