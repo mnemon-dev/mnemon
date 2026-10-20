@@ -538,15 +538,23 @@ func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, la
 }
 
 // rebuildEdges rebuilds the records' native edges that consolidate's jobs
-// left pending, unless its window has passed; a failure is logged under
-// label, and the next rebuild catches up.
+// left pending, unless its window has passed; a failure, and event edge
+// pairs JEV left undecided (edgeKinds), are logged under label, and the
+// next rebuild catches up.
 func (s *Server) rebuildEdges(ctx context.Context, user *userEntry, label string) {
 	if ctx.Err() != nil {
 		s.log.Printf("%s left native edges pending (user %s): %v", label, user.key[:8], ctx.Err())
 		return
 	}
-	if _, err := s.consolidateOnce(ctx, user, memoryagent.ConsolidateRequest{RebuildEdges: true}); err != nil {
+	result, err := s.consolidateOnce(ctx, user, memoryagent.ConsolidateRequest{RebuildEdges: true})
+	if err == nil && result.EdgeError != "" {
+		err = errors.New(result.EdgeError)
+	}
+	if err != nil {
 		s.log.Printf("%s native edges failed (user %s): %v", label, user.key[:8], err)
+	}
+	if result.EdgeFallbacks > 0 {
+		s.log.Printf("%s native edges left %d pairs undecided (user %s)", label, result.EdgeFallbacks, user.key[:8])
 	}
 }
 

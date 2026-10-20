@@ -314,3 +314,21 @@ func TestNativeEventEdgesRebuiltOncePerConsolidation(t *testing.T) {
 		t.Fatal("rebuilds", g, n, h.log.String())
 	}
 }
+
+func TestNativeEventEdgesLogFallbacks(t *testing.T) {
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &memoryagent.ConsolidationConfig{Mode: "layered", BatchCharacters: 300, MaxBatches: 1, NativeEdges: true, EdgeKinds: []string{"temporal"}}
+		config.ConsolidateOnAdd = true
+	})
+	h.judge.failEdges.Store(true)
+	long := addRequest("r1", "u1")
+	long.Messages = nil
+	for i := range 3 {
+		long.Messages = append(long.Messages, Message{Role: "user", Content: fmt.Sprintf("Note %d: ", i) + strings.Repeat("Caroline talked about the support group again. ", 10), Timestamp: at(i)})
+	}
+	h.mustAdd(t, long)
+	// The rebuild goes on without the failed pairs, and says so.
+	if g := derivedGeneration(t, h.root); g != "1" || !strings.Contains(h.log.String(), "consolidation native edges left 3 pairs undecided (user ") {
+		t.Fatal(g, h.log.String())
+	}
+}

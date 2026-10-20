@@ -65,8 +65,10 @@ func (p *fakePlanner) seen() []string {
 type fakeJudge struct {
 	fail, failJudgement, block, panicOnLayer atomic.Bool
 	blocked                                  atomic.Int64
-	// edgeCalls counts the calls asking about consolidation events' edges.
+	// edgeCalls counts the calls asking about consolidation events' edges;
+	// failEdges fails them.
 	edgeCalls atomic.Int64
+	failEdges atomic.Bool
 }
 
 func (j *fakeJudge) Decide(ctx context.Context, state any, questions map[string]memoryagent.Question) (map[string]float64, memoryagent.Usage, error) {
@@ -84,6 +86,9 @@ func (j *fakeJudge) Decide(ctx context.Context, state any, questions map[string]
 	for _, q := range questions {
 		if strings.Contains(q.Instructions, "event whose `id`") {
 			j.edgeCalls.Add(1)
+			if j.failEdges.Load() {
+				return nil, memoryagent.Usage{}, errors.New("malformed decision")
+			}
 			break
 		}
 	}
