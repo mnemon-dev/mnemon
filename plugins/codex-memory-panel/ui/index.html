@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Mnemon · 记忆系统</title><!--STYLE--></head>
+<body>
+<main>
+  <header class="header">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">m</span><div><h1>Mnemon <span>记忆系统</span></h1><p>让踩过的坑，成为下一次的经验。</p></div></div>
+    <span id="connection" class="connection" role="status"><i></i><span>正在连接</span></span>
+  </header>
+  <div class="toolbar"><label class="store-label">记忆范围<select id="store" aria-label="选择记忆范围"><option>正在读取…</option></select></label><button id="choose-project" class="copy" type="button">选定项目</button><button id="add-memory" class="copy" type="button">补充记忆</button><span id="version" class="version"></span></div>
+  <p class="workflow-hint">开发前召回项目与全局经验，验证后由模型记下新经验。全局保存通用知识；全部项目仅用于汇总浏览。</p>
+  <div id="notice" class="notice" role="status" hidden></div>
+  <section class="stats" aria-label="记忆统计">
+    <article><span>活跃记忆</span><strong id="total">—</strong><small>项目经验与长期知识</small></article>
+    <article><span>知识关联</span><strong id="edges">—</strong><small>记忆之间的连接</small></article>
+    <article><span>最后同步</span><strong id="synced" class="time">—</strong><small>有变化时自动同步</small></article>
+  </section>
+  <section class="workspace">
+    <div class="memories">
+      <div class="search-wrap"><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="搜索内容、标签或来源" aria-label="搜索记忆"></div>
+      <nav id="categories" class="categories" aria-label="分类筛选"></nav>
+      <div class="list-heading"><span>记忆列表</span><span id="matched">—</span></div>
+      <div id="list" class="list" aria-label="记忆列表"><div class="empty">正在读取你的记忆…</div></div>
+    </div>
+    <aside id="detail" class="detail" aria-label="记忆详情"><div class="detail-empty"><span class="detail-symbol">◎</span><h2>每条经验，都有来处</h2><p>选择一条记忆，查看完整内容和来源。</p></div></aside>
+  </section>
+  <footer><span id="data-path">本地记忆 · 内容不会发送到其他服务</span><span id="update-note" aria-live="polite"></span></footer>
+</main>
+<dialog id="project-dialog" aria-labelledby="project-title">
+  <form id="project-form">
+    <div class="dialog-heading"><h2 id="project-title">选定记忆项目</h2><button type="button" class="copy" id="close-project">关闭</button></div>
+    <p class="dialog-hint">关联目录与记忆库，让模型按项目召回和保存经验。已有记忆保留在原库。</p>
+    <label>发现的项目<select id="project-choice"><option value="">手动添加项目目录</option></select></label>
+    <label>项目名称<input id="project-name" required maxlength="100" placeholder="例如：我的应用"></label>
+    <label>项目目录<input id="project-path" required maxlength="4096" placeholder="粘贴完整项目目录"></label>
+    <label>项目记忆库<select id="project-store"><option value="">自动创建项目专属库</option></select></label>
+    <p class="dialog-hint">新项目库在首次保存记忆时创建。模型还会召回全局经验，不会将全部项目内容混写到一个库。</p>
+    <p id="project-error" class="form-status" role="status"></p>
+    <button id="save-project" class="primary" type="submit">关联并查看项目</button>
+  </form>
+</dialog>
+<dialog id="memory-dialog" aria-labelledby="memory-title">
+  <form id="memory-form">
+    <div class="dialog-heading"><h2 id="memory-title">补充一条记忆</h2><button type="button" class="copy" id="close-memory">关闭</button></div>
+    <p class="dialog-hint">主要由模型在开发中积累经验。也可以在这里补充你确认过的知识。</p>
+    <p id="memory-target" class="target-label"></p>
+    <label>分类<select id="memory-category"><option value="insight">经验</option><option value="decision">决策</option><option value="preference">偏好</option><option value="fact">事实</option><option value="context">上下文</option></select></label>
+    <label>记忆内容<textarea id="memory-content" required maxlength="8000" rows="7" placeholder="问题、根因、有效办法、验证结果和来源…"></textarea></label>
+    <p id="memory-error" class="form-status" role="status"></p>
+    <button id="save-memory" class="primary" type="submit">保存到所选记忆库</button>
+  </form>
+</dialog>
+<!--SCRIPT-->
+</body></html>

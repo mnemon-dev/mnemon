@@ -159,6 +159,10 @@ mnemon setup --target codex --yes
 One command deploys the mnemon skill, prompt files, and Codex lifecycle hooks
 (`SessionStart`, `UserPromptSubmit`, `Stop`) in `.codex/hooks.json`.
 
+For Codex desktop, the optional [memory panel](plugins/codex-memory-panel/README.md)
+adds project/global memory browsing, automatic updates and explicit memory
+tools through a local MCP App. It is installed separately from lifecycle hooks.
+
 ### [Cursor](https://cursor.com/)
 
 ```bash
