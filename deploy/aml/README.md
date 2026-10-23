@@ -56,9 +56,8 @@ may do (see step 6 below).
   `Conversation <session_id> on <YYYY/MM/DD (Mon) HH:MM>:` built from the first message
   timestamp of the request (UTC), or `Conversation <session_id>:` when there is none. The
   original date therefore travels inside `content`, and no date is inferred.
-- Records are content-addressed and immutable. The embedding of each new chunk is computed at
-  write time with `nomic-embed-text` (Ollama, on the same host), so Add returns only when the
-  records are persisted, searchable by words and by vector.
+- Records are content-addressed and immutable. Add returns only when the records are
+  persisted and searchable by words.
 - An Add is idempotent by `request_id`; a different payload under the same `request_id` is
   refused. Long Adds are split into parts of at most 90,000 bytes of message text.
 - Every `user_id` has its own store (`users/<hash of user_id>`), so users are isolated by
@@ -70,7 +69,7 @@ may do (see step 6 below).
    and one invented note that would answer the question, and lists up to three needs
    ("NEED" a fact, "ALL" every instance). The question itself is searched too. The prompts are
    the reference implementation's, verbatim.
-2. **Search.** Each cue runs a hybrid search (vector plus words) over the user's records and is
+2. **Search.** Each cue runs a BM25 search (words only) over the user's records and is
    read in pages of 20 records; the first pages are mixed into a pool of 48 candidates.
 3. **Judge.** JEV 1.13.0 screens each candidate ("is it needed?"), then tables the best against
    each need and judges whether a record is superseded by a later one.
@@ -100,8 +99,8 @@ may do (see step 6 below).
    time order, earlier first (`view.order: "time"`); records of one time keep the order they
    were written in. The records are selected, and cut at
    `top_k`, by rank. Each item's `score` is `1/(position+1)`. No answer is generated. If a
-   model, a budget or the embedder fails, or the read runs past its timeout, Search still
-   answers with the plain hybrid ranking, cut at `top_k` by rank and delivered in time order,
+   model or a budget fails, or the read runs past its timeout, Search still
+   answers with the plain BM25 ranking, cut at `top_k` by rank and delivered in time order,
    and records the fact in its log.
 
 ### Models and services
@@ -111,13 +110,17 @@ may do (see step 6 below).
 | Planner | DeepSeek Flash (`deepseek-flash`), no reasoning mode | DeepSeek API |
 | Judge; also links the consolidation items | JEV `jev-1.13.0` | JEV API (api.typesafe.ai) |
 | Consolidator (extracts each batch) | DeepSeek Flash, no reasoning mode | DeepSeek API |
-| Embeddings | `nomic-embed-text` (`search_query: ` / `search_document: ` prefixes) | Ollama on the submission host |
+
+Retrieval is BM25 only. The cue searches over the records, the consolidation layer's choice
+of the topics and values nearest to a question, and the linking of new topics and facts to
+stored ones all rank by shared words (BM25). Nothing is embedded and no embedding service
+runs.
 
 During a Search, the question, the planner's searches and candidate record texts go to the
 DeepSeek and JEV APIs; during consolidation (in an Add, or before a user's next Search), the
 conversation text goes to the DeepSeek API, and the events and facts it extracts from the
 conversation (topic titles, dated event texts, fact keys and values) go to the JEV API. Raw
-records and vectors stay on the submission host. `<confirm that the track rules allow
+records stay on the submission host. `<confirm that the track rules allow
 external model APIs, and add their data-retention terms if the rules require them>`.
 
 ## Changes from the reference implementation
@@ -177,11 +180,11 @@ Fill these from the measurements described in the runbook ("Capacity declaration
 | Stores kept open | 16 (`--max-open-stores`) |
 | Request body limit | 30 MiB |
 | Retries | Add retries with the same `request_id` are idempotent; 503 marks a retryable failure |
-| Model spending caps | JEV USD `<cap>` (reads and consolidation links), DeepSeek CNY `<cap>` (planning and extraction); `budgets` in the configuration |
+| Model spending caps | JEV USD 60 (reads and consolidation links), DeepSeek CNY 600 (planning and extraction); `budgets` in the configuration |
 
 ## Data handling
 
-- All user data (records, vectors, consolidation index) lives under one data root on the
+- All user data (records, consolidation index) lives under one data root on the
   submission host, one directory per `user_id`; users cannot reach each other's records.
 - Request bodies and user identifiers are not logged.
 - The model budget file keeps metering and the SHA-256 hashes of model requests, never their

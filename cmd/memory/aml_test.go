@@ -10,7 +10,6 @@ import (
 
 	"github.com/mnemon-dev/mnemon/internal/aml"
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
-	"github.com/mnemon-dev/mnemon/internal/records"
 )
 
 func TestAMLServeIsAMemoryAgentSubcommand(t *testing.T) {
@@ -91,12 +90,13 @@ func TestIndustrialConfigLoadsAndStarts(t *testing.T) {
 		// The extraction of a full batch may take minutes; the default 90 s
 		// would cut it off.
 		Consolidator: &memoryagent.ModelConfig{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "DEEPSEEK_API_KEY", TimeoutSeconds: 600},
-		Embedding: &records.EmbeddingConfig{
-			URL: "http://127.0.0.1:11434", Model: "nomic-embed-text",
-			QueryPrefix: "search_query: ", DocumentPrefix: "search_document: ",
-		},
+		// BM25 only, no Ollama: without an embedding section the cue searches
+		// match words, the consolidation layer and the linking rank by shared
+		// words, and an Add embeds nothing.
+		Embedding:  nil,
 		BudgetFile: "/var/lib/mnemon-aml/model-budget.db",
-		Budgets:    map[string]float64{"jev": 20, "deepseek": 200},
+		// The evaluation caps: JEV in USD, DeepSeek in CNY.
+		Budgets: map[string]float64{"jev": 60, "deepseek": 600},
 	}
 	if !reflect.DeepEqual(config, want) {
 		got, _ := json.MarshalIndent(config, "", " ")

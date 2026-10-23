@@ -25,15 +25,9 @@
     "keyEnv": "DEEPSEEK_API_KEY",
     "timeoutSeconds": 600
   },
-  "embedding": {
-    "url": "http://127.0.0.1:11434",
-    "model": "nomic-embed-text",
-    "queryPrefix": "search_query: ",
-    "documentPrefix": "search_document: "
-  },
   "budgetFile": "/var/lib/mnemon-aml/model-budget.db",
   "budgets": {
-    "jev": 20,
-    "deepseek": 200
+    "jev": 60,
+    "deepseek": 600
   }
 }
