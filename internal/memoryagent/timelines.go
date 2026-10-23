@@ -35,7 +35,8 @@ const (
 	// alike (ErrModelUnavailable: outage, credentials, balance, rate limit)
 	// never count, so an outage of any length drops nothing; a layered
 	// job's timeout counts only when another of its calls was answered
-	// (foldJob.counts).
+	// (foldJob.counts). The same thresholds make a layered head batch's
+	// linking rule due (linkDue), counted apart and never splitting it.
 	dropErrors = 3
 	dropAfter  = 10 * time.Minute
 )
@@ -95,7 +96,10 @@ type timelineMemory struct {
 // job reads the records after it, so none is read twice. ModelErrors counts
 // the jobs whose fold of the head batch ended in a model error since a batch
 // last left the pending records, and FirstModelError is when the first of
-// them was (Unix milliseconds; 0 for none). Mode is the consolidation mode
+// them was (Unix milliseconds; 0 for none). LinkErrors and FirstLinkError
+// count likewise the jobs (with DeferLinks) in which linking the head batch
+// failed for the linking request itself, for its linking rule (linkDue),
+// apart from its extraction's drop mode. Mode is the consolidation mode
 // of the job that last wrote the state: "" for timelines, or "layered".
 // EntityClusters (nativeEdges) holds the decided entity names: each name's
 // cluster, named by its first name; EventEdges (edgeKinds) JEV's decisions
@@ -115,6 +119,8 @@ type timelineState struct {
 	Failed          int               `json:"failed"`
 	ModelErrors     int               `json:"modelErrors,omitempty"`
 	FirstModelError int64             `json:"firstModelError,omitempty"`
+	LinkErrors      int               `json:"linkErrors,omitempty"`
+	FirstLinkError  int64             `json:"firstLinkError,omitempty"`
 	EntityClusters  map[string]string `json:"entityClusters,omitempty"`
 	EventEdges      *eventEdges       `json:"eventEdges,omitempty"`
 	EdgesMemory     string            `json:"edgesMemory,omitempty"`
@@ -899,17 +905,37 @@ func countedError(ctx context.Context, err error) bool {
 // counts (foldJob.counts).
 func (a *Agent) countError(ctx context.Context, state *timelineState, err error) {
 	if foldJobOf(ctx).counts(ctx, err) {
-		if state.ModelErrors == 0 {
-			state.FirstModelError = a.now().UnixMilli()
-		}
-		state.ModelErrors++
+		a.countFailure(&state.ModelErrors, &state.FirstModelError)
 	}
+}
+
+// countFailure counts one more failure in n, dating the first of them
+// (first, Unix milliseconds).
+func (a *Agent) countFailure(n *int, first *int64) {
+	if *n == 0 {
+		*first = a.now().UnixMilli()
+	}
+	(*n)++
 }
 
 // dropDue reports whether the head batch is folded in drop mode: dropErrors
 // counted model errors, the first of them at least dropAfter ago.
 func (a *Agent) dropDue(state timelineState) bool {
-	return state.ModelErrors >= dropErrors && a.now().Sub(time.UnixMilli(state.FirstModelError)) >= dropAfter
+	return a.ruleDue(state.ModelErrors, state.FirstModelError)
+}
+
+// linkDue reports whether a layered head batch whose linking fails for the
+// request itself links without JEV (its linking rule): dropErrors such
+// failures counted, the first of them at least dropAfter ago.
+func (a *Agent) linkDue(state timelineState) bool {
+	return a.ruleDue(state.LinkErrors, state.FirstLinkError)
+}
+
+// ruleDue reports whether n counted failures, the first at first (Unix
+// milliseconds), are due: dropErrors of them, the first at least dropAfter
+// ago.
+func (a *Agent) ruleDue(n int, first int64) bool {
+	return n >= dropErrors && a.now().Sub(time.UnixMilli(first)) >= dropAfter
 }
 
 // foldDropping folds the head batch after repeated model errors: split once,

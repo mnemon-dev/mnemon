@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -566,7 +567,7 @@ func TestDeferredLinkLeavesBatchPending(t *testing.T) {
 	// The state is the one saved after the first batch: every record read,
 	// the first batch linked, nothing counted against the second.
 	state := loadState(t, overlay)
-	if state.Watermark != newest || state.Batches != 1 || state.ModelErrors != 0 || state.FirstModelError != 0 || !slices.Equal(ids(state.Pending), []string{"n03", "n04", "n05", "n06", "n07", "n08"}) {
+	if state.Watermark != newest || state.Batches != 1 || state.ModelErrors != 0 || state.FirstModelError != 0 || state.LinkErrors != 0 || !slices.Equal(ids(state.Pending), []string{"n03", "n04", "n05", "n06", "n07", "n08"}) {
 		t.Fatalf("state %+v", state)
 	}
 	if got := threadEvents(state); !reflect.DeepEqual(got, map[string][]string{"kayak": {"n00"}, "taxes": {"n01"}, "garden": {"n02"}}) {
@@ -617,7 +618,7 @@ func TestDeferredLinkOutagesCountNothing(t *testing.T) {
 				if !errors.Is(err, ErrLinkDeferred) || !errors.Is(err, cause) || result.Deferred != 1 || result.LinkFallbacks != 0 {
 					t.Fatalf("result %+v %v", result, err)
 				}
-				if state := loadState(t, overlay); state.ModelErrors != 0 || state.FirstModelError != 0 || len(state.Pending) != 6 {
+				if state := loadState(t, overlay); state.ModelErrors != 0 || state.FirstModelError != 0 || state.LinkErrors != 0 || state.FirstLinkError != 0 || len(state.Pending) != 6 {
 					t.Fatalf("state %+v", state)
 				}
 			}
@@ -658,52 +659,89 @@ func TestWithoutDeferLinksStillFallsBack(t *testing.T) {
 }
 
 func TestRequestSpecificLinkFailureFallsBackAfterDropRule(t *testing.T) {
-	ctx := context.Background()
-	s, dir := agentStore(t)
-	seedTopics(t, s, 3)
-	judge := topicJudge()
-	answer := judge.answer
-	// JEV answers the second batch's questions with probabilities outside
-	// [0, 1], which fail validation: the request's own failure, each time.
-	second := regexp.MustCompile(`(note|update) 0[345]\b`)
-	judge.answer = func(kind, newText, candidate string) float64 {
-		if second.MatchString(newText) {
-			return 2
-		}
-		return answer(kind, newText, candidate)
-	}
-	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, topicModel(), judge)
-	clock := &timelineClock{now: time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)}
-	a.now = clock.Now
-	first := clock.Now().UnixMilli()
-	// Each job counts the failure against the batch, which stays pending
-	// with the third.
-	for i, wait := range []time.Duration{0, 5 * time.Minute, 5 * time.Minute} {
-		clock.advance(wait)
-		result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
-		if err == nil || errors.Is(err, ErrLinkDeferred) || errors.Is(err, ErrModelUnavailable) || !strings.Contains(err.Error(), "invalid or missing decision probability") ||
-			result.Folded != []int{1, 0, 0}[i] || result.Deferred != 1 || result.LinkFallbacks != 0 || result.Remaining != 6 {
-			t.Fatalf("job %d: %+v %v", i, result, err)
-		}
-		state := loadState(t, overlay)
-		if state.ModelErrors != i+1 || state.FirstModelError != first || state.Batches != 1 || len(state.Pending) != 6 {
-			t.Fatalf("job %d: state %+v", i, state)
-		}
-	}
-	// Three counted failures, the first ten minutes ago: the drop rule is
-	// due, so the second batch links without JEV, dropping nothing, and the
-	// third links with JEV.
-	result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
-	if err != nil || result.Folded != 2 || result.LinkFallbacks != 1 || result.Deferred != 0 || result.Dropped != 0 || result.Remaining != 0 || result.ThreadsNew != 3 || result.ThreadsLinked != 3 {
-		t.Fatalf("result %+v %v", result, err)
-	}
-	state := loadState(t, overlay)
-	if state.ModelErrors != 0 || state.FirstModelError != 0 || len(state.Memory.Threads) != 6 || len(state.Pending) != 0 || state.Failed != 0 {
-		t.Fatalf("state %+v", state)
-	}
-	want := map[string][]string{"kayak": {"n00", "n03", "n06"}, "taxes": {"n01", "n04", "n07"}, "garden": {"n02", "n05", "n08"}}
-	if got := threadEvents(state); !reflect.DeepEqual(got, want) {
-		t.Fatal("records lost", got)
+	// restart: each job runs in a new agent over a new overlay handle, as
+	// after a restart: nothing kept, the state reloaded from its database.
+	for _, restart := range []bool{false, true} {
+		t.Run(fmt.Sprint("restart ", restart), func(t *testing.T) {
+			ctx := context.Background()
+			s, dir := agentStore(t)
+			seedTopics(t, s, 3)
+			// The consolidator would fail, with a counted error, the half
+			// of the second batch that holds note 05 alone: splitting the
+			// batch would drop its record.
+			var mu sync.Mutex
+			split := 0
+			model := &limitPlanner{reply: func(_, prompt string) (string, error) {
+				if strings.Contains(prompt, "note 05") && !strings.Contains(prompt, "note 04") {
+					mu.Lock()
+					split++
+					mu.Unlock()
+					return "", errors.New("model HTTP 400; reservation released")
+				}
+				return layeredReply(prompt), nil
+			}}
+			judge := topicJudge()
+			answer := judge.answer
+			// JEV answers the second batch's questions with probabilities
+			// outside [0, 1], which fail validation: the request's own
+			// failure, each time.
+			second := regexp.MustCompile(`(note|update) 0[345]\b`)
+			judge.answer = func(kind, newText, candidate string) float64 {
+				if second.MatchString(newText) {
+					return 2
+				}
+				return answer(kind, newText, candidate)
+			}
+			clock := &timelineClock{now: time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)}
+			kept, keptOverlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, model, judge)
+			kept.now = clock.Now
+			job := func() (ConsolidateResult, error, timelineState) {
+				a, overlay := kept, keptOverlay
+				if restart {
+					var err error
+					if overlay, err = OpenOverlay(filepath.Join(dir, "memory-index.db"), false); err != nil {
+						t.Fatal(err)
+					}
+					defer overlay.Close()
+					if a, err = New(s, Config{Version: 1, Policy: &ReadPolicy{Consolidation: true}, Consolidation: &ConsolidationConfig{Mode: "layered", BatchCharacters: 100}}, Models{Consolidator: model, Judge: judge}, overlay); err != nil {
+						t.Fatal(err)
+					}
+					a.now = clock.Now
+				}
+				result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
+				return result, err, loadState(t, overlay)
+			}
+			first := clock.Now().UnixMilli()
+			// Each job counts the failure toward the batch's linking rule,
+			// not its extraction's drop rule; the batch stays pending with
+			// the third.
+			for i, wait := range []time.Duration{0, 5 * time.Minute, 5 * time.Minute} {
+				clock.advance(wait)
+				result, err, state := job()
+				if err == nil || errors.Is(err, ErrLinkDeferred) || errors.Is(err, ErrModelUnavailable) || !strings.Contains(err.Error(), "invalid or missing decision probability") ||
+					result.Folded != []int{1, 0, 0}[i] || result.Deferred != 1 || result.LinkFallbacks != 0 || result.Remaining != 6 {
+					t.Fatalf("job %d: %+v %v", i, result, err)
+				}
+				if state.LinkErrors != i+1 || state.FirstLinkError != first || state.ModelErrors != 0 || state.FirstModelError != 0 || state.Batches != 1 || len(state.Pending) != 6 {
+					t.Fatalf("job %d: state %+v", i, state)
+				}
+			}
+			// Three counted failures, the first ten minutes ago: the linking
+			// rule is due, so the second batch links without JEV from its
+			// whole extraction, never split, nothing dropped; the third
+			// links with JEV.
+			result, err, state := job()
+			if err != nil || result.Folded != 2 || result.LinkFallbacks != 1 || result.Deferred != 0 || result.Dropped != 0 || result.Remaining != 0 || result.ThreadsNew != 3 || result.ThreadsLinked != 3 {
+				t.Fatalf("result %+v %v", result, err)
+			}
+			if state.LinkErrors != 0 || state.FirstLinkError != 0 || state.ModelErrors != 0 || state.Failed != 0 || state.Batches != 3 || len(state.Memory.Threads) != 6 || len(state.Pending) != 0 || split != 0 {
+				t.Fatalf("state %+v, %d split calls", state, split)
+			}
+			want := map[string][]string{"kayak": {"n00", "n03", "n06"}, "taxes": {"n01", "n04", "n07"}, "garden": {"n02", "n05", "n08"}}
+			if got := threadEvents(state); !reflect.DeepEqual(got, want) {
+				t.Fatal("records lost", got)
+			}
+		})
 	}
 }
 

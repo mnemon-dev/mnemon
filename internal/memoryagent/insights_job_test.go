@@ -858,7 +858,7 @@ func TestConsolidateInsightsDeferLinks(t *testing.T) {
 			t.Fatalf("%+v %v", result, err)
 		}
 		state := loadState(t, overlay)
-		if len(state.Pending) != 0 || state.InsightRead.ModelErrors != 0 || insightsUnread(state) == 0 || result.Remaining != insightsUnread(state) {
+		if len(state.Pending) != 0 || state.InsightRead.ModelErrors != 0 || state.InsightRead.LinkErrors != 0 || insightsUnread(state) == 0 || result.Remaining != insightsUnread(state) {
 			t.Fatalf("%+v %+v", state.InsightRead, result)
 		}
 		down.Store(false)
@@ -899,8 +899,8 @@ func TestConsolidateInsightsDeferLinks(t *testing.T) {
 			}
 			return judge.Decide(ctx, state, questions)
 		})
-		// L2 concludes from the first two items of any part it reads, so
-		// that the halves of a batch in drop mode conclude too.
+		// L2 concludes from the first two items of any batch it reads, so
+		// that every batch's linking asks JEV.
 		pairs := insightModel(func(prompt string) (string, error) {
 			ids := []string{}
 			for _, m := range insightLinePattern.FindAllStringSubmatch(prompt, -1) {
@@ -921,18 +921,25 @@ func TestConsolidateInsightsDeferLinks(t *testing.T) {
 			if err == nil || errors.Is(err, ErrLinkDeferred) || !strings.Contains(err.Error(), "invalid or missing decision probability") || result.Deferred != 1 || result.InsightFallbacks != 0 {
 				t.Fatalf("job %d: %+v %v", i, result, err)
 			}
-			if state := loadState(t, overlay); state.InsightRead.ModelErrors != i+1 || state.InsightRead.FirstModelError != first || state.ModelErrors != 0 {
+			// Counted toward L2's linking rule, not its extraction's drop
+			// rule.
+			if state := loadState(t, overlay); state.InsightRead.LinkErrors != i+1 || state.InsightRead.FirstLinkError != first || state.InsightRead.ModelErrors != 0 || state.ModelErrors != 0 || state.LinkErrors != 0 {
 				t.Fatalf("job %d: %+v", i, state.InsightRead)
 			}
 		}
-		// Due: the head L2 batch, in drop mode, links without JEV after its
-		// call fails once more, its insights all added, dropping nothing;
-		// the later batches link with JEV, one call each.
+		// Due: the head L2 batch links without JEV from its whole
+		// extraction, never split, after its call fails once more, its
+		// insights all added, dropping nothing; the later batches link with
+		// JEV, one call each.
+		before, _ := l2Calls(pairs)
 		result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
 		if err != nil || result.InsightFallbacks != 1 || result.InsightBatches < 3 || result.InsightLinkCalls != result.InsightBatches || result.Deferred != 0 || result.InsightsDropped != 0 || result.Remaining != 0 {
 			t.Fatalf("%+v %v", result, err)
 		}
-		if state := loadState(t, overlay); state.InsightRead.ModelErrors != 0 || state.InsightRead.FirstModelError != 0 {
+		if after, _ := l2Calls(pairs); len(after)-len(before) != result.InsightBatches {
+			t.Fatal("an L2 batch was split", len(after)-len(before), result.InsightBatches)
+		}
+		if state := loadState(t, overlay); state.InsightRead.LinkErrors != 0 || state.InsightRead.FirstLinkError != 0 || state.InsightRead.ModelErrors != 0 {
 			t.Fatal(state.InsightRead)
 		}
 	})

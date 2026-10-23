@@ -152,7 +152,7 @@ func (a *Agent) foldLayered(ctx context.Context, model Completer, req Consolidat
 		if err != nil {
 			var counted bool
 			if foldErr, counted = linkStopped(ctx, err, result); counted {
-				a.countError(ctx, state, err)
+				a.countFailure(&state.LinkErrors, &state.FirstLinkError)
 			}
 			break
 		}
@@ -220,7 +220,7 @@ func layeredBatches(pending []pendingRecord, chars, max int, flush bool) [][]pen
 // applyLinked takes the head batch, of n records, off the pending records,
 // its extraction x linked into memory (counts): the memory, its folds and
 // failures and the job's drops and links are the state's and the result's,
-// and the head batch's model errors are reset.
+// and the head batch's model and linking errors are reset.
 func (s *timelineState) applyLinked(memory timelineMemory, x *extraction, counts linkCounts, n int, result *ConsolidateResult) {
 	s.Memory = memory
 	s.Batches += x.state.Batches
@@ -231,16 +231,17 @@ func (s *timelineState) applyLinked(memory timelineMemory, x *extraction, counts
 	result.addLinks(counts)
 	s.Pending = s.Pending[n:]
 	s.ModelErrors, s.FirstModelError = 0, 0
+	s.LinkErrors, s.FirstLinkError = 0, 0
 	result.Folded++
 }
 
 // linkStopped is the error a job ends with when linking a batch stopped it
 // (linker.link: the job's cancellation, or a failure keepsPending defers),
-// and whether that error counts against the batch for the drop rule. The
-// cancellation stays as it is. An outage (an unavailable provider or a
+// and whether that error counts toward the batch's linking rule (linkDue).
+// The cancellation stays as it is. An outage (an unavailable provider or a
 // spent budget) defers the batch with ErrLinkDeferred around its cause,
-// counted nowhere; the linking request's own failure defers it with the
-// error, counted. Either deferral counts in Deferred.
+// counted nowhere; the linking request's own failure (countedError) defers
+// it with the error, counted. Either deferral counts in Deferred.
 func linkStopped(ctx context.Context, err error, result *ConsolidateResult) (error, bool) {
 	if ctx.Err() != nil {
 		return err, false
@@ -249,7 +250,7 @@ func linkStopped(ctx context.Context, err error, result *ConsolidateResult) (err
 	if outageError(err) {
 		return fmt.Errorf("%w: %w", ErrLinkDeferred, err), false
 	}
-	return fmt.Errorf("linking failed: %w", err), true
+	return fmt.Errorf("linking failed: %w", err), countedError(ctx, err)
 }
 
 // outageError reports whether err says the provider cannot answer for now

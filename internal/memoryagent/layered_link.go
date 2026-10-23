@@ -20,8 +20,8 @@ import (
 // and a value JEV finds contradicts the stored latest is marked a conflict.
 // Directives keep the author's de-duplication. When JEV fails, the batch
 // links nothing but its keys of the same name; in a job that defers links
-// (ConsolidateRequest.DeferLinks) it stays pending instead, until the drop
-// rule is due for it (keepsPending). Lengths are UTF-16 units.
+// (ConsolidateRequest.DeferLinks) it stays pending instead, until its
+// linking rule is due (keepsPending, linkDue). Lengths are UTF-16 units.
 
 // ErrLinkDeferred wraps the error of a job with DeferLinks that stopped
 // before a batch JEV could not link for now, because the provider was
@@ -154,8 +154,8 @@ func latestText(key string, values []factValue) string {
 // unchanged, and what linking did. Every JEV call it makes adds its usage to
 // the state and the result. A JEV error or spent budget links nothing but
 // the keys of the same name (Fallback), unless the batch stays pending
-// (keepsPending; the drop rule read from state, whose head batch it is):
-// then, and for a canceled job, the error is returned.
+// (keepsPending; its linking rule read from state, whose head batch it is:
+// linkDue): then, and for a canceled job, the error is returned.
 func (l *linker) link(ctx context.Context, state *timelineState, batch timelineMemory, result *ConsolidateResult) (timelineMemory, linkCounts, error) {
 	m := state.Memory
 	newThreads, newEvents := eventThreads(batch)
@@ -231,7 +231,7 @@ func (l *linker) link(ctx context.Context, state *timelineState, batch timelineM
 		pairs = append(pairs, keyPairs[j]...)
 	}
 	if err := l.judge(ctx, news, cands, pairs, state, result, &result.LinkCalls); err != nil {
-		if ctx.Err() != nil || keepsPending(ctx, err, l.agent.dropDue(*state)) {
+		if ctx.Err() != nil || keepsPending(ctx, err, l.agent.linkDue(*state)) {
 			return timelineMemory{}, linkCounts{}, err
 		}
 		counts.Fallback = true
@@ -302,7 +302,9 @@ func (l *linker) link(ctx context.Context, state *timelineState, batch timelineM
 // pending, for a later job, instead of linking without JEV: only in a job
 // that defers links (ConsolidateRequest.DeferLinks), and there for an
 // outage (outageError) always, for the linking request's own failure until
-// the drop rule is due for the batch (due).
+// the batch's linking rule is due (due: linkDue, insightLinkDue). Its
+// extraction is never split for it: drop mode follows extraction errors
+// alone.
 func keepsPending(ctx context.Context, err error, due bool) bool {
 	return foldJobOf(ctx).defersLinks() && (outageError(err) || !due)
 }

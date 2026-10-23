@@ -198,18 +198,23 @@ or its budget spent (a timeout, a 5xx, an open circuit breaker, the background r
 the job saves the batches linked before it and returns an error wrapping `ErrLinkDeferred`
 (`model unavailable: linking deferred: …`, which wraps the cause too), counting nothing
 against the batch; when JEV fails the request itself (a 400, answers that fail
-validation), the failure counts toward the drop rule, and once the rule is due the batch
-links without JEV as above, nothing dropped. The result's `deferred` counts the batch so
-left pending. The job keeps the extractions of the batches it leaves pending, letting
-those still running end first, in memory (per agent, up to 64 batches), and the job that
-links them uses them without asking the consolidator again; another process, or a job
-without `deferLinks`, extracts them again. A model error in a batch's extraction
-stops the job there: the batches before it stay linked, it and the later ones stay
-pending, and the error counts toward the drop rule as in timelines mode. An extraction
-that timed out counts only when another extraction or JEV call of the same job was
-answered: a slowdown of the whole provider drops nothing, while a batch that alone keeps
-timing out is still split and, if a half times out again, dropped. Layered mode
-requires a decision model (`judge`) and a completion model (`consolidator`, else
+validation), the failure counts toward a linking rule of the batch's own, with the drop
+rule's thresholds but counters apart from its extraction's (`linkErrors` and
+`firstLinkError` in the state): after three such jobs, the first at least ten minutes
+earlier, a job in which JEV fails it again links the batch without JEV as above, from its
+whole extraction (the one kept, else extracted as usual, never in drop mode), so nothing is
+split or dropped, and the counters reset. The result's `deferred` counts the batch so left
+pending. The job keeps the extractions of the batches it leaves pending, letting those
+still running end first, in memory (per agent, up to 64 batches), and the job that links
+them uses them without asking the consolidator again; another process, or a job without
+`deferLinks`, extracts them again. A model error in a batch's extraction stops the job
+there: the batches before it stay linked, it and the later ones stay pending, and the error
+counts toward the drop rule as in timelines mode. An extraction that timed out counts only
+when another extraction or JEV call of the same job was answered: a slowdown of the whole
+provider drops nothing. A batch that alone keeps timing out is split and dropped only when
+its job also made a call that answered; in a job whose only call is that extraction it
+stays pending (the backlog-age alert reports it). Layered mode requires a decision model
+(`judge`) and a completion model (`consolidator`, else
 `planner`). It costs one extraction call per batch (more on retries and splits), whose
 request does not grow with the memory; once the memory holds anything, a few JEV calls per
 batch (up to `linkCandidates` questions per new thread and twice that per new key, at
@@ -252,7 +257,8 @@ conclusion: the best yes (at least 0.5) merges, the stored insight keeping its t
 taking the later date and the records it lacks; otherwise the insight is added. When a JEV
 call fails or its budget is spent, every new insight of the batch is added; with
 `deferLinks` the batch stays unread instead, as a batch of records stays pending, under
-L2's own drop rule (its extraction is not kept). The state keeps
+L2's own linking rule (`insightRead`'s `linkErrors` and `firstLinkError`; its extraction
+is not kept). The state keeps
 the insights and L2's read position (`insightRead`: per list, the events, each key's values
 and the directives read from its start, and those read past an unread one, which date
 order can read first); neither is written without the setting, and the records' native

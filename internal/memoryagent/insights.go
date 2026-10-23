@@ -41,7 +41,9 @@ type insight struct {
 // earlier one. Once the items before it are read, a position takes them in.
 // No item is read twice. ModelErrors and FirstModelError count the jobs
 // whose L2 of the head batch ended in a model error, as timelineState's
-// count L0's, for L2's own drop mode.
+// count L0's, for L2's own drop mode; LinkErrors and FirstLinkError the jobs
+// in which linking it failed for the request itself, as timelineState's
+// count L1's, for its linking rule (insightLinkDue).
 type insightRead struct {
 	Events          int              `json:"events"`
 	EventsAfter     []int            `json:"eventsAfter,omitempty"`
@@ -51,6 +53,8 @@ type insightRead struct {
 	DirectivesAfter []int            `json:"directivesAfter,omitempty"`
 	ModelErrors     int              `json:"modelErrors,omitempty"`
 	FirstModelError int64            `json:"firstModelError,omitempty"`
+	LinkErrors      int              `json:"linkErrors,omitempty"`
+	FirstLinkError  int64            `json:"firstLinkError,omitempty"`
 }
 
 // The kinds of consolidated item.
@@ -325,9 +329,9 @@ func insightItemOf(id string, in insight) linkItem {
 // keeps its text, takes the later date and appends the new records it
 // lacks; otherwise it is added. A failed or unaffordable JEV call adds
 // every new insight (Fallback), unless the batch stays unread
-// (keepsPending, the drop rule read from state.InsightRead, whose head
-// batch it is): then, and for a canceled job, the error is returned. Every
-// JEV call's usage is the state's and the job's (decide).
+// (keepsPending, its linking rule read from state.InsightRead, whose head
+// batch it is: insightLinkDue): then, and for a canceled job, the error is
+// returned. Every JEV call's usage is the state's and the job's (decide).
 func (l *linker) linkInsights(ctx context.Context, state *timelineState, fresh []insight, result *ConsolidateResult) ([]insight, insightCounts, error) {
 	stored := state.Memory.Insights
 	out, counts := slices.Clone(stored), insightCounts{}
@@ -352,7 +356,7 @@ func (l *linker) linkInsights(ctx context.Context, state *timelineState, fresh [
 	}
 	if len(all) > 0 {
 		if err := l.judge(ctx, news, cands, all, state, result, &result.InsightLinkCalls); err != nil {
-			if ctx.Err() != nil || keepsPending(ctx, err, l.agent.insightDropDue(state.insightPosition())) {
+			if ctx.Err() != nil || keepsPending(ctx, err, l.agent.insightLinkDue(state.insightPosition())) {
 				return nil, insightCounts{}, err
 			}
 			counts.Fallback = true
@@ -463,7 +467,7 @@ func (a *Agent) foldInsights(ctx context.Context, model Completer, req Consolida
 		if err != nil {
 			var counted bool
 			if foldErr, counted = linkStopped(ctx, err, result); counted {
-				a.countInsightError(ctx, state.InsightRead, err)
+				a.countFailure(&state.InsightRead.LinkErrors, &state.InsightRead.FirstLinkError)
 			}
 			break
 		}
@@ -501,11 +505,13 @@ func (a *Agent) foldInsights(ctx context.Context, model Completer, req Consolida
 
 // applyInsights marks L2's head batch read, its extraction x linked into
 // the stored insights (insights, counts): the insights are the state's, its
-// counts the result's, and the head batch's model errors are reset.
+// counts the result's, and the head batch's model and linking errors are
+// reset.
 func (s *timelineState) applyInsights(batch []insightItem, insights []insight, x *extraction, counts insightCounts, result *ConsolidateResult) {
 	s.Memory.Insights = insights
 	s.InsightRead.advance(batch)
 	s.InsightRead.ModelErrors, s.InsightRead.FirstModelError = 0, 0
+	s.InsightRead.LinkErrors, s.InsightRead.FirstLinkError = 0, 0
 	result.InsightBatches++
 	result.InsightsDropped += x.result.InsightsDropped
 	result.InsightsNew += counts.New
@@ -518,7 +524,13 @@ func (s *timelineState) applyInsights(batch []insightItem, insights []insight, x
 // insightDropDue reports whether L2's head batch is extracted in drop mode
 // (dropDue, by read's count).
 func (a *Agent) insightDropDue(read insightRead) bool {
-	return a.dropDue(timelineState{ModelErrors: read.ModelErrors, FirstModelError: read.FirstModelError})
+	return a.ruleDue(read.ModelErrors, read.FirstModelError)
+}
+
+// insightLinkDue reports whether L2's head batch whose linking fails for
+// the request itself links without JEV (linkDue, by read's count).
+func (a *Agent) insightLinkDue(read insightRead) bool {
+	return a.ruleDue(read.LinkErrors, read.FirstLinkError)
 }
 
 // countInsightError counts an L2 error against L2's head batch when it is
@@ -526,10 +538,7 @@ func (a *Agent) insightDropDue(read insightRead) bool {
 // (foldJob.counts).
 func (a *Agent) countInsightError(ctx context.Context, read *insightRead, err error) {
 	if foldJobOf(ctx).counts(ctx, err) {
-		if read.ModelErrors == 0 {
-			read.FirstModelError = a.now().UnixMilli()
-		}
-		read.ModelErrors++
+		a.countFailure(&read.ModelErrors, &read.FirstModelError)
 	}
 }
 
