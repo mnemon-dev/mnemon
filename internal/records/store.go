@@ -224,6 +224,10 @@ WHERE rev_from<=? AND (rev_to IS NULL OR rev_to>?) ORDER BY seq`, rev, rev)
 	return out, rows.Err()
 }
 
+// loadCurrent is the full reload of the current records that Put makes when it cannot resume the revision digest
+// (digest.go); tests wrap it to count those reloads.
+var loadCurrent = load
+
 func (s *Store) Get(ctx context.Context, req GetRequest) (Snapshot, error) {
 	rev, hash, err := revision(ctx, s.readDB(), req.Revision)
 	if err != nil {
@@ -249,6 +253,9 @@ func parseUpserts(values []Upsert) ([]record, error) {
 	}
 	return out, nil
 }
+
+// upsertMeta sets one meta key.
+const upsertMeta = "INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
 
 func (s *Store) Put(ctx context.Context, req PutRequest) (string, error) {
 	if s.readonly {
@@ -279,27 +286,24 @@ func (s *Store) Put(ctx context.Context, req PutRequest) (string, error) {
 			return "", err
 		}
 	}
+	// A Put that deletes nothing and replaces no current record only appends. Its records take fresh, increasing
+	// seq values, so they sort after every current record, in `values` order, and the digest can resume (digest.go).
+	appendOnly := len(req.Delete) == 0
 	for _, r := range values {
-		if err := writeVersion(ctx, tx, r, rev+1, &seq); err != nil {
+		replaced, err := writeVersion(ctx, tx, r, rev+1, &seq)
+		if err != nil {
 			return "", err
 		}
+		if replaced {
+			appendOnly = false
+		}
 	}
-	all, err := load(ctx, tx, rev+1)
+	hash, err = nextDigest(ctx, tx, rev, hash, appendOnly, values)
 	if err != nil {
 		return "", err
 	}
-	h := sha256.New()
-	h.Write([]byte("["))
-	for i, r := range all {
-		if i > 0 {
-			h.Write([]byte(","))
-		}
-		h.Write([]byte(r.Raw))
-	}
-	h.Write([]byte("]"))
-	hash = hex.EncodeToString(h.Sum(nil))
 	for _, entry := range [][2]string{{"revision", strconv.FormatInt(rev+1, 10)}, {"seq", strconv.FormatInt(seq, 10)}, {"digest", hash}, {"revision/" + hash, strconv.FormatInt(rev+1, 10)}} {
-		if _, err := tx.ExecContext(ctx, "INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", entry[0], entry[1]); err != nil {
+		if _, err := tx.ExecContext(ctx, upsertMeta, entry[0], entry[1]); err != nil {
 			return "", err
 		}
 	}
@@ -310,17 +314,22 @@ func (s *Store) Put(ctx context.Context, req PutRequest) (string, error) {
 	return hash, nil
 }
 
-func writeVersion(ctx context.Context, tx *sql.Tx, r record, rev int64, next *int64) error {
+// writeVersion writes r as the current version at revision rev. A record without a current version takes the next
+// seq; one with a current version keeps its seq and its place, and replaced reports that.
+func writeVersion(ctx context.Context, tx *sql.Tx, r record, rev int64, next *int64) (replaced bool, err error) {
 	var seq int64
-	err := tx.QueryRowContext(ctx, "SELECT seq FROM record_versions WHERE id=? AND rev_to IS NULL", r.ID).Scan(&seq)
-	if errors.Is(err, sql.ErrNoRows) {
+	err = tx.QueryRowContext(ctx, "SELECT seq FROM record_versions WHERE id=? AND rev_to IS NULL", r.ID).Scan(&seq)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
 		*next++
 		seq = *next
-	} else if err != nil {
-		return err
+	case err != nil:
+		return false, err
+	default:
+		replaced = true
 	}
-	if _, err := tx.ExecContext(ctx, "UPDATE record_versions SET rev_to=? WHERE id=? AND rev_to IS NULL", rev, r.ID); err != nil {
-		return err
+	if _, err = tx.ExecContext(ctx, "UPDATE record_versions SET rev_to=? WHERE id=? AND rev_to IS NULL", rev, r.ID); err != nil {
+		return false, err
 	}
 	var status any
 	if v, ok := r.Data["status"]; ok {
@@ -328,7 +337,7 @@ func writeVersion(ctx context.Context, tx *sql.Tx, r record, rev int64, next *in
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO record_versions VALUES(?,?,?,NULL,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.ID, seq, rev, r.Raw, r.SearchText, r.VectorText, r.Kind, r.Scope, r.WorkspaceID, r.SessionID, r.Date, r.State, status, r.CreatedAt)
-	return err
+	return replaced, err
 }
 
 func textHash(text string) string {
