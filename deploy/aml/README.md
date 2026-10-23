@@ -135,8 +135,9 @@ external model APIs, and add their data-retention terms if the rules require the
    summary and plus a request to name the entities each event and fact is about; then JEV
    links the batch to the stored memory, in batch order, by yes/no questions about the stored
    topics and facts nearest to each new one. The batches are extracted up to four at a time,
-   so they fold in parallel. The stored index and the way reads use it are the reference's;
-   the change is how a batch is joined to the memory, and it costs JEV calls during
+   so they fold in parallel. The stored index and the way reads use it are the reference's,
+   except that BM25 ranks the nearest topics and values (see the retrieval deviation below).
+   The change itself is how a batch is joined to the memory, and it costs JEV calls during
    consolidation.
 3. **AML adapter.** An HTTP service for the Add/Search contract: per-user stores, idempotent
    Add by `request_id`, conversation packing at write time, optional consolidation (full
@@ -149,6 +150,12 @@ external model APIs, and add their data-retention terms if the rules require the
    from the consolidation layer), 100 items and 240,000 characters. Every record comes from
    the judged list; none is added from the plain search ranking.
 5. **Smaller deliberate deviations.**
+   - Retrieval is BM25 only. The reference implementation ranks each search by BM25 and by
+     embedding similarity and fuses the two rankings by reciprocal rank fusion, and it ranks
+     the layer's nearest topics and values by embedding similarity when an embedder is
+     configured. Here the cue searches, the layer's nearest topics and values, and the linking
+     candidates (the stored topics and facts nearest to each new one) all rank by BM25, and
+     nothing is embedded: no embedding model runs on the host.
    - Search pages are 20 whole records; the reference implementation's 12,000-character page cut
      is not used.
    - The records are delivered in time order, earlier first, records of one time in the order
