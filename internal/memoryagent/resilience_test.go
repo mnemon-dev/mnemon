@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -303,6 +304,26 @@ func TestAttemptTimeoutRetries(t *testing.T) {
 	}
 }
 
+// A Background attempt is not abandoned: it waits its hard timeout, whatever
+// the Interactive attempt timeout.
+func TestBackgroundAttemptsWaitTheirHardTimeout(t *testing.T) {
+	e := newEndpoint(t, func(_ int, w http.ResponseWriter) {
+		time.Sleep(1500 * time.Millisecond)
+		io.WriteString(w, deepseekReply)
+	})
+	p, budget := deepseekOn(t, e, ModelConfig{AttemptTimeoutSeconds: 1, TimeoutSeconds: 5}, nil)
+	log := &attemptLog{}
+	Models{Consolidator: p}.Observe(log)
+	start := time.Now()
+	text, _, err := p.Complete(WithCallClass(context.Background(), Background), "s", "p")
+	if elapsed := time.Since(start); err != nil || text != "ok" || e.requests() != 1 || elapsed < 1500*time.Millisecond {
+		t.Fatal(text, err, e.requests(), elapsed)
+	}
+	if got := log.outcomes(); got != "ok" || !settled(budgetAttempts(t, budget)) {
+		t.Fatal(got, budgetAttempts(t, budget))
+	}
+}
+
 // reserveFixture is a DeepSeek provider whose account has a cap of 1.0 with
 // 0.70 spent: a call's flat 0.25 reservation fits the cap (0.95), not the
 // 0.9 of it a Background call may fill.
@@ -563,6 +584,27 @@ func TestQueuedRequestNeverSentIsReleased(t *testing.T) {
 	}
 }
 
+// Over the provider's own http.Transport, a request that never obtained a
+// connection sent nothing, however it failed: here at its proxy, before the
+// transport asked for a connection.
+func TestRequestFailingBeforeAConnectionIsReleased(t *testing.T) {
+	e := newEndpoint(t, func(_ int, w http.ResponseWriter) { io.WriteString(w, deepseekReply) })
+	p, budget := deepseekOn(t, e, ModelConfig{MaxAttempts: 1}, nil)
+	transport := newTransport(providerConns)
+	transport.Proxy = func(*http.Request) (*url.URL, error) { return nil, errors.New("malformed proxy setting") }
+	p.client.Transport = transport
+	_, _, err := p.Complete(context.Background(), "s", "p")
+	if !errors.Is(err, ErrModelUnavailable) || !strings.Contains(err.Error(), "reservation released") || e.requests() != 0 {
+		t.Fatal(err, e.requests())
+	}
+	if attempts := budgetAttempts(t, budget); len(attempts) != 1 || attempts[0].actual == nil || *attempts[0].actual != 0 {
+		t.Fatal(attempts)
+	}
+	if held, _ := accountHeld(t, budget, "deepseek"); !near(held, 0) {
+		t.Fatal("held", held)
+	}
+}
+
 func TestInteractiveCompletionRetriesUnparsedReplyOnce(t *testing.T) {
 	unparsed := `{"choices":[]}`
 	// The first reply does not parse; the second does.
@@ -667,8 +709,11 @@ func TestClassPoliciesByKindAndConfig(t *testing.T) {
 		{ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1"}, want{[3]time.Duration{45 * time.Second, 90 * time.Second, 90 * time.Second}, [3]int{4, 3, 3}}},
 		{ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1", TimeoutSeconds: 600}, want{[3]time.Duration{45 * time.Second, 600 * time.Second, 600 * time.Second}, [3]int{4, 3, 3}}},
 		{ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1", TimeoutSeconds: 30}, want{[3]time.Duration{30 * time.Second, 30 * time.Second, 30 * time.Second}, [3]int{4, 3, 3}}},
-		{ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CREDENTIAL"}, want{[3]time.Duration{20 * time.Second, 60 * time.Second, 60 * time.Second}, [3]int{4, 3, 3}}},
-		{ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CREDENTIAL", AttemptTimeoutSeconds: 5, MaxAttempts: 2}, want{[3]time.Duration{5 * time.Second, 5 * time.Second, 5 * time.Second}, [3]int{2, 2, 2}}},
+		// Flush and Background attempts take the hard timeout, for every kind:
+		// they are never abandoned. attemptTimeoutSeconds is the Interactive one.
+		{ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CREDENTIAL"}, want{[3]time.Duration{20 * time.Second, 90 * time.Second, 90 * time.Second}, [3]int{4, 3, 3}}},
+		{ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CREDENTIAL", TimeoutSeconds: 45}, want{[3]time.Duration{20 * time.Second, 45 * time.Second, 45 * time.Second}, [3]int{4, 3, 3}}},
+		{ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CREDENTIAL", AttemptTimeoutSeconds: 5, MaxAttempts: 2}, want{[3]time.Duration{5 * time.Second, 90 * time.Second, 90 * time.Second}, [3]int{2, 2, 2}}},
 	} {
 		p, err := NewProvider(c.config, budget)
 		if err != nil {

@@ -35,9 +35,10 @@ type ModelConfig struct {
 	// TimeoutSeconds bounds one request, from sending it to reading the
 	// whole reply (its hard timeout): 1–1800, 0 for the default of 90.
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
-	// AttemptTimeoutSeconds replaces every call class's attempt timeout
-	// (resilience.go) when positive, at most timeoutSeconds. An attempt past
-	// it is retried while its request runs on to the hard timeout.
+	// AttemptTimeoutSeconds replaces the Interactive attempt timeout
+	// (resilience.go) when positive, at most timeoutSeconds: an attempt past
+	// it is retried while its request runs on to the hard timeout. Flush and
+	// Background attempts take the hard timeout.
 	AttemptTimeoutSeconds int `json:"attemptTimeoutSeconds,omitempty"`
 	// MaxAttempts replaces every call class's attempts per call when
 	// positive: 1–10.
@@ -242,7 +243,7 @@ func unavailableStatus(code int) bool {
 // unsent reports whether a request's error says it failed while connecting,
 // before any of it was sent: a failed dial or name lookup. Anything later
 // may have reached the model. Requests sent over an http.Transport are
-// judged by their trace instead (connTrace).
+// judged by their trace instead (connTrace.sent).
 func unsent(err error) bool {
 	var op *net.OpError
 	var dns *net.DNSError

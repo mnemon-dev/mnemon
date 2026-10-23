@@ -510,12 +510,13 @@ backoff, waiting at least the endpoint's `Retry-After` and never into the caller
 within a retry budget of 20% of the provider's calls over a minute (at least 5 a second); a
 circuit breaker per provider fails calls fast for 20 s after 5 failures in a row or 10 of
 the last 20, and each call class has its own limit on requests in flight. Reads make up to
-4 attempts of 45 s (20 s for JEV), consolidation jobs up to 3 of `timeoutSeconds` (60 s
-for JEV), and background jobs leave the last 10% of a budget cap to reads. An attempt past
-its timeout is retried while its request runs on and settles; `attemptTimeoutSeconds` (at
-most `timeoutSeconds`) and `maxAttempts` (1–10) replace every class's own. Every attempt
-reserves and settles budget on its own. For fault drills the jev and deepseek kinds take a
-`testEndpoint`, an `http` URL on a loopback host, in place of their official endpoint.
+4 attempts of 45 s (20 s for JEV), consolidation jobs up to 3 of `timeoutSeconds` each,
+and background jobs leave the last 10% of a budget cap to reads. A read's attempt past its
+timeout is retried while its request runs on and settles; `attemptTimeoutSeconds` (at most
+`timeoutSeconds`) replaces the reads' attempt timeout, `maxAttempts` (1–10) every class's
+attempts. Every attempt reserves and settles budget on its own. For fault drills the jev
+and deepseek kinds take a `testEndpoint`, an `http` URL on a loopback host, in place of
+their official endpoint.
 An invalid consolidation batch is never published. Credentials come from environment
 variables and never enter request arguments, configuration files, logs or the
 metering database.

@@ -122,12 +122,12 @@ const (
 )
 
 // The classes' policies. An Interactive call makes up to 4 attempts of 45 s
-// (completions) or 20 s (JEV) each, retried after 0.5 s → 8 s, an endpoint's
-// Retry-After waited up to 10 s. Flush and Background calls make up to 3
-// attempts of the hard timeout (completions) or 60 s (JEV), retried after
-// 2 s → 60 s, a Retry-After waited up to 5 min. A model's
-// attemptTimeoutSeconds and maxAttempts replace every class's own; no
-// attempt timeout exceeds the hard one.
+// (completions) or 20 s (JEV) each, at most the hard timeout, retried after
+// 0.5 s → 8 s, an endpoint's Retry-After waited up to 10 s. Flush and
+// Background calls make up to 3 attempts of the hard timeout each, for every
+// kind, so they are never abandoned, retried after 2 s → 60 s, a Retry-After
+// waited up to 5 min. A model's attemptTimeoutSeconds replaces the
+// Interactive attempt timeout, its maxAttempts every class's attempts.
 const (
 	interactiveAttempts          = 4
 	interactiveCompletionTimeout = 45 * time.Second
@@ -136,7 +136,6 @@ const (
 	interactiveMaxBackoff        = 8 * time.Second
 	interactiveMaxRetryAfter     = 10 * time.Second
 	backgroundAttempts           = 3
-	backgroundDecisionTimeout    = 60 * time.Second
 	backgroundBackoff            = 2 * time.Second
 	backgroundMaxBackoff         = 60 * time.Second
 	backgroundMaxRetryAfter      = 5 * time.Minute
@@ -150,8 +149,9 @@ const (
 // classPolicy is how a provider makes the calls of one class.
 type classPolicy struct {
 	class CallClass
-	// attemptTimeout bounds an attempt's wait for its request; at most the
-	// hard timeout, and below it an attempt past it is abandoned (wait).
+	// attemptTimeout bounds an attempt's wait for its request: at most the
+	// hard timeout, below it only for Interactive attempts, which are
+	// abandoned past it (wait).
 	attemptTimeout time.Duration
 	maxAttempts    int
 	// A retry waits a random part of backoff×2^(n−1), at most maxBackoff,
@@ -188,23 +188,22 @@ func checkResilience(config ModelConfig, hard time.Duration) error {
 // classPolicies are a provider's policies, indexed by CallClass, for its
 // kind and resilience settings; hard is its hard timeout.
 func classPolicies(config ModelConfig, hard time.Duration) [3]classPolicy {
-	interactive, background := interactiveCompletionTimeout, hard
+	interactive := interactiveCompletionTimeout
 	if config.Kind == "jev" {
-		interactive, background = interactiveDecisionTimeout, backgroundDecisionTimeout
+		interactive = interactiveDecisionTimeout
+	}
+	if config.AttemptTimeoutSeconds > 0 {
+		interactive = time.Duration(config.AttemptTimeoutSeconds) * time.Second
 	}
 	policies := [3]classPolicy{
-		{class: Interactive, attemptTimeout: interactive, maxAttempts: interactiveAttempts, backoff: interactiveBackoff, maxBackoff: interactiveMaxBackoff, maxRetryAfter: interactiveMaxRetryAfter, calls: bulkhead.New[any](interactiveCalls), share: 1},
-		{class: Flush, attemptTimeout: background, maxAttempts: backgroundAttempts, backoff: backgroundBackoff, maxBackoff: backgroundMaxBackoff, maxRetryAfter: backgroundMaxRetryAfter, calls: bulkhead.New[any](flushCalls), share: 1},
-		{class: Background, attemptTimeout: background, maxAttempts: backgroundAttempts, backoff: backgroundBackoff, maxBackoff: backgroundMaxBackoff, maxRetryAfter: backgroundMaxRetryAfter, calls: bulkhead.New[any](backgroundCalls), share: backgroundShare},
+		{class: Interactive, attemptTimeout: min(interactive, hard), maxAttempts: interactiveAttempts, backoff: interactiveBackoff, maxBackoff: interactiveMaxBackoff, maxRetryAfter: interactiveMaxRetryAfter, calls: bulkhead.New[any](interactiveCalls), share: 1},
+		{class: Flush, attemptTimeout: hard, maxAttempts: backgroundAttempts, backoff: backgroundBackoff, maxBackoff: backgroundMaxBackoff, maxRetryAfter: backgroundMaxRetryAfter, calls: bulkhead.New[any](flushCalls), share: 1},
+		{class: Background, attemptTimeout: hard, maxAttempts: backgroundAttempts, backoff: backgroundBackoff, maxBackoff: backgroundMaxBackoff, maxRetryAfter: backgroundMaxRetryAfter, calls: bulkhead.New[any](backgroundCalls), share: backgroundShare},
 	}
-	for i := range policies {
-		if config.AttemptTimeoutSeconds > 0 {
-			policies[i].attemptTimeout = time.Duration(config.AttemptTimeoutSeconds) * time.Second
-		}
-		if config.MaxAttempts > 0 {
+	if config.MaxAttempts > 0 {
+		for i := range policies {
 			policies[i].maxAttempts = config.MaxAttempts
 		}
-		policies[i].attemptTimeout = min(policies[i].attemptTimeout, hard)
 	}
 	return policies
 }
@@ -570,17 +569,18 @@ func (c *modelCall[T]) admit(ctx context.Context) (*flight[T], error) {
 	// The request flies on the attempt's context without its cancellation:
 	// wait cuts it when the caller gives up, not when the attempt times out.
 	flying, cut := context.WithCancelCause(request.Context())
-	f.trace, f.cut = &connTrace{}, cut
+	f.trace, f.cut = &connTrace{traced: tracesConnections(p.client.Transport)}, cut
 	f.request = request.WithContext(httptrace.WithClientTrace(flying, f.trace.hooks()))
 	return f, nil
 }
 
 // wait waits for the flight's result on the attempt's context ctx. Past the
-// attempt timeout, when that is below the hard timeout, the attempt stops
-// waiting and abandons its request, which runs on and ends on its own; so
-// does an attempt whose own context ends while the caller's goes on. When the
-// caller gives up, the attempt cuts its request and waits the moment that
-// takes it to end. A result ready by then wins over both.
+// attempt timeout, when that is below the hard timeout (an Interactive
+// attempt's), the attempt stops waiting and abandons its request, which runs
+// on and ends on its own; so does an attempt whose own context ends while the
+// caller's goes on. When the caller gives up, the attempt cuts its request
+// and waits the moment that takes it to end. A result ready by then wins over
+// both.
 func (c *modelCall[T]) wait(ctx context.Context, f *flight[T]) flightResult[T] {
 	var expired <-chan time.Time
 	if c.policy.attemptTimeout < c.p.client.Timeout {
@@ -656,12 +656,13 @@ func (f *flight[T]) run(p *Provider) {
 }
 
 // exchange sends the request and meters what came back. A request that
-// never obtained a connection (it failed to connect, or waited for one until
-// it was cut or timed out) or that the endpoint refused (a status outside
-// 2xx) cost nothing: its reservation is released, recorded at 0. One that may
-// have been processed (it failed once connected, or its reply is unreadable
-// or does not parse) keeps its reservation held. A 200 reply that parses is
-// settled at its metering, also when the caller gave up meanwhile.
+// never obtained a connection (it failed before or while connecting, or
+// waited for one until it was cut or timed out) or that the endpoint refused
+// (a status outside 2xx) cost nothing: its reservation is released, recorded
+// at 0. One that may have been processed (it failed once connected, or its
+// reply is unreadable or does not parse) keeps its reservation held. A 200
+// reply that parses is settled at its metering, also when the caller gave up
+// meanwhile.
 func (f *flight[T]) exchange(p *Provider) flightResult[T] {
 	response, err := p.client.Do(f.request)
 	if err != nil {
@@ -738,24 +739,38 @@ func timedOut(err error) bool {
 	return errors.As(err, &timeout) && timeout.Timeout()
 }
 
-// connTrace is what a request's trace tells of its connection.
-type connTrace struct{ getting, got atomic.Bool }
-
-func (t *connTrace) hooks() *httptrace.ClientTrace {
-	return &httptrace.ClientTrace{
-		GetConn: func(string) { t.getting.Store(true) },
-		GotConn: func(httptrace.GotConnInfo) { t.got.Store(true) },
-	}
+// connTrace is what a request's trace tells of its connection: traced, the
+// round tripper reports the connections it hands requests (an
+// http.Transport), and got, the request obtained one.
+type connTrace struct {
+	traced bool
+	got    atomic.Bool
 }
 
-// sent reports whether a failed request may have reached the endpoint: it
-// obtained a connection. A round tripper that traces no connection (not an
-// http.Transport) is judged by its error (unsent).
+func (t *connTrace) hooks() *httptrace.ClientTrace {
+	return &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) { t.got.Store(true) }}
+}
+
+// sent reports whether a failed request may have reached the endpoint. An
+// http.Transport reports the connection it hands a request (GotConn, for
+// HTTP/1 and HTTP/2 alike) before it writes any of it, so a request that
+// obtained none sent nothing, however it failed. Another round tripper is
+// judged by its error (unsent).
 func (t *connTrace) sent(err error) bool {
-	if t.getting.Load() {
+	if t.traced {
 		return t.got.Load()
 	}
 	return !unsent(err)
+}
+
+// tracesConnections reports whether requests sent over rt report their
+// connections: rt is net/http's Transport (nil is http.DefaultTransport).
+func tracesConnections(rt http.RoundTripper) bool {
+	if rt == nil {
+		rt = http.DefaultTransport
+	}
+	_, ok := rt.(*http.Transport)
+	return ok
 }
 
 // newRequest is an attempt's request of body, with the credential, on ctx
