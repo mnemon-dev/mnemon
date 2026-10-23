@@ -65,6 +65,8 @@ func (s *completionServer) received() []string {
 
 // meteredProvider is an openai-kind provider on server, metered against the
 // budget file at budgetPath, replaying from cache (nil sends every request).
+// It makes one attempt a call: what the cache records is the subject here,
+// retries are resilience_test.go's.
 func meteredProvider(t *testing.T, server *completionServer, budgetPath string, cache *ModelCache) (*Provider, *Budget) {
 	t.Helper()
 	budget, err := OpenBudget(budgetPath)
@@ -73,7 +75,7 @@ func meteredProvider(t *testing.T, server *completionServer, budgetPath string, 
 	}
 	t.Cleanup(func() { budget.Close() })
 	t.Setenv("UNIT_OPENAI_CREDENTIAL", "test-only-placeholder")
-	p, err := NewProvider(ModelConfig{Kind: "openai", Model: "test-model", BaseURL: server.URL + "/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL", PriceIn: 1, PriceOut: 2}, budget)
+	p, err := NewProvider(ModelConfig{Kind: "openai", Model: "test-model", BaseURL: server.URL + "/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL", PriceIn: 1, PriceOut: 2, MaxAttempts: 1}, budget)
 	if err != nil {
 		t.Fatal(err)
 	}

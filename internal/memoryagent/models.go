@@ -1,6 +1,11 @@
 package memoryagent
 
-import "context"
+import (
+	"context"
+	"errors"
+	"slices"
+	"time"
+)
 
 type Usage struct {
 	InputTokens  int     `json:"inputTokens"`
@@ -43,6 +48,60 @@ type Models struct {
 	Judge   Decider
 	// Consolidator folds timelines consolidation batches; nil uses Planner.
 	Consolidator Completer
+}
+
+// ModelObserver is shown every attempt of the providers' model calls
+// (Models.Observe), for metrics. ModelAttempt runs on the calling goroutine,
+// holding no lock; it must be quick and safe for concurrent use.
+type ModelObserver interface {
+	ModelAttempt(AttemptEvent)
+}
+
+// AttemptEvent is one attempt of a model call, or one its policies stopped
+// before it was sent. Kind is the provider's kind and Class the call's class
+// (CallClass.String). Outcome is "ok"; "retryable", a failure a retry may
+// not meet, retried or not; "failed"; "breaker-open"; "bulkhead-full"; or
+// "budget", refused by the spending cap, its background reserve or the
+// provider's retry budget. Attempt is its number in the call (1 for the
+// first), Duration how long the caller waited for it, Status the HTTP status
+// answered (0 without an answer) and Retried whether it follows an earlier
+// attempt of the call.
+type AttemptEvent struct {
+	Kind, Class, Outcome string
+	Attempt              int
+	Duration             time.Duration
+	Status               int
+	Retried              bool
+}
+
+// Observe shows the attempts of every provider among the models to o; nil
+// stops showing them.
+func (m Models) Observe(o ModelObserver) {
+	for _, p := range m.providers() {
+		p.observer.Store(&observerRef{observer: o})
+	}
+}
+
+// Close closes every provider among the models once (Provider.Close): after
+// their requests in flight end, abandoned ones included. Close them before
+// the budget and the model cache they share.
+func (m Models) Close() error {
+	var errs []error
+	for _, p := range m.providers() {
+		errs = append(errs, p.Close())
+	}
+	return errors.Join(errs...)
+}
+
+// providers are the distinct providers among the models' roles.
+func (m Models) providers() []*Provider {
+	out := []*Provider{}
+	for _, role := range []any{m.Planner, m.Judge, m.Consolidator} {
+		if p, ok := role.(*Provider); ok && p != nil && !slices.Contains(out, p) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func (u *Usage) add(other Usage) {

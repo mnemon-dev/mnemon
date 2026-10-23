@@ -927,7 +927,9 @@ func TestFailedModelRequestReleasesOnlyUnsentOrRefused(t *testing.T) {
 		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":10,"completion_tokens":10}}`)
 	}))
 	defer server.Close()
-	p, err := NewProvider(ModelConfig{Kind: "openai", Model: "gpt-4.1-mini", BaseURL: server.URL + "/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL"}, budget)
+	// One attempt a call: how each request's outcome resolves its
+	// reservation is the subject here; retries are resilience_test.go's.
+	p, err := NewProvider(ModelConfig{Kind: "openai", Model: "gpt-4.1-mini", BaseURL: server.URL + "/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL", MaxAttempts: 1}, budget)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -958,7 +960,7 @@ func TestFailedModelRequestReleasesOnlyUnsentOrRefused(t *testing.T) {
 	}
 	closed := listener.Addr().String()
 	listener.Close()
-	unreachable, err := NewProvider(ModelConfig{Kind: "openai", Model: "gpt-4.1-mini", BaseURL: "http://" + closed + "/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL"}, budget)
+	unreachable, err := NewProvider(ModelConfig{Kind: "openai", Model: "gpt-4.1-mini", BaseURL: "http://" + closed + "/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL", MaxAttempts: 1}, budget)
 	if err != nil {
 		t.Fatal(err)
 	}

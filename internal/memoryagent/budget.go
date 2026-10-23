@@ -14,9 +14,11 @@ import (
 )
 
 // Budget is a durable prepare/call/settle boundary, shared across processes.
-// Ambiguous calls retain their reservation; calls that provably cost nothing
-// (never sent, or refused by the endpoint) release it; no automatic retry
-// occurs. It stores metering and request hashes, never prompts or credentials.
+// Every attempt of a call reserves on its own (the provider retries through
+// it, resilience.go). Ambiguous attempts retain their reservation; attempts
+// that provably cost nothing (never sent, or refused by the endpoint)
+// release it. It stores metering and request hashes, never prompts or
+// credentials.
 type Budget struct {
 	db   *sql.DB
 	caps map[string]float64
@@ -98,6 +100,13 @@ func (b *Budget) reserve(ctx context.Context, kind, hash string) (string, error)
 // reserveAmount holds amount for one call, at least the kind's flat
 // reservation, and returns the attempt's id; "" for a local model.
 func (b *Budget) reserveAmount(ctx context.Context, kind, hash string, amount float64) (string, error) {
+	return b.reserveWithin(ctx, kind, hash, amount, 1)
+}
+
+// reserveWithin is reserveAmount for a call that may fill only share of its
+// account's cap: a reservation the cap admits but the share does not fails
+// with ErrBackgroundReserve.
+func (b *Budget) reserveWithin(ctx context.Context, kind, hash string, amount, share float64) (string, error) {
 	if kind == "local" {
 		return "", nil
 	}
@@ -125,19 +134,33 @@ func (b *Budget) reserveAmount(ctx context.Context, kind, hash string, amount fl
 	if err != nil {
 		return "", err
 	}
-	result, err := tx.ExecContext(ctx, `UPDATE accounts SET held=held+? WHERE kind=? AND spent+held+?<=cap`, reservation, kind, reservation)
+	result, err := tx.ExecContext(ctx, `UPDATE accounts SET held=held+? WHERE kind=? AND spent+held+?<=cap*?`, reservation, kind, reservation, share)
 	if err != nil {
 		return "", err
 	}
 	n, err := result.RowsAffected()
 	if err != nil || n != 1 {
-		return "", ErrBudgetCap
+		return "", b.refusal(ctx, tx, kind, reservation, share)
 	}
 	id := uuid.NewString()
 	if _, err = tx.ExecContext(ctx, `INSERT INTO attempts(id,kind,request_hash,reserved) VALUES(?,?,?,?)`, id, kind, hash, reservation); err != nil {
 		return "", err
 	}
 	return id, tx.Commit()
+}
+
+// refusal is the error of a reservation the account refused within share of
+// its cap: ErrBackgroundReserve when the whole cap would have admitted it,
+// else ErrBudgetCap.
+func (b *Budget) refusal(ctx context.Context, tx *sql.Tx, kind string, reservation, share float64) error {
+	if share >= 1 {
+		return ErrBudgetCap
+	}
+	var fits bool
+	if err := tx.QueryRowContext(ctx, `SELECT spent+held+?<=cap FROM accounts WHERE kind=?`, reservation, kind).Scan(&fits); err != nil || !fits {
+		return ErrBudgetCap
+	}
+	return ErrBackgroundReserve
 }
 
 func (b *Budget) settle(ctx context.Context, id string, usage Usage) error {

@@ -196,6 +196,7 @@ func (s *Server) Close() error {
 
 // closeModels closes the files the models share, after their last call.
 func (s *Server) closeModels() {
+	s.models.Close()
 	if s.budget != nil {
 		s.budget.Close()
 	}

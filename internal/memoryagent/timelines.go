@@ -880,9 +880,10 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 }
 
 // countedError reports whether a fold's error counts toward drop mode: a
-// model error about this request (a refusal of its content, a timeout after
-// sending, a malformed reply), not the caller's cancellation or deadline, a
-// spent budget or an unavailable provider, which say nothing about the batch.
+// model error about this request (a refusal of its content, a malformed
+// reply), not the caller's cancellation or deadline, a spent budget or an
+// unavailable provider, which say nothing about the batch. A failed or
+// timed-out exchange (ErrAttemptTimeout) is the provider's unavailability.
 func countedError(ctx context.Context, err error) bool {
 	return ctx.Err() == nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, ErrBudgetCap) && !errors.Is(err, ErrModelUnavailable)
 }

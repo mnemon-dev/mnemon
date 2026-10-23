@@ -137,6 +137,9 @@ func (r *ConsolidateResult) keepDrops(n int) {
 // Call it from another client while serve handles reads, or as a separate CLI.
 // Network work happens before the overlay's fenced atomic publication.
 func (a *Agent) Consolidate(ctx context.Context, req ConsolidateRequest) (ConsolidateResult, error) {
+	// A job's model calls are Background calls, unless they fold the tail of
+	// a Search (Flush).
+	ctx = consolidationCalls(ctx)
 	if a.indexError != nil {
 		return ConsolidateResult{}, fmt.Errorf("derived index is unavailable: %w", a.indexError)
 	}

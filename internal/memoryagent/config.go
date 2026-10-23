@@ -19,7 +19,7 @@ func Open(store *records.Store, directory string, config Config, readonly bool) 
 		closeModelFiles(budget, cache)
 		return nil, err
 	}
-	agent.budget, agent.cache = budget, cache
+	agent.budget, agent.cache, agent.ownsModels = budget, cache, true
 	return agent, nil
 }
 

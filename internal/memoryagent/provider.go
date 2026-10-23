@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -31,9 +32,19 @@ type ModelConfig struct {
 	// the built-in table and are required for models outside it.
 	PriceIn  float64 `json:"priceIn,omitempty"`
 	PriceOut float64 `json:"priceOut,omitempty"`
-	// TimeoutSeconds bounds one call, from sending the request to reading
-	// the whole reply: 1–1800, 0 for the default of 90.
+	// TimeoutSeconds bounds one request, from sending it to reading the
+	// whole reply (its hard timeout): 1–1800, 0 for the default of 90.
 	TimeoutSeconds int `json:"timeoutSeconds,omitempty"`
+	// AttemptTimeoutSeconds replaces every call class's attempt timeout
+	// (resilience.go) when positive, at most timeoutSeconds. An attempt past
+	// it is retried while its request runs on to the hard timeout.
+	AttemptTimeoutSeconds int `json:"attemptTimeoutSeconds,omitempty"`
+	// MaxAttempts replaces every call class's attempts per call when
+	// positive: 1–10.
+	MaxAttempts int `json:"maxAttempts,omitempty"`
+	// TestEndpoint replaces the official endpoint of the jev and deepseek
+	// kinds, for fault drills: an http URL on a loopback host.
+	TestEndpoint string `json:"testEndpoint,omitempty"`
 }
 
 type Provider struct {
@@ -41,13 +52,26 @@ type Provider struct {
 	endpoint string
 	budget   *Budget
 	// client sends this provider's requests over a connection pool of its own
-	// (newTransport), shared with no other provider.
+	// (newTransport), shared with no other provider. Its timeout is the
+	// requests' hard timeout.
 	client *http.Client
 	// cache replays the replies recorded for identical requests
 	// (Config.ModelCache, eval only); nil sends every request.
 	cache *ModelCache
 	// USD per 1M tokens, set for the openai kind.
 	priceIn, priceOut float64
+	// policies are the resilience policies of the call classes, indexed by
+	// CallClass; the classes share the breaker and the retry budget
+	// (resilience.go).
+	policies [3]classPolicy
+	breaker  *breaker
+	retries  *retryBudget
+	observer atomic.Pointer[observerRef]
+	// flights counts the attempts in progress and their requests, abandoned
+	// ones included; mu guards closed, which Close sets to admit no more.
+	flights sync.WaitGroup
+	mu      sync.Mutex
+	closed  bool
 }
 
 // openAIPrices lists USD per 1M input and output tokens.
@@ -56,13 +80,14 @@ var openAIPrices = map[string][2]float64{"gpt-4.1-mini": {0.40, 1.60}, "gpt-4o-m
 // maxDeepSeekTokens bounds a DeepSeek call's output limit.
 const maxDeepSeekTokens = 16384
 
-// defaultModelTimeout bounds a call when the model sets no timeoutSeconds.
+// defaultModelTimeout bounds a request when the model sets no
+// timeoutSeconds.
 const defaultModelTimeout = 90 * time.Second
 
 // providerConns is the most connections a provider keeps to its endpoint,
-// busy or idle: what its three call classes may run at once, 32 interactive,
-// 8 flush and 8 background calls.
-const providerConns = 32 + 8 + 8
+// busy or idle: the requests its three call classes may have in flight at
+// once (their bulkheads), abandoned ones included.
+const providerConns = interactiveCalls + flushCalls + backgroundCalls
 
 // newTransport is a provider's own HTTP transport. http.DefaultTransport
 // keeps two idle connections per host, so concurrent calls to one endpoint
@@ -97,7 +122,11 @@ func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
 		}
 		timeout = time.Duration(config.TimeoutSeconds) * time.Second
 	}
-	p := &Provider{config: config, budget: budget, client: &http.Client{Timeout: timeout, Transport: newTransport(providerConns), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	if err := checkResilience(config, timeout); err != nil {
+		return nil, err
+	}
+	p := &Provider{config: config, budget: budget, client: &http.Client{Timeout: timeout, Transport: newTransport(providerConns), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+		policies: classPolicies(config, timeout), breaker: newBreaker(), retries: &retryBudget{}}
 	if len(config.Model) == 0 || len(config.Model) > 120 {
 		return nil, errors.New("model name is required")
 	}
@@ -148,6 +177,9 @@ func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
 	default:
 		return nil, errors.New("model kind must be jev, deepseek, openai or local")
 	}
+	if config.TestEndpoint != "" {
+		p.endpoint = config.TestEndpoint
+	}
 	if config.Kind != "local" && (budget == nil || config.KeyEnv == "" || os.Getenv(config.KeyEnv) == "") {
 		return nil, errors.New("paid model requires a budget and a nonempty credential environment variable")
 	}
@@ -172,59 +204,7 @@ const (
 // (JEV decisions). Nothing was reserved or sent.
 var ErrRequestTooLarge = errors.New("request too large")
 
-// post sends one encoded request body; the caller has bounded it. It holds
-// at least amount (at least the kind's flat reservation) while the call
-// runs. A call that never reached the endpoint (it failed to connect) or
-// that the endpoint refused (a status outside 2xx) cost nothing: its
-// reservation is released, recorded at 0. A call that may have been
-// processed (it failed after sending, or the reply is unreadable) keeps its
-// reservation held. A reply it returns is settled by the caller (settle). When
-// the caller's context ended, the error wraps its error.
-func (p *Provider) post(ctx context.Context, raw []byte, amount float64) ([]byte, string, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint, bytes.NewReader(raw))
-	if err != nil {
-		return nil, "", err
-	}
-	request.Header.Set("Content-Type", "application/json")
-	if p.config.KeyEnv != "" {
-		key := os.Getenv(p.config.KeyEnv)
-		if key == "" {
-			return nil, "", errors.New("model credential is unavailable")
-		}
-		request.Header.Set("Authorization", "Bearer "+key)
-	}
-	id, err := p.budget.reserveAmount(ctx, p.config.Kind, reference("request", string(raw)).Hash, amount)
-	if err != nil {
-		return nil, "", err
-	}
-	response, err := p.client.Do(request)
-	if err != nil {
-		if unsent(err) {
-			return nil, "", p.release(ctx, id, fmt.Errorf("%w: endpoint unreachable", ErrModelUnavailable))
-		}
-		if ctx.Err() != nil {
-			return nil, id, fmt.Errorf("model request failed; any reservation remains held: %w", ctx.Err())
-		}
-		return nil, id, errors.New("model request failed; any reservation remains held")
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode > 299 {
-		if unavailableStatus(response.StatusCode) {
-			return nil, "", p.release(ctx, id, fmt.Errorf("%w: model HTTP %d", ErrModelUnavailable, response.StatusCode))
-		}
-		return nil, "", p.release(ctx, id, fmt.Errorf("model HTTP %d", response.StatusCode))
-	}
-	if response.StatusCode != http.StatusOK {
-		return nil, id, fmt.Errorf("model HTTP %d; any reservation remains held", response.StatusCode)
-	}
-	data, err := io.ReadAll(io.LimitReader(response.Body, (8<<20)+1))
-	if err != nil || len(data) > 8<<20 {
-		return nil, id, errors.New("invalid or oversized model response")
-	}
-	return data, id, nil
-}
-
-// settle records what a call whose reply arrived cost and frees its
+// settle records what a request whose reply arrived cost and frees its
 // reservation. It runs even when the caller's context has ended: the reply
 // is paid for, and a caller that gave up after it arrived must not leave the
 // reservation held for good. It has no deadline of its own; the budget
@@ -233,7 +213,7 @@ func (p *Provider) settle(ctx context.Context, id string, usage Usage) error {
 	return p.budget.settle(context.WithoutCancel(ctx), id, usage)
 }
 
-// release frees the reservation of a call that cost nothing and returns
+// release frees the reservation of a request that cost nothing and returns
 // cause, saying whether the reservation was released. It runs even when the
 // caller's context has ended.
 func (p *Provider) release(ctx context.Context, id string, cause error) error {
@@ -243,19 +223,26 @@ func (p *Provider) release(ctx context.Context, id string, cause error) error {
 	return fmt.Errorf("%w; reservation released", cause)
 }
 
-// ErrModelUnavailable wraps the error of a call the provider refused for
-// reasons that hold for every request alike: unreachable, credentials or
-// balance refused (401, 402, 403), rate limited (429) or failing (5xx). It
-// says nothing about the request's own content.
+// ErrModelUnavailable wraps the error of a call that failed for reasons that
+// hold for every request alike: the endpoint unreachable, the exchange
+// failed or timed out, credentials or balance refused (401, 402, 403), a
+// request timeout or too early (408, 425), rate limited (429) or failing
+// (5xx), and the resilience policies' refusals (ErrBreakerOpen,
+// ErrBulkheadFull). It says nothing about the request's own content.
 var ErrModelUnavailable = errors.New("model unavailable")
 
 func unavailableStatus(code int) bool {
-	return code == http.StatusUnauthorized || code == http.StatusPaymentRequired || code == http.StatusForbidden || code == http.StatusTooManyRequests || code >= 500
+	switch code {
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden, http.StatusRequestTimeout, http.StatusTooEarly, http.StatusTooManyRequests:
+		return true
+	}
+	return code >= 500
 }
 
-// unsent reports whether a request failed while connecting, before any of it
-// was sent: a failed dial or name lookup. Anything later may have reached the
-// model.
+// unsent reports whether a request's error says it failed while connecting,
+// before any of it was sent: a failed dial or name lookup. Anything later
+// may have reached the model. Requests sent over an http.Transport are
+// judged by their trace instead (connTrace).
 func unsent(err error) bool {
 	var op *net.OpError
 	var dns *net.DNSError
@@ -408,15 +395,8 @@ func (p *Provider) completion(ctx context.Context, system, prompt string, jsonOn
 			return text, reply.usage, cacheEntry{}, err
 		}
 	}
-	raw, id, err := p.post(ctx, encoded, p.reservation(len(encoded), maxTokens))
+	reply, raw, err := send(ctx, p, encoded, p.reservation(len(encoded), maxTokens), p.parseCompletion)
 	if err != nil {
-		return "", Usage{}, cacheEntry{}, err
-	}
-	reply, err := p.parseCompletion(raw)
-	if err != nil {
-		return "", Usage{}, cacheEntry{}, err
-	}
-	if err := p.settle(ctx, id, reply.usage); err != nil {
 		return "", reply.usage, cacheEntry{}, err
 	}
 	text, err := reply.text(callLimit)
@@ -460,6 +440,8 @@ func (p *Provider) parseCompletion(raw []byte) (completionReply, error) {
 	}
 	return completionReply{content: result.Choices[0].Message.Content, finishReason: result.Choices[0].FinishReason, usage: usage}, nil
 }
+
+func (r completionReply) metered() Usage { return r.usage }
 
 // text is the reply's text. A reply cut at the output limit fails unless the
 // call set its own limit (callLimit).
@@ -536,15 +518,8 @@ func (p *Provider) Decide(ctx context.Context, state any, questions map[string]Q
 			return answers, reply.usage, err
 		}
 	}
-	raw, id, err := p.post(ctx, encoded, 0)
+	reply, raw, err := send(ctx, p, encoded, 0, p.parseDecision)
 	if err != nil {
-		return nil, Usage{}, err
-	}
-	reply, err := p.parseDecision(raw)
-	if err != nil {
-		return nil, Usage{}, err
-	}
-	if err = p.settle(ctx, id, reply.usage); err != nil {
 		return nil, reply.usage, err
 	}
 	answers, err := reply.probabilities(questions)
@@ -583,6 +558,8 @@ func (p *Provider) parseDecision(raw []byte) (decisionReply, error) {
 	usage.USD = float64(usage.InputTokens) * 0.042 / 1e6
 	return decisionReply{answers: result.Answers, usage: usage}, nil
 }
+
+func (r decisionReply) metered() Usage { return r.usage }
 
 // probabilities are the reply's answers to questions: a noul probability
 // for each question.

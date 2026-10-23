@@ -301,6 +301,8 @@ type Agent struct {
 	budget     *Budget
 	// cache is the model cache of the models Open opened; nil otherwise.
 	cache *ModelCache
+	// ownsModels: Open built the models, and Close closes them first.
+	ownsModels bool
 	// timelineLocks holds one lock per scope key (a chan struct{} of
 	// capacity 1): a timelines job reads, folds and writes its state alone.
 	timelineLocks sync.Map
@@ -517,6 +519,10 @@ func (a *Agent) MaxItems() int {
 }
 
 func (a *Agent) Close() error {
+	// The models' requests in flight settle on the budget: they end first.
+	if a.ownsModels {
+		a.models.Close()
+	}
 	if a.overlay != nil {
 		a.overlay.Close()
 	}
