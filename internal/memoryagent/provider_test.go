@@ -26,6 +26,21 @@ func mockResponse(body string) *http.Response {
 	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: http.Header{}}
 }
 
+// endHook is a response body that calls onEOF the moment the reply has been
+// read in full.
+type endHook struct {
+	io.ReadCloser
+	onEOF func()
+}
+
+func (h endHook) Read(p []byte) (int, error) {
+	n, err := h.ReadCloser.Read(p)
+	if err == io.EOF {
+		h.onEOF()
+	}
+	return n, err
+}
+
 func TestJEVRequiresMeteringAndTypedPresentAnswers(t *testing.T) {
 	budget, err := OpenBudget(filepath.Join(t.TempDir(), "budget.db"))
 	if err != nil {
@@ -1066,5 +1081,180 @@ func TestBudgetAccountsReport(t *testing.T) {
 	defer other.Close()
 	if accounts, err = other.Accounts(ctx); err != nil || accounts[0].Cap != 300 {
 		t.Fatal(accounts, err)
+	}
+}
+
+func TestProvidersUseOwnTransport(t *testing.T) {
+	budget, err := OpenBudget(filepath.Join(t.TempDir(), "budget.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer budget.Close()
+	t.Setenv("UNIT_JEV_CREDENTIAL", "test-only-placeholder")
+	t.Setenv("UNIT_DEEPSEEK_CREDENTIAL", "test-only-placeholder")
+	seen := map[*http.Transport]bool{}
+	for _, config := range []ModelConfig{
+		{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CREDENTIAL"},
+		{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "UNIT_DEEPSEEK_CREDENTIAL"},
+		{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "UNIT_DEEPSEEK_CREDENTIAL"},
+		{Kind: "local", Model: "local-test", BaseURL: "http://127.0.0.1:1/v1"},
+	} {
+		p, err := NewProvider(config, budget)
+		if err != nil {
+			t.Fatal(config.Kind, err)
+		}
+		transport, ok := p.client.Transport.(*http.Transport)
+		if !ok {
+			t.Fatalf("%s provider sends over %T, want its own *http.Transport", config.Kind, p.client.Transport)
+		}
+		if http.RoundTripper(transport) == http.DefaultTransport || seen[transport] {
+			t.Fatalf("%s provider shares its transport", config.Kind)
+		}
+		seen[transport] = true
+		// Sized to the bulkheads of one provider: 32 interactive, 8 flush and
+		// 8 background calls at once.
+		if transport.MaxIdleConnsPerHost != 48 || transport.MaxConnsPerHost != 48 {
+			t.Fatal(config.Kind, "connections per host", transport.MaxIdleConnsPerHost, transport.MaxConnsPerHost)
+		}
+		if transport.IdleConnTimeout != 90*time.Second || transport.TLSHandshakeTimeout != 10*time.Second || !transport.ForceAttemptHTTP2 {
+			t.Fatal(config.Kind, "timeouts or HTTP/2", transport.IdleConnTimeout, transport.TLSHandshakeTimeout, transport.ForceAttemptHTTP2)
+		}
+		// Dialing is bounded, and the proxy environment is honoured as it is
+		// by http.DefaultTransport.
+		if transport.DialContext == nil || transport.Proxy == nil {
+			t.Fatal(config.Kind, "dialer or proxy missing")
+		}
+	}
+}
+
+// Eight concurrent calls open eight connections and the next eight reuse
+// them. With http.DefaultTransport's two idle connections per host, six of
+// the second eight would dial again.
+func TestConcurrentCallsReuseConnections(t *testing.T) {
+	const burst = 8
+	var dials, arrived atomic.Int32
+	gates := [2]chan struct{}{make(chan struct{}), make(chan struct{})}
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.Copy(io.Discard, r.Body)
+		n := int(arrived.Add(1))
+		gate := gates[(n-1)/burst]
+		if n%burst == 0 {
+			close(gate) // the burst's last request is here: all of it is in use at once
+		}
+		select {
+		case <-gate:
+		case <-time.After(10 * time.Second):
+		}
+		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}]}`)
+	}))
+	server.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			dials.Add(1)
+		}
+	}
+	server.Start()
+	t.Cleanup(server.Close)
+	p, err := NewProvider(ModelConfig{Kind: "local", Model: "local-test", BaseURL: server.URL + "/v1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		var calls sync.WaitGroup
+		for range burst {
+			calls.Add(1)
+			go func() {
+				defer calls.Done()
+				if _, _, err := p.Complete(context.Background(), "s", "p"); err != nil {
+					t.Error(err)
+				}
+			}()
+		}
+		calls.Wait()
+	}
+	if got := dials.Load(); got != burst {
+		t.Fatalf("two bursts of %d concurrent calls opened %d connections, want %d", burst, got, burst)
+	}
+}
+
+// The caller gives up the moment the reply has been read, before the call
+// settles. The provider bills the call anyway, so its reservation settles
+// rather than staying held.
+func TestSettleSurvivesCanceledCaller(t *testing.T) {
+	t.Setenv("UNIT_OPENAI_CREDENTIAL", "test-only-placeholder")
+	t.Setenv("UNIT_JEV_CREDENTIAL", "test-only-placeholder")
+	for _, tc := range []struct {
+		name   string
+		config ModelConfig
+		reply  string
+		call   func(context.Context, *Provider) error
+	}{
+		{"completion", ModelConfig{Kind: "openai", Model: "gpt-4.1-mini", BaseURL: "https://openai.example/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL"},
+			`{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":1000,"completion_tokens":10}}`,
+			func(ctx context.Context, p *Provider) error { _, _, err := p.Complete(ctx, "s", "p"); return err }},
+		{"decision", ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CREDENTIAL"},
+			`{"model":"jev-1.13.0","answers":{"a":{"type":"noul","noul":0.8}},"usage":{"input_tokens":1000,"output_tokens":1}}`,
+			func(ctx context.Context, p *Provider) error {
+				_, _, err := p.Decide(ctx, "evidence", map[string]Question{"a": binary("Relevant?")})
+				return err
+			}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			budget, err := OpenBudget(filepath.Join(t.TempDir(), "budget.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer budget.Close()
+			p, err := NewProvider(tc.config, budget)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			p.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+				response := mockResponse(tc.reply)
+				response.Body = endHook{ReadCloser: response.Body, onEOF: cancel}
+				return response, nil
+			})
+			err = tc.call(ctx, p)
+			if ctx.Err() == nil {
+				t.Fatal("the caller did not give up during the call")
+			}
+			held, spent := accountHeld(t, budget, tc.config.Kind)
+			attempts := budgetAttempts(t, budget)
+			if err != nil || !near(held, 0) || spent <= 0 || len(attempts) != 1 || attempts[0].actual == nil || !near(*attempts[0].actual, spent) {
+				t.Fatal("a call whose reply arrived did not settle:", err, "held", held, "spent", spent, "attempts", attempts)
+			}
+		})
+	}
+}
+
+// The caller gives up as the endpoint's refusal arrives. The refused call
+// cost nothing and its reservation is released all the same.
+func TestReleaseSurvivesCanceledCaller(t *testing.T) {
+	budget, err := OpenBudget(filepath.Join(t.TempDir(), "budget.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer budget.Close()
+	t.Setenv("UNIT_OPENAI_CREDENTIAL", "test-only-placeholder")
+	p, err := NewProvider(ModelConfig{Kind: "openai", Model: "gpt-4.1-mini", BaseURL: "https://openai.example/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL"}, budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+		cancel()
+		response := mockResponse(`{"error":"overloaded"}`)
+		response.StatusCode = http.StatusServiceUnavailable
+		return response, nil
+	})
+	if _, _, err = p.Complete(ctx, "s", "p"); !errors.Is(err, ErrModelUnavailable) || !strings.Contains(err.Error(), "reservation released") {
+		t.Fatal(err)
+	}
+	held, spent := accountHeld(t, budget, "openai")
+	attempts := budgetAttempts(t, budget)
+	if !near(held, 0) || spent != 0 || len(attempts) != 1 || attempts[0].actual == nil || *attempts[0].actual != 0 {
+		t.Fatal("the refused call's reservation was not released", held, spent, attempts)
 	}
 }

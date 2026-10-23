@@ -40,7 +40,9 @@ type Provider struct {
 	config   ModelConfig
 	endpoint string
 	budget   *Budget
-	client   *http.Client
+	// client sends this provider's requests over a connection pool of its own
+	// (newTransport), shared with no other provider.
+	client *http.Client
 	// cache replays the replies recorded for identical requests
 	// (Config.ModelCache, eval only); nil sends every request.
 	cache *ModelCache
@@ -57,6 +59,30 @@ const maxDeepSeekTokens = 16384
 // defaultModelTimeout bounds a call when the model sets no timeoutSeconds.
 const defaultModelTimeout = 90 * time.Second
 
+// providerConns is the most connections a provider keeps to its endpoint,
+// busy or idle: what its three call classes may run at once, 32 interactive,
+// 8 flush and 8 background calls.
+const providerConns = 32 + 8 + 8
+
+// newTransport is a provider's own HTTP transport. http.DefaultTransport
+// keeps two idle connections per host, so concurrent calls to one endpoint
+// dial and handshake TLS again after every burst. This one keeps up to
+// maxConns idle connections per host and allows no more than maxConns open
+// at once. It bounds connecting (dial 5 s, TLS handshake 10 s) but not the
+// call, which the client's timeout bounds, and it honours the proxy
+// environment as http.DefaultTransport does.
+func newTransport(maxConns int) *http.Transport {
+	return &http.Transport{
+		Proxy:               http.ProxyFromEnvironment,
+		DialContext:         (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		ForceAttemptHTTP2:   true, // a custom dialer would otherwise switch HTTP/2 off
+		MaxIdleConnsPerHost: maxConns,
+		MaxConnsPerHost:     maxConns,
+		IdleConnTimeout:     90 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second,
+	}
+}
+
 func validPrice(price float64) bool { return !math.IsNaN(price) && !math.IsInf(price, 0) && price >= 0 }
 
 func isLoopbackHost(host string) bool {
@@ -71,7 +97,7 @@ func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
 		}
 		timeout = time.Duration(config.TimeoutSeconds) * time.Second
 	}
-	p := &Provider{config: config, budget: budget, client: &http.Client{Timeout: timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	p := &Provider{config: config, budget: budget, client: &http.Client{Timeout: timeout, Transport: newTransport(providerConns), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 	if len(config.Model) == 0 || len(config.Model) > 120 {
 		return nil, errors.New("model name is required")
 	}
@@ -152,8 +178,8 @@ var ErrRequestTooLarge = errors.New("request too large")
 // that the endpoint refused (a status outside 2xx) cost nothing: its
 // reservation is released, recorded at 0. A call that may have been
 // processed (it failed after sending, or the reply is unreadable) keeps its
-// reservation held. When the caller's context ended, the error wraps its
-// error.
+// reservation held. A reply it returns is settled by the caller (settle). When
+// the caller's context ended, the error wraps its error.
 func (p *Provider) post(ctx context.Context, raw []byte, amount float64) ([]byte, string, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, p.endpoint, bytes.NewReader(raw))
 	if err != nil {
@@ -196,6 +222,15 @@ func (p *Provider) post(ctx context.Context, raw []byte, amount float64) ([]byte
 		return nil, id, errors.New("invalid or oversized model response")
 	}
 	return data, id, nil
+}
+
+// settle records what a call whose reply arrived cost and frees its
+// reservation. It runs even when the caller's context has ended: the reply
+// is paid for, and a caller that gave up after it arrived must not leave the
+// reservation held for good. It has no deadline of its own; the budget
+// file's busy timeout bounds each of its transactions.
+func (p *Provider) settle(ctx context.Context, id string, usage Usage) error {
+	return p.budget.settle(context.WithoutCancel(ctx), id, usage)
 }
 
 // release frees the reservation of a call that cost nothing and returns
@@ -381,7 +416,7 @@ func (p *Provider) completion(ctx context.Context, system, prompt string, jsonOn
 	if err != nil {
 		return "", Usage{}, cacheEntry{}, err
 	}
-	if err := p.budget.settle(ctx, id, reply.usage); err != nil {
+	if err := p.settle(ctx, id, reply.usage); err != nil {
 		return "", reply.usage, cacheEntry{}, err
 	}
 	text, err := reply.text(callLimit)
@@ -509,7 +544,7 @@ func (p *Provider) Decide(ctx context.Context, state any, questions map[string]Q
 	if err != nil {
 		return nil, Usage{}, err
 	}
-	if err = p.budget.settle(ctx, id, reply.usage); err != nil {
+	if err = p.settle(ctx, id, reply.usage); err != nil {
 		return nil, reply.usage, err
 	}
 	answers, err := reply.probabilities(questions)
