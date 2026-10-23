@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -810,5 +812,179 @@ func TestConsolidateInsightsReadOutOfListOrderOnce(t *testing.T) {
 	}
 	if raw := iddStatePayload(t, overlay); strings.Contains(raw, "After") {
 		t.Fatal(raw)
+	}
+}
+
+// insightQuestions reports whether a linking call asks about insights.
+func insightQuestions(questions map[string]Question) bool {
+	for _, q := range questions {
+		if strings.HasPrefix(q.Instructions, "Does the new insight") {
+			return true
+		}
+	}
+	return false
+}
+
+func TestConsolidateInsightsDeferLinks(t *testing.T) {
+	settings := ConsolidationConfig{BatchCharacters: 300, Parallel: 1}
+	t.Run("an outage leaves the L2 batch unread", func(t *testing.T) {
+		ctx := context.Background()
+		// The insights and read position of a run whose JEV never fails.
+		s0, dir0 := agentStore(t)
+		seedTopics(t, s0, 6)
+		healthy, overlay0 := insightAgent(t, s0, dir0, settings, insightModel(nil), insightJudge())
+		if result, err := healthy.Consolidate(ctx, ConsolidateRequest{DeferLinks: true}); err != nil || result.Remaining != 0 || result.Deferred != 0 {
+			t.Fatal(result, err)
+		}
+		want := loadState(t, overlay0)
+
+		s, dir := agentStore(t)
+		seedTopics(t, s, 6)
+		var down atomic.Bool
+		down.Store(true)
+		judge := insightJudge()
+		jev := decisionFunc(func(ctx context.Context, state any, questions map[string]Question) (map[string]float64, Usage, error) {
+			if down.Load() && insightQuestions(questions) {
+				return nil, Usage{InputTokens: 5}, fmt.Errorf("jev: %w: model HTTP 503; reservation released", ErrModelUnavailable)
+			}
+			return judge.Decide(ctx, state, questions)
+		})
+		a, overlay := insightAgent(t, s, dir, settings, insightModel(nil), jev)
+		// L0 and L1 fold every record; L2 reads its first batch, whose
+		// insights have nothing stored to link to, and leaves the second,
+		// whose linking JEV cannot do, unread with the rest.
+		result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
+		if !errors.Is(err, ErrLinkDeferred) || result.Folded != 2 || result.InsightBatches != 1 || result.Deferred != 1 || result.InsightFallbacks != 0 || result.LinkFallbacks != 0 {
+			t.Fatalf("%+v %v", result, err)
+		}
+		state := loadState(t, overlay)
+		if len(state.Pending) != 0 || state.InsightRead.ModelErrors != 0 || insightsUnread(state) == 0 || result.Remaining != insightsUnread(state) {
+			t.Fatalf("%+v %+v", state.InsightRead, result)
+		}
+		down.Store(false)
+		result, err = a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
+		if err != nil || result.InsightBatches == 0 || result.Deferred != 0 || result.InsightFallbacks != 0 || result.Remaining != 0 {
+			t.Fatalf("%+v %v", result, err)
+		}
+		state = loadState(t, overlay)
+		if got, wanted := mustJSON(t, state.Memory.Insights), mustJSON(t, want.Memory.Insights); got != wanted {
+			t.Fatalf("insights after the outage:\n%s\nwant:\n%s", got, wanted)
+		}
+		if got, wanted := mustJSON(t, state.InsightRead), mustJSON(t, want.InsightRead); got != wanted {
+			t.Fatal(got, wanted)
+		}
+	})
+	t.Run("the request's own failure counts, then links without JEV", func(t *testing.T) {
+		ctx := context.Background()
+		s, dir := agentStore(t)
+		seedTopics(t, s, 6)
+		judge := insightJudge()
+		// The first four insight linking calls get probabilities outside
+		// [0, 1]: the request's own failure.
+		var mu sync.Mutex
+		insightCalls := 0
+		jev := decisionFunc(func(ctx context.Context, state any, questions map[string]Question) (map[string]float64, Usage, error) {
+			if insightQuestions(questions) {
+				mu.Lock()
+				insightCalls++
+				bad := insightCalls <= 4
+				mu.Unlock()
+				if bad {
+					answers := map[string]float64{}
+					for key := range questions {
+						answers[key] = 2
+					}
+					return answers, Usage{InputTokens: 5}, nil
+				}
+			}
+			return judge.Decide(ctx, state, questions)
+		})
+		// L2 concludes from the first two items of any part it reads, so
+		// that the halves of a batch in drop mode conclude too.
+		pairs := insightModel(func(prompt string) (string, error) {
+			ids := []string{}
+			for _, m := range insightLinePattern.FindAllStringSubmatch(prompt, -1) {
+				ids = append(ids, m[1])
+			}
+			if len(ids) < 2 {
+				return `{"insights":[]}`, nil
+			}
+			return `{"insights":[{"text":"` + ids[0] + ` and ` + ids[1] + ` go together.","items":["` + ids[0] + `","` + ids[1] + `"]}]}`, nil
+		})
+		a, overlay := insightAgent(t, s, dir, settings, pairs, jev)
+		clock := &timelineClock{now: time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)}
+		a.now = clock.Now
+		first := clock.Now().UnixMilli()
+		for i, wait := range []time.Duration{0, 5 * time.Minute, 5 * time.Minute} {
+			clock.advance(wait)
+			result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
+			if err == nil || errors.Is(err, ErrLinkDeferred) || !strings.Contains(err.Error(), "invalid or missing decision probability") || result.Deferred != 1 || result.InsightFallbacks != 0 {
+				t.Fatalf("job %d: %+v %v", i, result, err)
+			}
+			if state := loadState(t, overlay); state.InsightRead.ModelErrors != i+1 || state.InsightRead.FirstModelError != first || state.ModelErrors != 0 {
+				t.Fatalf("job %d: %+v", i, state.InsightRead)
+			}
+		}
+		// Due: the head L2 batch, in drop mode, links without JEV after its
+		// call fails once more, its insights all added, dropping nothing;
+		// the later batches link with JEV, one call each.
+		result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
+		if err != nil || result.InsightFallbacks != 1 || result.InsightBatches < 3 || result.InsightLinkCalls != result.InsightBatches || result.Deferred != 0 || result.InsightsDropped != 0 || result.Remaining != 0 {
+			t.Fatalf("%+v %v", result, err)
+		}
+		if state := loadState(t, overlay); state.InsightRead.ModelErrors != 0 || state.InsightRead.FirstModelError != 0 {
+			t.Fatal(state.InsightRead)
+		}
+	})
+}
+
+func TestConsolidateInsightsTimeoutCountsOnlyWhenAnswered(t *testing.T) {
+	ctx := context.Background()
+	s, dir := agentStore(t)
+	seedTopics(t, s, 6)
+	timeout := fmt.Errorf("%w; any reservation remains held (after 3 attempts)", ErrAttemptTimeout)
+	model := insightModel(func(string) (string, error) { return "", timeout })
+	a, overlay := insightAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 300, Parallel: 1}, model, insightJudge())
+	// L0's and L1's calls were answered in this job: L2's timeout is the
+	// request's own, and counts.
+	if _, err := a.Consolidate(ctx, ConsolidateRequest{}); !errors.Is(err, ErrAttemptTimeout) {
+		t.Fatal(err)
+	}
+	if state := loadState(t, overlay); state.InsightRead.ModelErrors != 1 || len(state.Pending) != 0 {
+		t.Fatal(state.InsightRead, len(state.Pending))
+	}
+	// A job with no record to fold makes no other call: the timeout is an
+	// outage, counted nowhere.
+	if _, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true}); !errors.Is(err, ErrAttemptTimeout) {
+		t.Fatal(err)
+	}
+	if state := loadState(t, overlay); state.InsightRead.ModelErrors != 1 {
+		t.Fatal(state.InsightRead)
+	}
+}
+
+func TestInsightsDropModeCountsAnsweredTimeouts(t *testing.T) {
+	timeout := fmt.Errorf("%w; any reservation remains held (after 3 attempts)", ErrAttemptTimeout)
+	model := insightModel(func(prompt string) (string, error) {
+		if strings.Contains(prompt, "E1 ") {
+			return "", timeout
+		}
+		return `{"insights":[]}`, nil
+	})
+	a := linkAgent(t, &linkJudge{}, 8, nil)
+	batch := []insightItem{{id: "E1", line: "E1 (2024/01/01) a", date: "2024/01/01", dated: true}, {id: "E2", line: "E2 (2024/01/02) b", date: "2024/01/02", dated: true, index: 1}}
+	for _, answered := range []bool{false, true} {
+		job := &foldJob{}
+		if answered {
+			job.answer()
+		}
+		var state timelineState
+		var result ConsolidateResult
+		err := a.extractInsightsDropping(withFoldJob(context.Background(), job), model, &state, batch, &result)
+		// The half with E1 times out first: dropped when another call of
+		// the job was answered, else the outage ends the job.
+		if answered && (err != nil || result.InsightsDropped != 1) || !answered && (!errors.Is(err, ErrAttemptTimeout) || result.InsightsDropped != 0) {
+			t.Fatal(answered, err, result.InsightsDropped)
+		}
 	}
 }

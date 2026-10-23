@@ -19,7 +19,16 @@ import (
 // the key JEV likes best, or to the key of the same name, or starts one,
 // and a value JEV finds contradicts the stored latest is marked a conflict.
 // Directives keep the author's de-duplication. When JEV fails, the batch
-// links nothing but its keys of the same name. Lengths are UTF-16 units.
+// links nothing but its keys of the same name; in a job that defers links
+// (ConsolidateRequest.DeferLinks) it stays pending instead, until the drop
+// rule is due for it (keepsPending). Lengths are UTF-16 units.
+
+// ErrLinkDeferred wraps the error of a job with DeferLinks that stopped
+// before a batch JEV could not link for now, because the provider was
+// unavailable or its budget spent (the cause, also wrapped): the batch and
+// the later ones stay pending for a later job, and nothing counts against
+// them.
+var ErrLinkDeferred = fmt.Errorf("%w: linking deferred", ErrModelUnavailable)
 
 // The linking questions, in the style of the author's (simple_questions.go):
 // one sentence naming the two items by id, with yes and no criteria.
@@ -144,7 +153,9 @@ func latestText(key string, values []factValue) string {
 // link returns state.Memory with batch linked into it, leaving state.Memory
 // unchanged, and what linking did. Every JEV call it makes adds its usage to
 // the state and the result. A JEV error or spent budget links nothing but
-// the keys of the same name (Fallback); only a canceled job is an error.
+// the keys of the same name (Fallback), unless the batch stays pending
+// (keepsPending; the drop rule read from state, whose head batch it is):
+// then, and for a canceled job, the error is returned.
 func (l *linker) link(ctx context.Context, state *timelineState, batch timelineMemory, result *ConsolidateResult) (timelineMemory, linkCounts, error) {
 	m := state.Memory
 	newThreads, newEvents := eventThreads(batch)
@@ -220,7 +231,7 @@ func (l *linker) link(ctx context.Context, state *timelineState, batch timelineM
 		pairs = append(pairs, keyPairs[j]...)
 	}
 	if err := l.judge(ctx, news, cands, pairs, state, result, &result.LinkCalls); err != nil {
-		if ctx.Err() != nil {
+		if ctx.Err() != nil || keepsPending(ctx, err, l.agent.dropDue(*state)) {
 			return timelineMemory{}, linkCounts{}, err
 		}
 		counts.Fallback = true
@@ -285,6 +296,15 @@ func (l *linker) link(ctx context.Context, state *timelineState, batch timelineM
 		}
 	}
 	return out, counts, nil
+}
+
+// keepsPending reports whether a batch whose linking failed with err stays
+// pending, for a later job, instead of linking without JEV: only in a job
+// that defers links (ConsolidateRequest.DeferLinks), and there for an
+// outage (outageError) always, for the linking request's own failure until
+// the drop rule is due for the batch (due).
+func keepsPending(ctx context.Context, err error, due bool) bool {
+	return foldJobOf(ctx).defersLinks() && (outageError(err) || !due)
 }
 
 // bestLink is the index of the highest answer of at least 0.5, the first of
@@ -521,10 +541,14 @@ func (l *linker) questionLimit() int {
 }
 
 // decide makes one linking call and meters it: its usage is the job's and
-// the state's, and the job's linking usage; calls counts it.
+// the state's, and the job's linking usage; calls counts it. An answered
+// call is the job's (foldJob.answer).
 func (l *linker) decide(ctx context.Context, s linkState, questions map[string]Question, state *timelineState, result *ConsolidateResult, calls *int) (map[string]float64, error) {
 	start := time.Now()
 	answers, usage, err := l.agent.models.Judge.Decide(ctx, s, questions)
+	if err == nil {
+		foldJobOf(ctx).answer()
+	}
 	result.ModelMS += float64(time.Since(start).Microseconds()) / 1000
 	result.Usage.add(usage)
 	state.Usage.add(usage)

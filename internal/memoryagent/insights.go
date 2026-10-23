@@ -324,8 +324,10 @@ func insightItemOf(id string, in insight) linkItem {
 // best yes (bestLink: at least 0.5, ties to the nearer): the stored one
 // keeps its text, takes the later date and appends the new records it
 // lacks; otherwise it is added. A failed or unaffordable JEV call adds
-// every new insight (Fallback). Every JEV call's usage is the state's and
-// the job's (decide); only a canceled job is an error.
+// every new insight (Fallback), unless the batch stays unread
+// (keepsPending, the drop rule read from state.InsightRead, whose head
+// batch it is): then, and for a canceled job, the error is returned. Every
+// JEV call's usage is the state's and the job's (decide).
 func (l *linker) linkInsights(ctx context.Context, state *timelineState, fresh []insight, result *ConsolidateResult) ([]insight, insightCounts, error) {
 	stored := state.Memory.Insights
 	out, counts := slices.Clone(stored), insightCounts{}
@@ -350,7 +352,7 @@ func (l *linker) linkInsights(ctx context.Context, state *timelineState, fresh [
 	}
 	if len(all) > 0 {
 		if err := l.judge(ctx, news, cands, all, state, result, &result.InsightLinkCalls); err != nil {
-			if ctx.Err() != nil {
+			if ctx.Err() != nil || keepsPending(ctx, err, l.agent.insightDropDue(state.insightPosition())) {
 				return nil, insightCounts{}, err
 			}
 			counts.Fallback = true
@@ -413,10 +415,14 @@ func insightsUnread(state timelineState) int {
 // batch whose extraction ends in a model error stops L2: the batches
 // before it stay read, it and those after it stay unread, and the error,
 // unless it is the caller's cancellation, a spent budget or an unavailable
-// provider, counts against L2's head batch: after dropErrors such jobs over
-// dropAfter, the head batch is extracted in drop mode
-// (extractInsightsDropping). foldErr is the error the job ends with after
-// saving; err another save error, returned at once.
+// provider (a timeout counts as L0's do: foldJob.counts, once the job's
+// extractions ended), counts against L2's head batch: after dropErrors such
+// jobs over dropAfter, the head batch is extracted in drop mode
+// (extractInsightsDropping). A batch whose linking stops the job
+// (linkInsights: with DeferLinks) stays unread with those after it, as
+// for records (linkStopped); its extraction is not kept. foldErr is the
+// error the job ends with after saving; err another save error, returned
+// at once.
 func (a *Agent) foldInsights(ctx context.Context, model Completer, req ConsolidateRequest, state *timelineState, token *string, rest bool, dirty *bool, result *ConsolidateResult) (foldErr, err error) {
 	if state.InsightRead == nil {
 		state.InsightRead = &insightRead{Values: map[string]int{}}
@@ -427,7 +433,7 @@ func (a *Agent) foldInsights(ctx context.Context, model Completer, req Consolida
 		return nil, nil
 	}
 	*dirty = true
-	dropping := a.dropDue(timelineState{ModelErrors: head.ModelErrors, FirstModelError: head.FirstModelError})
+	dropping := a.insightDropDue(head)
 	run := startExtractions(ctx, len(batches), a.config.Consolidation.Parallel, func(ctx context.Context, i int, x *extraction) error {
 		x.state = timelineState{}
 		if i == 0 && dropping {
@@ -445,29 +451,23 @@ func (a *Agent) foldInsights(ctx context.Context, model Completer, req Consolida
 		metered++
 	}
 	link := a.newLinker()
+	var extractErr error
 	for i, batch := range batches {
 		x := run.wait(i)
 		meter(x)
 		if x.err != nil {
-			foldErr = x.err
-			a.countInsightError(ctx, state.InsightRead, foldErr)
+			foldErr, extractErr = x.err, x.err
 			break
 		}
 		insights, counts, err := link.linkInsights(ctx, state, x.state.Memory.Insights, result)
 		if err != nil {
-			foldErr = err
+			var counted bool
+			if foldErr, counted = linkStopped(ctx, err, result); counted {
+				a.countInsightError(ctx, state.InsightRead, err)
+			}
 			break
 		}
-		state.Memory.Insights = insights
-		state.InsightRead.advance(batch)
-		state.InsightRead.ModelErrors, state.InsightRead.FirstModelError = 0, 0
-		result.InsightBatches++
-		result.InsightsDropped += x.result.InsightsDropped
-		result.InsightsNew += counts.New
-		result.InsightsMerged += counts.Merged
-		if counts.Fallback {
-			result.InsightFallbacks++
-		}
+		state.applyInsights(batch, insights, x, counts, result)
 		saved, err := a.overlay.saveTimelines(ctx, req.Scope, *token, *state)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -490,16 +490,42 @@ func (a *Agent) foldInsights(ctx context.Context, model Completer, req Consolida
 	for i := metered; i < len(batches); i++ {
 		meter(&run.out[i])
 	}
+	if extractErr != nil {
+		a.countInsightError(ctx, state.InsightRead, extractErr)
+	}
 	if foldErr != nil {
 		*dirty = true
 	}
 	return foldErr, nil
 }
 
-// countInsightError counts an L2 extraction's error against L2's head
-// batch when it is a counted model error (countedError).
+// applyInsights marks L2's head batch read, its extraction x linked into
+// the stored insights (insights, counts): the insights are the state's, its
+// counts the result's, and the head batch's model errors are reset.
+func (s *timelineState) applyInsights(batch []insightItem, insights []insight, x *extraction, counts insightCounts, result *ConsolidateResult) {
+	s.Memory.Insights = insights
+	s.InsightRead.advance(batch)
+	s.InsightRead.ModelErrors, s.InsightRead.FirstModelError = 0, 0
+	result.InsightBatches++
+	result.InsightsDropped += x.result.InsightsDropped
+	result.InsightsNew += counts.New
+	result.InsightsMerged += counts.Merged
+	if counts.Fallback {
+		result.InsightFallbacks++
+	}
+}
+
+// insightDropDue reports whether L2's head batch is extracted in drop mode
+// (dropDue, by read's count).
+func (a *Agent) insightDropDue(read insightRead) bool {
+	return a.dropDue(timelineState{ModelErrors: read.ModelErrors, FirstModelError: read.FirstModelError})
+}
+
+// countInsightError counts an L2 error against L2's head batch when it is
+// a counted model error (countedError), or a timeout that counts
+// (foldJob.counts).
 func (a *Agent) countInsightError(ctx context.Context, read *insightRead, err error) {
-	if countedError(ctx, err) {
+	if foldJobOf(ctx).counts(ctx, err) {
 		if read.ModelErrors == 0 {
 			read.FirstModelError = a.now().UnixMilli()
 		}
@@ -552,8 +578,9 @@ func (a *Agent) extractInsights(ctx context.Context, model Completer, state *tim
 // extractInsightsDropping extracts L2's head batch after repeated model
 // errors, as foldDropping folds L0's: split once, each half extracted on
 // its own without a further split; a half whose extraction fails with a
-// counted model error is dropped whole (InsightsDropped), a half that is
-// extracted is kept. Any other error ends the job, dropping nothing.
+// counted model error (also a timeout that counts: foldJob.counts) is
+// dropped whole (InsightsDropped), a half that is extracted is kept. Any
+// other error ends the job, dropping nothing.
 func (a *Agent) extractInsightsDropping(ctx context.Context, model Completer, state *timelineState, batch []insightItem, result *ConsolidateResult) error {
 	parts := [][]insightItem{batch}
 	if len(batch) > 1 {
@@ -566,7 +593,7 @@ func (a *Agent) extractInsightsDropping(ctx context.Context, model Completer, st
 		if err == nil {
 			continue
 		}
-		if !countedError(ctx, err) {
+		if !foldJobOf(ctx).counts(ctx, err) {
 			return err
 		}
 		state.Memory.Insights, result.InsightsDropped = state.Memory.Insights[:kept], dropped+len(part)

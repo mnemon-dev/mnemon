@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -499,5 +500,527 @@ func TestReadSimpleWithLayeredState(t *testing.T) {
 	}
 	if !slices.Equal(blockIDs(view.Index), []string{"1-instructions", "2-topics", "3-timelines", "4-values"}) || view.Records[0].ID != "orbit" {
 		t.Fatal(blockIDs(view.Index), recordIDs(view.Records))
+	}
+}
+
+// plannerCalls is the number of calls p received.
+func plannerCalls(p *limitPlanner) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return len(p.calls)
+}
+
+// topicModel is L0 over topic notes (layeredReply).
+func topicModel() *limitPlanner {
+	return &limitPlanner{reply: func(_, prompt string) (string, error) { return layeredReply(prompt), nil }}
+}
+
+// jevDown is topicJudge failing every call with an unavailable provider
+// while down is set.
+func jevDown(down *atomic.Bool) *linkJudge {
+	judge := topicJudge()
+	judge.err = func(context.Context) error {
+		if down.Load() {
+			return fmt.Errorf("jev: %w: model HTTP 503; reservation released", ErrModelUnavailable)
+		}
+		return nil
+	}
+	return judge
+}
+
+// healthyMemory is, as JSON, the memory a layered job folds from
+// seedTopics(n) with a judge that never fails.
+func healthyMemory(t *testing.T, n int) string {
+	t.Helper()
+	s, dir := agentStore(t)
+	seedTopics(t, s, n)
+	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, topicModel(), topicJudge())
+	if result, err := a.Consolidate(context.Background(), ConsolidateRequest{}); err != nil || result.Remaining != 0 {
+		t.Fatal(result, err)
+	}
+	raw, _ := json.Marshal(cloneMemory(loadState(t, overlay).Memory))
+	return string(raw)
+}
+
+func TestDeferredLinkLeavesBatchPending(t *testing.T) {
+	ctx := context.Background()
+	s, dir := agentStore(t)
+	seedTopics(t, s, 3)
+	var down atomic.Bool
+	down.Store(true)
+	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, topicModel(), jevDown(&down))
+	// The first batch links into an empty memory, asking JEV nothing; JEV
+	// is unavailable for the second, which stays pending with the third.
+	result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
+	if !errors.Is(err, ErrLinkDeferred) || !errors.Is(err, ErrModelUnavailable) || result.Folded != 1 || result.Deferred != 1 || result.LinkFallbacks != 0 || result.Remaining != 6 || result.Dropped != 0 {
+		t.Fatalf("result %+v %v", result, err)
+	}
+	_, heads, err := s.Heads(ctx, "", records.Scope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newest := int64(0)
+	for _, head := range heads {
+		newest = max(newest, head.Version)
+	}
+	// The state is the one saved after the first batch: every record read,
+	// the first batch linked, nothing counted against the second.
+	state := loadState(t, overlay)
+	if state.Watermark != newest || state.Batches != 1 || state.ModelErrors != 0 || state.FirstModelError != 0 || !slices.Equal(ids(state.Pending), []string{"n03", "n04", "n05", "n06", "n07", "n08"}) {
+		t.Fatalf("state %+v", state)
+	}
+	if got := threadEvents(state); !reflect.DeepEqual(got, map[string][]string{"kayak": {"n00"}, "taxes": {"n01"}, "garden": {"n02"}}) {
+		t.Fatal("the deferred batch was linked", got)
+	}
+	// JEV answers again: the next job links the second and third batches,
+	// into the memory a job whose JEV never failed folds.
+	down.Store(false)
+	result, err = a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
+	if err != nil || result.Folded != 2 || result.Deferred != 0 || result.LinkFallbacks != 0 || result.Remaining != 0 {
+		t.Fatalf("result %+v %v", result, err)
+	}
+	state = loadState(t, overlay)
+	want := healthyMemory(t, 3)
+	if got, _ := json.Marshal(cloneMemory(state.Memory)); string(got) != want {
+		t.Fatalf("memory after the outage:\n%s\nwant:\n%s", got, want)
+	}
+	if state.Batches != 3 || len(state.Pending) != 0 || state.ModelErrors != 0 {
+		t.Fatalf("state %+v", state)
+	}
+	// Neither field is written when unset.
+	if raw, _ := json.Marshal(ConsolidateRequest{}); strings.Contains(string(raw), "deferLinks") {
+		t.Fatal(string(raw))
+	}
+	if raw, _ := json.Marshal(ConsolidateResult{}); strings.Contains(string(raw), "deferred") {
+		t.Fatal(string(raw))
+	}
+}
+
+func TestDeferredLinkOutagesCountNothing(t *testing.T) {
+	for name, cause := range map[string]error{
+		"unavailable":       fmt.Errorf("jev: %w: model HTTP 503; reservation released", ErrModelUnavailable),
+		"timeout":           fmt.Errorf("jev: %w; any reservation remains held (after 3 attempts)", ErrAttemptTimeout),
+		"breaker":           fmt.Errorf("jev: %w", ErrBreakerOpen),
+		"budget":            fmt.Errorf("jev: %w", ErrBudgetCap),
+		"background budget": fmt.Errorf("jev: %w", ErrBackgroundReserve),
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, dir := agentStore(t)
+			seedTopics(t, s, 3)
+			judge := topicJudge()
+			judge.err = func(context.Context) error { return cause }
+			a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, topicModel(), judge)
+			// The job's extractions were answered, yet an outage of JEV,
+			// a timeout too, counts nowhere: the batch is deferred.
+			for range 2 {
+				result, err := a.Consolidate(context.Background(), ConsolidateRequest{DeferLinks: true})
+				if !errors.Is(err, ErrLinkDeferred) || !errors.Is(err, cause) || result.Deferred != 1 || result.LinkFallbacks != 0 {
+					t.Fatalf("result %+v %v", result, err)
+				}
+				if state := loadState(t, overlay); state.ModelErrors != 0 || state.FirstModelError != 0 || len(state.Pending) != 6 {
+					t.Fatalf("state %+v", state)
+				}
+			}
+		})
+	}
+}
+
+func TestWithoutDeferLinksStillFallsBack(t *testing.T) {
+	for name, failure := range map[string]error{
+		"unavailable":   fmt.Errorf("jev: %w: model HTTP 503; reservation released", ErrModelUnavailable),
+		"budget":        fmt.Errorf("jev: %w", ErrBudgetCap),
+		"request's own": errors.New("jev: model HTTP 400; reservation released"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			s, dir := agentStore(t)
+			seedTopics(t, s, 3)
+			judge := topicJudge()
+			calls := 0
+			// JEV fails its first call, the second batch's only one.
+			judge.err = func(context.Context) error {
+				if calls++; calls == 1 {
+					return failure
+				}
+				return nil
+			}
+			a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, topicModel(), judge)
+			// The second batch links without JEV: its topics start threads
+			// of their own; the third batch's continue stored ones.
+			result, err := a.Consolidate(context.Background(), ConsolidateRequest{})
+			if err != nil || result.Folded != 3 || result.LinkFallbacks != 1 || result.Deferred != 0 || result.Remaining != 0 || result.ThreadsNew != 6 || result.ThreadsLinked != 3 {
+				t.Fatalf("result %+v %v", result, err)
+			}
+			if state := loadState(t, overlay); len(state.Memory.Threads) != 6 || state.ModelErrors != 0 || state.Batches != 3 {
+				t.Fatalf("state %+v", state)
+			}
+		})
+	}
+}
+
+func TestRequestSpecificLinkFailureFallsBackAfterDropRule(t *testing.T) {
+	ctx := context.Background()
+	s, dir := agentStore(t)
+	seedTopics(t, s, 3)
+	judge := topicJudge()
+	answer := judge.answer
+	// JEV answers the second batch's questions with probabilities outside
+	// [0, 1], which fail validation: the request's own failure, each time.
+	second := regexp.MustCompile(`(note|update) 0[345]\b`)
+	judge.answer = func(kind, newText, candidate string) float64 {
+		if second.MatchString(newText) {
+			return 2
+		}
+		return answer(kind, newText, candidate)
+	}
+	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, topicModel(), judge)
+	clock := &timelineClock{now: time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)}
+	a.now = clock.Now
+	first := clock.Now().UnixMilli()
+	// Each job counts the failure against the batch, which stays pending
+	// with the third.
+	for i, wait := range []time.Duration{0, 5 * time.Minute, 5 * time.Minute} {
+		clock.advance(wait)
+		result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
+		if err == nil || errors.Is(err, ErrLinkDeferred) || errors.Is(err, ErrModelUnavailable) || !strings.Contains(err.Error(), "invalid or missing decision probability") ||
+			result.Folded != []int{1, 0, 0}[i] || result.Deferred != 1 || result.LinkFallbacks != 0 || result.Remaining != 6 {
+			t.Fatalf("job %d: %+v %v", i, result, err)
+		}
+		state := loadState(t, overlay)
+		if state.ModelErrors != i+1 || state.FirstModelError != first || state.Batches != 1 || len(state.Pending) != 6 {
+			t.Fatalf("job %d: state %+v", i, state)
+		}
+	}
+	// Three counted failures, the first ten minutes ago: the drop rule is
+	// due, so the second batch links without JEV, dropping nothing, and the
+	// third links with JEV.
+	result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
+	if err != nil || result.Folded != 2 || result.LinkFallbacks != 1 || result.Deferred != 0 || result.Dropped != 0 || result.Remaining != 0 || result.ThreadsNew != 3 || result.ThreadsLinked != 3 {
+		t.Fatalf("result %+v %v", result, err)
+	}
+	state := loadState(t, overlay)
+	if state.ModelErrors != 0 || state.FirstModelError != 0 || len(state.Memory.Threads) != 6 || len(state.Pending) != 0 || state.Failed != 0 {
+		t.Fatalf("state %+v", state)
+	}
+	want := map[string][]string{"kayak": {"n00", "n03", "n06"}, "taxes": {"n01", "n04", "n07"}, "garden": {"n02", "n05", "n08"}}
+	if got := threadEvents(state); !reflect.DeepEqual(got, want) {
+		t.Fatal("records lost", got)
+	}
+}
+
+func TestDeferredBatchReusesExtraction(t *testing.T) {
+	ctx := context.Background()
+	s, dir := agentStore(t)
+	seedTopics(t, s, 3)
+	var calls atomic.Int32
+	sent := make(chan struct{})
+	model := completeFunc(func(ctx context.Context, _, prompt string) (string, Usage, error) {
+		if calls.Add(1) == 3 {
+			close(sent)
+		}
+		if strings.Contains(prompt, "note 06") {
+			// The third batch's reply takes a moment: a job that cut its
+			// request instead of letting it end would lose it.
+			select {
+			case <-ctx.Done():
+				return "", Usage{InputTokens: 10, OutputTokens: 2}, ctx.Err()
+			case <-time.After(20 * time.Millisecond):
+			}
+		}
+		return layeredReply(prompt), Usage{InputTokens: 10, OutputTokens: 2}, nil
+	})
+	var down atomic.Bool
+	down.Store(true)
+	judge := topicJudge()
+	judge.err = func(context.Context) error {
+		if !down.Load() {
+			return nil
+		}
+		// JEV fails once every batch was sent for extraction, so the third
+		// batch's extraction is kept with the second's.
+		<-sent
+		return fmt.Errorf("jev: %w", ErrModelUnavailable)
+	}
+	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, model, judge)
+	result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
+	if !errors.Is(err, ErrLinkDeferred) || result.Folded != 1 || result.Deferred != 1 || calls.Load() != 3 || result.Usage.InputTokens != 3*10+3 {
+		t.Fatalf("result %+v %v", result, err)
+	}
+	spent := loadState(t, overlay)
+	if spent.Calls != 3 || spent.Usage.InputTokens != 3*10+3 || len(a.extractions.entries) != 2 {
+		t.Fatalf("state %+v, %d kept", spent, len(a.extractions.entries))
+	}
+	// The retry links both batches with the extractions it kept: no
+	// extraction request, no extraction spending counted twice.
+	down.Store(false)
+	result, err = a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
+	if err != nil || result.Folded != 2 || result.Remaining != 0 || calls.Load() != 3 || result.Usage.InputTokens != 200 || result.LinkUsage == nil || result.LinkUsage.InputTokens != 200 {
+		t.Fatalf("result %+v %v", result, err)
+	}
+	state := loadState(t, overlay)
+	if state.Calls != 3 || state.Usage.InputTokens != spent.Usage.InputTokens+200 || state.Batches != 3 {
+		t.Fatalf("state %+v", state)
+	}
+	if got, want := mustJSON(t, cloneMemory(state.Memory)), healthyMemory(t, 3); got != want {
+		t.Fatalf("memory:\n%s\nwant:\n%s", got, want)
+	}
+	// What was linked is no longer kept.
+	if len(a.extractions.entries) != 0 {
+		t.Fatal("linked batches stayed kept", len(a.extractions.entries))
+	}
+}
+
+func TestExtractionTimeoutCountsAfterAnsweredLink(t *testing.T) {
+	ctx := context.Background()
+	s, dir := agentStore(t)
+	seedTopics(t, s, 2)
+	var down, slow atomic.Bool
+	down.Store(true)
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) {
+		if slow.Load() {
+			return "", fmt.Errorf("%w; any reservation remains held (after 3 attempts)", ErrAttemptTimeout)
+		}
+		return layeredReply(prompt), nil
+	}}
+	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, model, jevDown(&down))
+	clock := &timelineClock{now: time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)}
+	a.now = clock.Now
+	// JEV is down: the second batch's linking defers, its extraction kept.
+	if _, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true}); !errors.Is(err, ErrLinkDeferred) {
+		t.Fatal(err)
+	}
+	for i := 6; i < 9; i++ {
+		topic := []string{"kayak", "taxes", "garden"}[i%3]
+		seedNote(t, s, fmt.Sprintf("n%02d", i), fmt.Sprintf("%s note %02d %s", topic, i, strings.Repeat(".", 34-len(topic)-9)))
+	}
+	// JEV answers again, but every extraction times out. The next job
+	// links the kept batch, JEV answering, and the third batch's
+	// extraction times out: that counts, since the job had a call
+	// answered, if only by JEV.
+	down.Store(false)
+	slow.Store(true)
+	calls := plannerCalls(model)
+	result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true})
+	if !errors.Is(err, ErrAttemptTimeout) || result.Folded != 1 || result.LinkCalls != 1 || plannerCalls(model) != calls+1 {
+		t.Fatalf("result %+v %v", result, err)
+	}
+	if state := loadState(t, overlay); state.ModelErrors != 1 || !slices.Equal(ids(state.Pending), []string{"n06", "n07", "n08"}) {
+		t.Fatalf("state %+v", state)
+	}
+	// A job whose only call is that extraction has nothing answered: its
+	// timeout is an outage.
+	if _, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true}); !errors.Is(err, ErrAttemptTimeout) {
+		t.Fatal(err)
+	}
+	if state := loadState(t, overlay); state.ModelErrors != 1 {
+		t.Fatalf("state %+v", state)
+	}
+}
+
+func TestKeptExtractionsServeOnlyTheirAgentsDeferringJobs(t *testing.T) {
+	ctx := context.Background()
+	// deferred is an agent whose job deferred the second batch, and JEV
+	// answering again.
+	deferred := func(t *testing.T) (*Agent, *records.Store, *Overlay, *limitPlanner, *linkJudge) {
+		s, dir := agentStore(t)
+		seedTopics(t, s, 3)
+		var down atomic.Bool
+		down.Store(true)
+		model, judge := topicModel(), jevDown(&down)
+		a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, model, judge)
+		if _, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: true}); !errors.Is(err, ErrLinkDeferred) || len(a.extractions.entries) == 0 {
+			t.Fatal(err, len(a.extractions.entries))
+		}
+		down.Store(false)
+		return a, s, overlay, model, judge
+	}
+	t.Run("another agent extracts again", func(t *testing.T) {
+		_, s, overlay, model, judge := deferred(t)
+		calls := plannerCalls(model)
+		b, err := New(s, Config{Version: 1, Policy: &ReadPolicy{Consolidation: true}, Consolidation: &ConsolidationConfig{Mode: "layered", BatchCharacters: 100}}, Models{Consolidator: model, Judge: judge}, overlay)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result, err := b.Consolidate(ctx, ConsolidateRequest{DeferLinks: true}); err != nil || result.Folded != 2 || plannerCalls(model) != calls+2 {
+			t.Fatal(result, err, plannerCalls(model)-calls)
+		}
+	})
+	t.Run("a job without deferLinks extracts again", func(t *testing.T) {
+		a, _, _, model, _ := deferred(t)
+		calls := plannerCalls(model)
+		if result, err := a.Consolidate(ctx, ConsolidateRequest{}); err != nil || result.Folded != 2 || plannerCalls(model) != calls+2 {
+			t.Fatal(result, err, plannerCalls(model)-calls)
+		}
+	})
+}
+
+func TestExtractionCacheKeepsTheLatest(t *testing.T) {
+	var c extractionCache
+	if _, ok := c.take("0"); ok {
+		t.Fatal("an empty cache kept something")
+	}
+	for i := range extractionCacheSize + 1 {
+		c.put(strconv.Itoa(i), extraction{state: timelineState{Batches: i}})
+	}
+	if len(c.entries) != extractionCacheSize || c.order.Len() != extractionCacheSize {
+		t.Fatal("bound", len(c.entries), c.order.Len())
+	}
+	if _, ok := c.take("0"); ok {
+		t.Fatal("the oldest was kept past the bound")
+	}
+	if x, ok := c.take("1"); !ok || x.state.Batches != 1 {
+		t.Fatal(x, ok)
+	}
+	if _, ok := c.take("1"); ok {
+		t.Fatal("taken twice")
+	}
+	// Storing a kept key again replaces it and makes it the latest: the
+	// oldest left, 3, goes first.
+	c.put("2", extraction{state: timelineState{Batches: 20}})
+	c.put("a", extraction{})
+	c.put("b", extraction{})
+	if _, ok := c.take("3"); ok {
+		t.Fatal("3 was kept")
+	}
+	if x, ok := c.take("2"); !ok || x.state.Batches != 20 {
+		t.Fatal(x, ok)
+	}
+}
+
+func TestExtractionRunHaltKeepsWhatRuns(t *testing.T) {
+	started, release := make(chan int, 5), make(chan struct{})
+	run := startExtractions(context.Background(), 5, 1, func(ctx context.Context, i int, x *extraction) error {
+		started <- i
+		<-release
+		return nil
+	})
+	if i := <-started; i != 0 {
+		t.Fatal(i)
+	}
+	// Halted while the first batch is extracted: that extraction ends and
+	// is kept, and no other batch is taken.
+	run.halt()
+	close(release)
+	if value := run.stop(); value != nil {
+		t.Fatal(value)
+	}
+	if len(started) != 0 || !run.extracted(0) || run.extracted(1) {
+		t.Fatal("batches taken after the halt", len(started), run.extracted(0), run.extracted(1))
+	}
+}
+
+func TestExtractionKey(t *testing.T) {
+	batch := []pendingRecord{{ID: "a", Header: "h", Text: "x"}, {ID: "b", Header: "h", Text: "y"}}
+	key := extractionKey(false, batch)
+	if extractionKey(false, slices.Clone(batch)) != key {
+		t.Fatal("the same batch has two keys")
+	}
+	changed := func(edit func(*pendingRecord)) []pendingRecord {
+		out := slices.Clone(batch)
+		edit(&out[0])
+		return out
+	}
+	for name, other := range map[string]string{
+		"drop mode": extractionKey(true, batch),
+		"an id":     extractionKey(false, changed(func(r *pendingRecord) { r.ID = "c" })),
+		"a header":  extractionKey(false, changed(func(r *pendingRecord) { r.Header = "g" })),
+		"a text":    extractionKey(false, changed(func(r *pendingRecord) { r.Text = "z" })),
+		"the order": extractionKey(false, []pendingRecord{batch[1], batch[0]}),
+		"a record":  extractionKey(false, batch[:1]),
+	} {
+		if other == key {
+			t.Fatal(name, "does not change the key")
+		}
+	}
+}
+
+func TestProviderWideTimeoutDefersNotDrops(t *testing.T) {
+	for _, deferLinks := range []bool{true, false} {
+		t.Run(fmt.Sprint("deferLinks ", deferLinks), func(t *testing.T) {
+			ctx := context.Background()
+			s, dir := agentStore(t)
+			seedTopics(t, s, 3)
+			var slow atomic.Bool
+			slow.Store(true)
+			model := &limitPlanner{reply: func(_, prompt string) (string, error) {
+				if slow.Load() {
+					return "", fmt.Errorf("%w; any reservation remains held (after 3 attempts)", ErrAttemptTimeout)
+				}
+				return layeredReply(prompt), nil
+			}}
+			a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, model, topicJudge())
+			clock := &timelineClock{now: time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)}
+			a.now = clock.Now
+			// For fifteen minutes every extraction times out: no call of a
+			// job is answered, so nothing counts against the head batch and
+			// nothing is dropped; the batches stay pending.
+			for minute := 0; minute <= 15; minute += 5 {
+				result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: deferLinks})
+				if !errors.Is(err, ErrAttemptTimeout) || result.Folded != 0 || result.Dropped != 0 || result.Remaining != 9 {
+					t.Fatalf("minute %d: %+v %v", minute, result, err)
+				}
+				if state := loadState(t, overlay); state.ModelErrors != 0 || state.Failed != 0 || len(state.Pending) != 9 {
+					t.Fatalf("minute %d: state %+v", minute, state)
+				}
+				clock.advance(5 * time.Minute)
+			}
+			slow.Store(false)
+			result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: deferLinks})
+			if err != nil || result.Folded != 3 || result.Dropped != 0 || result.Remaining != 0 {
+				t.Fatalf("result %+v %v", result, err)
+			}
+			if got, want := mustJSON(t, cloneMemory(loadState(t, overlay).Memory)), healthyMemory(t, 3); got != want {
+				t.Fatalf("memory:\n%s\nwant:\n%s", got, want)
+			}
+		})
+	}
+}
+
+func TestLoneExtractionTimeoutCounts(t *testing.T) {
+	for _, deferLinks := range []bool{true, false} {
+		t.Run(fmt.Sprint("deferLinks ", deferLinks), func(t *testing.T) {
+			ctx := context.Background()
+			s, dir := agentStore(t)
+			seedTopics(t, s, 3)
+			timeout := fmt.Errorf("%w; any reservation remains held (after 3 attempts)", ErrAttemptTimeout)
+			third := make(chan struct{}, 8)
+			// Every extraction that reads note 05 times out, once the third
+			// batch's was sent: in every job a call of another batch is
+			// answered.
+			model := &limitPlanner{reply: func(_, prompt string) (string, error) {
+				switch {
+				case strings.Contains(prompt, "note 06"):
+					third <- struct{}{}
+				case strings.Contains(prompt, "note 05"):
+					<-third
+					return "", timeout
+				}
+				return layeredReply(prompt), nil
+			}}
+			a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100}, model, topicJudge())
+			clock := &timelineClock{now: time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)}
+			a.now = clock.Now
+			first := clock.Now().UnixMilli()
+			for i, wait := range []time.Duration{0, 5 * time.Minute, 5 * time.Minute} {
+				clock.advance(wait)
+				result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: deferLinks})
+				if !errors.Is(err, ErrAttemptTimeout) || result.Dropped != 0 || result.Deferred != 0 || result.Remaining != 6 {
+					t.Fatalf("job %d: %+v %v", i, result, err)
+				}
+				if state := loadState(t, overlay); state.ModelErrors != i+1 || state.FirstModelError != first || len(state.Pending) != 6 {
+					t.Fatalf("job %d: state %+v", i, state)
+				}
+			}
+			// The batch alone keeps timing out: in drop mode it splits
+			// once, and the half that times out again is dropped.
+			result, err := a.Consolidate(ctx, ConsolidateRequest{DeferLinks: deferLinks})
+			if err != nil || result.Folded != 2 || result.Dropped != 1 || len(result.Drops) != 1 || !strings.Contains(result.Drops[0].Reason, "model error after 3 failed jobs over 10m0s") || !strings.Contains(result.Drops[0].Reason, "attempt timed out") {
+				t.Fatalf("result %+v %v", result, err)
+			}
+			state := loadState(t, overlay)
+			want := map[string][]string{"kayak": {"n00", "n03", "n06"}, "taxes": {"n01", "n04", "n07"}, "garden": {"n02", "n08"}}
+			if got := threadEvents(state); !reflect.DeepEqual(got, want) || state.Failed != 1 || state.ModelErrors != 0 || len(state.Pending) != 0 {
+				t.Fatalf("state %v %+v", got, state)
+			}
+		})
 	}
 }

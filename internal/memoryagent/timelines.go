@@ -33,7 +33,9 @@ const (
 	// is folded in drop mode (foldDropping): a provider that keeps refusing
 	// one batch must not stop every later job. Errors that hit every request
 	// alike (ErrModelUnavailable: outage, credentials, balance, rate limit)
-	// never count, so an outage of any length drops nothing.
+	// never count, so an outage of any length drops nothing; a layered
+	// job's timeout counts only when another of its calls was answered
+	// (foldJob.counts).
 	dropErrors = 3
 	dropAfter  = 10 * time.Minute
 )
@@ -737,9 +739,11 @@ func jsString(raw json.RawMessage) string {
 // error withdraws the batch's items, keeps its records pending, ends the job
 // with the error and, unless it is the caller's cancellation or a spent
 // budget, counts against the head batch: after dropErrors such jobs over
-// dropAfter, the head batch is folded in drop mode (foldDropping). With
-// insights (layered mode), L2 then reads the consolidated items it has not
-// read (foldInsights), and Remaining counts those too.
+// dropAfter, the head batch is folded in drop mode (foldDropping). A
+// layered job's folds share a foldJob (req.DeferLinks, and whether a call
+// of the job was answered, for its timeouts). With insights (layered
+// mode), L2 then reads the consolidated items it has not read
+// (foldInsights), and Remaining counts those too.
 func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest) (ConsolidateResult, error) {
 	settings := a.config.Consolidation
 	model := a.models.Consolidator
@@ -807,6 +811,7 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	dirty := read > 0 || req.Reset
 	var foldErr error
 	if layered {
+		ctx = withFoldJob(ctx, &foldJob{deferLinks: req.DeferLinks})
 		if foldErr, err = a.foldLayered(ctx, model, req, &state, &token, flush, &dirty, &result); err != nil {
 			return result, err
 		}
@@ -883,15 +888,17 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 // model error about this request (a refusal of its content, a malformed
 // reply), not the caller's cancellation or deadline, a spent budget or an
 // unavailable provider, which say nothing about the batch. A failed or
-// timed-out exchange (ErrAttemptTimeout) is the provider's unavailability.
+// timed-out exchange (ErrAttemptTimeout) is the provider's unavailability;
+// foldJob.counts adds a layered job's timeouts that are the request's own.
 func countedError(ctx context.Context, err error) bool {
 	return ctx.Err() == nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, ErrBudgetCap) && !errors.Is(err, ErrModelUnavailable)
 }
 
 // countError counts a fold's error against the head batch when it is a
-// counted model error (countedError).
+// counted model error (countedError), or, in a layered job, a timeout that
+// counts (foldJob.counts).
 func (a *Agent) countError(ctx context.Context, state *timelineState, err error) {
-	if countedError(ctx, err) {
+	if foldJobOf(ctx).counts(ctx, err) {
 		if state.ModelErrors == 0 {
 			state.FirstModelError = a.now().UnixMilli()
 		}
@@ -907,9 +914,10 @@ func (a *Agent) dropDue(state timelineState) bool {
 
 // foldDropping folds the head batch after repeated model errors: split once,
 // each half folded on its own (foldTimelines without a further split). A half
-// whose fold fails with a counted model error is dropped whole (Failed, and a
-// Drop naming the error); a half that folds is kept. Any other error ends the
-// job as in foldTimelines, dropping nothing.
+// whose fold fails with a counted model error (in a layered job, also a
+// timeout that counts: foldJob.counts) is dropped whole (Failed, and a Drop
+// naming the error); a half that folds is kept. Any other error ends the job
+// as in foldTimelines, dropping nothing.
 func (a *Agent) foldDropping(ctx context.Context, model Completer, spec foldSpec, state *timelineState, batch []pendingRecord, result *ConsolidateResult) error {
 	cause := fmt.Sprintf("%d failed jobs over %s", state.ModelErrors, a.now().Sub(time.UnixMilli(state.FirstModelError)).Round(time.Second))
 	parts := [][]pendingRecord{batch}
@@ -923,7 +931,7 @@ func (a *Agent) foldDropping(ctx context.Context, model Completer, spec foldSpec
 		if err == nil {
 			continue
 		}
-		if !countedError(ctx, err) {
+		if !foldJobOf(ctx).counts(ctx, err) {
 			return err
 		}
 		state.Memory, state.Batches, state.Failed = memory, batches, failed+1
@@ -1058,7 +1066,8 @@ func (a *Agent) foldTimelines(ctx context.Context, model Completer, spec foldSpe
 	return nil
 }
 
-// completeFold makes one consolidating model call and meters it.
+// completeFold makes one consolidating model call and meters it. An
+// answered call is the job's (foldJob.answer).
 func (a *Agent) completeFold(ctx context.Context, model Completer, system, prompt string, state *timelineState, result *ConsolidateResult) (string, error) {
 	start := time.Now()
 	var reply string
@@ -1076,6 +1085,7 @@ func (a *Agent) completeFold(ctx context.Context, model Completer, system, promp
 		return "", err
 	}
 	state.Calls++
+	foldJobOf(ctx).answer()
 	return reply, nil
 }
 

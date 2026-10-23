@@ -14,7 +14,7 @@ while the service runs. No old data needs conversion.
 | `memory.write` | `text`, optional `id`, `source`, `at`, `scope`, `workspaceId`, `sessionId` | Committed revision, original-document reference and block references. |
 | `memory.writeConversation` | `messages` (`role`, `content`, optional RFC 3339 `at`), `sessionId`, optional `id`, `source`, `scope`, `workspaceId` | Same as `memory.write`. |
 | `memory.read` | `question`, optional `recent`, `scope`, `revision`, `maxItems` | Original-evidence View, index hints, needs, stop reason and resource use. |
-| `memory.consolidate` | Optional `scope`, `maxBatches` (1–4 for memory-agent/v1, 1–64 for timelines and layered), `reset`, `hold` (timelines and layered), `deferEdges`, `rebuildEdges` | Background job progress and usage. |
+| `memory.consolidate` | Optional `scope`, `maxBatches` (1–4 for memory-agent/v1, 1–64 for timelines and layered), `reset`, `hold` (timelines and layered), `deferLinks` (layered), `deferEdges`, `rebuildEdges` | Background job progress and usage. |
 
 `maxItems` caps the records of a `"strategy": "simple"` View: 0 or absent takes the
 configured `view.maxItems`, and more than it is an error. memory-agent/v1 reads have no
@@ -192,9 +192,23 @@ question is asked); otherwise it links to its best yes, else starts a key. A
 contradiction marks the appended values as conflicts. Directives are de-duplicated as in
 timelines mode. The questions are packed into as few JEV calls as fit 128 questions and
 96,000 UTF-16 units. When a JEV call fails or its budget is spent, the batch links nothing
-but its keys of the same name and the job goes on. A model error in a batch's extraction
+but its keys of the same name and the job goes on. A job with `deferLinks: true` leaves
+the batch pending instead, with the later ones, for a later job: when JEV is unavailable
+or its budget spent (a timeout, a 5xx, an open circuit breaker, the background reserve),
+the job saves the batches linked before it and returns an error wrapping `ErrLinkDeferred`
+(`model unavailable: linking deferred: …`, which wraps the cause too), counting nothing
+against the batch; when JEV fails the request itself (a 400, answers that fail
+validation), the failure counts toward the drop rule, and once the rule is due the batch
+links without JEV as above, nothing dropped. The result's `deferred` counts the batch so
+left pending. The job keeps the extractions of the batches it leaves pending, letting
+those still running end first, in memory (per agent, up to 64 batches), and the job that
+links them uses them without asking the consolidator again; another process, or a job
+without `deferLinks`, extracts them again. A model error in a batch's extraction
 stops the job there: the batches before it stay linked, it and the later ones stay
-pending, and the error counts toward the drop rule as in timelines mode. Layered mode
+pending, and the error counts toward the drop rule as in timelines mode. An extraction
+that timed out counts only when another extraction or JEV call of the same job was
+answered: a slowdown of the whole provider drops nothing, while a batch that alone keeps
+timing out is still split and, if a half times out again, dropped. Layered mode
 requires a decision model (`judge`) and a completion model (`consolidator`, else
 `planner`). It costs one extraction call per batch (more on retries and splits), whose
 request does not grow with the memory; once the memory holds anything, a few JEV calls per
@@ -236,7 +250,9 @@ order, JEV links each new insight to the `linkCandidates` stored insights neares
 (embeddings, else shared words), asking of each pair whether the two state the same
 conclusion: the best yes (at least 0.5) merges, the stored insight keeping its text and
 taking the later date and the records it lacks; otherwise the insight is added. When a JEV
-call fails or its budget is spent, every new insight of the batch is added. The state keeps
+call fails or its budget is spent, every new insight of the batch is added; with
+`deferLinks` the batch stays unread instead, as a batch of records stays pending, under
+L2's own drop rule (its extraction is not kept). The state keeps
 the insights and L2's read position (`insightRead`: per list, the events, each key's values
 and the directives read from its start, and those read past an unread one, which date
 order can read first); neither is written without the setting, and the records' native

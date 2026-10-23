@@ -29,6 +29,15 @@ type ConsolidateRequest struct {
 	// the memory: the result reports the edges pending, and a later job or
 	// RebuildEdges builds them, once for many jobs.
 	DeferEdges bool `json:"deferEdges,omitempty"`
+	// DeferLinks (layered mode) leaves a batch pending, for a later job,
+	// when JEV fails to link it, instead of linking it without JEV at
+	// once: an unavailable provider or a spent budget stops the job before
+	// the batch (ErrLinkDeferred), counted nowhere; a failure of the
+	// linking request itself counts toward the drop rule, and the batch
+	// links without JEV once the rule is due, dropping nothing. The job
+	// keeps the extractions of the batches it leaves pending for the job
+	// that links them (in memory). L2 linking likewise.
+	DeferLinks bool `json:"deferLinks,omitempty"`
 }
 
 type ConsolidateResult struct {
@@ -65,6 +74,10 @@ type ConsolidateResult struct {
 	Conflicts     int    `json:"conflicts,omitempty"`
 	LinkFallbacks int    `json:"linkFallbacks,omitempty"`
 	LinkLexical   int    `json:"linkLexical,omitempty"`
+	// Deferred counts the batches, of records or of L2's items, a job with
+	// DeferLinks left pending because their linking failed (at most one: the
+	// job stops there).
+	Deferred int `json:"deferred,omitempty"`
 	// With nativeEdges, a job that changed the memory, or a rebuildEdges
 	// request, replaces the records' derived metadata (edges.go):
 	// EdgeRecords records got a row, with EdgeLinks links by type. Of the
