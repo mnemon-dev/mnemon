@@ -933,12 +933,14 @@ func TestFailedModelRequestReleasesOnlyUnsentOrRefused(t *testing.T) {
 		io.WriteString(w, `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":10,"completion_tokens":10}}`)
 	}))
 	defer server.Close()
-	// One attempt a call: how each request's outcome resolves its
-	// reservation is the subject here; retries are resilience_test.go's.
+	// One attempt a call, a 429's included: how each request's outcome
+	// resolves its reservation is the subject here; retries are
+	// resilience_test.go's.
 	p, err := NewProvider(ModelConfig{Kind: "openai", Model: "gpt-4.1-mini", BaseURL: server.URL + "/v1", KeyEnv: "UNIT_OPENAI_CREDENTIAL", MaxAttempts: 1}, budget)
 	if err != nil {
 		t.Fatal(err)
 	}
+	impatient(p)
 	ctx := context.Background()
 	// A non-2xx answer was not a completed call: released, recorded at 0.
 	for _, code := range []int{http.StatusInternalServerError, http.StatusTooManyRequests, http.StatusBadRequest} {

@@ -60,11 +60,13 @@ type ModelObserver interface {
 // AttemptEvent is one attempt of a model call, or one its policies stopped
 // before it was sent. Kind is the provider's kind and Class the call's class
 // (CallClass.String). Outcome is "ok"; "throttled", refused with HTTP 429,
-// retried after its Retry-After or not; "invalid", a 200 reply that did not
-// parse or failed validation, retried once or not; "retryable", another
-// failure a retry may not meet, retried or not; "failed"; "breaker-open";
-// "bulkhead-full"; or "budget", refused by the spending cap, its background
-// reserve or the provider's retry budget. Attempt is its number in the call
+// retried after its Retry-After, patiently without one, or not; "invalid", a
+// 200 reply that did not parse or failed validation, retried once or not;
+// "rejected", refused with HTTP 401, 402 or 403 (the credential or the
+// balance), not retried; "retryable", another failure a retry may not meet,
+// retried or not; "failed"; "breaker-open"; "bulkhead-full"; or "budget",
+// refused by the spending cap, its background reserve or the provider's
+// retry budget. Attempt is its number in the call
 // (1 for the first), Duration how long the caller waited for it, Status the
 // HTTP status answered (0 without an answer) and Retried whether it follows
 // an earlier attempt of the call.

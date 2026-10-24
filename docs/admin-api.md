@@ -118,7 +118,7 @@ consolidation queue, it carries these, which the memory cloud console reads:
 | Series | Meaning |
 | --- | --- |
 | `mnemon_aml_admin_auth_failures_total` | admin requests refused with 401 (no labels) |
-| `mnemon_aml_model_attempts_total{kind,class,outcome}` | attempts of model calls. `outcome` is `ok`, `throttled` (refused with HTTP 429), `invalid` (a 200 reply that did not parse or failed validation), `retryable`, `failed`, `breaker-open`, `bulkhead-full` or `budget`; the console counts every outcome but `ok` as a model failure |
+| `mnemon_aml_model_attempts_total{kind,class,outcome}` | attempts of model calls. `outcome` is `ok`, `throttled` (refused with HTTP 429), `invalid` (a 200 reply that did not parse or failed validation), `rejected` (refused with HTTP 401, 402 or 403: the key or the balance), `retryable`, `failed`, `breaker-open`, `bulkhead-full` or `budget`; the console counts every outcome but `ok` as a model failure |
 | `mnemon_aml_open_stores` | user stores the server holds open now |
 | `mnemon_aml_stores` | user stores in the data root, from the latest scan (at most 60 s old) |
 | `mnemon_aml_store_bytes` | bytes of the regular files of those stores, from the same scan |
@@ -156,6 +156,7 @@ counts only.
 | `queue` | the consolidation scheduler: `queued`, `running`, `backingOff`, `held`, `oldestQueued` (nanoseconds) and `maxBacklog` (characters) |
 | `lagBound` | the backlog, in characters, above which an Add waits (0 unless `--consolidate background`) |
 | `breakers`, `breakerTrips` | by provider kind, the breaker's state, and how many times it has opened |
+| `rejectedByKind` | by provider kind, the requests the provider rejected with 401, 402 or 403 (a wrong or revoked key, an empty balance); it only grows, from 0 for every kind the models have. The watcher's `provider-rejected:<kind>` alert reads it |
 | `budgets` | each paid account that has been used: `kind`, `cap`, `spent`, `held`; always an array |
 | `openStores` | user stores open now |
 | `version` | the product version string of the build (`dev` for a build made without one) |

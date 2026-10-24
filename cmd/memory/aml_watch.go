@@ -88,6 +88,9 @@ import (
 //	breaker-open:<kind>      a provider's circuit breaker is open, or opened since the last
 //	                         run (the count of trips only grows, so one that opened and
 //	                         recovered between two runs still shows)
+//	provider-rejected:<kind> a provider rejected requests with 401, 402 or 403 since the last
+//	                         run: a wrong or revoked key, or an empty balance (a status
+//	                         without rejectedByKind, an older server's, has nothing to say)
 //	budget-high:<kind>       an account's spent and held amounts are above 80% of its cap
 //	budget-held:<kind>       an account's held reservations are above 2% of its cap
 //	backlog-age              the oldest work not yet consolidated has waited more than 15 minutes
@@ -106,10 +109,11 @@ import (
 // (no state file) takes the counters as they are and says nothing about them.
 //
 // An alert about something that happens (degraded-search, breaker-open,
-// consolidation-dropped, link-fallback, add-outran and restart: the others
-// are about how things are) is firing for 10 minutes after the last run that
-// saw it happen, so that a stream of events is one alert, repeated every 30
-// minutes while it lasts and then resolved, not a pair of messages per event.
+// provider-rejected, consolidation-dropped, link-fallback, add-outran and
+// restart: the others are about how things are) is firing for 10 minutes
+// after the last run that saw it happen, so that a stream of events is one
+// alert, repeated every 30 minutes while it lasts and then resolved, not a
+// pair of messages per event.
 // Any firing alert is said again 30 minutes after its last message. When the
 // status cannot be read, the alerts that come from it are neither repeated
 // nor resolved: the ready alert says what is wrong.
@@ -542,7 +546,8 @@ func (w *watcher) probeHealth(ctx context.Context) string {
 //	           any status was read)
 //	counters   the status's counters as of the last run that read it, by name
 //	           (the status's own for the Search and consolidation counters,
-//	           "trips:<kind>" for a kind's breaker trips)
+//	           "trips:<kind>" for a kind's breaker trips, "rejected:<kind>" for
+//	           the requests it rejected)
 //	rises      when each alert about a counter was last seen to be new
 //	since      when each condition that must last (backlog-lag) was first seen
 //	firing     the alerts that fired and have not been resolved
@@ -707,6 +712,7 @@ func (e *evaluation) status(st *aml.AdminStatus) {
 	e.counter("link-fallback", "linkFallbacks", watchNoun{"batch linked without JEV", "batches linked without JEV"}, st.LinkFallbacks)
 	e.counter("add-outran", "addOutran", watchNoun{"Add that waited out its window for consolidation", "Adds that waited out their window for consolidation"}, st.AddOutran)
 	e.breakers(st)
+	e.rejected(st)
 	e.partial(st)
 	e.budgets(st.Budgets)
 	e.backlog(st)
@@ -790,6 +796,27 @@ func (e *evaluation) breakers(st *aml.AdminStatus) {
 		}
 		e.event("breaker-open:"+kind, open || trips > base, risen,
 			fmt.Sprintf("%s circuit breaker has opened %s since the process started", kind, times.count(trips)))
+	}
+}
+
+// watchRejectedAdvice is what a provider-rejected alert asks the operator to
+// check: a 401 or 403 is the key, a 402 the balance.
+const watchRejectedAdvice = "check the API key and the account balance"
+
+// rejected: a provider kind rejected requests (401, 402 or 403: a wrong or
+// revoked key, an empty balance) since the last run (ruling R65). Its count
+// only grows. The message says the kind, the counts and what to check; what
+// the provider answered never reaches the status. A status without
+// rejectedByKind, an older server's, has no kind to say anything about.
+func (e *evaluation) rejected(st *aml.AdminStatus) {
+	requests := watchNoun{"request", "requests"}
+	for _, kind := range slices.Sorted(maps.Keys(st.RejectedByKind)) {
+		rejected := st.RejectedByKind[kind]
+		base := e.base("rejected:"+kind, rejected)
+		e.next.Counters["rejected:"+kind] = rejected
+		e.event("provider-rejected:"+kind, rejected > base,
+			fmt.Sprintf("%s rejected %s (401/402/403) since the last run — %s (%d since the process started)", kind, requests.count(rejected-base), watchRejectedAdvice, rejected),
+			fmt.Sprintf("%s rejected %s (401/402/403) since the process started — %s", kind, requests.count(rejected), watchRejectedAdvice))
 	}
 }
 

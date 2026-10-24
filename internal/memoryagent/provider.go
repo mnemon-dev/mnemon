@@ -41,7 +41,8 @@ type ModelConfig struct {
 	// attempts wait at most 180 s and Background ones the hard timeout.
 	AttemptTimeoutSeconds int `json:"attemptTimeoutSeconds,omitempty"`
 	// MaxAttempts replaces every call class's attempts per call when
-	// positive: 1–10.
+	// positive: 1–10. An Interactive or Flush call's patient retries of a
+	// 429 without Retry-After are not among them (resilience.go).
 	MaxAttempts int `json:"maxAttempts,omitempty"`
 	// TestEndpoint replaces the official endpoint of the jev and deepseek
 	// kinds, for fault drills: an http URL on a loopback host.
@@ -68,6 +69,9 @@ type Provider struct {
 	breaker  *breaker
 	retries  *retryBudget
 	observer atomic.Pointer[observerRef]
+	// rejected counts the attempts the endpoint rejected (401, 402, 403:
+	// Models.Rejections); it only grows.
+	rejected atomic.Int64
 	// flights counts the attempts in progress and their requests, abandoned
 	// ones included; mu guards closed, which Close sets to admit no more.
 	flights sync.WaitGroup

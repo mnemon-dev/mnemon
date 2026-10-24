@@ -382,7 +382,7 @@ func TestAdminStatusFieldsAreStable(t *testing.T) {
 		slices.Sort(out)
 		return out
 	}
-	want := []string{"addOutran", "adds", "breakerTrips", "breakers", "budgets", "degraded", "dropped", "lagBound", "linkFallbacks", "openStores", "partial", "partialLast10m", "queue", "searches", "searchesLast10m", "startedAt", "version"}
+	want := []string{"addOutran", "adds", "breakerTrips", "breakers", "budgets", "degraded", "dropped", "lagBound", "linkFallbacks", "openStores", "partial", "partialLast10m", "queue", "rejectedByKind", "searches", "searchesLast10m", "startedAt", "version"}
 	if got := keys(fields); !slices.Equal(got, want) {
 		t.Fatalf("fields %v, want %v", got, want)
 	}
@@ -395,8 +395,8 @@ func TestAdminStatusFieldsAreStable(t *testing.T) {
 	}
 	// No provider or paid account: empty, not null. No consolidation lag
 	// bound without background consolidation.
-	if string(fields["breakers"]) != "{}" || string(fields["breakerTrips"]) != "{}" || string(fields["budgets"]) != "[]" || string(fields["lagBound"]) != "0" {
-		t.Fatal(string(fields["breakers"]), string(fields["breakerTrips"]), string(fields["budgets"]), string(fields["lagBound"]))
+	if string(fields["breakers"]) != "{}" || string(fields["breakerTrips"]) != "{}" || string(fields["rejectedByKind"]) != "{}" || string(fields["budgets"]) != "[]" || string(fields["lagBound"]) != "0" {
+		t.Fatal(string(fields["breakers"]), string(fields["breakerTrips"]), string(fields["rejectedByKind"]), string(fields["budgets"]), string(fields["lagBound"]))
 	}
 	var started time.Time
 	if err := json.Unmarshal(fields["startedAt"], &started); err != nil || started.Before(before) || started.After(time.Now()) {
@@ -513,6 +513,40 @@ func TestAdminStatusCountsBreakerTrips(t *testing.T) {
 	if closed.Breakers["local"] != "closed" || len(closed.BreakerTrips) != 1 || closed.BreakerTrips["local"] != 0 {
 		t.Fatalf("breakers %v, trips %v", closed.Breakers, closed.BreakerTrips)
 	}
+}
+
+// rejectedByKind counts, by provider kind, the requests the provider
+// rejected with 401, 402 or 403 (ruling R65), from 0 for every kind the
+// models have: the attempts whose outcome is rejected, which the metrics
+// count too. Reading it changes nothing.
+func TestAdminStatusCountsRejections(t *testing.T) {
+	// An empty balance, as DeepSeek answers it.
+	endpoint := newModelEndpoint(t, func(_ int, w http.ResponseWriter) {
+		w.WriteHeader(http.StatusPaymentRequired)
+		io.WriteString(w, `{"error":{"message":"Insufficient Balance"}}`)
+	})
+	provider, err := memoryagent.NewProvider(memoryagent.ModelConfig{Kind: "local", Model: "m", BaseURL: endpoint.URL + "/v1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { provider.Close() })
+	h := serverWith(t, provider)
+	if status := h.adminStatus(t); len(status.RejectedByKind) != 1 || status.RejectedByKind["local"] != 0 {
+		t.Fatal(status.RejectedByKind)
+	}
+	for range 2 {
+		if _, _, err := provider.Complete(context.Background(), "s", "p"); err == nil || !strings.Contains(err.Error(), "model HTTP 402") {
+			t.Fatal(err)
+		}
+	}
+	for range 2 {
+		if status := h.adminStatus(t); len(status.RejectedByKind) != 1 || status.RejectedByKind["local"] != 2 {
+			t.Fatal(status.RejectedByKind)
+		}
+	}
+	m := h.scrape(t)
+	m.is(t, 2, "mnemon_aml_model_attempts_total", "kind", "local", "class", "interactive", "outcome", "rejected")
+	m.is(t, 2, "mnemon_aml_model_attempt_seconds_count", "kind", "local", "class", "interactive")
 }
 
 // budgets is always an array: [] when no account has been used and when the

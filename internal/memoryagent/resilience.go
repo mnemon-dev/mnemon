@@ -33,7 +33,9 @@ import (
 //     the statuses retryableStatus lists (a 429 among them, throttling) and,
 //     once, an invalid reply, with full-jitter exponential backoff that waits
 //     at least an endpoint's Retry-After, never into the caller's deadline,
-//     within the provider's retry budget;
+//     within the provider's retry budget; an Interactive or Flush call
+//     refused with a 429 that names no wait of its own waits it out
+//     patiently, with retries of its own apart from its attempts (stop);
 //   - the provider's circuit breaker (failsafe-go's), shared by its classes,
 //     which counts only availability failures, and opens on a run of them;
 //   - the class's bulkhead (failsafe-go's), whose permit a request holds until
@@ -52,7 +54,10 @@ import (
 // (ruling R59–R63): throttling is not unavailability, the breaker isolates
 // outages while retries absorb partial failure rates, an invalid reply is
 // retried once, stalls are cut, and every reservation settles when its
-// request ends.
+// request ends. After it, a refused credential or balance is counted as a
+// rejection, which the alert watcher pages on (R65), and a 429 without
+// Retry-After is waited out patiently by the calls a Search waits for
+// (R67).
 
 // CallClass says whose model call it is, which picks the call's policies. A
 // context carries it (WithCallClass); one without is Interactive.
@@ -137,9 +142,12 @@ const (
 // Background calls make up to 3 attempts each, retried after 2 s → 60 s, a
 // Retry-After waited up to 5 min; a Flush attempt waits at most 180 s, a
 // Background one its hard timeout, so it is never abandoned. Every attempt
-// of every class fails once its reply has sent no byte for 60 s. A model's
-// attemptTimeoutSeconds replaces the Interactive attempt timeout, its
-// maxAttempts every class's attempts.
+// of every class fails once its reply has sent no byte for 60 s. An
+// Interactive or Flush call refused with a 429 and no Retry-After retries it
+// patiently, apart from its attempts: the k-th time after max(the class's
+// backoff, 2 s × 2^(k−1)), so 2, 4, 8 and 16 s, 5 times and 30 s in all at
+// most. A model's attemptTimeoutSeconds replaces the Interactive attempt
+// timeout, its maxAttempts every class's attempts.
 const (
 	interactiveAttempts          = 4
 	interactiveCompletionTimeout = 45 * time.Second
@@ -159,6 +167,18 @@ const (
 	// headers came, sent no byte for that long (ruling R62, from the same
 	// drill). DeepSeek's keep-alive blank lines are bytes.
 	bodyIdleTimeout = 60 * time.Second
+	// Patient throttling (ruling R67) of Interactive and Flush calls: a 429
+	// that names no wait of its own is retried up to throttledRetries times,
+	// none of them among the class's attempts, the k-th after at least
+	// throttleFloor×2^(k−1), and at most maxThrottleWait of such waits a
+	// call. For this workload a degraded Search is worse than a slower one
+	// (the platform allows 30 minutes a request), and throttling passes. In
+	// the fault drill's re-run after R59, a 12 s storm of 429s without
+	// Retry-After still degraded 5 of 10 Searches: an Interactive call's
+	// backoff gives up after about 3.5 s.
+	throttledRetries = 5
+	throttleFloor    = 2 * time.Second
+	maxThrottleWait  = 30 * time.Second
 	// backgroundShare is the part of an account's cap Background calls may
 	// fill: the rest is kept for Searches and their flushes.
 	backgroundShare = 0.9
@@ -180,6 +200,13 @@ type classPolicy struct {
 	// A retry waits a random part of backoff×2^(n−1), at most maxBackoff,
 	// and at least an endpoint's Retry-After, up to maxRetryAfter.
 	backoff, maxBackoff, maxRetryAfter time.Duration
+	// throttledRetries bounds a call's patient retries of a 429 that names
+	// no wait (stop), which are not among its maxAttempts; 0, a Background
+	// call's, retries such a 429 as one of its attempts. The k-th waits at
+	// least throttleFloor×2^(k−1) (throttleDelay), and they wait
+	// maxThrottleWait in all at most.
+	throttledRetries               int
+	throttleFloor, maxThrottleWait time.Duration
 	// calls is the class's bulkhead. A request holds a permit until it ends,
 	// an abandoned one included; an attempt waits for one up to its timeout.
 	calls bulkhead.Bulkhead[any]
@@ -228,6 +255,9 @@ func classPolicies(config ModelConfig, hard time.Duration) [3]classPolicy {
 			policies[i].maxAttempts = config.MaxAttempts
 		}
 	}
+	for _, class := range []CallClass{Interactive, Flush} {
+		policies[class].throttledRetries, policies[class].throttleFloor, policies[class].maxThrottleWait = throttledRetries, throttleFloor, maxThrottleWait
+	}
 	return policies
 }
 
@@ -241,6 +271,16 @@ func (c classPolicy) retryDelay(retry int, retryAfter time.Duration, random floa
 		ceiling = min(c.maxBackoff, c.backoff<<shift)
 	}
 	return max(time.Duration(random*float64(ceiling)), min(retryAfter, c.maxRetryAfter))
+}
+
+// throttleDelay is the wait before the call's retry number retry when it is
+// the call's throttled retry number k (1 for the first), of a 429 that named
+// no wait (ruling R67): throttleFloor×2^(k−1), or the class's backoff for the
+// retry (retryDelay) when that is longer. Only the backoff is jittered;
+// random is in [0, 1).
+func (c classPolicy) throttleDelay(retry, k int, random float64) time.Duration {
+	floor := c.throttleFloor << min(max(k-1, 0), 16)
+	return max(c.retryDelay(retry, 0, random), floor)
 }
 
 // parseRetryAfter is the wait a Retry-After header asks for at now, in delta
@@ -287,18 +327,27 @@ func retryableStatus(code int) bool {
 // its credential.
 func failingStatus(code int) bool { return code >= 500 && code <= 599 }
 
+// rejectedStatus reports whether a refusal with the status is a rejection
+// (ruling R65): the provider refused the credential or the account, 401 or
+// 403 for a wrong, expired or revoked key, 402 for an empty balance
+// (DeepSeek's "Insufficient Balance"). It refuses every request alike until
+// an operator acts, so it is not retried, and it is no breaker failure.
+func rejectedStatus(code int) bool {
+	return code == http.StatusUnauthorized || code == http.StatusPaymentRequired || code == http.StatusForbidden
+}
+
 // breaker is a provider's circuit breaker, shared by its classes:
 // failsafe-go's count-based breaker with a consecutive threshold
 // (WithFailureThreshold: the last breakerConsecutive attempts all failed)
 // opens after breakerConsecutive availability failures in a row,
 // half-opens after breakerDelay and closes again after breakerSuccesses.
 // Ruling R60: only availability failures count (flightResult.failed); an
-// attempt that ended otherwise, a 429 or an invalid reply among them,
-// records a success, as failsafe-go records a result its failure conditions
-// do not handle, so it starts the count again. Partial failure rates are
-// the retries' to absorb. An attempt takes its permit (permit) once the
-// bulkhead and the budget admitted it, and returns it with how it ended
-// (record).
+// attempt that ended otherwise, a 429, an invalid reply or a rejection among
+// them, records a success, as failsafe-go records a result its failure
+// conditions do not handle, so it starts the count again. Partial failure
+// rates are the retries' to absorb. An attempt takes its permit (permit)
+// once the bulkhead and the budget admitted it, and returns it with how it
+// ended (record).
 type breaker struct {
 	cb circuitbreaker.CircuitBreaker[any]
 	// trips counts the times the breaker opened, from closed or from
@@ -378,6 +427,20 @@ func (m Models) BreakerTrips() map[string]int64 {
 		trips[p.config.Kind] += p.breaker.trips.Load()
 	}
 	return trips
+}
+
+// Rejections counts, by provider kind, the requests the models' providers
+// rejected since they were made (ruling R65): the attempts answered 401, 402
+// or 403, a wrong or revoked credential or an empty balance, whose outcome
+// is "rejected". A count only grows; a kind with several providers sums
+// theirs. The map has a key for each kind among the models, and is empty for
+// models that are not providers.
+func (m Models) Rejections() map[string]int64 {
+	rejected := map[string]int64{}
+	for _, p := range m.providers() {
+		rejected[p.config.Kind] += p.rejected.Load()
+	}
+	return rejected
 }
 
 // permit takes the breaker's permission to send one request, which record
@@ -472,7 +535,8 @@ type flightResult[T meteredReply] struct {
 }
 
 // outcome is the result's AttemptEvent.Outcome: "throttled" for a 429
-// (R59), "invalid" for an invalid reply (R61).
+// (R59), "invalid" for an invalid reply (R61), "rejected" for a 401, 402 or
+// 403 (R65).
 func (r flightResult[T]) outcome() string {
 	switch {
 	case r.err == nil:
@@ -487,6 +551,8 @@ func (r flightResult[T]) outcome() string {
 		return "invalid"
 	case r.status == http.StatusTooManyRequests:
 		return "throttled"
+	case rejectedStatus(r.status):
+		return "rejected"
 	case r.retry:
 		return "retryable"
 	}
@@ -503,14 +569,17 @@ func (r flightResult[T]) outcome() string {
 // attempt's error, whose category says what failed it: the provider
 // (ErrModelUnavailable), the budget (ErrBudgetCap) or the request itself (no
 // category). An invalid reply, one parse or check refuses, is retried once
-// within the class's attempts (R61), and comes back with its error. When the
+// within the class's attempts (R61), and comes back with its error. A 429
+// that names no wait is retried patiently, apart from them (R67). When the
 // caller's context ended, the error wraps its error.
 func send[T meteredReply](ctx context.Context, p *Provider, body []byte, amount float64, parse func([]byte) (T, error), check func(T) error) (T, []byte, error) {
 	c := &modelCall[T]{ctx: ctx, p: p, policy: &p.policies[callClass(ctx)], body: body, hash: reference("request", string(body)).Hash, amount: amount, parse: parse, check: check}
+	// stop ends a call at its class's attempts, its throttled retries being
+	// none of them; the policy's own bound is the two together.
 	retry := retrypolicy.NewBuilder[flightResult[T]]().
 		HandleIf(func(r flightResult[T], err error) bool { return err != nil && r.retry }).
 		AbortIf(func(flightResult[T], error) bool { return c.stop() }).
-		WithMaxAttempts(c.policy.maxAttempts).
+		WithMaxAttempts(c.policy.maxAttempts + c.policy.throttledRetries).
 		WithDelayFunc(func(failsafe.ExecutionAttempt[flightResult[T]]) time.Duration { return c.delay }).
 		ReturnLastFailure().
 		Build()
@@ -535,12 +604,17 @@ type modelCall[T meteredReply] struct {
 	last     flightResult[T] // the last attempt's
 	revalid  bool            // an invalid reply was retried
 	delay    time.Duration   // the wait before the next retry
+	// throttled counts the call's patient retries of a 429 that named no
+	// wait (R67), which are not among the class's attempts, and throttleWait
+	// sums their waits.
+	throttled    int
+	throttleWait time.Duration
 }
 
 // attempt is one attempt of the call (the function the retry policy runs),
-// shown to the provider's observer. Its reply is checked here, on the
-// caller's goroutine, and not by its request's: an abandoned request's reply
-// is never read.
+// shown to the provider's observer; a rejected one is counted (R65). Its
+// reply is checked here, on the caller's goroutine, and not by its
+// request's: an abandoned request's reply is never read.
 func (c *modelCall[T]) attempt(exec failsafe.Execution[flightResult[T]]) (flightResult[T], error) {
 	c.attempts++
 	start := time.Now()
@@ -555,7 +629,11 @@ func (c *modelCall[T]) attempt(exec failsafe.Execution[flightResult[T]]) (flight
 		res.retry, c.revalid = true, true
 	}
 	c.last = res
-	c.report(res.outcome(), c.attempts, time.Since(start), res.status)
+	outcome := res.outcome()
+	if outcome == "rejected" {
+		c.p.rejected.Add(1)
+	}
+	c.report(outcome, c.attempts, time.Since(start), res.status)
 	return res, res.err
 }
 
@@ -565,20 +643,35 @@ func (c *modelCall[T]) report(outcome string, attempt int, took time.Duration, s
 }
 
 // stop decides, after an attempt a retry may pass, whether the call stops
-// there, and sets the wait before the retry. A call with no attempt left is
-// left to the retry policy, which ends it; one whose wait would end at or
-// past the caller's deadline stops, as does one the provider's retry budget
-// has no retry left for (shown to the observer as a "budget" attempt).
+// there, and sets the wait before the retry. A 429 that names no wait (no
+// Retry-After, or one that is invalid or past), in a class with throttled
+// retries, is retried patiently (R67): after throttleDelay, while the call
+// has a throttled retry left and their waits stay within maxThrottleWait.
+// Such a retry is none of the class's attempts; any other is one, and a call
+// that has made them all stops. So does a call whose wait would end at or
+// past the caller's deadline, and one the provider's retry budget has no
+// retry left for (shown to the observer as a "budget" attempt).
 func (c *modelCall[T]) stop() bool {
-	if c.attempts >= c.policy.maxAttempts {
-		return false
-	}
 	var retryAfter time.Duration
 	var status *statusError
 	if errors.As(c.last.err, &status) {
 		retryAfter = status.retryAfter
 	}
-	c.delay = c.policy.retryDelay(c.attempts, retryAfter, rand.Float64())
+	patient := c.policy.throttledRetries > 0 && c.last.status == http.StatusTooManyRequests && retryAfter == 0
+	switch {
+	case patient:
+		if c.throttled >= c.policy.throttledRetries {
+			return true
+		}
+		c.delay = c.policy.throttleDelay(c.attempts, c.throttled+1, rand.Float64())
+		if c.throttleWait+c.delay > c.policy.maxThrottleWait {
+			return true
+		}
+	case c.attempts-c.throttled >= c.policy.maxAttempts:
+		return true
+	default:
+		c.delay = c.policy.retryDelay(c.attempts, retryAfter, rand.Float64())
+	}
 	now := time.Now()
 	if deadline, ok := c.ctx.Deadline(); ok && !now.Add(c.delay).Before(deadline) {
 		return true
@@ -587,6 +680,10 @@ func (c *modelCall[T]) stop() bool {
 		c.last.err = fmt.Errorf("%w; the provider's retry budget is spent", c.last.err)
 		c.report("budget", c.attempts+1, 0, 0)
 		return true
+	}
+	if patient {
+		c.throttled++
+		c.throttleWait += c.delay
 	}
 	return false
 }
@@ -951,11 +1048,12 @@ func (f *flight[T]) broken(p *Provider, err error, sent bool) flightResult[T] {
 }
 
 // refused is a request the endpoint answered outside 2xx: it cost nothing,
-// so its reservation is released. A refusal that holds for every request
-// alike is an unavailable model (unavailableStatus); one a retry may pass
-// (retryableStatus) is retried after the endpoint's Retry-After. Only a 5xx
-// is a failure of the provider's availability, which its breaker counts
-// (failingStatus): a 429 is throttling (R59).
+// so its reservation is released, and its body is not read. A refusal that
+// holds for every request alike is an unavailable model (unavailableStatus);
+// one a retry may pass (retryableStatus) is retried after the endpoint's
+// Retry-After. Only a 5xx is a failure of the provider's availability, which
+// its breaker counts (failingStatus): a 429 is throttling (R59), and a 401,
+// 402 or 403 a rejection (rejectedStatus, R65).
 func (f *flight[T]) refused(p *Provider, response *http.Response) flightResult[T] {
 	status := &statusError{code: response.StatusCode, retryAfter: parseRetryAfter(response.Header.Get("Retry-After"), time.Now())}
 	var err error = status

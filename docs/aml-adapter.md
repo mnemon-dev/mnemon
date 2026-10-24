@@ -547,7 +547,7 @@ comments, so the notes are here:
 | `consolidation` | `{"mode": "layered"}` | DeepSeek extracts each batch alone, then JEV links it to the memory so far (see "Background consolidation"). It needs the `judge` and a completion model (the `consolidator`, else the planner). Other fields keep their defaults: 10,000-character batches, at most 16 batches per job, 4 extractions in flight (`parallel`), 8 stored candidates per linked item (`linkCandidates`). A user's records waiting to be folded are bounded by 16 × 10,000 characters; later records wait unread, losing nothing. `{"mode": "timelines"}` is the reference's sequential fold: the state and the reads are the same. `insights` is refused in background mode. `nativeEdges`, `edgeKinds`, `view.expand` and `index` (memory-service options) are not set. |
 | `planner` | DeepSeek Flash, **no thinking** | Do not add `"thinking": true`. Cue planning is capped at 400 output tokens and need planning at 200; a reasoning model can spend them on reasoning and return an empty plan, which makes Search degrade. |
 | `judge` | `jev` / `jev-1.13.0` | The version is pinned; the endpoint is JEV's official one. It judges the reads and, in layered mode, links the consolidation items, so its budget pays for both. |
-| `consolidator` | DeepSeek Flash, no thinking, `timeoutSeconds` 600 | Each extraction asks for at most 8,192 output tokens whatever `maxTokens` says. The extraction of a full batch can take minutes, so its calls may run 600 s (`timeoutSeconds`, 1–1,800; models without it time out after 90 s). Unset, the planner would extract. |
+| `consolidator` | DeepSeek Flash, no thinking, `timeoutSeconds` 600 | Each extraction asks for at most 8,192 output tokens whatever `maxTokens` says. A background job's extraction may run 600 s (`timeoutSeconds`, 1–1,800; models without it time out after 90 s). A Search's flush gives each extraction attempt at most 180 s, then retries it: about 10× a typical extraction of about 1,900 output tokens, which DeepSeek Flash returned in 15–17 s (about 110 tokens/s) from the evaluation host on 2026-10-24. DeepSeek sends nothing until its reply is complete, so these caps are what bound the wait. Once a reply's headers have come, an attempt of any class whose body then sends nothing for 60 s is cut and retried (`the reply stopped sending`). Unset, the planner would extract. |
 | `budgetFile` | `/var/lib/mnemon-aml/<n>/model-budget.db` | Absolute, private (0600), one per instance, shared by all users of the instance. Two profiles with different caps on one file would overwrite each other's stored cap. |
 | `budgets` | evaluation `{"jev": 60, "deepseek": 600}`, beta `{"jev": 3, "deepseek": 30}` | **Hard caps on spending**, in USD for `jev` and `openai` and CNY for `deepseek`: check them before a job. When a cap is reached the model calls stop (see Troubleshooting). Every call holds a reservation while it runs: USD 0.01 for JEV, CNY 0.25 for DeepSeek, more for a large fold (up to about CNY 0.46 for the largest request). A call that never connected or got a non-2xx answer releases it; a reply settles it at its metered usage; a call that failed or was cut after sending, or whose reply is unreadable or carries no metering, settles it at its input estimate (its request's input tokens at the input price, no output). Only calls in flight hold it, so the usable headroom is a little below the cap while they run. The configured value replaces the stored cap when the service starts; the amount already spent is kept. The `openai` cap is a soft one: a call that costs more than its reservation is recorded at its real price. |
 
@@ -678,8 +678,9 @@ admin /metrics | grep '^mnemon_aml_'
 - **`/admin/status`** is the status the watcher reads, in camelCase: `startedAt`, `adds`,
   `searches`, `degraded`, `partial`, `dropped`, `linkFallbacks`, `addOutran`, `partialLast10m`,
   `searchesLast10m`, `queue` (`queued`, `running`, `backingOff`, `held`, `oldestQueued` in
-  nanoseconds, `maxBacklog` in characters), `lagBound`, `breakers` and `breakerTrips` by provider
-  kind, `budgets` (always an array of `kind`, `cap`, `spent`, `held`), `openStores` and `version`.
+  nanoseconds, `maxBacklog` in characters), `lagBound`, `breakers`, `breakerTrips` and
+  `rejectedByKind` (requests refused with 401, 402 or 403) by provider kind, `budgets` (always an
+  array of `kind`, `cap`, `spent`, `held`), `openStores` and `version`.
 - **`/admin/v1/stores`** is the console's store overview: each store by its 8-digit prefix, its
   bytes, last change, whether it is open and its backlog. No user id and no content.
 - **`/debug/pprof/`** is Go's profiler, behind the token like every admin route.
@@ -694,7 +695,7 @@ admin /metrics | grep '^mnemon_aml_'
 | `mnemon_aml_shed_total{route}` | requests shed with 503 (`add`, `search`) |
 | `mnemon_aml_search_degraded_total` | Searches answered by the raw ranking |
 | `mnemon_aml_search_partial_total{stage}` | stages of a read that fell back, once per Search |
-| `mnemon_aml_model_attempts_total{kind,class,outcome}` | model call attempts: class `interactive`, `flush` or `background`; outcome `ok`, `throttled` (HTTP 429, retried after its `Retry-After`), `invalid` (a reply that did not parse or validate, retried once), `retryable`, `failed`, `breaker-open`, `bulkhead-full` or `budget`. Every outcome but `ok` is a model failure the console shows |
+| `mnemon_aml_model_attempts_total{kind,class,outcome}` | model call attempts: class `interactive`, `flush` or `background`; outcome `ok`, `throttled` (HTTP 429, retried after its `Retry-After`; without one, an `interactive` or `flush` call retries after 2, 4, 8 and 16 s, 30 s in all at most), `invalid` (a reply that did not parse or validate, retried once), `rejected` (HTTP 401, 402 or 403: the key or the balance was refused; not retried), `retryable`, `failed`, `breaker-open`, `bulkhead-full` or `budget`. Every outcome but `ok` is a model failure the console shows |
 | `mnemon_aml_model_attempt_seconds{kind,class}` | time of the attempts that went to the provider |
 | `mnemon_aml_model_retries_total{kind}` | attempts after a call's first |
 | `mnemon_aml_consolidation_jobs_total{outcome}` | scheduler jobs: `ok`, `failed`, `paused`, `canceled` |
@@ -797,6 +798,7 @@ watcher keeps alerting when the ops host is down.
 | `degraded-search` | `degraded` | a Search was answered by the raw ranking since the last run |
 | `partial-search` | `partialLast10m`, `searchesLast10m` | more than 5% of the last 10 minutes' Searches were partially degraded, once there were 20 |
 | `breaker-open:<kind>` | `breakers`, `breakerTrips` | a provider's breaker is open, or opened since the last run |
+| `provider-rejected:<kind>` | `rejectedByKind` | the provider rejected requests with 401, 402 or 403 since the last run: a wrong or revoked key, or an empty balance (see Troubleshooting) |
 | `budget-high:<kind>` | `budgets` | spent and held are above 80% of the cap |
 | `budget-held:<kind>` | `budgets` | held reservations are above 2% of the cap |
 | `backlog-age` | `queue.oldestQueued` | the oldest work not yet consolidated has waited more than 15 minutes |
@@ -806,12 +808,13 @@ watcher keeps alerting when the ops host is down.
 | `add-outran` | `addOutran` | an Add waited out its window for consolidation |
 
 - **Hold and repeat.** An alert about something that happens (`restart`, `degraded-search`,
-  `breaker-open`, `consolidation-dropped`, `link-fallback`, `add-outran`) keeps firing for 10
-  minutes after the last run that saw it happen, so a stream of events is one alert, not a
-  pair of messages per event. Any firing alert is said again 30 minutes after its last
-  message. The first run (no state file) takes the counters as they are and says nothing
-  about them. When the status cannot be read, the alerts that come from it are neither
-  repeated nor resolved: `ready` says what is wrong.
+  `breaker-open`, `provider-rejected`, `consolidation-dropped`, `link-fallback`, `add-outran`)
+  keeps firing for 10 minutes after the last run that saw it happen, so a stream of events is
+  one alert, not a pair of messages per event. Any firing alert is said again 30 minutes after
+  its last message. The first run (no state file) takes the counters as they are and says
+  nothing about them. When the status cannot be read, the alerts that come from it are neither
+  repeated nor resolved: `ready` says what is wrong. A server too old to report
+  `rejectedByKind` gets no `provider-rejected` alert.
 - **At-least-once delivery.** A message that did not go out stays unsent in the state, and the
   next run sends it again, every minute, with no cap on the tries. An alert that clears before
   its own message was ever delivered still owes its resolution, which says
@@ -988,7 +991,8 @@ scratch instance first if continuous replication is needed.
 | **404** `{"error":"not found"}` from a shared host | No instance has that `/i/<n>` prefix: check the base URL and `mnemon-instance list`. |
 | **413** | The body is over 30 MiB (the platform splits at 20 messages or 2,000 words, so this means a client bug). |
 | **502** or **504** from Caddy | The instance is down for longer than Caddy's 30 s of dialing (`systemctl status aml-serve@<n>`), a dedicated instance is suspended, or a proxy timeout is below the platform's 31 minutes: compare the timeouts with `deploy/aml/Caddyfile.dedicated` or the snippet. |
-| `degraded search …` in the log | The planner, JEV or a budget failed for that question, or the read ran past `--search-timeout`. The platform still got a 200 with the raw ranking. Read the error after the colon: `model HTTP 401` (a wrong or expired key), `model HTTP 429` (provider rate limit), `model endpoint unreachable` (network or DNS; nothing was sent), `request failed` (network, after sending), `context deadline exceeded` (the timeout), `spending cap reached` (below). |
+| `degraded search …` in the log | The planner, JEV or a budget failed for that question, or the read ran past `--search-timeout`. The platform still got a 200 with the raw ranking. Read the error after the colon: `model HTTP 401` or `model HTTP 403` (a wrong, expired or revoked key) and `model HTTP 402` (an empty balance; DeepSeek says `Insufficient Balance`), which also page as `provider-rejected:<kind>` (below); `model HTTP 429` (the provider's rate limit outlasted the call's retries: up to its `Retry-After`, or 2, 4, 8 and 16 s without one); `model endpoint unreachable` (network or DNS; nothing was sent), `request failed` (network, after sending), `attempt timed out` (an attempt waited past its timeout: 45 s for the planner, 20 s for JEV, 180 s for a flush's extraction), `the reply stopped sending` (a reply sent nothing for 60 s after its headers came), `context deadline exceeded` (the timeout), `spending cap reached` (below). |
+| `provider-rejected:<kind>` alert | The provider refuses the instance's requests: 401 or 403, a wrong, expired or revoked key; 402, an empty balance (DeepSeek: `Insufficient Balance`). They are not retried: Searches degrade or partially degrade, and consolidation backs off with its batches pending (no record is dropped). Check the account's balance in the provider's console and top it up: the next call goes through, with no restart. For a new key, put it into `DEEPSEEK_API_KEY=` or `TYPESAFE_API_KEY=` of `/etc/mnemon-aml/<n>/env` (and of `/etc/mnemon-aml/host.env`, which `new` copies from) with an editor, then `systemctl restart aml-serve@<n>`. `mnemon_aml_model_attempts_total{outcome="rejected"}` shows the call classes affected; the alert resolves once no new rejection has been seen for 10 minutes. |
 | `model spending cap reached, including unresolved reservations` | A budget is exhausted. Searches degrade to the raw ranking. A spent DeepSeek budget stops consolidation (a spent budget never drops records from the index). A spent JEV budget does not: layered consolidation goes on, but links without JEV. Raise `budgets` in `/etc/mnemon-aml/<n>/memory-config.json` and `systemctl restart aml-serve@<n>`; spent amounts are kept and the new cap applies at once. Check `spent` and `held` first (`mnemon-preflight <n>`): reservations held by calls in flight, or by requests still in flight when the service last exited, count against the cap. |
 | Empty or poor plans, many degraded searches with a DeepSeek planner | The planner has `thinking` on. Remove it (`deepseek-flash` without thinking). |
 | `model credential is unavailable` or a startup error naming a credential environment variable | A `keyEnv` variable is empty or absent in `/etc/mnemon-aml/<n>/env`. |

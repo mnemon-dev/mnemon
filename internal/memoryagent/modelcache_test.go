@@ -79,6 +79,7 @@ func meteredProvider(t *testing.T, server *completionServer, budgetPath string, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	impatient(p) // one attempt a call, a 429's included
 	p.cache = cache
 	return p, budget
 }

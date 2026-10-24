@@ -47,13 +47,14 @@ var (
 )
 
 // watchHealthy is the status of a server that is well: nothing counted, every
-// breaker closed, the accounts a fifth spent, no backlog.
+// breaker closed, no request rejected, the accounts a fifth spent, no backlog.
 func watchHealthy(started time.Time) aml.AdminStatus {
 	return aml.AdminStatus{
 		StartedAt: started, Adds: 900, Searches: 500, SearchesLast10m: 100, LagBound: 160000,
-		Breakers:     map[string]string{"deepseek": "closed", "jev": "closed", "openai": "closed"},
-		BreakerTrips: map[string]int64{"deepseek": 0, "jev": 0, "openai": 0},
-		Budgets:      []memoryagent.BudgetAccount{{Kind: "deepseek", Cap: 600, Spent: 120}, {Kind: "jev", Cap: 60, Spent: 12}},
+		Breakers:       map[string]string{"deepseek": "closed", "jev": "closed", "openai": "closed"},
+		BreakerTrips:   map[string]int64{"deepseek": 0, "jev": 0, "openai": 0},
+		RejectedByKind: map[string]int64{"deepseek": 0, "jev": 0, "openai": 0},
+		Budgets:        []memoryagent.BudgetAccount{{Kind: "deepseek", Cap: 600, Spent: 120}, {Kind: "jev", Cap: 60, Spent: 12}},
 	}
 }
 
@@ -714,11 +715,15 @@ func neverPrintsWebhook(t *testing.T, kind string, url func(*watchStack) string,
 	if unlockErr := held.Unlock(); unlockErr != nil || err != nil || !strings.Contains(out.String(), "another aml-watch run holds the lock") {
 		t.Fatalf("%v %v\n%s", err, unlockErr, out.String())
 	}
-	// One more degraded Search and work that has waited too long: two
-	// alerts to say, to a webhook that fails. (backlog-age sorts before
-	// degraded-search, so that a webhook that cannot be reached, which
-	// ends the run at its first failure, is tried with it first.)
-	stack.set(func(s *aml.AdminStatus) { s.Degraded = 1; s.Queue.OldestQueued = 20 * time.Minute })
+	// One more degraded Search, work that has waited too long and requests
+	// DeepSeek rejected: three alerts to say, to a webhook that fails.
+	// (backlog-age sorts first, so that a webhook that cannot be reached,
+	// which ends the run at its first failure, is tried with it first.)
+	stack.set(func(s *aml.AdminStatus) {
+		s.Degraded = 1
+		s.Queue.OldestQueued = 20 * time.Minute
+		s.RejectedByKind["deepseek"] = 2
+	})
 	fail(stack)
 	err = run(public...)
 	if err == nil || !strings.Contains(err.Error(), "not delivered") {
@@ -736,7 +741,8 @@ func neverPrintsWebhook(t *testing.T, kind string, url func(*watchStack) string,
 	// The state was saved all the same, the messages owed, and
 	// without the secret.
 	raw, readErr := os.ReadFile(state)
-	if readErr != nil || !strings.Contains(string(raw), `"degraded-search"`) || !strings.Contains(string(raw), `"backlog-age"`) || strings.Contains(string(raw), watchToken) {
+	if readErr != nil || !strings.Contains(string(raw), `"degraded-search"`) || !strings.Contains(string(raw), `"backlog-age"`) ||
+		!strings.Contains(string(raw), `"provider-rejected:deepseek"`) || strings.Contains(string(raw), watchToken) {
 		t.Errorf("state: %v\n%s", readErr, raw)
 	}
 	// A redirect is a failure, not an address to post to; a Telegram bot is
@@ -1201,6 +1207,7 @@ func TestWatchFirstRunSetsABaseline(t *testing.T) {
 	r.stack.set(func(s *aml.AdminStatus) {
 		s.Degraded, s.Dropped, s.LinkFallbacks, s.AddOutran = 7, 3, 2, 5
 		s.BreakerTrips = map[string]int64{"deepseek": 4, "jev": 1}
+		s.RejectedByKind = map[string]int64{"deepseek": 40, "jev": 2}
 	})
 	if texts := r.step(0); len(texts) != 0 {
 		t.Fatal("history is not new:", texts)
@@ -1241,6 +1248,9 @@ func TestWatchRules(t *testing.T) {
 		{"breaker open, no trip count", func(s *aml.AdminStatus) { s.Breakers["deepseek"] = "open" }, "breaker-open:deepseek", "is open"},
 		{"breaker half-open", func(s *aml.AdminStatus) { s.Breakers["jev"] = "half-open" }, "", ""},
 		{"breaker closed again after a trip", func(s *aml.AdminStatus) { s.BreakerTrips["openai"] = 2 }, "breaker-open:openai", "opened 2 times"},
+
+		{"requests rejected", func(s *aml.AdminStatus) { s.RejectedByKind["jev"] = 2 }, "provider-rejected:jev", "jev rejected 2 requests (401/402/403) since the last run"},
+		{"one request rejected", func(s *aml.AdminStatus) { s.RejectedByKind["deepseek"] = 1 }, "provider-rejected:deepseek", "deepseek rejected 1 request (401/402/403)"},
 
 		// Above 80% of the cap, spent and held together; held reservations
 		// above 2% of it.
@@ -1329,6 +1339,94 @@ func TestWatchBreakerTripBetweenRuns(t *testing.T) {
 	}
 	if message = onlyAlert(t, r.step(time.Minute), "breaker-open:deepseek"); !strings.HasPrefix(message, watchWantTag+"RESOLVED") {
 		t.Fatal(message)
+	}
+}
+
+// A provider that rejects requests (401, 402 or 403: a wrong or revoked key,
+// an empty balance) pages at once (ruling R65): provider-rejected:<kind>
+// fires on any rise of the kind's rejectedByKind. Its text is the kind, the
+// count and what to check, and nothing the provider said. Like the other
+// alerts about a counter it fires for ten minutes after the last rise, then
+// resolves. Each kind is an alert of its own, so a second provider's
+// rejections page as soon as they start. A server too old to count them (no
+// rejectedByKind) is skipped, silently.
+func TestWatchProviderRejected(t *testing.T) {
+	r := newWatchRig(t)
+	r.step(0) // 12:00, the baseline
+	r.stack.set(func(s *aml.AdminStatus) { s.RejectedByKind["deepseek"] = 3 })
+	if message := onlyAlert(t, r.step(time.Minute), "provider-rejected:deepseek"); message != watchWantTag+"ALERT provider-rejected:deepseek on aml-test\n"+
+		"deepseek rejected 3 requests (401/402/403) since the last run — check the API key and the account balance (3 since the process started)\n"+
+		"2026-10-24 12:01:00 UTC" {
+		t.Fatalf("%q", message)
+	}
+	// More of them while it fires: nothing new to say.
+	r.stack.set(func(s *aml.AdminStatus) { s.RejectedByKind["deepseek"] = 5 })
+	if texts := r.step(time.Minute); len(texts) != 0 { // 12:02
+		t.Fatal(texts)
+	}
+	// JEV's rejections are an alert of their own, said at once.
+	r.stack.set(func(s *aml.AdminStatus) { s.RejectedByKind["jev"] = 1 })
+	if message := onlyAlert(t, r.step(time.Minute), "provider-rejected:jev"); message != watchWantTag+"ALERT provider-rejected:jev on aml-test\n"+ // 12:03
+		"jev rejected 1 request (401/402/403) since the last run — check the API key and the account balance (1 since the process started)\n"+
+		"2026-10-24 12:03:00 UTC" {
+		t.Fatalf("%q", message)
+	}
+	// Then they stop. Each alert fires for ten minutes after its last rise:
+	// DeepSeek's (12:02) until 12:12, JEV's (12:03) until 12:13.
+	for minute := 4; minute < 12; minute++ {
+		if texts := r.step(time.Minute); len(texts) != 0 {
+			t.Fatalf("at 12:%02d: %q", minute, texts)
+		}
+	}
+	if message := onlyAlert(t, r.step(time.Minute), "provider-rejected:deepseek"); message != watchWantTag+"RESOLVED provider-rejected:deepseek on aml-test (after 11m0s)\n"+
+		"was: deepseek rejected 5 requests (401/402/403) since the process started — check the API key and the account balance (last seen 9m0s ago)\n"+
+		"2026-10-24 12:12:00 UTC" {
+		t.Fatalf("%q", message)
+	}
+	if message := onlyAlert(t, r.step(time.Minute), "provider-rejected:jev"); !strings.HasPrefix(message, watchWantTag+"RESOLVED provider-rejected:jev on aml-test (after 10m0s)\n") {
+		t.Fatalf("%q", message)
+	}
+	if got := r.firing(); len(got) != 0 {
+		t.Fatal("the state still has", got)
+	}
+
+	// A server too old to count rejections sends no rejectedByKind: the rule
+	// says nothing and keeps nothing, and the run is no error.
+	r = newWatchRig(t)
+	withoutRejections := func(s *watchStack) {
+		raw, err := json.Marshal(s.status)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			t.Fatal(err)
+		}
+		delete(fields, "rejectedByKind")
+		if raw, err = json.Marshal(fields); err != nil {
+			t.Fatal(err)
+		}
+		s.statusRaw = string(raw)
+	}
+	r.stack.configure(withoutRejections)
+	for _, after := range []time.Duration{0, time.Minute} {
+		if texts := r.step(after); len(texts) != 0 {
+			t.Fatal(texts)
+		}
+	}
+	if counters := string(r.saved()["counters"]); strings.Contains(counters, "rejected") {
+		t.Fatal(counters)
+	}
+	// Once it is upgraded (a restart) it counts from its start, so what it
+	// has rejected since is new.
+	r.stack.configure(func(s *watchStack) {
+		s.statusRaw = ""
+		s.status.StartedAt = watchNow.Add(90 * time.Second)
+		s.status.RejectedByKind = map[string]int64{"deepseek": 2, "jev": 0}
+	})
+	texts := r.step(time.Minute) // 12:02
+	if len(texts) != 2 || !strings.Contains(texts[0], " provider-rejected:deepseek on aml-test\ndeepseek rejected 2 requests (401/402/403) since the last run") || !strings.Contains(texts[1], " restart on aml-test\n") {
+		t.Fatalf("%q", texts)
 	}
 }
 

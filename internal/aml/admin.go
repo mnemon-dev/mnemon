@@ -63,6 +63,9 @@ const (
 //	breakerTrips     by provider kind, how many times a circuit breaker of the kind has opened
 //	                 (a failed probe of a half-open one included): unlike breakers it only grows,
 //	                 so a breaker that opened and closed between two readings still moves it
+//	rejectedByKind   by provider kind, the requests the provider rejected with 401, 402 or 403 (a
+//	                 wrong or revoked key, an empty balance): it only grows, and has a key, 0 at
+//	                 first, for every kind the models have
 //	budgets          each paid account that has been used: kind, cap, spent and held; always an
 //	                 array, empty when none has been used and when the budget file cannot be read
 //	                 (/ready says so)
@@ -83,6 +86,7 @@ type AdminStatus struct {
 	LagBound        int64                       `json:"lagBound"`
 	Breakers        map[string]string           `json:"breakers"`
 	BreakerTrips    map[string]int64            `json:"breakerTrips"`
+	RejectedByKind  map[string]int64            `json:"rejectedByKind"`
 	Budgets         []memoryagent.BudgetAccount `json:"budgets"`
 	OpenStores      int                         `json:"openStores"`
 	Version         string                      `json:"version"`
@@ -185,6 +189,7 @@ func (s *Server) status(ctx context.Context) AdminStatus {
 		LagBound:        s.consolidationLagBound(),
 		Breakers:        s.breakerStates(),
 		BreakerTrips:    s.models.BreakerTrips(),
+		RejectedByKind:  s.models.Rejections(),
 		Budgets:         accounts,
 		OpenStores:      s.users.open(),
 		Version:         s.config.Version,

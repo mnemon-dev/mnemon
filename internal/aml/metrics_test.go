@@ -342,6 +342,9 @@ func TestModelAttemptsAreMetered(t *testing.T) {
 		{Kind: "jev", Class: "background", Outcome: "throttled", Attempt: 1, Duration: 50 * time.Millisecond, Status: 429},
 		{Kind: "jev", Class: "background", Outcome: "invalid", Attempt: 2, Duration: 250 * time.Millisecond, Status: 200, Retried: true},
 		{Kind: "jev", Class: "background", Outcome: "ok", Attempt: 3, Duration: 200 * time.Millisecond, Status: 200, Retried: true},
+		// A Flush call whose retry the provider rejected: its balance is spent.
+		{Kind: "deepseek", Class: "flush", Outcome: "retryable", Attempt: 1, Duration: 250 * time.Millisecond, Status: 502},
+		{Kind: "deepseek", Class: "flush", Outcome: "rejected", Attempt: 2, Duration: 250 * time.Millisecond, Status: 402, Retried: true},
 	} {
 		observer.ModelAttempt(event)
 	}
@@ -355,18 +358,21 @@ func TestModelAttemptsAreMetered(t *testing.T) {
 	m.is(t, 1, "mnemon_aml_model_attempts_total", "kind", "jev", "class", "background", "outcome", "throttled")
 	m.is(t, 1, "mnemon_aml_model_attempts_total", "kind", "jev", "class", "background", "outcome", "invalid")
 	m.is(t, 1, "mnemon_aml_model_attempts_total", "kind", "jev", "class", "background", "outcome", "ok")
+	m.is(t, 1, "mnemon_aml_model_attempts_total", "kind", "deepseek", "class", "flush", "outcome", "rejected")
 	// Only attempts that went to the provider are timed: not those a policy
-	// refused (breaker, bulkhead, budget). A throttled or invalid attempt
-	// went to it.
+	// refused (breaker, bulkhead, budget). A throttled, invalid or rejected
+	// attempt went to it.
 	m.is(t, 2, "mnemon_aml_model_attempt_seconds_count", "kind", "deepseek", "class", "interactive")
 	m.is(t, 1.6, "mnemon_aml_model_attempt_seconds_sum", "kind", "deepseek", "class", "interactive")
 	m.is(t, 1, "mnemon_aml_model_attempt_seconds_count", "kind", "deepseek", "class", "background")
+	m.is(t, 2, "mnemon_aml_model_attempt_seconds_count", "kind", "deepseek", "class", "flush")
+	m.is(t, 0.5, "mnemon_aml_model_attempt_seconds_sum", "kind", "deepseek", "class", "flush")
 	m.is(t, 3, "mnemon_aml_model_attempt_seconds_count", "kind", "jev", "class", "background")
 	m.is(t, 0.5, "mnemon_aml_model_attempt_seconds_sum", "kind", "jev", "class", "background")
 	m.absent(t, "mnemon_aml_model_attempt_seconds_count", "kind", "jev", "class", "interactive")
 	m.absent(t, "mnemon_aml_model_attempt_seconds_count", "kind", "jev", "class", "flush")
 	// Retries are the attempts after a call's first that were sent.
-	m.is(t, 1, "mnemon_aml_model_retries_total", "kind", "deepseek")
+	m.is(t, 2, "mnemon_aml_model_retries_total", "kind", "deepseek")
 	m.is(t, 2, "mnemon_aml_model_retries_total", "kind", "jev")
 }
 

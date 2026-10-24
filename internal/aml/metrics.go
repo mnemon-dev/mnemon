@@ -163,9 +163,9 @@ func (m *metrics) instrument(route string, next http.Handler) http.Handler {
 
 // ModelAttempt counts an attempt of a model call (memoryagent.ModelObserver).
 // Every attempt is counted by its outcome; only those that went to the
-// provider (ok, throttled, invalid, retryable, failed: not the ones a
-// breaker, a bulkhead or a budget refused) are timed and, when they follow
-// an earlier attempt of their call, counted as retries.
+// provider (ok, throttled, invalid, rejected, retryable, failed: not the
+// ones a breaker, a bulkhead or a budget refused) are timed and, when they
+// follow an earlier attempt of their call, counted as retries.
 func (m *metrics) ModelAttempt(e memoryagent.AttemptEvent) {
 	m.attempts.WithLabelValues(e.Kind, e.Class, e.Outcome).Inc()
 	switch e.Outcome {

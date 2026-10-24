@@ -107,8 +107,9 @@ func stallMidBody(reply string) func(int, http.ResponseWriter, *http.Request, []
 // R59: a 429 is throttling, not unavailability. A storm of them, with and
 // without Retry-After, longer than the breaker's ten attempts, leaves the
 // breaker closed. Its attempts count as throttled and wait max(backoff,
-// Retry-After). The calls succeed once the storm has passed them, within
-// their attempts and their deadline, and the refusals cost nothing.
+// Retry-After), or without Retry-After the patient throttling's waits (R67).
+// The calls succeed once the storm has passed them, within their attempts
+// and their deadline, and the refusals cost nothing.
 func TestThrottleNeverOpensTheBreaker(t *testing.T) {
 	for _, retryAfter := range []string{"1", ""} {
 		t.Run("Retry-After "+cmp.Or(retryAfter, "absent"), func(t *testing.T) {
@@ -131,6 +132,9 @@ func TestThrottleNeverOpensTheBreaker(t *testing.T) {
 				io.WriteString(w, deepseekReply)
 			})
 			p, budget := deepseekOn(t, e, ModelConfig{}, nil)
+			// Without Retry-After a call waits 2, 4 and 8 s for its three
+			// retries (R67): here a twentieth of that.
+			p.policies[Interactive].throttleFloor = 100 * time.Millisecond
 			// A minute of steady traffic leaves the provider's retry budget
 			// room for the storm's twelve retries.
 			for range 100 {
@@ -564,7 +568,10 @@ func TestEveryReservationSettles(t *testing.T) {
 		{name: "an abandoned attempt's stall", answer: stallBeforeHeaders, config: ModelConfig{TimeoutSeconds: 2},
 			prepare: func(p *Provider) { p.policies[Interactive].attemptTimeout = 200 * time.Millisecond }, settles: atEstimate},
 		{name: "the caller gives up after send", answer: stallBeforeHeaders, config: ModelConfig{TimeoutSeconds: 10}, cancelAfter: 200 * time.Millisecond, settles: atEstimate},
-		{name: "429", answer: status(http.StatusTooManyRequests), settles: released},
+		// One attempt: a 429 without Retry-After is otherwise retried apart
+		// from the class's attempts (R67).
+		{name: "429", answer: status(http.StatusTooManyRequests), prepare: impatient, settles: released},
+		{name: "402", answer: status(http.StatusPaymentRequired), settles: released},
 		{name: "5xx", answer: status(http.StatusServiceUnavailable), settles: released},
 		{name: "a JEV 5xx", jev: true, decide: true, answer: status(http.StatusBadGateway), settles: released},
 	} {
