@@ -37,10 +37,14 @@ aml_say() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" >&2; }
 # failed.
 AML_EXIT_OURS=
 
-# aml_exit STATUS: ends the script, on purpose, with STATUS (0 or 1).
+# aml_exit STATUS: ends the script, on purpose, with STATUS (0 or 1). STATUS is
+# read before the flag is set: with none, an argument-less call would set the
+# flag and then abort on the unbound $1, which bash 3.2 reads as a 0 the script
+# chose. Now it aborts first, with the flag unset, and exits 2.
 aml_exit() {
+	local status=${1:?aml_exit needs a status}
 	AML_EXIT_OURS=1
-	exit "$1"
+	exit "$status"
 }
 
 # aml_exit_status STATUS: the status a script exits with, when its EXIT trap saw

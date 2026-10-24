@@ -8,8 +8,10 @@
 # e^-mean is 0 in a double from a mean of about 745 on, until the upper tail
 # falls below $tail. A mean of 0 or less has no event (0). A mean that is not a
 # finite number, or a tail outside (0, 1), is an error, and so is a sum that
-# has not got there by mean + 40 standard deviations + 100 (a tail so small
-# that a double cannot tell it from 0): it must never loop for ever.
+# has not got there by mean + 40 standard deviations + 100: it must never loop
+# for ever. The sum is in doubles: it agrees with exact arithmetic for tails of
+# 1e-10 and above (checked for means from 0.001 to 1000), and for a far smaller
+# tail it can return a k a little off, or fail as above. The drill passes 1%.
 def poissonQuantile($mean; $tail):
 	if ($mean | type) != "number" or ($mean | isnan) or ($mean | isinfinite) then error("poissonQuantile: the mean must be a finite number")
 	elif ($tail | type) != "number" or $tail <= 0 or $tail >= 1 then error("poissonQuantile: the tail must be in (0, 1)")

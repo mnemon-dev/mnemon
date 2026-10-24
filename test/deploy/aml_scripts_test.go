@@ -374,6 +374,39 @@ func TestExitStatusMapping(t *testing.T) {
 	}
 }
 
+// TestAmlExitNeedsAStatus checks the one way left to end a script on purpose:
+// aml_exit with a status of 0 or 1 exits with it, and with no status, an empty
+// one, an unset variable, a word or any other number it exits 2, never 0. Under
+// bash 3.2 an argument-less aml_exit once set its flag and then aborted on the
+// unbound $1, which the EXIT trap read as a 0 the script had chosen (the
+// re-review of Task 19, Minor 2).
+func TestAmlExitNeedsAStatus(t *testing.T) {
+	repo := scriptsRepo(t)
+	lib := filepath.Join(repo, "scripts", "aml", "lib.sh")
+	for _, shell := range shellsUnderTest(t) {
+		for _, c := range []struct {
+			name, call string
+			want       int
+		}{
+			{"no status", `aml_exit`, 2},
+			{"an empty status", `aml_exit ""`, 2},
+			{"an unquoted empty status", `empty=; aml_exit $empty`, 2},
+			{"an unset variable", `aml_exit "$no_such_variable"`, 2},
+			{"a word", `aml_exit pass`, 2},
+			{"a status of 3", `aml_exit 3`, 2},
+			{"a status of 0", `aml_exit 0`, 0},
+			{"a status of 1", `aml_exit 1`, 1},
+		} {
+			// The shell of a script: set -u, and the first EXIT trap in place.
+			cmd := exec.Command(shell, "-c", `set -euo pipefail; . "$1"; PROG=probe; aml_trap_exit; `+c.call, "_", lib)
+			out, err := cmd.CombinedOutput()
+			if code := exitCode(t, err); code != c.want {
+				t.Errorf("%s: %s (%s) exited %d, want %d:\n%s", shell, c.name, c.call, code, c.want, out)
+			}
+		}
+	}
+}
+
 // TestFinalSummaryExitsZero checks that a script which ends on purpose still
 // exits 0: final.sh --summary of a made-up run. (The drill's and the load
 // test's own ends are checked by reading them, below.)
@@ -450,13 +483,49 @@ exit "${STUB_DRILL:-0}"
 	}
 }
 
+// plainExit matches a line that ends a script with a plain exit of 0, of 1 or
+// of a variable, which lib.sh's exit rule would turn into a 2. The status is
+// followed by white space, a semicolon or the line's end: after a closing
+// quote at the end of a line there is no word boundary for a \b to find.
+var plainExit = regexp.MustCompile(`^\s*exit\s+(0|1|"\$[a-z_]+")(\s|;|$)`)
+
+// TestPlainExitRule checks plainExit on the lines it must flag, among them
+// the variable the re-review of Task 19 (Minor 3) found it never matched, and
+// on those it must leave alone.
+func TestPlainExitRule(t *testing.T) {
+	for line, want := range map[string]bool{
+		"exit 0":                      true,
+		"exit 1":                      true,
+		"\texit 1":                    true,
+		"exit 0 # done":               true,
+		"exit 1; fi":                  true,
+		`exit "$status"`:              true,
+		"\texit \"$code\"":            true,
+		`exit "$status"; fi`:          true,
+		`exit "$status" # the status`: true,
+		"exit 2":                      false,
+		"exit 10":                     false,
+		"exit 130":                    false,
+		`exit "$(aml_exit_status 1)"`: false,
+		`exit "${status}"`:            false,
+		`aml_exit 0`:                  false,
+		`aml_exit "$status"`:          false,
+		"# exit 0":                    false,
+		"printf 'exit 0'":             false,
+		"exit":                        false,
+	} {
+		if got := plainExit.MatchString(line); got != want {
+			t.Errorf("plainExit on %q = %v, want %v", line, got, want)
+		}
+	}
+}
+
 // TestScriptsEndOnPurposeOnly reads the scripts: none ends with a plain exit 0
 // or 1, which lib.sh's exit rule would turn into a 2, and each one's last
 // statement is an aml_exit. The drill's and the load test's own ends are too
 // long to run in a test (the real runs, and the final run, show them).
 func TestScriptsEndOnPurposeOnly(t *testing.T) {
 	repo := scriptsRepo(t)
-	plainExit := regexp.MustCompile(`^\s*exit\s+(0|1|"\$[a-z_]+")\b`)
 	for name, calls := range map[string][]string{
 		"drill.sh": {"aml_exit 0", "aml_exit 1"},
 		"load.sh":  {"aml_exit 0", "aml_exit 1"},
@@ -483,6 +552,33 @@ func TestScriptsEndOnPurposeOnly(t *testing.T) {
 				t.Errorf("%s never calls %q", name, call)
 			}
 		}
+	}
+}
+
+// TestDrillWindowBoundIsACount reads the drill's table: the bound of a fault
+// over a window counts Searches (those that started in the window or the 45 s
+// after it), and no comment says that a Search is forbidden to degrade because
+// it started before the fault. Such a Search adds nothing to the allowance,
+// but none is judged by itself (the re-review of Task 19, Minor 1).
+func TestDrillWindowBoundIsACount(t *testing.T) {
+	repo := scriptsRepo(t)
+	source, err := os.ReadFile(filepath.Join(repo, "scripts", "aml", "drill.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A comment wraps: read the text of the comment lines as one.
+	var words []string
+	for _, line := range strings.Split(string(source), "\n") {
+		if trimmed := strings.TrimSpace(line); strings.HasPrefix(trimmed, "#") {
+			words = append(words, strings.Fields(strings.TrimLeft(trimmed, "# "))...)
+		}
+	}
+	text := strings.Join(words, " ")
+	if found := regexp.MustCompile(`(?i)none of the \d+ started before[^.;]*`).FindAllString(text, -1); len(found) != 0 {
+		t.Errorf("drill.sh judges the Searches that started before a fault one by one: %q", found)
+	}
+	if got := strings.Count(text, "started before it add nothing to the allowance"); got != 2 {
+		t.Errorf("drill.sh says %d times that the Searches started before a window add nothing to the allowance, want 2 (outage-30s, slow-past-timeout)", got)
 	}
 }
 
@@ -1019,6 +1115,56 @@ func TestAMLProvenanceCountsUntrackedFiles(t *testing.T) {
 	writeFile(t, filepath.Join(tree, "main.go"), "package main\n\nfunc main() { println() }\n", 0o644)
 	if got := dirty(); got != true {
 		t.Errorf("a changed file leaves the tree dirty %v, want true", got)
+	}
+}
+
+// TestEvaluationCapsAreTheSameEverywhere checks that every place that states
+// the evaluation instance's spending caps states the shipped configuration's:
+// the kit's README, the runbook (its defaults, its notes on the configuration,
+// and the sentence that says the evaluation caps are fixed), the instance
+// script's dedicated defaults and usage, and the design's deploy-kit
+// paragraph. The numbers stood in six places, and only the JSON and the
+// command's test were guarded (the final review's parked T2-c).
+func TestEvaluationCapsAreTheSameEverywhere(t *testing.T) {
+	repo := filepath.Join("..", "..")
+	read := func(path string) string {
+		t.Helper()
+		raw, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	var shipped struct {
+		Budgets map[string]float64 `json:"budgets"`
+	}
+	if err := json.Unmarshal([]byte(read("deploy/aml/memory-config.industrial.json")), &shipped); err != nil {
+		t.Fatal(err)
+	}
+	deepseek, jev := strconv.FormatFloat(shipped.Budgets["deepseek"], 'f', -1, 64), strconv.FormatFloat(shipped.Budgets["jev"], 'f', -1, 64)
+	if deepseek == "0" || jev == "0" {
+		t.Fatalf("the shipped configuration's budgets are %v, want both kinds", shipped.Budgets)
+	}
+	for _, c := range []struct {
+		file string
+		want []string
+	}{
+		{"deploy/aml/README.md", []string{"JEV USD " + jev + " (reads and consolidation links), DeepSeek CNY " + deepseek + " (planning and extraction)"}},
+		{"docs/aml-adapter.md", []string{
+			"| DeepSeek cap (CNY) | " + deepseek + " |", "| JEV cap (USD) | " + jev + " |",
+			"evaluation `{\"jev\": " + jev + ", \"deepseek\": " + deepseek + "}`",
+			"evaluation caps are fixed at " + deepseek + "/" + jev,
+		}},
+		{"deploy/aml/instance.sh", []string{"DEEPSEEK_CAP=" + deepseek + " JEV_CAP=" + jev, "DeepSeek cap: dedicated " + deepseek + ",", "JEV cap: dedicated " + jev + ","}},
+		{"docs/superpowers/specs/2026-10-24-aml-serve-hardening-design.md", []string{"DeepSeek CNY " + deepseek + ", JEV USD " + jev}},
+	} {
+		// A line may wrap in a document: compare with the white space collapsed.
+		text := strings.Join(strings.Fields(read(c.file)), " ")
+		for _, want := range c.want {
+			if !strings.Contains(text, want) {
+				t.Errorf("%s does not say %q: the evaluation caps are the shipped configuration's, DeepSeek CNY %s and JEV USD %s", c.file, want, deepseek, jev)
+			}
+		}
 	}
 }
 

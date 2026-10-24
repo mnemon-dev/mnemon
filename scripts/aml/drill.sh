@@ -214,14 +214,14 @@ scenarios() {
 # deterministic and keep exact bounds.
 baseline|hard|60|none|-|12|none|0|0|-|steady|-|no fault: the workload alone
 # outage-30s, over a window of 30 s: the Searches started in it or in the 45 s
-# after it; the workload ends 15 s after it, so 11 of N 14 at 0.25 a second,
-# and none of the 3 started before it.
+# after it; the workload ends 15 s after it, so 11 of N 14 at 0.25 a second.
+# The 3 started before it add nothing to the allowance.
 outage-30s|hard|30|toxic|both timeout downstream 1 {"timeout":0}|8|retries|window+45|window+45|-|-|-|blackhole on both providers for 30 s: connections accepted, nothing answered
 429-retry-after|hard|12|fake|all={"errorRate":1,"errorStatus":429,"retryAfter":"5"}|5|throttled|0|0|-|steady|-|every call of both kinds 429 with Retry-After 5 for 12 s
 429-no-retry-after|hard|12|fake|all={"errorRate":1,"errorStatus":429}|5|throttled|0|0|-|steady|-|every call of both kinds 429 without Retry-After for 12 s (3 patient retries)
 429-no-retry-after-short|hard|20|fake|all={"errorRate":1,"errorStatus":429}|6|throttled|0|0|-|steady|-|every call of both kinds 429 without Retry-After for 20 s, under the 30 s a call (4 patient retries)
-# slow-past-timeout, over a window of 40 s: likewise 14 of N 17, and none of
-# the 3 started before it.
+# slow-past-timeout, over a window of 40 s: likewise 14 of N 17; the 3 started
+# before it add nothing to the allowance.
 slow-past-timeout|hard|40|toxic|both latency downstream 1 {"latency":50000}|9|retries|window+45|window+45|-|-|-|every reply of both kinds 50 s late (past both attempt timeouts) for 40 s
 # resets: p 0.3 (a new connection reset; one kept alive is not), a 4 (a reset
 # is retried within the Interactive attempts).

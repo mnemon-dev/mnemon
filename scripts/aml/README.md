@@ -19,10 +19,11 @@ usage error, a tool or a server that failed, an interruption, an abort of the sc
 These are the scripts' own codes, never a tool's: an option without its value, or a failure before
 a run starts, is a 2. `load.sh` has no hard criteria: its knee is a measurement.
 
-A script exits 0 or 1 only when it ends on purpose (`aml_exit` in `lib.sh`); on exit, every other
-status becomes 2. This matters on macOS, where bash 3.2 leaves `$?` as the last command left it
-when a fatal error of the shell's own ends a script (an unbound variable, a bad substitution), so
-that an EXIT trap sees a 0 and the abort would read as a pass, whatever the trap captures first.
+A script exits 0 or 1 only when it ends on purpose (`aml_exit STATUS` in `lib.sh`, which needs its
+status: called with none it is a 2, never a pass); on exit, every other status becomes 2. This
+matters on macOS, where bash 3.2 leaves `$?` as the last command left it when a fatal error of the
+shell's own ends a script (an unbound variable, a bad substitution), so that an EXIT trap sees a 0
+and the abort would read as a pass, whatever the trap captures first.
 
 ## The final run
 
