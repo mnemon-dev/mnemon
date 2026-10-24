@@ -3,7 +3,9 @@ module github.com/mnemon-dev/mnemon
 go 1.24.6
 
 require (
+	github.com/coreos/go-systemd/v22 v22.7.0
 	github.com/failsafe-go/failsafe-go v0.9.8
+	github.com/gofrs/flock v0.13.0
 	github.com/google/uuid v1.6.0
 	github.com/mattn/go-isatty v0.0.20
 	github.com/prometheus/client_golang v1.23.2

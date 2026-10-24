@@ -120,13 +120,13 @@ func TestStatusLine(t *testing.T) {
 	// The line is logged on a schedule until the context ends.
 	logCtx, cancel := context.WithCancel(ctx)
 	stopped := make(chan struct{})
-	go func() { h.server.LogStatus(logCtx, 10*time.Millisecond); close(stopped) }()
+	go func() { h.server.logStatus(logCtx, 10*time.Millisecond); close(stopped) }()
 	eventually(t, func() bool { return strings.Contains(h.log.String(), "status: adds 1") })
 	cancel()
 	select {
 	case <-stopped:
 	case <-time.After(5 * time.Second):
-		t.Fatal("LogStatus did not stop")
+		t.Fatal("logStatus did not stop")
 	}
 }
 

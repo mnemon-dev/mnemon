@@ -398,7 +398,7 @@ func (s *Server) Run(ctx context.Context, ready func()) error {
 	work.Add(1)
 	go func() {
 		defer work.Done()
-		s.LogStatus(ctx, statusEvery)
+		s.logStatus(ctx, statusEvery)
 	}()
 	s.tick()
 	if ready != nil {
@@ -562,8 +562,9 @@ func (s *Server) statusLine(ctx context.Context) string {
 	return line
 }
 
-// LogStatus logs the status line every interval until ctx ends.
-func (s *Server) LogStatus(ctx context.Context, every time.Duration) {
+// logStatus logs the status line every interval until ctx ends; Run runs it,
+// so the line is logged once per interval.
+func (s *Server) logStatus(ctx context.Context, every time.Duration) {
 	ticker := time.NewTicker(every)
 	defer ticker.Stop()
 	for {
