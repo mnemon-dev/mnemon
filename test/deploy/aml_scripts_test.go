@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -1231,5 +1232,439 @@ func TestLoadKneeRule(t *testing.T) {
 		case c.kneeRate != 0 && ((c.reasonHas == "") != (got.Void == "") || !strings.Contains(got.Void, c.reasonHas)):
 			t.Errorf("%s: %s, want a note on void steps %q", c.name, out, c.reasonHas)
 		}
+	}
+}
+
+// ---- the parity replay (scripts/aml/parity) ----
+
+// parityFiles are the script and its README, which are committed with the
+// branch (the final review's Recommendation 6) and so hold nothing of the
+// workspace they came from.
+var parityFiles = []string{"scripts/aml/parity/replay.py", "scripts/aml/parity/README.md"}
+
+// TestParityReplayHoldsNothingOfTheWorkspace reads the script and its README:
+// no key, no key file, no absolute path of a workspace, a user or the agent's
+// scratch area, no address, and none of the constants the script had in the
+// workspace (the paths it became arguments for).
+func TestParityReplayHoldsNothingOfTheWorkspace(t *testing.T) {
+	repo := filepath.Join("..", "..")
+	forbidden := []struct {
+		what string
+		re   *regexp.Regexp
+	}{
+		{"an absolute path of a machine or a user", regexp.MustCompile(`(^|[\s"'=(,:\[])/(Volumes|Users|home|private|var|tmp|root|etc|opt|usr|mnt)/|[A-Za-z]:\\`)},
+		{"the agent's scratch area or the workspace", regexp.MustCompile(`claude-501|scratchpad|records-workspace|workspace-2026|\bscratch/|\bruns/20`)},
+		{"a key file or a keys path", regexp.MustCompile(`provider-keys|keys\.json|KEYS_FILE|HP_OLD_BIN|private/provider`)},
+		{"a key or a digest", regexp.MustCompile(`sk-[A-Za-z0-9]{16,}|Bearer [A-Za-z0-9._~+/=-]{20,}|AKIA[0-9A-Z]{12,}|\b[A-Fa-f0-9]{32,}\b|[A-Za-z0-9+/]{40,}={1,2}`)},
+		{"an e-mail address", regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z]{2,}`)},
+		{"the workspace layout", regexp.MustCompile(`\bW /|BASE /|datasets/benchmarks`)},
+	}
+	for _, name := range parityFiles {
+		raw, err := os.ReadFile(filepath.Join(repo, filepath.FromSlash(name)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for number, line := range strings.Split(string(raw), "\n") {
+			for _, f := range forbidden {
+				if found := f.re.FindString(line); found != "" {
+					t.Errorf("%s:%d holds %s (%q): %s", name, number+1, f.what, found, strings.TrimSpace(line))
+				}
+			}
+		}
+	}
+}
+
+// parityScript is scripts/aml/parity/replay.py, and skips the test without
+// python3.
+func parityScript(t *testing.T) string {
+	t.Helper()
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 is missing; the parity replay needs it")
+	}
+	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "aml", "parity", "replay.py"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return script
+}
+
+// parityInputs writes the six dataset files of the replay, small: a LoCoMo
+// conversation of two sessions (the first of 46 messages, so an Add splits at
+// 20) and a BEAM case of two sessions (the first of 30 messages of 150 words,
+// so an Add splits at 2,000 words), with seven and three questions.
+func parityInputs(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	write := func(name string, value any) {
+		raw, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(dir, name), string(raw), 0o644)
+	}
+	turns := func(n int) []map[string]string {
+		out := make([]map[string]string, n)
+		for i := range out {
+			speaker := []string{"Ann", "Bob"}[i%2]
+			out[i] = map[string]string{"speaker": speaker, "text": fmt.Sprintf("message %d of the conversation about the number %d", i, i*7)}
+		}
+		return out
+	}
+	first := append(turns(45), map[string]string{"speaker": "Ann", "text": "look", "blip_caption": "a dog"})
+	write("locomo10.json", []any{map[string]any{"conversation": map[string]any{
+		"speaker_a": "Ann", "speaker_b": "Bob",
+		"session_1_date_time": "1:56 pm on 8 May, 2023", "session_1": first,
+		"session_2_date_time": "9:30 am on 9 May, 2023", "session_2": turns(5),
+	}}})
+	beamTurns := func(n int, text string) []map[string]string {
+		out := make([]map[string]string, n)
+		for i := range out {
+			out[i] = map[string]string{"speaker": []string{"user", "assistant"}[i%2], "text": text}
+		}
+		return out
+	}
+	write("beam-128k.cases.json", []any{map[string]any{"id": "beam128k-1", "sessions": []any{
+		map[string]any{"id": "s2", "iso": "2024-01-03T03:04:05Z", "turns": beamTurns(4, strings.Repeat("later ", 30))},
+		map[string]any{"id": "s1", "iso": "2024-01-02T03:04:05Z", "turns": beamTurns(30, strings.Repeat("x ", 150))},
+	}}})
+	cases := []any{}
+	for i := 1; i <= 7; i++ {
+		cases = append(cases, map[string]any{"id": fmt.Sprintf("q%d", i), "input": map[string]string{"query": fmt.Sprintf("question %d?", i)}})
+	}
+	write("locomo-0.questions.json", map[string]any{"cases": cases})
+	write("locomo-sample.json", map[string]any{"ids": []string{"q1", "q3"}})
+	questions := []any{}
+	for i := 1; i <= 3; i++ {
+		questions = append(questions, map[string]any{"id": fmt.Sprintf("b%d", i), "date": "2024-02-01", "question": fmt.Sprintf("beam question %d?", i)})
+	}
+	write("beam128k-1.questions.json", map[string]any{"questions": questions})
+	write("beam-sample.json", map[string]any{"ids": []string{"b2"}})
+	return dir
+}
+
+// replayRun runs the parity script, isolated (python3 -I), on an environment
+// of its own: PATH, a home, and what env adds. The developer's environment,
+// a provider key in it included, never reaches the script.
+func replayRun(t *testing.T, script string, env []string, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	cmd := exec.Command("python3", append([]string{"-I", "-B", script}, args...)...)
+	cmd.Env = append([]string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir()}, env...)
+	var out, errs strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &errs
+	err := cmd.Run()
+	return out.String(), errs.String(), exitCode(t, err)
+}
+
+// TestParityReplayPlanAndRefusals checks the stages that start no server: the
+// plan counts the requests as the platform splits them, and a missing
+// argument, dataset file, binary, key or recorded run is a message and a
+// status, never a traceback and never a key.
+func TestParityReplayPlanAndRefusals(t *testing.T) {
+	script := parityScript(t)
+	inputs, root := parityInputs(t), filepath.Join(t.TempDir(), "root")
+	binary, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("true is missing")
+	}
+
+	out, errs, code := replayRun(t, script, nil, "--root", root, "--inputs", inputs, "plan")
+	if code != 0 {
+		t.Fatalf("plan exited %d:\n%s%s", code, out, errs)
+	}
+	type plan struct {
+		User             string
+		AddRequests      int
+		Retries          int
+		Searches         int
+		SearchesInSample int `json:"searchesInDefaultSample"`
+		PlanSha256       string
+	}
+	want := map[string]plan{
+		"locomo-0":   {User: "locomo-0", AddRequests: 4, Retries: 1, Searches: 7, SearchesInSample: 2},
+		"beam128k-1": {User: "beam128k-1", AddRequests: 4, Retries: 1, Searches: 3, SearchesInSample: 1},
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("plan printed %d lines, want a plan for each user and the datasets' hashes:\n%s", len(lines), out)
+	}
+	for _, line := range lines[:2] {
+		var got plan
+		if err := json.Unmarshal([]byte(line), &got); err != nil {
+			t.Fatal(err, line)
+		}
+		w, ok := want[got.User]
+		if !ok || got.AddRequests != w.AddRequests || got.Retries != w.Retries || got.Searches != w.Searches || got.SearchesInSample != w.SearchesInSample || len(got.PlanSha256) != 64 {
+			t.Errorf("the plan of %s is %+v, want %+v and a digest", got.User, got, w)
+		}
+	}
+	var datasets struct{ Datasets map[string]string }
+	if err := json.Unmarshal([]byte(lines[2]), &datasets); err != nil || len(datasets.Datasets) != 6 {
+		t.Errorf("the datasets' hashes: %v: %s", err, lines[2])
+	}
+	// The same inputs make the same plan; a changed question makes another.
+	again, _, _ := replayRun(t, script, nil, "--root", root, "--inputs", inputs, "plan")
+	if again != out {
+		t.Errorf("the plan is not repeatable:\n%s\n%s", out, again)
+	}
+
+	planted := "planted-secret-" + strings.Repeat("k", 20)
+	secrets := []string{"DEEPSEEK_API_KEY=" + planted, "TYPESAFE_API_KEY=" + planted}
+	missing := filepath.Join(t.TempDir(), "no-inputs")
+	for _, c := range []struct {
+		name string
+		env  []string
+		args []string
+		code int
+		want string
+	}{
+		{"no task directory", nil, []string{"plan"}, 2, "--root"},
+		{"a plan without inputs", nil, []string{"--root", root, "plan"}, 2, "needs --inputs"},
+		{"inputs without a dataset file", nil, []string{"--root", root, "--inputs", missing, "plan"}, 1, "is missing: --inputs must hold"},
+		{"a live run without a key", nil, []string{"--root", root, "--inputs", inputs, "run", "old", "--binary", binary}, 1, "DEEPSEEK_API_KEY is not set"},
+		{"a run without a binary", secrets, []string{"--root", root, "--inputs", inputs, "run", "old", "--binary", filepath.Join(t.TempDir(), "none")}, 1, "no such binary"},
+		{"a replay without the recorded run", nil, []string{"--root", root, "--inputs", inputs, "replay", "label", "--binary", binary}, 1, "record the old run first"},
+		{"a scrub without keys", nil, []string{"--root", root, "scrub"}, 1, "is not set in the environment"},
+	} {
+		out, errs, code := replayRun(t, script, c.env, c.args...)
+		if code != c.code || !strings.Contains(out+errs, c.want) || strings.Contains(out+errs, "Traceback") || strings.Contains(out+errs, planted) {
+			t.Errorf("%s: exited %d, want %d with %q, no traceback and no key:\n%s%s", c.name, code, c.code, c.want, out, errs)
+		}
+	}
+}
+
+// TestParityReplayServerEnvironment imports the script and checks what it
+// gives the servers: the shipped configuration (BM25 only) with only the
+// budget file, the caps and the model cache changed, in the task directory's
+// private/; a live run's proxy variables and keys as they are; and a replay's
+// placeholder keys with every proxy variable at a dead loopback port and no
+// NO_PROXY, whatever the parent's environment held.
+func TestParityReplayServerEnvironment(t *testing.T) {
+	script := parityScript(t)
+	root := filepath.Join(t.TempDir(), "root")
+	program := `
+import importlib.util, json, pathlib, sys
+spec = importlib.util.spec_from_file_location('replay', sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+m.ROOT = pathlib.Path(sys.argv[2])
+layout = m.Layout(False)
+config = m.effective_config(layout)
+live = m.Server('x', 'new', layout, {'DEEPSEEK_API_KEY': 'live-key'}, '/bin/true').environment()
+dead = m.Server('x', 'new', layout, dict(m.PLACEHOLDER_KEYS), '/bin/true', dead_proxy=True).environment()
+print(json.dumps(dict(config={k: config.get(k) for k in ('budgetFile', 'budgets', 'modelCache', 'strategy')}, embedding='embedding' in config,
+                      private=str(layout.private), live=live, dead=dead)))
+`
+	planted := "planted-secret-" + strings.Repeat("k", 20)
+	cmd := exec.Command("python3", "-I", "-B", "-c", program, script, root)
+	cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + t.TempDir(), "DEEPSEEK_API_KEY=" + planted, "TYPESAFE_API_KEY=" + planted,
+		"HTTPS_PROXY=http://proxy.invalid:3128", "http_proxy=http://proxy.invalid:3128", "NO_PROXY=.internal"}
+	raw, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("%v: %s", err, raw)
+	}
+	var got struct {
+		Config    map[string]any
+		Embedding bool
+		Private   string
+		Live      map[string]string
+		Dead      map[string]string
+	}
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err, string(raw))
+	}
+	private := filepath.Join(root, "private")
+	if got.Embedding || got.Config["strategy"] != "simple" || got.Private != private ||
+		got.Config["budgetFile"] != filepath.Join(private, "model-budget.db") || got.Config["modelCache"] != filepath.Join(private, "model-cache.db") ||
+		!reflect.DeepEqual(got.Config["budgets"], map[string]any{"deepseek": 15.0, "jev": 5.0}) {
+		t.Errorf("the configuration the builds run on: %+v (embedding %v, private %s)", got.Config, got.Embedding, got.Private)
+	}
+	if got.Live["HTTPS_PROXY"] != "http://proxy.invalid:3128" || got.Live["http_proxy"] != "http://proxy.invalid:3128" || got.Live["NO_PROXY"] != ".internal" || got.Live["DEEPSEEK_API_KEY"] != "live-key" {
+		t.Errorf("a live run's environment: %v", got.Live)
+	}
+	for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"} {
+		if got.Dead[name] != "http://127.0.0.1:9" {
+			t.Errorf("a replay's %s is %q, want the dead loopback port", name, got.Dead[name])
+		}
+	}
+	for _, name := range []string{"NO_PROXY", "no_proxy"} {
+		if value, ok := got.Dead[name]; ok {
+			t.Errorf("a replay keeps %s=%q", name, value)
+		}
+	}
+	for _, name := range []string{"DEEPSEEK_API_KEY", "TYPESAFE_API_KEY"} {
+		if got.Dead[name] != "parity-replay-placeholder" {
+			t.Errorf("a replay's %s is %q, want the placeholder", name, got.Dead[name])
+		}
+	}
+	for _, env := range []map[string]string{got.Live, got.Dead} {
+		for name, value := range env {
+			if strings.Contains(value, planted) {
+				t.Errorf("the parent's key reached the server's environment as %s", name)
+			}
+		}
+	}
+}
+
+// TestParityReplayEndToEnd runs every stage of the replay with local models
+// that fail at once (--dry: nothing is spent, no key is read) over a mnemon
+// built from this tree on both sides, and checks the plumbing: the smoke
+// start, a recorded old run, the replay of the new side and its comparison,
+// the compare and scrub stages. The build is run through a wrapper that
+// writes down the environment the script gave it, which shows what a replay
+// hands the server: placeholder keys and dead proxies, whatever the script's
+// own environment held. (The verdict of a dry run is FAIL, as every Search
+// degrades and the log says so; the bodies of the two sides are identical.)
+func TestParityReplayEndToEnd(t *testing.T) {
+	script := parityScript(t)
+	repo, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mnemon := testMnemon(t, repo)
+	inputs, root, dumps := parityInputs(t), filepath.Join(t.TempDir(), "root"), t.TempDir()
+	wrapper := filepath.Join(t.TempDir(), "mnemon-wrapped")
+	writeFile(t, wrapper, "#!/bin/sh\nenv | sort > '"+dumps+"/env.'$$\nexec '"+mnemon+"' \"$@\"\n", 0o755)
+	planted := "planted-secret-" + strings.Repeat("k", 20)
+	env := []string{"DEEPSEEK_API_KEY=" + planted, "TYPESAFE_API_KEY=" + planted, "HTTPS_PROXY=http://proxy.invalid:3128", "NO_PROXY=.internal"}
+	stage := func(args ...string) (string, int) {
+		t.Helper()
+		out, errs, code := replayRun(t, script, env, append([]string{"--root", root, "--inputs", inputs, "--dry"}, args...)...)
+		if strings.Contains(out+errs, "Traceback") || strings.Contains(out+errs, planted) {
+			t.Fatalf("%v: a traceback, or the key in the output:\n%s%s", args, out, errs)
+		}
+		return out, code
+	}
+	// lines are the one-line JSON objects of a stage's output.
+	lines := func(out string) []map[string]any {
+		var all []map[string]any
+		for _, line := range strings.Split(out, "\n") {
+			var object map[string]any
+			if strings.HasPrefix(line, "{") && json.Unmarshal([]byte(line), &object) == nil {
+				all = append(all, object)
+			}
+		}
+		return all
+	}
+
+	out, code := stage("smoke", "--old-binary", wrapper, "--new-binary", wrapper)
+	var healthy []string
+	for _, line := range lines(out) {
+		if line["stage"] == "smoke" && line["healthy"] == true {
+			healthy = append(healthy, fmt.Sprint(line["kind"]))
+		}
+	}
+	if code != 0 || !slices.Equal(healthy, []string{"old", "new"}) {
+		t.Fatalf("smoke exited %d, healthy %v:\n%s", code, healthy, out)
+	}
+
+	out, code = stage("run", "old", "--binary", wrapper, "--built-from", "baseline", "--sessions", "1", "--searches", "2")
+	progress := lines(out)
+	if code != 0 || len(progress) == 0 || progress[len(progress)-1]["stage"] != "finished" || progress[len(progress)-1]["abort"] != nil {
+		t.Fatalf("the old run exited %d:\n%s", code, out)
+	}
+
+	// The replay: all bodies identical, none paid, the verdict FAIL for the faults of a dry run.
+	out, code = stage("replay", "again", "--binary", wrapper, "--built-from", "newbuild", "--sessions", "1", "--searches", "2")
+	_, result, found := strings.Cut(out, "\n{\n")
+	if !found {
+		t.Fatalf("the replay printed no result:\n%s", out)
+	}
+	var replay struct {
+		Verdict         string
+		NewRunPaidCalls int
+		Users           map[string]struct {
+			Searches, Adds, AddRetry struct{ Sent, Identical int }
+			SameRequests             bool
+			Differences              int
+			State                    bool
+		}
+		Replay struct {
+			RealKeysRead bool
+			Proxies      string
+			RunExit      int
+			BuiltFrom    string
+		}
+		Report string
+	}
+	if err := json.Unmarshal([]byte("{\n"+result), &replay); err != nil {
+		t.Fatal(err, result)
+	}
+	if code != 1 || replay.Verdict != "FAIL" || replay.NewRunPaidCalls != 0 || replay.Replay.RealKeysRead || replay.Replay.RunExit != 0 ||
+		replay.Replay.BuiltFrom != "newbuild" || !strings.Contains(replay.Replay.Proxies, "dead") || len(replay.Users) != 2 {
+		t.Fatalf("the replay exited %d: %+v", code, replay)
+	}
+	for user, u := range replay.Users {
+		if u.Searches.Sent != 2 && u.Searches.Sent != 0 || u.Searches.Identical != u.Searches.Sent || u.Adds.Sent == 0 || u.Adds.Identical != u.Adds.Sent ||
+			u.AddRetry.Sent != 1 || u.AddRetry.Identical != 1 || !u.SameRequests || u.Differences != 0 || !u.State {
+			t.Errorf("%s: the two sides differ: %+v", user, u)
+		}
+	}
+	if _, err := os.Stat(replay.Report); err != nil {
+		t.Errorf("no compare-report.json: %v", err)
+	}
+
+	// What the script gave each server: the old run (a live run's kind) its
+	// proxy as it was and no key; the replay placeholder keys and the dead
+	// proxy; neither the key the script held nor the proxy it held.
+	files, err := filepath.Glob(filepath.Join(dumps, "env.*"))
+	if err != nil || len(files) != 4 {
+		t.Fatalf("the wrapper was started %d times, want 4 (two smoke starts, the old run, the replay): %v", len(files), err)
+	}
+	replayed, passedThrough := 0, 0
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dump := string(raw)
+		if strings.Contains(dump, planted) {
+			t.Errorf("a server was given the key the script held:\n%s", dump)
+		}
+		switch {
+		case strings.Contains(dump, "DEEPSEEK_API_KEY=parity-replay-placeholder"):
+			replayed++
+			for _, want := range []string{"HTTPS_PROXY=http://127.0.0.1:9", "HTTP_PROXY=http://127.0.0.1:9", "ALL_PROXY=http://127.0.0.1:9", "https_proxy=http://127.0.0.1:9", "TYPESAFE_API_KEY=parity-replay-placeholder"} {
+				if !strings.Contains(dump, want+"\n") {
+					t.Errorf("the replay's server environment lacks %s:\n%s", want, dump)
+				}
+			}
+			if strings.Contains(dump, "NO_PROXY=") || strings.Contains(dump, "proxy.invalid") {
+				t.Errorf("the replay's server kept a proxy setting of the script's:\n%s", dump)
+			}
+		case strings.Contains(dump, "HTTPS_PROXY=http://proxy.invalid:3128\n") && strings.Contains(dump, "NO_PROXY=.internal\n"):
+			passedThrough++
+		}
+	}
+	if replayed != 1 || passedThrough != 3 {
+		t.Errorf("%d servers got the replay's environment, %d the script's proxy settings; want 1 and 3", replayed, passedThrough)
+	}
+
+	// compare writes the facts of the task; the second side is the replay's.
+	out, _ = stage("compare", "--old", "old", "--new", "again")
+	report, err := os.ReadFile(filepath.Join(root, "dry", "report.json"))
+	if err != nil {
+		t.Fatalf("compare wrote no report.json: %v\n%s", err, out)
+	}
+	var facts struct {
+		Commits       map[string]string
+		Datasets      map[string]string
+		Configuration struct{ BM25Only bool }
+	}
+	if err := json.Unmarshal(report, &facts); err != nil {
+		t.Fatal(err)
+	}
+	if facts.Commits["old"] != "baseline" || facts.Commits["new"] != "newbuild" || len(facts.Datasets) != 6 {
+		t.Errorf("the facts of the task: %+v", facts)
+	}
+	for name, digest := range facts.Datasets {
+		if len(digest) != 64 {
+			t.Errorf("dataset %s has digest %q", name, digest)
+		}
+	}
+
+	// Nothing the script wrote holds the key it held.
+	out, code = stage("scrub")
+	if code != 0 || !strings.Contains(out, `"filesWithAKey": []`) {
+		t.Errorf("scrub exited %d:\n%s", code, out)
 	}
 }

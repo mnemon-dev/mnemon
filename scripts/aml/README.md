@@ -11,6 +11,7 @@ curl, jq and awk.
 | `drill.sh` | The fault drill: each scenario against a steady Add and Search workload, judged both ways |
 | `load.sh` | The load test: Adds, Searches or both at rising rates, and the knee of each, locally or against a base URL |
 | `fakeprovider/` | The fake DeepSeek and JEV: deterministic replies, and faults set at run time through a loopback-only `POST /_fault` |
+| `parity/` | The parity replay (Python 3.9 or later, not bash): the same requests to the baseline build and to the build under test, every response body compared byte for byte, the new side served from the model cache with 0 paid calls. It has a README of its own |
 | `lib.sh`, `scenario.jq`, `poisson.jq`, `knee.jq` | What the scripts share (sourced), the drill's criteria for one run of a scenario, the Poisson quantile its bounds use, and the knee rule (jq programs) |
 
 Exit status of every script: **0** when the run completed and its hard criteria held, **1** when
