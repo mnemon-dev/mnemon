@@ -30,7 +30,9 @@ RestartSec=5
 # The shutdown, in aml_process.go: the requests in flight and the
 # consolidation scheduler's drain share a 30 s grace; requests still running
 # then are canceled and have 5 s more; the stores and models close within the
-# same 35 s. 30 s + 5 s = 35 s, within the 60 s below.
+# same 35 s, when the model requests still in flight are cut, and those settle
+# their budget reservations within 5 s more. 30 s + 5 s + 5 s = 40 s, within
+# the 60 s below.
 TimeoutStopSec=60
 User=mnemon
 Group=mnemon

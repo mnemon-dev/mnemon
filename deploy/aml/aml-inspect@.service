@@ -21,7 +21,9 @@ Type=simple
 Restart=on-failure
 RestartSec=5
 # The shutdown, in aml_inspect.go: the requests in flight have 30 s, those
-# canceled then 5 s more, within the 45 s below.
+# canceled then 5 s more; then the model requests still in flight are cut,
+# and settle in the debug budget within 5 s more. 30 s + 5 s + 5 s = 40 s,
+# within the 45 s below.
 TimeoutStopSec=45
 User=mnemon
 Group=mnemon

@@ -40,11 +40,15 @@ import (
 // amlCancelGrace more to end before their connections are closed. Then the
 // admin server, kept open so the drain can be watched, closes; every
 // component is waited for; and the server closes its stores and models
-// within what is left of both windows: closing the models waits for their
-// requests in flight, abandoned ones included, which could take up to their
-// hard timeout, so past the windows the process exits without them, their
-// budget reservations held. The lock is given back last. A shutdown that had
-// to cancel or cut anything fails the command (exit status 1) and says what.
+// within what is left of both windows (ruling R90): closing the models waits
+// for their requests in flight, abandoned ones included, until the windows
+// end, then cuts those still running, each of which settles its budget
+// reservation at its input estimate (or releases it, unsent) within
+// amlSettleGrace more. Should even that not finish, the process exits without
+// them, their reservations held, and the next start settles them (the lock
+// is then given back while the close goes on, as the process exits). A
+// shutdown that had to cancel or cut anything fails the command (exit status
+// 1) and says what.
 
 const (
 	// amlLockName is the data root's single-instance lock file.
@@ -62,6 +66,10 @@ var (
 	// shorten them.
 	amlShutdownGrace = 30 * time.Second
 	amlCancelGrace   = 5 * time.Second
+	// amlSettleGrace is how long the model requests cut at the end of both
+	// windows have to settle their reservations before the process exits.
+	// 30 s + 5 s + 5 s stays within the unit's TimeoutStopSec=60.
+	amlSettleGrace = 5 * time.Second
 	// sdNotify tells systemd the service's state (sd_notify): nothing without
 	// NOTIFY_SOCKET, which stays set for the notifications to come. Tests
 	// record the states instead.
@@ -263,15 +271,24 @@ func (p *amlProcess) shutdown(sup *supervisor, stopWork, stopWatch context.Cance
 		p.logf(slog.LevelError, "aml-serve: %s did not stop by the end of the shutdown", strings.Join(stuck, ", "))
 		cut = append(cut, fmt.Errorf("did not stop: %s", strings.Join(stuck, ", ")))
 	}
-	if !closeBy(p.server.Close, end) {
-		p.logf(slog.LevelError, "aml-serve: closing the stores and models did not finish by the end of the shutdown; exiting while model requests are in flight: their budget reservations stay held")
-		cut = append(cut, errors.New("closing the stores and models did not finish by the end of the shutdown: the model requests in flight keep their budget reservations held"))
+	// The models' close cuts at the windows' end what still runs (R90).
+	closing, endClosing := context.WithDeadline(context.Background(), end)
+	defer endClosing()
+	var closeErr error
+	switch {
+	case !closeBy(func() error { closeErr = p.server.CloseWithin(closing); return closeErr }, end.Add(amlSettleGrace)):
+		p.logf(slog.LevelError, "aml-serve: closing the stores and models did not finish %s after the end of the shutdown; exiting while model requests settle: their budget reservations stay held until the next start settles them", amlSettleGrace)
+		cut = append(cut, fmt.Errorf("closing the stores and models did not finish %s after the end of the shutdown: the model requests still settling keep their budget reservations held until the next start settles them", amlSettleGrace))
+	case closeErr != nil:
+		p.logf(slog.LevelWarn, "aml-serve: %v", closeErr)
+		cut = append(cut, closeErr)
 	}
 	return errors.Join(cut...)
 }
 
 // closeBy runs closer and reports whether it returned by the deadline. Past
-// it closer goes on alone, until it returns or the process exits.
+// it closer goes on alone, until it returns or the process exits; what it
+// writes is the caller's to read only once closeBy has reported true.
 func closeBy(closer func() error, deadline time.Time) bool {
 	closed := make(chan struct{})
 	go func() {

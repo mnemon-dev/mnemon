@@ -158,7 +158,7 @@ func NewInspector(config InspectConfig) (*Inspector, error) {
 	}
 	var err error
 	if i.maxItems, err = i.probe(); err != nil {
-		i.closeModels()
+		i.closeModels(context.Background())
 		return nil, err
 	}
 	i.baseCtx, i.cancelRequests = context.WithCancel(context.Background())
@@ -321,7 +321,7 @@ func (i *Inspector) openModels() error {
 	if i.full {
 		models, err := i.config.Models(debug)
 		if err != nil {
-			i.closeModels()
+			i.closeModels(context.Background())
 			return err
 		}
 		i.models = models
@@ -366,21 +366,53 @@ func (i *Inspector) probe() (int, error) {
 	return agent.MaxItems(), nil
 }
 
-// closeModels closes the models, after their last call, then the budget.
-func (i *Inspector) closeModels() {
-	i.models.Close()
+// closeModels closes the models by the deadline of ctx, after their last
+// call, then the budget; it returns what the models' close cut.
+func (i *Inspector) closeModels(ctx context.Context) error {
+	err := i.models.CloseWithin(ctx)
 	if i.budget != nil {
 		i.budget.Close()
 	}
+	return err
 }
 
-// Close closes the models and the debug budget. Stop the HTTP server first:
-// closing the models waits for their requests in flight.
-func (i *Inspector) Close() error {
+// Close is CloseWithin with no deadline: closing the models waits for their
+// requests in flight, abandoned ones included, each until it ends or its
+// hard timeout.
+func (i *Inspector) Close() error { return i.CloseWithin(context.Background()) }
+
+// CloseWithin cancels the requests still served, then closes the models by
+// the deadline of ctx and the debug budget. Stop the HTTP server first. The
+// models wait for their requests in flight, abandoned ones included, until
+// the deadline, then cut those still running, which settle or release their
+// reservations in the debug budget before it closes (ruling R90). It returns
+// what the models' close cut, nil when it cut nothing; a later call does
+// nothing and returns nil.
+func (i *Inspector) CloseWithin(ctx context.Context) error {
+	var err error
 	i.closeOnce.Do(func() {
 		i.cancelRequests()
-		i.closeModels()
+		err = i.closeModels(ctx)
 	})
+	return err
+}
+
+// SettleHolds settles the reservations that a previous run of the service
+// left held in its debug budget, at the input estimates they recorded
+// (ruling R90), and logs what it settled by kind, once; with nothing held it
+// says nothing. Call it once, holding the debug budget's lock (aml-inspect
+// takes it), before serving. Without a debug budget it does nothing.
+func (i *Inspector) SettleHolds(ctx context.Context) error {
+	if i.budget == nil {
+		return nil
+	}
+	settled, err := i.budget.SettleHolds(ctx)
+	if err != nil {
+		return fmt.Errorf("settling what the debug budget holds: %w", err)
+	}
+	if line := settledLine(settled); line != "" {
+		i.log.Warn(line)
+	}
 	return nil
 }
 

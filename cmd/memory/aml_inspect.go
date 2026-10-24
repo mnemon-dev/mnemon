@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gofrs/flock"
 	"github.com/mnemon-dev/mnemon/internal/aml"
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
 	"github.com/spf13/cobra"
@@ -118,16 +119,39 @@ func debugCaps(value string) (map[string]float64, error) {
 
 // inspectShutdownGrace is how long the requests in flight have to finish
 // once the inspect service stops; inspectCancelGrace, how long the requests
-// canceled then have to end. Tests shorten them.
+// canceled then have to end; inspectSettleGrace, how long the model requests
+// that the models' close cuts at the end of both windows have to settle
+// (R90). 30 s + 5 s + 5 s stays within the unit's TimeoutStopSec=45. Tests
+// shorten the first two.
 var (
 	inspectShutdownGrace = 30 * time.Second
 	inspectCancelGrace   = 5 * time.Second
+	inspectSettleGrace   = 5 * time.Second
 )
+
+// lockDebugBudget takes the debug budget's lock, an exclusive lock on
+// <debug-budget-file>.lock, a file of its own beside it: one aml-inspect per
+// debug budget, so that what the service finds held there when it starts is
+// a previous run's, which it settles (R90). The kernel releases the lock
+// when the process ends, however it ends; while another process holds it,
+// the command refuses to run.
+func lockDebugBudget(path string) (*flock.Flock, error) {
+	lock := flock.New(path + ".lock")
+	locked, err := lock.TryLock()
+	if err != nil {
+		return nil, fmt.Errorf("lock %s: %w", lock.Path(), err)
+	}
+	if !locked {
+		return nil, fmt.Errorf("another aml-inspect holds %s", lock.Path())
+	}
+	return lock, nil
+}
 
 // runAMLInspect checks the flags (the token among them) and the memory
 // configuration, builds the inspect service (which checks the data root and
-// the debug budget file, and opens the latter), binds the listener and
-// serves until SIGINT or SIGTERM. It never takes the data root's lock or
+// the debug budget file, and opens the latter), takes the debug budget's
+// lock and settles what a previous run left held there, binds the listener
+// and serves until SIGINT or SIGTERM. It never takes the data root's lock or
 // opens a file in the data root but the stores it reads for a request.
 func runAMLInspect(cmd *cobra.Command, _ []string) error {
 	options, err := amlInspectFlags(cmd)
@@ -149,6 +173,17 @@ func runAMLInspect(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
+	if options.debugBudget != "" {
+		lock, err := lockDebugBudget(filepath.Clean(options.debugBudget))
+		if err != nil {
+			inspector.Close()
+			return err
+		}
+		defer lock.Unlock()
+		if err := inspector.SettleHolds(ctx); err != nil {
+			log.Error(fmt.Sprintf("aml-inspect: %v; it stays held until a start settles it", err))
+		}
+	}
 	listener, err := net.Listen("tcp", options.listen)
 	if err != nil {
 		inspector.Close()
@@ -161,9 +196,13 @@ func runAMLInspect(cmd *cobra.Command, _ []string) error {
 // serveInspect serves the inspect service on listener until ctx ends or the
 // server fails, then shuts down: the requests in flight have
 // inspectShutdownGrace to finish, those still running are canceled and have
-// inspectCancelGrace more, then the connections close and the models and the
-// debug budget are closed (after their requests in flight). The serving
-// goroutine is this function's: it is waited for before it returns.
+// inspectCancelGrace more, then the connections close; and the models and
+// the debug budget close within what is left of both windows, as aml-serve's
+// do (the final review's Minor 2, R90): the models' requests in flight,
+// abandoned ones included, are cut at the windows' end and settle in the
+// debug budget within inspectSettleGrace more, after which the command
+// returns all the same. The serving goroutine is this function's: it is
+// waited for before it returns.
 func serveInspect(ctx context.Context, stopSignals func(), inspector *aml.Inspector, listener net.Listener, log *slog.Logger) error {
 	server := inspector.HTTPServer()
 	served := make(chan error, 1)
@@ -176,27 +215,39 @@ func serveInspect(ctx context.Context, stopSignals func(), inspector *aml.Inspec
 		log.Error(fmt.Sprintf("aml-inspect: %v; shutting down", failed))
 	}
 	stopSignals()
-	grace, endGrace := context.WithTimeout(context.Background(), inspectShutdownGrace)
+	graceEnd := time.Now().Add(inspectShutdownGrace)
+	end := graceEnd.Add(inspectCancelGrace)
+	grace, endGrace := context.WithDeadline(context.Background(), graceEnd)
 	defer endGrace()
-	var cut error
+	var cut []error
 	if err := server.Shutdown(grace); errors.Is(err, context.DeadlineExceeded) {
 		log.Warn(fmt.Sprintf("aml-inspect: the %s grace has ended with requests still running; canceling them", inspectShutdownGrace))
 		inspector.CancelRequests()
-		final, endFinal := context.WithTimeout(context.Background(), inspectCancelGrace)
+		final, endFinal := context.WithDeadline(context.Background(), end)
 		if server.Shutdown(final) != nil {
 			server.Close()
 		}
 		endFinal()
-		cut = fmt.Errorf("canceled at the end of the %s grace: requests still running", inspectShutdownGrace)
+		cut = append(cut, fmt.Errorf("canceled at the end of the %s grace: requests still running", inspectShutdownGrace))
 	}
 	if failed == nil {
 		if err := <-served; !errors.Is(err, http.ErrServerClosed) {
 			failed = err
 		}
 	}
-	inspector.Close()
+	closing, endClosing := context.WithDeadline(context.Background(), end)
+	defer endClosing()
+	var closeErr error
+	switch {
+	case !closeBy(func() error { closeErr = inspector.CloseWithin(closing); return closeErr }, end.Add(inspectSettleGrace)):
+		log.Error(fmt.Sprintf("aml-inspect: closing the models did not finish %s after the end of the shutdown; exiting while model requests settle: their debug budget reservations stay held until the next start settles them", inspectSettleGrace))
+		cut = append(cut, fmt.Errorf("closing the models did not finish %s after the end of the shutdown: the model requests still settling keep their debug budget reservations held until the next start settles them", inspectSettleGrace))
+	case closeErr != nil:
+		log.Warn(fmt.Sprintf("aml-inspect: %v", closeErr))
+		cut = append(cut, closeErr)
+	}
 	if errors.Is(failed, http.ErrServerClosed) {
 		failed = nil
 	}
-	return errors.Join(failed, cut)
+	return errors.Join(append([]error{failed}, cut...)...)
 }

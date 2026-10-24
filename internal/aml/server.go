@@ -240,7 +240,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 		return nil, err
 	}
 	if s.maxItems, s.lagBound, err = s.probe(); err != nil {
-		s.closeModels()
+		s.closeModels(context.Background())
 		return nil, err
 	}
 	s.baseCtx, s.cancelRequests = context.WithCancel(context.Background())
@@ -363,12 +363,21 @@ func (s *Server) openUser(dir string) (*records.Store, *memoryagent.Agent, func(
 	return store, agent, stop, nil
 }
 
-// Close stops a running Run and waits for it, then closes the user stores
-// (held ones when their request ends) and the models' budget and model
-// cache. Stop the HTTP server first. Closing the models waits for their
+// Close is CloseWithin with no deadline: closing the models waits for their
 // requests in flight, abandoned ones included, each until it ends or its hard
-// timeout (memoryagent.Provider.Close), so Close can take that long.
-func (s *Server) Close() error {
+// timeout, so Close can take that long.
+func (s *Server) Close() error { return s.CloseWithin(context.Background()) }
+
+// CloseWithin stops a running Run and waits for it, then closes the user
+// stores (held ones when their request ends) and the models, by the deadline
+// of ctx, and the budget and model cache they share. Stop the HTTP server
+// first. The models wait for their requests in flight, abandoned ones
+// included, until the deadline, then cut those still running, which settle
+// or release their reservations before the budget closes (ruling R90,
+// memoryagent.Models.CloseWithin). It returns what the models' close cut,
+// nil when it cut nothing; a later call does nothing and returns nil.
+func (s *Server) CloseWithin(ctx context.Context) error {
+	var err error
 	s.once.Do(func() {
 		s.runMu.Lock()
 		s.closed = true
@@ -379,9 +388,50 @@ func (s *Server) Close() error {
 			<-done
 		}
 		s.users.close()
-		s.closeModels()
+		err = s.closeModels(ctx)
 	})
+	return err
+}
+
+// SettleHolds settles the reservations that a previous process of this
+// instance left held in its budget file, the requests a crash or a stop past
+// its windows cut, at the input estimates they recorded (ruling R90,
+// memoryagent.Budget.SettleHolds), and logs what it settled by kind, once;
+// with nothing held it says nothing. Call it once, holding the data root's
+// lock, before Run and before serving: the instance's budget file then has
+// no other writer, and none of its holds is of a request still in flight.
+// Without a budget file it does nothing.
+func (s *Server) SettleHolds(ctx context.Context) error {
+	if s.budget == nil {
+		return nil
+	}
+	settled, err := s.budget.SettleHolds(ctx)
+	if err != nil {
+		return fmt.Errorf("settling what the budget file holds: %w", err)
+	}
+	if line := settledLine(settled); line != "" {
+		s.logf(ctx, slog.LevelWarn, "%s", line)
+	}
 	return nil
+}
+
+// settledLine is the line that says what SettleHolds settled, by kind, ""
+// when nothing: how many reservations, what they held and what they settled
+// at, in each account's currency.
+func settledLine(settled []memoryagent.HeldSettled) string {
+	holds, kinds := 0, []string{}
+	for _, account := range settled {
+		holds += account.Holds
+		kinds = append(kinds, fmt.Sprintf("%s %d (held %.4f, settled %.4f)", account.Kind, account.Holds, account.Held, account.Settled))
+	}
+	if holds == 0 {
+		return ""
+	}
+	noun := "reservations"
+	if holds == 1 {
+		noun = "reservation"
+	}
+	return fmt.Sprintf("settled %d budget %s a previous process left held, at their input estimates: %s", holds, noun, strings.Join(kinds, ", "))
 }
 
 // Run runs the server's background work until ctx ends or Close is called:
@@ -550,15 +600,17 @@ func (s *Server) consolidateUser(ctx context.Context, key string) (int64, error)
 	return backlog.Characters, outcome.err
 }
 
-// closeModels closes the files the models share, after their last call.
-func (s *Server) closeModels() {
-	s.models.Close()
+// closeModels closes the models by the deadline of ctx, then the files they
+// share, after their last call; it returns what the models' close cut.
+func (s *Server) closeModels(ctx context.Context) error {
+	err := s.models.CloseWithin(ctx)
 	if s.budget != nil {
 		s.budget.Close()
 	}
 	if s.cache != nil {
 		s.cache.Close()
 	}
+	return err
 }
 
 // DegradedSearches counts the Searches answered by raw search because the

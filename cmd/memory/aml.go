@@ -229,10 +229,10 @@ func amlLogger(format string, w io.Writer) *slog.Logger {
 // runAMLServe checks the flags (the admin token among them), the API key, the
 // memory configuration and systemd's watchdog setting, takes the data root's
 // lock (before anything opens a file in the data root or the budget file),
-// builds the server, binds the listeners and runs the process
-// (aml_process.go) until SIGINT or SIGTERM. Its error, the exit status 1, also
-// reports a shutdown that had to cut requests, consolidation jobs or model
-// requests.
+// builds the server, settles what a previous process left held in the budget
+// file, binds the listeners and runs the process (aml_process.go) until
+// SIGINT or SIGTERM. Its error, the exit status 1, also reports a shutdown
+// that had to cut requests, consolidation jobs or model requests.
 func runAMLServe(cmd *cobra.Command, _ []string) error {
 	if readOnly {
 		return errors.New("aml-serve writes user stores and cannot run with --readonly")
@@ -276,6 +276,13 @@ func runAMLServe(cmd *cobra.Command, _ []string) error {
 	})
 	if err != nil {
 		return err
+	}
+	// Under the data root's lock and before anything is served, so that the
+	// instance's budget file has no other writer: what a previous process
+	// left held there is settled (R90). A failure leaves it held, as before;
+	// the next start tries again.
+	if err := server.SettleHolds(ctx); err != nil {
+		log.Error(fmt.Sprintf("aml-serve: %v; it stays held until a start settles it", err))
 	}
 	process, err := newAMLProcess(server, options, log, watchdog)
 	if err != nil {

@@ -567,9 +567,10 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 	// The shutdown (aml_process.go) fits in TimeoutStopSec: the requests in
 	// flight and the scheduler's drain share amlShutdownGrace, the requests
 	// canceled then have amlCancelGrace more, and the stores and models close
-	// within the same window.
-	if stop := systemdSpan(t, serve.get(t, "Service", "TimeoutStopSec")); stop <= amlShutdownGrace+amlCancelGrace {
-		t.Errorf("TimeoutStopSec %s does not outlast the shutdown's %s", stop, amlShutdownGrace+amlCancelGrace)
+	// within the same window, the model requests cut at its end settling
+	// within amlSettleGrace (R90).
+	if stop, shutdown := systemdSpan(t, serve.get(t, "Service", "TimeoutStopSec")), amlShutdownGrace+amlCancelGrace+amlSettleGrace; stop <= shutdown {
+		t.Errorf("TimeoutStopSec %s does not outlast the shutdown's %s", stop, shutdown)
 	}
 	// The limits are per instance, in its drop-in, so the template is the
 	// same for every instance.
@@ -724,6 +725,11 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 		if got := inspect.get(t, s.section, s.key); got != s.want {
 			t.Errorf("aml-inspect@.service [%s] %s=%s, want %s", s.section, s.key, got, s.want)
 		}
+	}
+	// aml-inspect's shutdown (aml_inspect.go) fits in its TimeoutStopSec as
+	// aml-serve's does (Minor 2, R90).
+	if stop, shutdown := systemdSpan(t, inspect.get(t, "Service", "TimeoutStopSec")), inspectShutdownGrace+inspectCancelGrace+inspectSettleGrace; stop <= shutdown {
+		t.Errorf("aml-inspect@.service TimeoutStopSec %s does not outlast the shutdown's %s", stop, shutdown)
 	}
 	if !strings.HasPrefix(dataRoot, strings.ReplaceAll(inspect.get(t, "Service", "ReadOnlyPaths"), "%i", instance)+"/") {
 		t.Errorf("--data-root %s is not under ReadOnlyPaths=", dataRoot)
@@ -1400,33 +1406,22 @@ func TestSupervisorStartsInOrder(t *testing.T) {
 	}
 }
 
-// Closing the models waits for their requests in flight, abandoned ones
-// included, up to their hard timeout (R14); the shutdown waits no longer than
-// its windows, then exits non-zero with their reservations held, and says so.
-func TestShutdownBoundsCloseByTheGrace(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("the abandoned requests keep the budget file open past the test")
-	}
+// R90: closing the models waits for their requests in flight, abandoned ones
+// included, until the end of the shutdown's windows, then cuts those still
+// running. Each settles its reservation at its input estimate before the
+// command returns, within a few seconds of the windows (TimeoutStopSec leaves
+// it more), non-zero, saying what it cut: nothing stays held, and the budget
+// file is closed.
+func TestShutdownCutsAbandonedModelRequests(t *testing.T) {
 	shortGrace(t, 100*time.Millisecond, 400*time.Millisecond)
 	notified := recordNotifications(t)
 	endpoint := newModelEndpoint(t)
-	// The models close the budget file after the command has returned, once
-	// the abandoned requests end: its directory goes then.
-	budgetDir, err := os.MkdirTemp("", "aml-budget-")
-	if err != nil {
-		t.Fatal(err)
-	}
 	// A planner attempt stops waiting after one second and is not retried;
-	// its request runs on to the minute's hard timeout.
-	config := amlTestConfig(t, endpoint.URL, func(config *memoryagent.Config) {
+	// its request runs on toward the minute's hard timeout.
+	configPath := amlTestConfig(t, endpoint.URL, func(config *memoryagent.Config) {
 		config.Planner.TimeoutSeconds, config.Planner.AttemptTimeoutSeconds, config.Planner.MaxAttempts = 60, 1, 1
-		config.BudgetFile = filepath.Join(budgetDir, "model-budget.db")
 	})
-	t.Cleanup(func() {
-		endpoint.free()
-		waitFor(t, "the budget file to close", func() bool { return os.RemoveAll(budgetDir) == nil })
-	})
-	run := startAMLServe(t, config)
+	run := startAMLServe(t, configPath)
 	waitFor(t, "READY=1", func() bool { return slices.Contains(notified.all(), "READY=1") })
 	if code, body := run.post(t, "/add", noteAdd("r1", "u1")); code != http.StatusOK {
 		t.Fatal(code, body)
@@ -1440,15 +1435,19 @@ func TestShutdownBoundsCloseByTheGrace(t *testing.T) {
 		t.Fatal("planner requests", n)
 	}
 	start := time.Now()
-	err = run.stop(t)
+	err := run.stop(t)
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatal("the shutdown waited for the abandoned requests", elapsed)
 	}
-	if err == nil || !strings.Contains(err.Error(), "closing the stores and models did not finish") || strings.Contains(err.Error(), "requests still running") {
+	const cut = "deepseek: cut 2 model requests still in flight at the close's deadline: their reservations settled at their input estimates"
+	if err == nil || !strings.Contains(err.Error(), cut) || strings.Contains(err.Error(), "did not finish") || strings.Contains(err.Error(), "requests still running") {
 		t.Fatal(err, run.log.String())
 	}
-	if !strings.Contains(run.log.String(), "their budget reservations stay held") {
+	if !strings.Contains(run.log.String(), "aml-serve: "+cut) {
 		t.Fatal(run.log.String())
+	}
+	if held, spent := budgetAccount(t, configPath, "deepseek"); held != 0 || spent <= 0 {
+		t.Fatal("deepseek held", held, "spent", spent)
 	}
 }
 
