@@ -149,7 +149,8 @@ type storeConsolidation struct {
 
 // serveStores answers GET /v1/stores?limit&after: the data root's stores in
 // key order, as the overview lists them (readStores, storesAfter), each
-// opened to count its records and read its consolidation's progress. A
+// opened to count its records and read its consolidation's progress, a row
+// kept for storesCacheFor while the store's files do not change (keptRow). A
 // page's work is bounded: a row is one state read and one scan of its
 // store's records (memoryagent.Agent.Progress), at most limit rows, and the
 // page stops opening stores once its request has ended (the client left,
@@ -168,12 +169,18 @@ func (i *Inspector) serveStores(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page, next := storesAfter(stores, after, limit)
+	i.forgetRows(stores)
 	rows := make([]inspectStoreRow, 0, len(page))
 	for _, stat := range page {
 		if r.Context().Err() != nil {
 			break
 		}
-		rows = append(rows, i.storeRow(r.Context(), stat))
+		row, kept := i.keptRow(stat)
+		if !kept {
+			row = i.storeRow(r.Context(), stat)
+			i.keepRow(stat, row)
+		}
+		rows = append(rows, row)
 	}
 	if err := r.Context().Err(); err != nil {
 		i.storeFailure(w, r, "", "the store page", err)
@@ -205,6 +212,59 @@ func (i *Inspector) storeRow(ctx context.Context, stat storeStat) inspectStoreRo
 		row.Consolidation = &storeConsolidation{Watermark: p.Watermark, Pending: p.Pending}
 	}
 	return row
+}
+
+// keptRow is the store's row a page counted less than storesCacheFor ago,
+// while the store's files are as the scan found them (their bytes and their
+// newest time): a page asked again soon opens no store that has not changed
+// (the final review's parked T18-f).
+func (i *Inspector) keptRow(stat storeStat) (inspectStoreRow, bool) {
+	now := time.Now()
+	i.rowsMu.Lock()
+	defer i.rowsMu.Unlock()
+	kept, ok := i.rows[stat.key]
+	if !ok || kept.bytes != stat.bytes || !kept.modified.Equal(stat.modified) || now.Sub(kept.at) >= storesCacheFor {
+		return inspectStoreRow{}, false
+	}
+	return kept.row, true
+}
+
+// keepRow keeps a row the page counted, unless it holds an error, which the
+// next page asks again.
+func (i *Inspector) keepRow(stat storeStat, row inspectStoreRow) {
+	if row.Error != "" {
+		return
+	}
+	i.rowsMu.Lock()
+	defer i.rowsMu.Unlock()
+	if i.rows == nil {
+		i.rows = map[string]keptStoreRow{}
+	}
+	i.rows[stat.key] = keptStoreRow{bytes: stat.bytes, modified: stat.modified, at: time.Now(), row: row}
+}
+
+// forgetRows drops the kept rows of stores the scan no longer lists, so
+// that the rows kept are at most the data root's stores.
+func (i *Inspector) forgetRows(stores []storeStat) {
+	listed := make(map[string]bool, len(stores))
+	for _, stat := range stores {
+		listed[stat.key] = true
+	}
+	i.rowsMu.Lock()
+	defer i.rowsMu.Unlock()
+	for key := range i.rows {
+		if !listed[key] {
+			delete(i.rows, key)
+		}
+	}
+}
+
+// keptStoreRow is a counted store row (keepRow): the store's files as the
+// scan found them, and when it was counted.
+type keptStoreRow struct {
+	bytes        int64
+	modified, at time.Time
+	row          inspectStoreRow
 }
 
 // rowError is the error of a store row: store_busy (retry) or
@@ -272,8 +332,11 @@ func recordOf(raw records.PageRecord) (inspectRecord, bool) {
 	return inspectRecord{ID: record.ID, Seq: raw.Seq, CreatedAt: record.Date, Session: record.Session, Content: record.Text}, ok
 }
 
-// lookupIDMax bounds the {id} of a lookup, in bytes.
-const lookupIDMax = 256
+// lookupIDMax bounds the {id} of a lookup, in bytes: a fact's key, which a
+// fold's model writes (the final review's parked T18-d), can be as long as
+// the fold's reply, at most timelineMaxTokens (8192) tokens, which take 4
+// bytes at most for text a key can hold. A record's id is far shorter.
+const lookupIDMax = 32 << 10
 
 // lookupID is the {id} of a lookup's path, decoded: 1 to lookupIDMax bytes,
 // no control character; on failure it has answered 400 invalid (id). Like

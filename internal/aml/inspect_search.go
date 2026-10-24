@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"runtime/debug"
 	"strings"
@@ -140,23 +141,35 @@ func (i *Inspector) serveSearch(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 	switch {
-	case err != nil && answer.read && storeBusy(err):
-		// The store changed under a full search, or SQLite was busy: what it
-		// read is not answered, but what it cost is, with its trace.
-		trace := answer.trace
-		if !q.tracing {
-			trace = nil
-		}
-		w.Header().Set("Retry-After", storeBusyRetry)
-		inspectJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "store_busy", "trace": trace, "usage": answer.usage})
-		return
 	case err != nil:
-		i.storeFailure(w, r, q.key, "search", err)
+		i.searchFailed(w, r, q, answer, err)
 		return
 	case !q.tracing:
 		answer.body["trace"] = nil
 	}
 	inspectJSON(w, answer.status, answer.body)
+}
+
+// searchFailed answers a search that failed with err, answer what it did.
+// Once a full search's read has run, what it cost is answered with the
+// error, and its trace when the search asked for one: the store changing
+// under it, or SQLite busy, answers 503 store_busy, and any other failure
+// but the client leaving 500 internal (the final review's parked T18-e).
+func (i *Inspector) searchFailed(w http.ResponseWriter, r *http.Request, q inspectSearch, answer searchOutcome, err error) {
+	trace := answer.trace
+	if !q.tracing {
+		trace = nil
+	}
+	switch {
+	case answer.read && storeBusy(err):
+		w.Header().Set("Retry-After", storeBusyRetry)
+		inspectJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "store_busy", "trace": trace, "usage": answer.usage})
+	case answer.read && r.Context().Err() == nil && !errors.Is(err, fs.ErrNotExist):
+		i.log.Error(fmt.Sprintf("search failed (store %s): %v", short(q.key), withoutPath(err)))
+		inspectJSON(w, http.StatusInternalServerError, map[string]any{"error": "internal", "trace": trace, "usage": answer.usage})
+	default:
+		i.storeFailure(w, r, q.key, "search", err)
+	}
 }
 
 // searchOutcome is a search's answer: its status and body. Once a full

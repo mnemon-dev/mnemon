@@ -127,6 +127,11 @@ type Inspector struct {
 	fullSearches int                // guarded by mu
 	fullCost     map[string]float64 // guarded by mu
 	closeOnce    sync.Once
+
+	// rows keeps the counted rows of GET /v1/stores, by store key (keptRow);
+	// guarded by rowsMu.
+	rowsMu sync.Mutex
+	rows   map[string]keptStoreRow
 }
 
 // NewInspector checks the configuration, opens the debug budget, builds the

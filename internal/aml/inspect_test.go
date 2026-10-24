@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -718,7 +719,7 @@ func rawItems(t *testing.T, page []byte, key string) []json.RawMessage {
 
 // badIDs are path segments that are no lookup's id: empty, too long, or
 // with a control character.
-var badIDs = []string{"", strings.Repeat("x", 257), "a%00b", "a%0Ab", "%7F", "a%C2%85b"}
+var badIDs = []string{"", strings.Repeat("x", lookupIDMax+1), "a%00b", "a%0Ab", "%7F", "a%C2%85b"}
 
 // A record by its id: the very object its page lists, byte for byte; a
 // record the page does not list, or none, is record_not_found; the id is
@@ -968,4 +969,102 @@ func TestInspectBusy(t *testing.T) {
 	<-done
 	h.judge.block.Store(false)
 	ih.ok(t, "GET", "/v1/stores", nil, nil)
+}
+
+// Parked T18-d (final review): a fact's key is what the fold's model wrote,
+// longer than 256 bytes when it likes: a lookup takes the longest a fold can
+// write (lookupIDMax), so a long key's fact is found like any other.
+func TestInspectMemoryItemWithALongKey(t *testing.T) {
+	long := "long key " + strings.Repeat("k", 300)
+	h := layeredHarness(t)
+	h.consolidator.answer(func(context.Context, string) (string, error) {
+		return `{"events":[{"thread":"new: Support group","date":"2023/05/08","text":"Caroline went to the support group.","records":["r0"]}],` +
+			`"facts":[{"key":"` + long + `","value":"long","date":"2023/05/08","records":["r0"],"conflict":false}],"directives":[]}`, nil
+	})
+	for _, id := range []string{"r1", "r2", "r3"} {
+		h.mustAdd(t, addRequest(id, "u1"))
+	}
+	ih := newInspector(t, h, nil)
+	var fact struct {
+		Item struct {
+			Key string `json:"key"`
+		} `json:"item"`
+	}
+	ih.ok(t, "GET", "/v1/stores/"+userKey("u1")+"/memory/facts/"+url.PathEscape(long), nil, &fact)
+	if fact.Item.Key != long {
+		t.Fatalf("%+v", fact)
+	}
+}
+
+// Parked T18-e (final review): a full search that fails after its read ran,
+// at a failure that is neither the store being busy nor the client leaving,
+// answers 500 with what the read cost and its trace: the spend is the
+// console's to show, as a 503 store_busy and a 502 provider_failed show it.
+func TestFullSearchFailureAfterTheReadCarriesItsUsage(t *testing.T) {
+	h := layeredHarness(t)
+	h.mustAdd(t, addRequest("r1", "u1"))
+	ih := newInspector(t, h, nil)
+	usage := searchUsage{Calls: 3, Tokens: tokenCount{Input: 1200, Output: 40}, Cost: usageByKind{DeepSeek: 0.0026}}
+	answer := searchOutcome{read: true, usage: usage, trace: []any{map[string]any{"name": "cues"}}}
+	recorder := httptest.NewRecorder()
+	ih.inspector.searchFailed(recorder, httptest.NewRequest("POST", "/v1/search", nil), inspectSearch{key: userKey("u1"), full: true, tracing: true}, answer, errors.New("the trace's store read failed"))
+	var body struct {
+		Error string          `json:"error"`
+		Trace []any           `json:"trace"`
+		Usage json.RawMessage `json:"usage"`
+	}
+	if recorder.Code != http.StatusInternalServerError || json.Unmarshal(recorder.Body.Bytes(), &body) != nil || body.Error != "internal" || len(body.Trace) != 1 ||
+		string(body.Usage) != string(must(json.Marshal(usage))) {
+		t.Fatalf("%d %s", recorder.Code, recorder.Body.String())
+	}
+	// Before the read, nothing was spent: the plain 500.
+	recorder = httptest.NewRecorder()
+	ih.inspector.searchFailed(recorder, httptest.NewRequest("POST", "/v1/search", nil), inspectSearch{key: userKey("u1")}, searchOutcome{}, errors.New("broken"))
+	if recorder.Code != http.StatusInternalServerError || strings.Contains(recorder.Body.String(), "usage") {
+		t.Fatalf("%d %s", recorder.Code, recorder.Body.String())
+	}
+}
+
+// Parked T18-f (final review): a store's row of GET /v1/stores (its records
+// and consolidation's progress, a scan of its records) is counted once and
+// kept for a minute while the store's files are as the scan found them: a
+// page asked again soon opens no store whose files have not changed. Here a
+// store made unreadable in place (its files' sizes and times as they were)
+// still shows its counted row, and one whose files changed is counted again.
+func TestInspectStoreRowsAreCountedOnce(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("needs a file mode that keeps the owner out")
+	}
+	h := layeredHarness(t)
+	for _, user := range []string{"u1", "u2"} {
+		h.mustAdd(t, addRequest("r1", user))
+	}
+	ih := newInspector(t, h, nil)
+	var first storesAnswer
+	ih.ok(t, "GET", "/v1/stores", nil, &first)
+	if len(first.Stores) != 2 || first.Stores[0].Records == nil || first.Stores[1].Records == nil {
+		t.Fatalf("%+v", first)
+	}
+	// u1's records file kept out, its size and time as they were.
+	records := filepath.Join(h.root, "users", userKey("u1"), "records.db")
+	if err := os.Chmod(records, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(records, 0o600) })
+	var second storesAnswer
+	ih.ok(t, "GET", "/v1/stores", nil, &second)
+	for _, row := range second.Stores {
+		if row.Error != "" || row.Records == nil {
+			t.Fatalf("a row counted a minute ago was counted again: %+v", row)
+		}
+	}
+	// u2 adds: its files change, and its row is counted again.
+	h.mustAdd(t, addRequest("r2", "u2"))
+	var third storesAnswer
+	ih.ok(t, "GET", "/v1/stores", nil, &third)
+	for _, row := range third.Stores {
+		if row.Key == userKey("u2") && (row.Records == nil || *row.Records != 2) {
+			t.Fatalf("a changed store was not counted again: %+v", row)
+		}
+	}
 }
