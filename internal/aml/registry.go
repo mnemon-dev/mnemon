@@ -30,6 +30,19 @@ func userKey(userID string) string {
 	return hex.EncodeToString(sum[:])[:32]
 }
 
+// isUserKey reports whether name is a user key: 32 lowercase hex digits.
+func isUserKey(name string) bool {
+	if len(name) != 32 {
+		return false
+	}
+	for _, c := range name {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
+	return true
+}
+
 // userEntry is one user's open store and agent. A request holds it between
 // acquire and release; refs counts the holders, and an entry is closed only
 // when it is out of the cache and refs is 0.
@@ -77,7 +90,11 @@ func (g *registry) dir(key string) string { return filepath.Join(g.root, "users"
 // release. With create false, a user who has no store yet gives nil and
 // nothing is created.
 func (g *registry) acquire(ctx context.Context, userID string, create bool) (*userEntry, error) {
-	key := userKey(userID)
+	return g.acquireKey(ctx, userKey(userID), create)
+}
+
+// acquireKey is acquire for the user whose key (userKey) is key.
+func (g *registry) acquireKey(ctx context.Context, key string, create bool) (*userEntry, error) {
 	if !create && !g.cached(key) {
 		// Look for the store without holding the lock: stores are never
 		// removed, and one created meanwhile is simply not seen yet.

@@ -61,10 +61,11 @@ func (p *fakePlanner) seen() []string {
 // fakeJudge calls everything needed and nothing superseded, or fails: every
 // call (fail), the judgements alone (their questions ask s<i>; failJudgement),
 // or by waiting until its context ends (block; blocked counts the waits). It
-// panics when asked about the timelines layer's topics (panicOnLayer).
+// panics when asked about the timelines layer's topics (panicOnLayer). With
+// outage every call fails as an unavailable provider does.
 type fakeJudge struct {
-	fail, failJudgement, block, panicOnLayer atomic.Bool
-	blocked                                  atomic.Int64
+	fail, failJudgement, block, panicOnLayer, outage atomic.Bool
+	blocked                                          atomic.Int64
 	// edgeCalls counts the calls asking about consolidation events' edges;
 	// failEdges fails them.
 	edgeCalls atomic.Int64
@@ -72,6 +73,9 @@ type fakeJudge struct {
 }
 
 func (j *fakeJudge) Decide(ctx context.Context, state any, questions map[string]memoryagent.Question) (map[string]float64, memoryagent.Usage, error) {
+	if j.outage.Load() {
+		return nil, memoryagent.Usage{}, fmt.Errorf("jev: %w: model HTTP 503; reservation released", memoryagent.ErrModelUnavailable)
+	}
 	if j.block.Load() {
 		j.blocked.Add(1)
 		<-ctx.Done()

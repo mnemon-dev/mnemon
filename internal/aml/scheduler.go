@@ -1,0 +1,484 @@
+package aml
+
+import (
+	"container/heap"
+	"container/list"
+	"context"
+	"errors"
+	"fmt"
+	"math"
+	"math/rand/v2"
+	"runtime/debug"
+	"sync"
+	"time"
+
+	"github.com/mnemon-dev/mnemon/internal/memoryagent"
+)
+
+// Background consolidation (ConsolidationBackground) runs the users' jobs in
+// a fixed pool of workers. Raw records and each user's timelines state say
+// what is pending; the scheduler only remembers which users to look at, how
+// much each has pending (its backlog, in the characters a job reads), and who
+// runs next: the first user of a FIFO queue that no Search holds. A user is
+// idle, queued, running or backing off after a failed job, and a Search may
+// hold it in any of these states; one job per user runs at a time.
+
+const (
+	// defaultConsolidationWorkers is how many users consolidate at once.
+	defaultConsolidationWorkers = 4
+	// maxConsolidationUsers bounds the users with work (queued, running or
+	// backing off); a notification beyond it is dropped.
+	maxConsolidationUsers = 100000
+	// A failed job's user is retried after retryBase × 2ⁿ⁻¹ for its n-th
+	// failure in a row, ±20%, at most retryMax; a job the budget reserve
+	// stopped after reservePause.
+	retryBase    = 30 * time.Second
+	retryMax     = 10 * time.Minute
+	reservePause = 10 * time.Minute
+	// queueFullEvery spaces the logs of dropped notifications.
+	queueFullEvery = time.Minute
+)
+
+// SchedulerStatus is a snapshot of the scheduler: the users queued (held
+// ones among them), running and backing off, the users a Search holds, how
+// long the oldest work not yet consolidated has waited (queued, running or
+// backing off since the notification a successful job has not covered), and
+// the largest backlog, in characters.
+type SchedulerStatus struct {
+	Queued, Running, BackingOff, Held int
+	OldestQueued                      time.Duration
+	MaxBacklog                        int64
+}
+
+type userState uint8
+
+const (
+	userIdle userState = iota
+	userQueued
+	userRunning
+	userBackingOff
+)
+
+// schedUser is one user the scheduler knows: while it has work, is held or
+// waited on, or, idle, has characters pending (the tail a held job leaves).
+type schedUser struct {
+	key   string
+	state userState
+	elem  *list.Element // its place in the queue, while queued
+	// holds counts the Searches holding the user, waiters the WaitBacklog
+	// calls waiting on it.
+	holds, waiters int
+	// backlog is the characters pending: the last job's measure, plus what
+	// Adds wrote since; added is what they wrote while it ran, which the
+	// measure may miss; dirty says Adds wrote while it ran.
+	backlog, added int64
+	dirty          bool
+	// failures counts its failed jobs in a row; retryAt ends its backoff,
+	// and seq orders retries due at the same time.
+	failures int
+	retryAt  time.Time
+	seq      uint64
+	// since is when the oldest notification no successful job has covered
+	// came (zero when idle); dirtySince, the first while it ran.
+	since, dirtySince time.Time
+}
+
+// scheduler runs the users' consolidation jobs (run) on its workers. Its
+// callbacks run without its lock: run may block until its context ends and
+// may call the scheduler; logf and now must not block.
+type scheduler struct {
+	workers, maxUsers int
+	// run is a user's job; it returns the user's backlog measured after the
+	// job (negative when unknown) and the job's failure.
+	run  func(ctx context.Context, key string) (backlog int64, err error)
+	logf func(format string, args ...any)
+	now  func() time.Time
+	// jitter is uniform in [0, 1): the backoff's jitter.
+	jitter func() float64
+
+	mu         sync.Mutex
+	users      map[string]*schedUser
+	queue      *list.List // of *schedUser, queued in order
+	retries    retryHeap  // the users backing off, the next retry first
+	running    int        // users running
+	retrySeq   uint64
+	changed    chan struct{} // closed, and replaced, at every change
+	started    bool          // Run is running
+	stopped    bool          // Run returned: nothing runs, no Add waits
+	fullLogged time.Time
+}
+
+func newScheduler(workers, maxUsers int, run func(ctx context.Context, key string) (backlog int64, err error), logf func(format string, args ...any), now func() time.Time) *scheduler {
+	return &scheduler{workers: workers, maxUsers: maxUsers, run: run, logf: logf, now: now, jitter: rand.Float64,
+		users: map[string]*schedUser{}, queue: list.New(), changed: make(chan struct{})}
+}
+
+// short is a user key as logs name it: its 8-hex-digit prefix.
+func short(key string) string { return key[:min(8, len(key))] }
+
+// Notify tells the scheduler that an Add wrote addedChars characters (0 for
+// none: a job left work, or a Search's flush did) for the user. Its backlog
+// grows by them and an idle user joins the back of the queue; a queued user
+// keeps its place, one backing off its retry time, and one running runs
+// again after its job. Past maxUsers users with work, the notification is
+// dropped and logged at most once per minute; the user's next Add or
+// Search picks it up.
+func (s *scheduler) Notify(key string, addedChars int64) {
+	now := s.now()
+	s.mu.Lock()
+	u := s.users[key]
+	if (u == nil || u.state == userIdle) && s.activeLocked() >= s.maxUsers {
+		logFull := s.fullLogged.IsZero() || now.Sub(s.fullLogged) >= queueFullEvery
+		if logFull {
+			s.fullLogged = now
+		}
+		s.mu.Unlock()
+		if logFull {
+			s.logf("consolidation queue full: %d users have work; dropped a notification (user %s)", s.maxUsers, short(key))
+		}
+		return
+	}
+	if u == nil {
+		u = &schedUser{key: key}
+		s.users[key] = u
+	}
+	u.backlog += addedChars
+	switch u.state {
+	case userIdle:
+		u.since = now
+		s.enqueueLocked(u)
+	case userRunning:
+		u.added += addedChars
+		if !u.dirty {
+			u.dirty, u.dirtySince = true, now
+		}
+	}
+	s.unlockChanged()
+}
+
+// WaitBacklog returns nil once the user's backlog is at most limit, or once
+// the scheduler has stopped, and ctx's error if ctx ends first. A user the
+// scheduler does not know has no backlog. Waiting on an idle user queues a
+// job, which measures its backlog, unless no job can be queued.
+func (s *scheduler) WaitBacklog(ctx context.Context, key string, limit int64) error {
+	now := s.now()
+	s.mu.Lock()
+	u := s.users[key]
+	if u == nil {
+		s.mu.Unlock()
+		return nil
+	}
+	u.waiters++
+	defer func() {
+		u.waiters--
+		s.forgetLocked(u)
+		s.mu.Unlock()
+	}()
+	for u.backlog > limit && !s.stopped {
+		var old chan struct{}
+		if u.state == userIdle {
+			if s.activeLocked() >= s.maxUsers {
+				return nil
+			}
+			u.since = now
+			s.enqueueLocked(u)
+			old = s.changedLocked()
+		}
+		changed := s.changed
+		s.mu.Unlock()
+		if old != nil {
+			close(old)
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+		}
+		s.mu.Lock()
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Hold keeps the user's jobs from starting until release is called, while a
+// Search flushes it: a queued user keeps its place in the queue and is
+// passed over; a job already running goes on. release may be called more
+// than once.
+func (s *scheduler) Hold(key string) (release func()) {
+	s.mu.Lock()
+	u := s.users[key]
+	if u == nil {
+		// Holds are bounded by the Searches in flight, not by maxUsers.
+		u = &schedUser{key: key}
+		s.users[key] = u
+	}
+	u.holds++
+	s.mu.Unlock()
+	return sync.OnceFunc(func() {
+		s.mu.Lock()
+		u.holds--
+		s.forgetLocked(u)
+		s.unlockChanged()
+	})
+}
+
+// held reports whether a Search holds the user.
+func (s *scheduler) held(key string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := s.users[key]
+	return u != nil && u.holds > 0
+}
+
+// Run runs the workers until ctx ends and returns once every one has
+// exited. A job running then sees ctx end, and its user, cut, is queued
+// again; its state is saved per batch, so the job resumes later. After Run
+// returns no job starts and no Add waits. One Run runs at a time.
+func (s *scheduler) Run(ctx context.Context) error {
+	s.mu.Lock()
+	if s.started {
+		s.mu.Unlock()
+		return errors.New("the consolidation scheduler is already running")
+	}
+	s.started, s.stopped = true, false
+	s.mu.Unlock()
+	var workers sync.WaitGroup
+	for range s.workers {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			s.work(ctx)
+		}()
+	}
+	workers.Wait()
+	s.mu.Lock()
+	s.started, s.stopped = false, true
+	s.unlockChanged()
+	return nil
+}
+
+// Status is a snapshot of the scheduler.
+func (s *scheduler) Status() SchedulerStatus {
+	now := s.now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	status := SchedulerStatus{Queued: s.queue.Len(), Running: s.running, BackingOff: len(s.retries)}
+	for _, u := range s.users {
+		if u.holds > 0 {
+			status.Held++
+		}
+		status.MaxBacklog = max(status.MaxBacklog, u.backlog)
+		if u.state != userIdle && !u.since.IsZero() {
+			status.OldestQueued = max(status.OldestQueued, now.Sub(u.since))
+		}
+	}
+	return status
+}
+
+// signal makes the workers look again, as after any change: a clock moved
+// by a test, say.
+func (s *scheduler) signal() {
+	s.mu.Lock()
+	s.unlockChanged()
+}
+
+// work runs jobs until ctx ends.
+func (s *scheduler) work(ctx context.Context) {
+	for {
+		u := s.next(ctx)
+		if u == nil {
+			return
+		}
+		backlog, err := s.call(ctx, u.key)
+		s.finish(ctx, u, backlog, err)
+	}
+}
+
+// next waits for the next user to run and marks it running: the first user
+// of the queue no Search holds, once the users whose backoff has ended have
+// joined the back of the queue. It returns nil once ctx has ended.
+func (s *scheduler) next(ctx context.Context) *schedUser {
+	for ctx.Err() == nil {
+		// The change channel is taken before the clock is read: a change
+		// after the reading (a moved clock, a signal) then ends the wait.
+		s.mu.Lock()
+		changed := s.changed
+		s.mu.Unlock()
+		now := s.now()
+		s.mu.Lock()
+		s.retryDueLocked(now)
+		if u := s.firstUnheldLocked(); u != nil {
+			s.queue.Remove(u.elem)
+			u.elem, u.state = nil, userRunning
+			u.added, u.dirty, u.dirtySince = 0, false, time.Time{}
+			s.running++
+			s.mu.Unlock()
+			return u
+		}
+		wait := time.Duration(0)
+		if len(s.retries) > 0 {
+			wait = s.retries[0].retryAt.Sub(now)
+		}
+		s.mu.Unlock()
+		sleep(ctx, changed, wait)
+	}
+	return nil
+}
+
+// sleep waits until ctx ends, changed is closed or, when wait is positive,
+// wait has passed.
+func sleep(ctx context.Context, changed <-chan struct{}, wait time.Duration) {
+	var timeout <-chan time.Time
+	if wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		timeout = timer.C
+	}
+	select {
+	case <-ctx.Done():
+	case <-changed:
+	case <-timeout:
+	}
+}
+
+// call runs the user's job; a job that panics fails, its panic and stack
+// logged.
+func (s *scheduler) call(ctx context.Context, key string) (backlog int64, err error) {
+	defer func() {
+		if value := recover(); value != nil {
+			s.logf("consolidation job panicked (user %s): %v\n%s", short(key), value, debug.Stack())
+			backlog, err = -1, fmt.Errorf("panic: %v", value)
+		}
+	}()
+	return s.run(ctx, key)
+}
+
+// finish settles u's job, which measured backlog (negative when unknown)
+// and failed with err. A job ctx's end cut queues its user again. After a
+// successful job its user is idle, or queued again when Adds wrote while it
+// ran; after a failed one it backs off (retryDelay), for reservePause when
+// the budget reserve stopped it.
+func (s *scheduler) finish(ctx context.Context, u *schedUser, backlog int64, err error) {
+	now, jitter := s.now(), s.jitter()
+	s.mu.Lock()
+	s.running--
+	if backlog >= 0 {
+		u.backlog = backlog + u.added
+	}
+	u.added = 0
+	var line string
+	switch {
+	case ctx.Err() != nil:
+		s.enqueueLocked(u)
+	case err == nil:
+		u.failures = 0
+		if u.dirty {
+			u.since = u.dirtySince
+			s.enqueueLocked(u)
+		} else {
+			u.state, u.since = userIdle, time.Time{}
+		}
+	default:
+		u.failures++
+		delay := retryDelay(u.failures, jitter)
+		line = fmt.Sprintf("consolidation retries in %s (user %s)", delay.Round(time.Second), short(u.key))
+		if errors.Is(err, memoryagent.ErrBackgroundReserve) {
+			delay, line = reservePause, fmt.Sprintf("consolidation paused: budget reserve (user %s)", short(u.key))
+		}
+		s.retrySeq++
+		u.state, u.retryAt, u.seq = userBackingOff, now.Add(delay), s.retrySeq
+		heap.Push(&s.retries, u)
+	}
+	u.dirty, u.dirtySince = false, time.Time{}
+	s.forgetLocked(u)
+	s.unlockChanged()
+	if line != "" {
+		s.logf("%s", line)
+	}
+}
+
+// retryDelay is the wait before a user's retry after its failures-th failed
+// job in a row: retryBase × 2^(failures−1), times 0.8 + 0.4 × jitter (±20%
+// for a jitter in [0, 1)), at most retryMax.
+func retryDelay(failures int, jitter float64) time.Duration {
+	delay := retryMax
+	if failures <= 10 { // past ten, the doubling alone passes retryMax
+		delay = retryBase << max(failures-1, 0)
+	}
+	return min(time.Duration(math.Round(float64(delay)*(0.8+0.4*jitter))), retryMax)
+}
+
+// activeLocked counts the users with work: queued, running or backing off.
+func (s *scheduler) activeLocked() int { return s.queue.Len() + s.running + len(s.retries) }
+
+// enqueueLocked puts u at the back of the queue.
+func (s *scheduler) enqueueLocked(u *schedUser) {
+	u.state, u.elem = userQueued, s.queue.PushBack(u)
+}
+
+// retryDueLocked moves the users whose backoff has ended to the back of the
+// queue, the earliest first.
+func (s *scheduler) retryDueLocked(now time.Time) {
+	for len(s.retries) > 0 && !s.retries[0].retryAt.After(now) {
+		s.enqueueLocked(heap.Pop(&s.retries).(*schedUser))
+	}
+}
+
+// firstUnheldLocked is the first queued user no Search holds, or nil.
+func (s *scheduler) firstUnheldLocked() *schedUser {
+	for element := s.queue.Front(); element != nil; element = element.Next() {
+		if u := element.Value.(*schedUser); u.holds == 0 {
+			return u
+		}
+	}
+	return nil
+}
+
+// forgetLocked drops u once nothing needs it: idle with nothing pending,
+// not held and not waited on.
+func (s *scheduler) forgetLocked(u *schedUser) {
+	if u.state == userIdle && u.holds == 0 && u.waiters == 0 && u.backlog <= 0 && s.users[u.key] == u {
+		delete(s.users, u.key)
+	}
+}
+
+// changedLocked replaces the change channel and returns the old one, to be
+// closed once mu is released: closing it wakes every worker and waiter.
+func (s *scheduler) changedLocked() chan struct{} {
+	old := s.changed
+	s.changed = make(chan struct{})
+	return old
+}
+
+// unlockChanged releases mu after a change and wakes those waiting for one.
+func (s *scheduler) unlockChanged() {
+	old := s.changedLocked()
+	s.mu.Unlock()
+	close(old)
+}
+
+// retryHeap orders the users backing off by retry time, then by when they
+// failed.
+type retryHeap []*schedUser
+
+func (h retryHeap) Len() int { return len(h) }
+
+func (h retryHeap) Less(i, j int) bool {
+	if !h[i].retryAt.Equal(h[j].retryAt) {
+		return h[i].retryAt.Before(h[j].retryAt)
+	}
+	return h[i].seq < h[j].seq
+}
+
+func (h retryHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
+
+func (h *retryHeap) Push(x any) { *h = append(*h, x.(*schedUser)) }
+
+func (h *retryHeap) Pop() any {
+	old := *h
+	u := old[len(old)-1]
+	old[len(old)-1] = nil
+	*h = old[:len(old)-1]
+	return u
+}

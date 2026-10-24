@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
 	"github.com/mnemon-dev/mnemon/internal/records"
@@ -41,6 +43,28 @@ const (
 	// embedBatch keeps a DerivedVectors call within its 512 texts and 2 MiB
 	// (a chunk is at most ~602 UTF-16 units, under 2.5 kB).
 	embedBatch = 256
+	// statusEvery is how often Run logs the status line.
+	statusEvery = 10 * time.Minute
+)
+
+// ConsolidationMode says when the server consolidates its users' records.
+type ConsolidationMode string
+
+const (
+	// ConsolidationOff consolidates nothing.
+	ConsolidationOff ConsolidationMode = ""
+	// ConsolidationOnAdd consolidates during requests: in timelines mode
+	// (and layered) an Add folds the full batches before it returns and a
+	// Search first folds the rest (the conversation's tail); otherwise an
+	// Add folds until caught up. Failures are logged, not returned.
+	ConsolidationOnAdd ConsolidationMode = "on-add"
+	// ConsolidationBackground (timelines or layered, without insights)
+	// folds the full batches in supervised workers that Run starts
+	// (scheduler.go): an Add only writes and notifies them, then waits while
+	// its user's backlog is above one job's window, and a Search first folds
+	// the rest, as in on-add mode. A link JEV cannot make for now is
+	// deferred (ConsolidateRequest.DeferLinks), never made without JEV.
+	ConsolidationBackground ConsolidationMode = "background"
 )
 
 // ServerConfig configures a Server.
@@ -51,11 +75,14 @@ type ServerConfig struct {
 	MemoryConfig memoryagent.Config
 	// AuthKey is the API key every Add and Search must carry.
 	AuthKey string
-	// ConsolidateOnAdd consolidates during requests: in timelines mode an
-	// Add folds the full batches before it returns and a Search first folds
-	// the rest (the conversation's tail); otherwise an Add folds until
-	// caught up. Failures are logged, not returned.
+	// Consolidation is when the server consolidates (default off).
+	Consolidation ConsolidationMode
+	// ConsolidateOnAdd is the older name of Consolidation on-add; with
+	// Consolidation unset it selects on-add.
 	ConsolidateOnAdd bool
+	// ConsolidationWorkers is how many users background consolidation folds
+	// at once (default 4).
+	ConsolidationWorkers int
 	// SearchTimeout bounds a Search's memory read (default 10 minutes);
 	// when it expires with the client still connected, the raw ranking
 	// answers.
@@ -81,8 +108,14 @@ type Server struct {
 	// timelines reports consolidation mode "timelines" or "layered": Adds
 	// fold full batches and Searches flush the tail.
 	timelines bool
-	users     *registry
-	log       *log.Logger
+	// mode is when the server consolidates; in background mode sched runs
+	// the jobs, and an Add waits while its user's backlog is above lagBound,
+	// one job's window (memoryagent.Agent.JobWindow).
+	mode     ConsolidationMode
+	sched    *scheduler
+	lagBound int64
+	users    *registry
+	log      *log.Logger
 	// Served requests, and Searches answered by the raw ranking (degraded)
 	// or by a read with a stage that fell back (partial).
 	adds, searches, degraded, partial atomic.Int64
@@ -90,6 +123,13 @@ type Server struct {
 	addWindow, flushWindow, searchTimeout time.Duration
 	handler                               http.Handler
 	once                                  sync.Once
+	// runMu guards Run's lifecycle: stopRun ends the running Run, which
+	// closes runDone once its goroutines have exited; closed refuses Run
+	// after Close.
+	runMu   sync.Mutex
+	stopRun context.CancelFunc
+	runDone chan struct{}
+	closed  bool
 }
 
 // NewServer checks the configuration, builds the shared models and checks
@@ -113,17 +153,24 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if config.SearchTimeout < 0 {
 		return nil, errors.New("the search timeout must be positive")
 	}
+	mode, err := consolidationMode(config)
+	if err != nil {
+		return nil, err
+	}
+	config.Consolidation = mode
+	if config.ConsolidationWorkers == 0 {
+		config.ConsolidationWorkers = defaultConsolidationWorkers
+	}
 	if err := os.MkdirAll(config.DataRoot, 0o700); err != nil {
 		return nil, err
 	}
 	consolidation := config.MemoryConfig.Consolidation
 	s := &Server{config: config, key: sha256.Sum256([]byte(config.AuthKey)), log: config.Logger,
-		timelines: consolidation.Timelines(),
+		timelines: consolidation.Timelines(), mode: mode,
 		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout}
 	if s.log == nil {
 		s.log = log.New(os.Stderr, "aml: ", log.LstdFlags|log.LUTC)
 	}
-	var err error
 	if config.Models != nil {
 		s.models, err = config.Models(config.MemoryConfig)
 	} else {
@@ -132,35 +179,70 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	if s.maxItems, err = s.probe(); err != nil {
+	if s.maxItems, s.lagBound, err = s.probe(); err != nil {
 		s.closeModels()
 		return nil, err
 	}
 	s.users = newRegistry(config.DataRoot, config.MaxOpenStores, s.openUser)
+	if mode == ConsolidationBackground {
+		s.sched = newScheduler(config.ConsolidationWorkers, maxConsolidationUsers, s.consolidateUser, s.log.Printf, time.Now)
+	}
 	s.handler = s.routes()
 	return s, nil
 }
 
+// consolidationMode is the configuration's consolidation mode, checked with
+// its workers; ConsolidateOnAdd alone is on-add.
+func consolidationMode(config ServerConfig) (ConsolidationMode, error) {
+	mode := config.Consolidation
+	if config.ConsolidateOnAdd {
+		if mode != ConsolidationOff && mode != ConsolidationOnAdd {
+			return "", fmt.Errorf("ConsolidateOnAdd conflicts with consolidation %q", mode)
+		}
+		mode = ConsolidationOnAdd
+	}
+	switch mode {
+	case ConsolidationOff, ConsolidationOnAdd:
+	case ConsolidationBackground:
+		consolidation := config.MemoryConfig.Consolidation
+		if !consolidation.Timelines() {
+			return "", errors.New(`background consolidation requires consolidation mode "timelines" or "layered"`)
+		}
+		// L2 reads every unread item in date order, so its batches depend
+		// on how many batches each job folded: a worker's jobs would read
+		// other L2 batches than the Adds' jobs of on-add mode.
+		if consolidation.Insights {
+			return "", errors.New("background consolidation does not support consolidation.insights: its L2 batches would differ from on-add mode's; use on-add")
+		}
+	default:
+		return "", fmt.Errorf("unknown consolidation %q: off (\"\"), on-add or background", mode)
+	}
+	if config.ConsolidationWorkers < 0 {
+		return "", errors.New("consolidation workers must be at least 1")
+	}
+	return mode, nil
+}
+
 // probe makes an agent over an empty scratch store, so a configuration the
 // agents refuse fails at startup rather than on every request, and reads
-// the View's record bound.
-func (s *Server) probe() (int, error) {
+// the View's record bound and a consolidation job's window.
+func (s *Server) probe() (int, int64, error) {
 	dir, err := os.MkdirTemp("", "aml-probe-")
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer os.RemoveAll(dir)
 	store, err := records.Open(dir, false)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer store.Close()
 	agent, err := memoryagent.New(store, s.config.MemoryConfig, s.models, nil)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	defer agent.Close()
-	return agent.MaxItems(), nil
+	return agent.MaxItems(), agent.JobWindow(), nil
 }
 
 // openUser opens a user's store with the query runtime records serve runs
@@ -184,14 +266,114 @@ func (s *Server) openUser(dir string) (*records.Store, *memoryagent.Agent, func(
 	return store, agent, stop, nil
 }
 
-// Close closes the user stores (held ones when their request ends) and the
-// models' budget and model cache. Stop the HTTP server first.
+// Close stops a running Run and waits for it, then closes the user stores
+// (held ones when their request ends) and the models' budget and model
+// cache. Stop the HTTP server first.
 func (s *Server) Close() error {
 	s.once.Do(func() {
+		s.runMu.Lock()
+		s.closed = true
+		stop, done := s.stopRun, s.runDone
+		s.runMu.Unlock()
+		if stop != nil {
+			stop()
+			<-done
+		}
 		s.users.close()
 		s.closeModels()
 	})
 	return nil
+}
+
+// Run runs the server's background work until ctx ends or Close is called:
+// in background mode the consolidation scheduler, which first queues every
+// user directory under <data-root>/users/ (a user with nothing pending costs
+// one state read), and the status line every 10 minutes. It returns once
+// all of it has exited, nil unless Run is already running or the server is
+// closed. No background work runs without Run.
+func (s *Server) Run(ctx context.Context) error {
+	s.runMu.Lock()
+	switch {
+	case s.closed:
+		s.runMu.Unlock()
+		return errClosing
+	case s.runDone != nil:
+		s.runMu.Unlock()
+		return errors.New("the AML server is already running")
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	s.stopRun, s.runDone = cancel, done
+	s.runMu.Unlock()
+	defer func() {
+		cancel()
+		s.runMu.Lock()
+		s.stopRun, s.runDone = nil, nil
+		s.runMu.Unlock()
+		close(done)
+	}()
+	var work sync.WaitGroup
+	if s.sched != nil {
+		s.queueUsers()
+		work.Add(1)
+		go func() {
+			defer work.Done()
+			s.sched.Run(ctx)
+		}()
+	}
+	s.LogStatus(ctx, statusEvery)
+	work.Wait()
+	return nil
+}
+
+// queueUsers queues every user store under the data root for a job.
+func (s *Server) queueUsers() {
+	entries, err := os.ReadDir(filepath.Join(s.config.DataRoot, "users"))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		s.log.Printf("consolidation could not list the users: %v", err)
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && isUserKey(entry.Name()) {
+			s.sched.Notify(entry.Name(), 0)
+		}
+	}
+}
+
+// consolidateUser is a background job of the user with key: through the
+// registry (so eviction cannot close the store under it), consolidate's held
+// jobs with DeferLinks until a job folds no full batch, or until the user's
+// Search holds it, then the layer warmed when anything folded. It returns
+// the user's backlog measured after them (negative when unknown) and the
+// failure of a job. A job that stopped with full batches left notifies the
+// scheduler, which runs the user again.
+func (s *Server) consolidateUser(ctx context.Context, key string) (int64, error) {
+	user, err := s.users.acquireKey(ctx, key, false)
+	if err != nil {
+		s.log.Printf("consolidation failed (user %s): %v", short(key), err)
+		return -1, err
+	}
+	if user == nil {
+		return 0, nil
+	}
+	defer s.users.release(user)
+	outcome := s.consolidate(ctx, user, true, "consolidation", func() bool { return s.sched.held(key) })
+	if outcome.folded > 0 {
+		if err := user.agent.WarmLayer(ctx, records.Scope{}); err != nil {
+			s.log.Printf("layer embedding failed (user %s): %v", short(key), err)
+		}
+	}
+	if outcome.unfinished && outcome.err == nil {
+		s.sched.Notify(key, 0)
+	}
+	backlog, err := user.agent.Backlog(ctx, records.Scope{})
+	if err != nil {
+		if outcome.err == nil {
+			s.log.Printf("consolidation backlog unreadable (user %s): %v", short(key), err)
+			return -1, err
+		}
+		return -1, outcome.err
+	}
+	return backlog.Characters, outcome.err
 }
 
 // closeModels closes the files the models share, after their last call.
@@ -339,10 +521,12 @@ func (s *Server) recovered(operation string, next http.HandlerFunc) http.Handler
 
 // add stores one chunk of a conversation and returns once it is persisted and
 // searchable: written (in parts when it is longer than a document holds),
-// its new chunks embedded when the configuration embeds, and, with
-// ConsolidateOnAdd, consolidated (consolidateAdd). A retry of a stored
-// request succeeds and finishes what the earlier attempt may not have. Only
-// a missing request_id, user_id or session_id, or a request_id reused for
+// its new chunks embedded when the configuration embeds, and, in on-add
+// mode, consolidated (consolidateAdd). In background mode it then hands the
+// user to the scheduler and waits while the user's backlog is above the lag
+// bound (awaitConsolidation); it calls no model. A retry of a stored request
+// succeeds and finishes what the earlier attempt may not have. Only a
+// missing request_id, user_id or session_id, or a request_id reused for
 // other text, is a 400.
 func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	deadline := time.Now().Add(s.addWindow)
@@ -374,7 +558,27 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, "open store", "", err)
 		return
 	}
-	defer s.users.release(user)
+	release := sync.OnceFunc(func() { s.users.release(user) })
+	defer release()
+	written, ok := s.writeParts(ctx, w, user, parts, deadline)
+	if !ok {
+		return
+	}
+	if s.sched != nil {
+		// Stored: the wait needs the scheduler, not the store.
+		release()
+		s.sched.Notify(user.key, written)
+		s.awaitConsolidation(ctx, user.key, deadline)
+	}
+	s.adds.Add(1)
+	writeJSON(w, http.StatusOK, done)
+}
+
+// writeParts writes an Add's parts under the user's write lock and embeds
+// their chunks; in on-add mode it then consolidates under the lock. It
+// returns the characters of the chunks written, about what consolidation
+// will read of them, and false when it answered with an error.
+func (s *Server) writeParts(ctx context.Context, w http.ResponseWriter, user *userEntry, parts []addPart, deadline time.Time) (int64, bool) {
 	user.waiting.Add(1)
 	user.writes.Lock()
 	user.waiting.Add(-1)
@@ -384,11 +588,11 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		err := s.write(ctx, user, part)
 		if errors.Is(err, errRequestReused) {
 			writeError(w, http.StatusBadRequest, err.Error())
-			return
+			return 0, false
 		}
 		if err != nil {
 			s.fail(w, "write", user.key, err)
-			return
+			return 0, false
 		}
 		chunks = append(chunks, part.chunks...)
 	}
@@ -396,14 +600,29 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		if err := embedChunks(ctx, user.store, *embedding, chunks); err != nil {
 			s.log.Printf("embedding failed (user %s): %v", user.key[:8], err)
 			writeError(w, http.StatusServiceUnavailable, "embedding is unavailable; retry the same request")
-			return
+			return 0, false
 		}
 	}
-	if s.config.ConsolidateOnAdd {
+	if s.mode == ConsolidationOnAdd {
 		s.consolidateAdd(ctx, user, deadline)
 	}
-	s.adds.Add(1)
-	writeJSON(w, http.StatusOK, done)
+	written := int64(0)
+	for _, chunk := range chunks {
+		written += int64(utf8.RuneCountInString(chunk))
+	}
+	return written, true
+}
+
+// awaitConsolidation waits until the user's backlog is within the lag bound,
+// one job's window, or the Add's window ends at deadline. An Add that
+// outran consolidation still answers: its records are stored and
+// searchable.
+func (s *Server) awaitConsolidation(ctx context.Context, key string, deadline time.Time) {
+	ctx, cancel := context.WithDeadline(ctx, deadline)
+	defer cancel()
+	if err := s.sched.WaitBacklog(ctx, key, s.lagBound); errors.Is(err, context.DeadlineExceeded) {
+		s.log.Printf("add outran consolidation (user %s)", short(key))
+	}
 }
 
 var errRequestReused = errors.New("request_id was already used for a different payload")
@@ -488,21 +707,36 @@ func (s *Server) consolidateAdd(ctx context.Context, user *userEntry, deadline t
 	}
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
-	s.consolidate(ctx, user, s.timelines, "consolidation")
+	s.consolidate(ctx, user, s.timelines, "consolidation", nil)
 	if err := user.agent.WarmLayer(ctx, records.Scope{}); err != nil {
 		s.log.Printf("layer embedding failed (user %s): %v", user.key[:8], err)
 	}
 }
 
+// flushHeld is flush while the Search holds its user in the scheduler
+// (background mode): no job of the user starts meanwhile, and one already
+// running ends first (the jobs' timelines lock).
+func (s *Server) flushHeld(ctx context.Context, user *userEntry) {
+	if s.sched != nil {
+		defer s.sched.Hold(user.key)()
+	}
+	s.flush(ctx, user)
+}
+
 // flush folds what the user's Adds left pending, the tail of the
-// conversation, before a Search reads, for at most flushWindow; then it
-// stores the layer's embeddings when it folded anything. A failed or
-// unfinished flush is logged, and the Search reads what is consolidated.
+// conversation, before a Search reads, for at most flushWindow, its model
+// calls of the Flush class; then it stores the layer's embeddings when it
+// folded anything. A failed or unfinished flush is logged, and the Search
+// reads what is consolidated; in background mode a job takes up the rest.
 // With nothing pending it only loads the state.
 func (s *Server) flush(ctx context.Context, user *userEntry) {
-	ctx, cancel := context.WithTimeout(ctx, s.flushWindow)
+	ctx, cancel := context.WithTimeout(memoryagent.WithCallClass(ctx, memoryagent.Flush), s.flushWindow)
 	defer cancel()
-	if s.consolidate(ctx, user, false, "flush") == 0 {
+	outcome := s.consolidate(ctx, user, false, "flush", nil)
+	if outcome.unfinished && s.sched != nil {
+		s.sched.Notify(user.key, 0)
+	}
+	if outcome.folded == 0 {
 		return
 	}
 	if err := user.agent.WarmLayer(ctx, records.Scope{}); err != nil {
@@ -510,23 +744,37 @@ func (s *Server) flush(ctx context.Context, user *userEntry) {
 	}
 }
 
+// foldOutcome is what consolidate's jobs did: the batches they folded, the
+// error the last one failed with, and whether they stopped with work left
+// (after an error, maxConsolidateCalls jobs, or stop).
+type foldOutcome struct {
+	folded     int
+	err        error
+	unfinished bool
+}
+
 // consolidate runs the user's consolidation jobs: with hold, until a job
 // folds no full batch; without, until nothing remains (a job reads full
 // batches; one that finds nothing new folds the rest). It stops at the first
-// error, logged under label, or after maxConsolidateCalls jobs; it logs each
-// drop of records, and returns the batches folded. The jobs defer the
-// records' native edges (nativeEdges); when one leaves them pending, they
-// are rebuilt once after the jobs.
-func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, label string) int {
-	folded, pending := 0, false
+// error, logged under label, after maxConsolidateCalls jobs, or when stop
+// (nil for never) says so before a job; it logs each drop of records. In
+// background mode the jobs defer the links JEV cannot make for now
+// (DeferLinks). The jobs defer the records' native edges (nativeEdges);
+// when one leaves them pending, they are rebuilt once after the jobs.
+func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, label string, stop func() bool) (outcome foldOutcome) {
+	pending := false
 	defer func() {
 		if pending {
 			s.rebuildEdges(ctx, user, label)
 		}
 	}()
 	for call := 1; call <= maxConsolidateCalls; call++ {
-		result, err := s.consolidateOnce(ctx, user, memoryagent.ConsolidateRequest{Hold: hold, DeferEdges: true})
-		folded += result.Folded
+		if stop != nil && stop() {
+			outcome.unfinished = true
+			break
+		}
+		result, err := s.consolidateOnce(ctx, user, memoryagent.ConsolidateRequest{Hold: hold, DeferEdges: true, DeferLinks: s.mode == ConsolidationBackground})
+		outcome.folded += result.Folded
 		pending = pending || result.EdgesPending
 		for _, drop := range result.Drops {
 			s.log.Printf("consolidation dropped %d records (user %s): %s", drop.Records, user.key[:8], drop.Reason)
@@ -536,6 +784,7 @@ func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, la
 		}
 		if err != nil {
 			s.log.Printf("%s failed (user %s): %v", label, user.key[:8], err)
+			outcome.err, outcome.unfinished = err, true
 			break
 		}
 		if hold && result.Folded == 0 || !hold && result.Remaining == 0 {
@@ -543,9 +792,10 @@ func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, la
 		}
 		if call == maxConsolidateCalls {
 			s.log.Printf("%s stopped with %d records pending (user %s)", label, result.Remaining, user.key[:8])
+			outcome.unfinished = true
 		}
 	}
-	return folded
+	return outcome
 }
 
 // rebuildEdges rebuilds the records' native edges that consolidate's jobs
@@ -583,8 +833,8 @@ func (s *Server) consolidateOnce(ctx context.Context, user *userEntry, req memor
 }
 
 // search reads the user's memory for the question, within SearchTimeout,
-// after flushing the user's consolidation (timelines with
-// ConsolidateOnAdd). When the read fails for any reason but the client
+// after flushing the user's consolidation (timelines or layered, on-add or
+// in the background). When the read fails for any reason but the client
 // leaving (a model, a budget, the embedder, the timeout, a panic), the raw
 // search ranking answers instead, and the degradation is counted; a read in
 // which a stage fell back is logged and counted as partially degraded. A
@@ -615,8 +865,8 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.users.release(user)
-	if s.config.ConsolidateOnAdd && s.timelines {
-		s.flush(ctx, user)
+	if s.mode != ConsolidationOff && s.timelines {
+		s.flushHeld(ctx, user)
 	}
 	// The platform asks a fixed top_k; a View bound below it gives fewer
 	// records rather than an error.
