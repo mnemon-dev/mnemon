@@ -3,15 +3,18 @@
 package deploy_test
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -20,9 +23,10 @@ import (
 )
 
 // The AML verification scripts (scripts/aml): a drill or a load test that
-// fails midway leaves no process behind; the drill's criteria and the
-// checks of its scenario table; the knee rule of load.sh; the dirty flag of
-// the scripts' provenance; and what the scripts refuse before they start
+// fails midway leaves no process behind; an abort of a script is never an
+// exit 0; the drill's criteria, the Poisson bounds of its random faults and
+// the checks of its scenario table; the knee rule of load.sh; the dirty flag
+// of the scripts' provenance; and what the scripts refuse before they start
 // anything.
 
 // scriptsRepo is the repository root, and skips the test without the tools
@@ -275,6 +279,213 @@ func TestScriptsRefuseAnOptionWithoutItsValue(t *testing.T) {
 	}
 }
 
+// shellsUnderTest are the bashes the abort tests run under: /bin/bash (3.2 on
+// macOS, which loses an abort's status in an EXIT trap) and the bash on PATH
+// when that is another one. It logs their versions.
+func shellsUnderTest(t *testing.T) []string {
+	t.Helper()
+	var shells []string
+	system, err := os.Stat("/bin/bash")
+	if err == nil {
+		shells = append(shells, "/bin/bash")
+	}
+	if path, err := exec.LookPath("bash"); err == nil {
+		if found, err := os.Stat(path); err == nil && (system == nil || !os.SameFile(system, found)) {
+			shells = append(shells, path)
+		}
+	}
+	if len(shells) == 0 {
+		t.Skip("bash is missing; the AML scripts need it")
+	}
+	for _, shell := range shells {
+		version, _ := exec.Command(shell, "--version").Output()
+		t.Logf("%s: %s", shell, strings.SplitN(string(version), "\n", 2)[0])
+	}
+	return shells
+}
+
+// TestScriptsExitNonZeroOnAnAbort forces an unbound variable in each script
+// (the test hook AML_TEST_UNBOUND), once before the script's own cleanup is
+// set (early) and once after (late), and checks that the script exits 2,
+// never 0 (ruling R85). Under macOS bash 3.2 an EXIT trap reads the status of
+// such an abort, and of every fatal error of the shell's own, as 0, whatever
+// the trap captures first: a broken drill would read as a pass. The scripts
+// therefore exit 0 only when they say they ended on purpose. A late abort
+// must still run the cleanup: the script's temporary directory is gone.
+func TestScriptsExitNonZeroOnAnAbort(t *testing.T) {
+	repo := scriptsRepo(t, "curl", "od", "pgrep", "sort", "go")
+	for _, shell := range shellsUnderTest(t) {
+		for _, c := range []struct {
+			script string
+			args   func(out string, base int) []string
+		}{
+			{"drill.sh", func(out string, base int) []string {
+				return []string{"--only", "baseline", "--seed-adds", "0", "--out", out, "--port-base", strconv.Itoa(base)}
+			}},
+			{"load.sh", func(out string, _ int) []string { return []string{"--mode", "add", "--rates", "1", "--out", out} }},
+			{"final.sh", func(out string, _ int) []string { return []string{"--out", out} }},
+		} {
+			for _, at := range []string{"early", "late"} {
+				t.Run(strings.ReplaceAll(shell, "/", "_")+"/"+c.script+"/"+at, func(t *testing.T) {
+					tmp := privateDir(t)
+					args := c.args(filepath.Join(t.TempDir(), "out"), freePortBase(t, 6))
+					// A script that did not stop at the hook would run on for minutes: end it.
+					ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+					defer cancel()
+					cmd := exec.CommandContext(ctx, shell, append([]string{filepath.Join(repo, "scripts", "aml", c.script)}, args...)...)
+					cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+					cmd.WaitDelay = 30 * time.Second
+					cmd.Env = append(os.Environ(), "AML_TEST_UNBOUND="+at, "TMPDIR="+tmp)
+					out, err := cmd.CombinedOutput()
+					if code := exitCode(t, err); code != 2 || !strings.Contains(string(out), "unbound variable") {
+						t.Errorf("%s with an unbound variable %s exited %d, want 2 after the abort:\n%s", c.script, at, code, out)
+					}
+					if entries, _ := os.ReadDir(tmp); at == "late" && len(entries) != 0 {
+						t.Errorf("%s aborted %s left %v in its TMPDIR, want its cleanup to have run", c.script, at, entries)
+					}
+				})
+			}
+		}
+	}
+}
+
+// TestExitStatusMapping checks the status a script exits with (lib.sh's
+// aml_exit_status, run in its EXIT trap) for the status the trap saw and
+// whether the script said it ended on purpose (AML_EXIT_OURS): 2 always
+// stands; 0 and 1 only when the script chose them; anything else is a 2.
+func TestExitStatusMapping(t *testing.T) {
+	repo := scriptsRepo(t)
+	lib := filepath.Join(repo, "scripts", "aml", "lib.sh")
+	for _, c := range []struct{ status, ours, want string }{
+		{"0", "", "2"}, // an abort that the shell reads as 0
+		{"0", "1", "0"},
+		{"1", "", "2"},
+		{"1", "1", "1"},
+		{"2", "", "2"},
+		{"2", "1", "2"},
+		{"3", "1", "2"},
+		{"127", "", "2"},
+		{"143", "1", "2"},
+	} {
+		out, err := exec.Command("/bin/bash", "-c", `. "$1"; AML_EXIT_OURS=$3; aml_exit_status "$2" 2>/dev/null`, "_", lib, c.status, c.ours).Output()
+		if got := strings.TrimSpace(string(out)); err != nil || got != c.want {
+			t.Errorf("status %s with AML_EXIT_OURS=%q maps to %q (%v), want %s", c.status, c.ours, got, err, c.want)
+		}
+	}
+}
+
+// TestFinalSummaryExitsZero checks that a script which ends on purpose still
+// exits 0: final.sh --summary of a made-up run. (The drill's and the load
+// test's own ends are checked by reading them, below.)
+func TestFinalSummaryExitsZero(t *testing.T) {
+	repo := scriptsRepo(t)
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "drill", "report.json"), `{"pass":true,"matrix":[]}`, 0o600)
+	writeFile(t, filepath.Join(dir, "drill", "matrix.md"), "| scenario |\n|---|\n", 0o600)
+	for _, shell := range shellsUnderTest(t) {
+		out, err := exec.Command(shell, filepath.Join(repo, "scripts", "aml", "final.sh"), "--summary", dir,
+			"--compare", filepath.Join(dir, "none.json")).CombinedOutput()
+		if code := exitCode(t, err); code != 0 || !strings.Contains(string(out), "# Final run of") || !strings.Contains(string(out), "No earlier run") {
+			t.Errorf("%s final.sh --summary exited %d, want 0 and the summary:\n%s", shell, code, out)
+		}
+	}
+}
+
+// TestFinalRunExitStatus runs final.sh's whole flow on a repository of its
+// own, whose drill.sh and load.sh are stubs that exit as asked: the exit status
+// of the run is the drill's (0 or 1) when both steps ran, and 2 when a step
+// could not run (a drill that exits 2 or more, a load test that fails). The
+// real final.sh and lib.sh are copied into it; it extracts that repository's
+// HEAD, builds a trivial program and runs the stubs from the extraction.
+func TestFinalRunExitStatus(t *testing.T) {
+	repo := scriptsRepo(t, "git", "tar", "go")
+	tree, env, git := ownGitTree(t)
+	for _, name := range []string{"final.sh", "lib.sh"} {
+		source, err := os.ReadFile(filepath.Join(repo, "scripts", "aml", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(tree, "scripts", "aml", name), string(source), 0o755)
+	}
+	writeFile(t, filepath.Join(tree, "scripts", "aml", "drill.sh"), `#!/bin/bash
+# A drill that writes a report and exits as STUB_DRILL says.
+while [ $# -gt 0 ]; do
+	case $1 in --out) out=$2 ;; esac
+	shift
+done
+mkdir -p "$out"
+echo '{"pass":true,"matrix":[]}' >"$out/report.json"
+printf '| scenario |\n|---|\n' >"$out/matrix.md"
+exit "${STUB_DRILL:-0}"
+`, 0o755)
+	writeFile(t, filepath.Join(tree, "scripts", "aml", "load.sh"), "#!/bin/bash\nexit \"${STUB_LOAD:-0}\"\n", 0o755)
+	writeFile(t, filepath.Join(tree, "go.mod"), "module example.invalid/final\n\ngo 1.21\n", 0o644)
+	writeFile(t, filepath.Join(tree, "main.go"), "package main\n\nfunc main() {}\n", 0o644)
+	git("add", "go.mod", "main.go", "scripts/aml/final.sh", "scripts/aml/lib.sh", "scripts/aml/drill.sh", "scripts/aml/load.sh")
+	git("-c", "user.name=test", "-c", "user.email=test@example.invalid", "commit", "-q", "-m", "a tree with stub steps")
+	for _, c := range []struct {
+		name         string
+		drill, load  string
+		want         int
+		wantInOutput string
+	}{
+		{"both steps ran and the drill passed", "0", "0", 0, "final run:"},
+		{"both steps ran and a hard criterion failed", "1", "0", 1, "final run:"},
+		{"the drill could not run", "2", "0", 2, "the drill could not run"},
+		{"the drill was stopped by a command that failed", "7", "0", 2, "the drill could not run"},
+		{"the load test could not run", "0", "3", 2, "load test could not run"},
+	} {
+		out := filepath.Join(t.TempDir(), "out")
+		cmd := exec.Command("/bin/bash", filepath.Join(tree, "scripts", "aml", "final.sh"), "--out", out)
+		cmd.Env = append(append([]string{}, env...), "STUB_DRILL="+c.drill, "STUB_LOAD="+c.load, "TMPDIR="+privateDir(t))
+		got, err := cmd.CombinedOutput()
+		if code := exitCode(t, err); code != c.want || !strings.Contains(string(got), c.wantInOutput) {
+			t.Errorf("%s: final.sh exited %d, want %d with %q in:\n%s", c.name, code, c.want, c.wantInOutput, got)
+		}
+		if c.want <= 1 {
+			if summary, err := os.ReadFile(filepath.Join(out, "summary.md")); err != nil || !strings.Contains(string(summary), "# Final run of") {
+				t.Errorf("%s: no summary.md (%v)", c.name, err)
+			}
+		}
+	}
+}
+
+// TestScriptsEndOnPurposeOnly reads the scripts: none ends with a plain exit 0
+// or 1, which lib.sh's exit rule would turn into a 2, and each one's last
+// statement is an aml_exit. The drill's and the load test's own ends are too
+// long to run in a test (the real runs, and the final run, show them).
+func TestScriptsEndOnPurposeOnly(t *testing.T) {
+	repo := scriptsRepo(t)
+	plainExit := regexp.MustCompile(`^\s*exit\s+(0|1|"\$[a-z_]+")\b`)
+	for name, calls := range map[string][]string{
+		"drill.sh": {"aml_exit 0", "aml_exit 1"},
+		"load.sh":  {"aml_exit 0", "aml_exit 1"},
+		"final.sh": {"aml_exit 0", `aml_exit "$status"`},
+	} {
+		source, err := os.ReadFile(filepath.Join(repo, "scripts", "aml", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		last := ""
+		for number, line := range strings.Split(string(source), "\n") {
+			if plainExit.MatchString(line) {
+				t.Errorf("%s:%d ends with a plain exit, want aml_exit: %s", name, number+1, line)
+			}
+			if trimmed := strings.TrimSpace(line); trimmed != "" && !strings.HasPrefix(trimmed, "#") {
+				last = trimmed
+			}
+		}
+		if !strings.HasPrefix(last, "aml_exit ") {
+			t.Errorf("%s ends with %q, want an aml_exit", name, last)
+		}
+		for _, call := range calls {
+			if !strings.Contains(string(source), call) {
+				t.Errorf("%s never calls %q", name, call)
+			}
+		}
+	}
+}
+
 // TestDrillChecksItsTable checks that the drill refuses, with status 2 and
 // before it starts anything, a scenario table holding a value it could not
 // judge: a typo would otherwise drop a criterion without a word. Each case is
@@ -354,6 +565,19 @@ func TestDrillChecksItsTable(t *testing.T) {
 	}
 }
 
+// jqOutput runs jq with the arguments and returns its output. A jq program
+// that does not end fails the test after 30 s instead of hanging it.
+func jqOutput(t *testing.T, args ...string) ([]byte, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "jq", args...).CombinedOutput()
+	if ctx.Err() != nil {
+		t.Fatalf("jq %v did not end within 30 s", args)
+	}
+	return out, err
+}
+
 // drillRun is one made-up run of a drill scenario, in the arguments drill.sh
 // gives scripts/aml/scenario.jq: a hard row whose fault, from t 1000 to 1030,
 // took effect (3 JEV retries); 14 Searches started every 4 s from t 990 and
@@ -421,7 +645,8 @@ func (r *drillRun) summary(t *testing.T, repo string) map[string]any {
 		}
 		args = append(args, "--argjson", name, string(raw))
 	}
-	out, err := exec.Command("jq", append(args, "-f", filepath.Join(repo, "scripts", "aml", "scenario.jq"))...).CombinedOutput()
+	lib := filepath.Join(repo, "scripts", "aml")
+	out, err := jqOutput(t, append(args, "-L", lib, "-f", filepath.Join(lib, "scenario.jq"))...)
 	if err != nil {
 		t.Fatalf("scenario.jq: %v\n%s", err, out)
 	}
@@ -434,13 +659,16 @@ func (r *drillRun) summary(t *testing.T, repo string) map[string]any {
 
 // TestDrillScenarioCriteria runs the drill's criteria (scripts/aml/scenario.jq)
 // on made-up runs:
-//   - ruling R82's bounds on degraded and on partial Searches: for a fault
-//     random per attempt at rate p, which the policy gives a attempts, at most
-//     max(1, ⌈N × min(1, 2·10·p^a)⌉) of the N Searches; for a fault over a
-//     window, at most the Searches that started in it or within the given
-//     seconds after it; or a number, 0 or >0, as before;
+//   - ruling R84's bounds on degraded and on partial Searches: for a fault
+//     random per attempt at rate p, which the policy gives a attempts, with
+//     q = 1 − (1 − p^a)^10 and λ = N × q for the N Searches answered, the
+//     smallest k with P(X > k) < 1% for X Poisson with mean λ, at least 1 and
+//     at most N (the expected values here are from an 80-digit decimal
+//     computation of the Poisson tail, made apart from the code);
+//   - the bounds of a fault over a window: at most the Searches that started
+//     in it or within the given seconds after it; and a number, 0 or >0;
 //   - the breaker's cycle, whose close must come within the 180 s after the
-//     fault, and steady, which needs samples to show it.
+//     fault's end, and steady, which needs samples to show it.
 func TestDrillScenarioCriteria(t *testing.T) {
 	repo := scriptsRepo(t)
 	bounds := func(degraded, partial string) func(*drillRun) {
@@ -459,40 +687,49 @@ func TestDrillScenarioCriteria(t *testing.T) {
 		edits  []func(*drillRun)
 		want   map[string]string  // criterion: "pass", "fail", or "" for not judged
 		atMost map[string]float64 // bounds.<column>.atMost
+		lambda float64            // bounds.<column>.lambda, for a bound of the form P^A
 	}{
-		{"a random fault: 0.3^4 of 14 Searches allows 3", []func(*drillRun){bounds("0.3^4", "0.3^4"), answered(14, 3, 3)},
-			map[string]string{"degraded": "pass", "partial": "pass"}, map[string]float64{"degraded": 3, "partial": 3}},
-		{"a random fault: 0.3^4 of 14 Searches fails 4", []func(*drillRun){bounds("0.3^4", "0.3^4"), answered(14, 4, 0)},
-			map[string]string{"degraded": "fail", "partial": "pass"}, map[string]float64{"degraded": 3}},
-		{"a random fault: 0.05^2 of 20 Searches allows 1, not 2", []func(*drillRun){bounds("0.05^2", "0.05^2"), answered(20, 2, 1)},
-			map[string]string{"degraded": "fail", "partial": "pass"}, map[string]float64{"degraded": 1, "partial": 1}},
+		{"a random fault: 0.3^4 of 14 Searches (λ 1.0935) allows 4", []func(*drillRun){bounds("0.3^4", "0.3^4"), answered(14, 4, 4)},
+			map[string]string{"degraded": "pass", "partial": "pass"}, map[string]float64{"degraded": 4, "partial": 4}, 1.093546},
+		{"a random fault: 0.3^4 of 14 Searches fails 5", []func(*drillRun){bounds("0.3^4", "0.3^4"), answered(14, 5, 0)},
+			map[string]string{"degraded": "fail", "partial": "pass"}, map[string]float64{"degraded": 4}, 1.093546},
+		{"a random fault: 0.3^4 of 22 Searches (λ 1.7184) allows 5", []func(*drillRun){bounds("0.3^4", "0.3^4"), answered(22, 5, 5)},
+			map[string]string{"degraded": "pass", "partial": "pass"}, map[string]float64{"degraded": 5, "partial": 5}, 1.718429},
+		{"a random fault: 0.05^2 of 20 Searches (λ 0.4944) allows 3, not 4", []func(*drillRun){bounds("0.05^2", "0.05^2"), answered(20, 4, 3)},
+			map[string]string{"degraded": "fail", "partial": "pass"}, map[string]float64{"degraded": 3, "partial": 3}, 0.494412},
+		{"a random fault: 0.2^2 of 18 Searches (λ 6.033) allows 12", []func(*drillRun){bounds("0.2^2", "0.2^2"), answered(18, 12, 12)},
+			map[string]string{"degraded": "pass", "partial": "pass"}, map[string]float64{"degraded": 12, "partial": 12}, 6.033013},
+		{"a random fault: 0.2^2 of 18 Searches fails 13", []func(*drillRun){bounds("0.2^2", "0.2^2"), answered(18, 13, 13)},
+			map[string]string{"degraded": "fail", "partial": "fail"}, map[string]float64{"degraded": 12}, 6.033013},
 		{"a random fault: never less than 1", []func(*drillRun){bounds("0.05^4", "0.05^4"), answered(22, 1, 1)},
-			map[string]string{"degraded": "pass", "partial": "pass"}, map[string]float64{"degraded": 1, "partial": 1}},
-		{"a random fault: at most every Search", []func(*drillRun){bounds("0.5^1", "-"), answered(14, 14, 0)},
-			map[string]string{"degraded": "pass", "partial": ""}, map[string]float64{"degraded": 14}},
+			map[string]string{"degraded": "pass", "partial": "pass"}, map[string]float64{"degraded": 1, "partial": 1}, 0.001375},
+		{"a random fault: 1 is the most when the quantile is 0", []func(*drillRun){bounds("0.05^4", "0.05^4"), answered(22, 2, 0)},
+			map[string]string{"degraded": "fail", "partial": "pass"}, map[string]float64{"degraded": 1}, 0.001375},
+		{"a random fault: never more than the Searches answered", []func(*drillRun){bounds("0.5^1", "-"), answered(14, 14, 0)},
+			map[string]string{"degraded": "pass", "partial": ""}, map[string]float64{"degraded": 14}, 13.986328},
 		{"a window: the Searches started in it and 45 s after", []func(*drillRun){bounds("window+45", "window+45"),
 			func(r *drillRun) { r.values["searchStarts"] = append(r.values["searchStarts"].([]int), 1076, 1080) }, answered(16, 11, 0)},
-			map[string]string{"degraded": "pass", "partial": "pass"}, map[string]float64{"degraded": 11, "partial": 11}},
+			map[string]string{"degraded": "pass", "partial": "pass"}, map[string]float64{"degraded": 11, "partial": 11}, 0},
 		{"a window: one more fails", []func(*drillRun){bounds("window+45", "window+45"), answered(14, 12, 12)},
-			map[string]string{"degraded": "fail", "partial": "fail"}, map[string]float64{"degraded": 11}},
+			map[string]string{"degraded": "fail", "partial": "fail"}, map[string]float64{"degraded": 11}, 0},
 		{"a number", []func(*drillRun){bounds("2", "2"), answered(14, 2, 3)},
-			map[string]string{"degraded": "pass", "partial": "fail"}, map[string]float64{"degraded": 2, "partial": 2}},
+			map[string]string{"degraded": "pass", "partial": "fail"}, map[string]float64{"degraded": 2, "partial": 2}, 0},
 		{"none may", []func(*drillRun){bounds("0", "0"), answered(14, 0, 1)},
-			map[string]string{"degraded": "pass", "partial": "fail"}, map[string]float64{"degraded": 0}},
+			map[string]string{"degraded": "pass", "partial": "fail"}, map[string]float64{"degraded": 0}, 0},
 		{"some must", []func(*drillRun){bounds(">0", "-"), answered(14, 0, 0)},
-			map[string]string{"degraded": "fail", "partial": ""}, nil},
+			map[string]string{"degraded": "fail", "partial": ""}, nil, 0},
 		{"a cycle that closes within 180 s", []func(*drillRun){breaker("cycle",
 			breakerSamples(995, "closed", 1010, "open", 1030, "half-open", 1040, "open", 1100, "closed", 1110, "closed"))},
-			map[string]string{"breaker": "pass"}, nil},
-		{"a cycle that closes 250 s after the fault", []func(*drillRun){breaker("cycle",
+			map[string]string{"breaker": "pass"}, nil, 0},
+		{"a cycle that closes 250 s after the fault's end", []func(*drillRun){breaker("cycle",
 			breakerSamples(995, "closed", 1010, "open", 1040, "open", 1200, "half-open", 1280, "closed"))},
-			map[string]string{"breaker": "fail"}, nil},
+			map[string]string{"breaker": "fail"}, nil, 0},
 		{"a cycle that never closes", []func(*drillRun){breaker("cycle", breakerSamples(995, "closed", 1010, "open", 1100, "half-open", 1200, "open"))},
-			map[string]string{"breaker": "fail"}, nil},
+			map[string]string{"breaker": "fail"}, nil, 0},
 		{"steady", []func(*drillRun){breaker("steady", breakerSamples(990, "closed", 1030, "closed"))},
-			map[string]string{"breaker": "pass"}, nil},
+			map[string]string{"breaker": "pass"}, nil, 0},
 		{"steady without a sample", []func(*drillRun){breaker("steady", []map[string]any{})},
-			map[string]string{"breaker": "fail"}, nil},
+			map[string]string{"breaker": "fail"}, nil, 0},
 	} {
 		r := newDrillRun()
 		for _, edit := range c.edits {
@@ -511,6 +748,165 @@ func TestDrillScenarioCriteria(t *testing.T) {
 			if got, ok := bound["atMost"].(float64); !ok || got != want {
 				t.Errorf("%s: the %s bound is %v, want at most %v", c.name, column, bound, want)
 			}
+			if got, _ := bound["lambda"].(float64); c.lambda != 0 && math.Abs(got-c.lambda) > 1e-6 {
+				t.Errorf("%s: the %s bound's λ is %v, want %v", c.name, column, bound["lambda"], c.lambda)
+			}
+		}
+	}
+}
+
+// poissonQuantileOracle is the smallest k with P(X > k) < tail for X Poisson
+// with the mean, from the terms exp(−mean + i·ln mean − ln i!) (math.Lgamma)
+// summed from 0: not the recurrence in log space that the jq module uses.
+func poissonQuantileOracle(mean, tail float64) int {
+	if mean <= 0 {
+		return 0
+	}
+	cdf := 0.0
+	for k := 0; ; k++ {
+		logFactorial, _ := math.Lgamma(float64(k) + 1)
+		cdf += math.Exp(-mean + float64(k)*math.Log(mean) - logFactorial)
+		if 1-cdf < tail {
+			return k
+		}
+	}
+}
+
+// TestPoissonQuantile checks scripts/aml/poisson.jq's poissonQuantile(mean;
+// tail), the smallest k with P(X > k) < tail for X Poisson with that mean:
+//   - against values from an 80-digit decimal computation of the tail, made
+//     apart from the code (for mean 0.5: P(X > 2) = 1.44% and P(X > 3) = 0.18%,
+//     so k = 3), among them the edges where the tail passes 1% (0.01 and
+//     0.0101) and a mean whose e^-mean is 0 in a double;
+//   - against the oracle above over a sweep of means and tails;
+//   - a mean or a tail it cannot use, and a tail too small for a double to
+//     reach, are errors, never an endless loop.
+func TestPoissonQuantile(t *testing.T) {
+	repo := scriptsRepo(t)
+	jq := func(program string) string {
+		t.Helper()
+		out, err := jqOutput(t, "-n", "-c", "-L", filepath.Join(repo, "scripts", "aml"), `include "poisson"; `+program)
+		if err != nil {
+			t.Fatalf("jq %s: %v\n%s", program, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	known := []struct {
+		mean, tail float64
+		k          int
+	}{
+		{0, 0.01, 0}, {0.0001, 0.01, 0}, {0.01, 0.01, 0}, {0.0101, 0.01, 1}, {0.1, 0.01, 1}, {0.445, 0.01, 3}, {0.5, 0.01, 3}, {1, 0.01, 4},
+		{2, 0.01, 6}, {5, 0.01, 11}, {10, 0.01, 18}, {22, 0.01, 34}, {100, 0.01, 124}, {1000, 0.01, 1074},
+		{0.5, 0.05, 2}, {0.5, 0.1, 1}, {0.5, 0.001, 4}, {10, 0.05, 15}, {10, 0.001, 21},
+	}
+	var means, wants []string
+	for _, c := range known {
+		means = append(means, fmt.Sprintf("[%v,%v]", c.mean, c.tail))
+		wants = append(wants, strconv.Itoa(c.k))
+	}
+	if got, want := jq("["+strings.Join(means, ",")+"] | map(poissonQuantile(.[0]; .[1]))"), "["+strings.Join(wants, ",")+"]"; got != want {
+		t.Errorf("poissonQuantile over the known values is\n%s\nwant\n%s", got, want)
+	}
+
+	var sweep, want []string
+	for mean := 0.001; mean < 300; mean *= 1.37 {
+		for _, tail := range []float64{0.05, 0.01, 0.001} {
+			sweep = append(sweep, fmt.Sprintf("[%v,%v]", mean, tail))
+			want = append(want, strconv.Itoa(poissonQuantileOracle(mean, tail)))
+		}
+	}
+	if got, want := jq("["+strings.Join(sweep, ",")+"] | map(poissonQuantile(.[0]; .[1]))"), "["+strings.Join(want, ",")+"]"; got != want {
+		t.Errorf("poissonQuantile over the sweep is\n%s\nwant the oracle's\n%s", got, want)
+	}
+
+	if got, want := jq(`[try poissonQuantile(nan; 0.01) catch "error", try poissonQuantile(infinite; 0.01) catch "error",
+		try poissonQuantile(1; 0) catch "error", try poissonQuantile(1; 1) catch "error", try poissonQuantile(1; 1e-300) catch "error"]`),
+		`["error","error","error","error","error"]`; got != want {
+		t.Errorf("poissonQuantile of a mean or a tail it cannot use is %s, want an error for each", got)
+	}
+}
+
+// TestDrillTableDerivesItsBounds checks the bounds that the built-in scenario
+// table derives for its random faults (ruling R84), against an oracle of this
+// test's own. For every row whose degraded or partial column is P^A: the N
+// Searches a run answers at 0.25 a second are (10 s before the fault + the
+// window + 15 s after) / 4, rounded up; q = 1 − (1 − P^A)^10, λ = N × q and k
+// is the Poisson 99% quantile; then
+//   - scripts/aml/scenario.jq gives, for N answered Searches, that λ and the
+//     bound max(1, min(N, k)); and
+//   - the table's comments state it, as "P^A at N n: q …, λ …, k …, at most
+//     …", so that what a reader of the table sees is what the drill judges.
+func TestDrillTableDerivesItsBounds(t *testing.T) {
+	repo := scriptsRepo(t)
+	source, err := os.ReadFile(filepath.Join(repo, "scripts", "aml", "drill.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	const open = "\tcat <<EOF\n"
+	start := strings.Index(text, open)
+	if start < 0 {
+		t.Fatal("drill.sh holds no built-in table (cat <<EOF)")
+	}
+	table := text[start+len(open):]
+	table = table[:strings.Index(table, "\nEOF\n")]
+	comments := map[string]bool{}
+	derivation := regexp.MustCompile(`^#\s+(\S+\^\d+ at N \d+: q \S+, λ \S+, k \d+, at most \d+)$`)
+	form := regexp.MustCompile(`^([0-9.]+)\^([0-9]+)$`)
+	type derived struct {
+		form     string
+		searches int
+	}
+	rows := map[derived][]string{} // the derivation: the rows that have it
+	for _, line := range strings.Split(table, "\n") {
+		if m := derivation.FindStringSubmatch(line); m != nil {
+			comments[m[1]] = true
+		}
+		columns := strings.Split(line, "|")
+		if strings.HasPrefix(line, "#") || len(columns) != 13 {
+			continue
+		}
+		window, err := strconv.Atoi(columns[2])
+		if err != nil {
+			t.Fatalf("row %s: window %q", columns[0], columns[2])
+		}
+		searches := (10 + window + 15 + 3) / 4 // rounded up
+		for _, bound := range columns[7:9] {
+			key := derived{bound, searches}
+			if names := rows[key]; form.MatchString(bound) && (len(names) == 0 || names[len(names)-1] != columns[0]) {
+				rows[key] = append(names, columns[0])
+			}
+		}
+	}
+	if len(rows) < 7 {
+		t.Fatalf("the table has %d distinct random-fault derivations, want at least 7 (the rows with a P^A bound): %v", len(rows), rows)
+	}
+	for key, names := range rows {
+		parts := form.FindStringSubmatch(key.form)
+		p, _ := strconv.ParseFloat(parts[1], 64)
+		attempts, _ := strconv.Atoi(parts[2])
+		share := 1 - math.Pow(1-math.Pow(p, float64(attempts)), 10)
+		lambda := float64(key.searches) * share
+		quantile := poissonQuantileOracle(lambda, 0.01)
+		atMost := max(1, min(key.searches, quantile))
+
+		run := newDrillRun()
+		run.text["wantDegraded"], run.text["wantPartial"] = key.form, key.form
+		run.after["searches"] = key.searches
+		bounds, _ := run.summary(t, repo)["bounds"].(map[string]any)
+		for _, column := range []string{"degraded", "partial"} {
+			bound, _ := bounds[column].(map[string]any)
+			if got, _ := bound["atMost"].(float64); got != float64(atMost) {
+				t.Errorf("%s at N %d (%v): the drill's %s bound is %v, want at most %d", key.form, key.searches, names, column, bound, atMost)
+			}
+			if got, _ := bound["lambda"].(float64); math.Abs(got-lambda) > 1e-9 {
+				t.Errorf("%s at N %d (%v): the drill's λ is %v, want %v", key.form, key.searches, names, bound["lambda"], lambda)
+			}
+		}
+		stated := fmt.Sprintf("%s at N %d: q %s, λ %s, k %d, at most %d", key.form, key.searches,
+			strconv.FormatFloat(share, 'f', 5, 64), strconv.FormatFloat(lambda, 'f', 3, 64), quantile, atMost)
+		if !comments[stated] {
+			t.Errorf("the table does not state the derivation of %v in a comment line:\n  # %s", names, stated)
 		}
 	}
 }
@@ -554,20 +950,20 @@ func TestLoadRefusesUserinfoAndReadsEnvLines(t *testing.T) {
 	}
 }
 
-// TestAMLProvenanceCountsUntrackedFiles checks the dirty flag the scripts
-// record (lib.sh's aml_provenance) in a repository of its own: go build
-// compiles an untracked .go file, so an untracked file makes the tree dirty,
-// and so does a changed one; an ignored file does not.
-func TestAMLProvenanceCountsUntrackedFiles(t *testing.T) {
-	repo := scriptsRepo(t, "git")
-	tree := t.TempDir()
+// ownGitTree is a new git repository in the test's temporary directory, apart
+// from every repository above it: the tree, the environment to run git (and
+// the scripts that run git) with, and a function that runs git on the tree. It
+// skips the test when the temporary directory is inside a git work tree. Never
+// a configuration of this machine's, and only this tree's repository,
+// whatever git would find above it.
+func ownGitTree(t *testing.T) (tree string, env []string, git func(args ...string)) {
+	t.Helper()
+	tree = t.TempDir()
 	if out, err := exec.Command("git", "-C", tree, "rev-parse", "--is-inside-work-tree").Output(); err == nil && strings.TrimSpace(string(out)) == "true" {
 		t.Skip("the temporary directory is inside a git work tree")
 	}
-	// Never a configuration of this machine's, and only this tree's
-	// repository, whatever git would find above it.
-	env := append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CEILING_DIRECTORIES="+filepath.Dir(tree))
-	git := func(args ...string) {
+	env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CEILING_DIRECTORIES="+filepath.Dir(tree))
+	git = func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("git", append([]string{"--git-dir=" + filepath.Join(tree, ".git"), "--work-tree=" + tree}, args...)...)
 		cmd.Env = env
@@ -580,6 +976,16 @@ func TestAMLProvenanceCountsUntrackedFiles(t *testing.T) {
 	if out, err := initialize.CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
+	return tree, env, git
+}
+
+// TestAMLProvenanceCountsUntrackedFiles checks the dirty flag the scripts
+// record (lib.sh's aml_provenance) in a repository of its own: go build
+// compiles an untracked .go file, so an untracked file makes the tree dirty,
+// and so does a changed one; an ignored file does not.
+func TestAMLProvenanceCountsUntrackedFiles(t *testing.T) {
+	repo := scriptsRepo(t, "git")
+	tree, env, git := ownGitTree(t)
 	writeFile(t, filepath.Join(tree, ".gitignore"), "ignored.go\n", 0o644)
 	writeFile(t, filepath.Join(tree, "main.go"), "package main\n\nfunc main() {}\n", 0o644)
 	git("add", ".gitignore", "main.go")

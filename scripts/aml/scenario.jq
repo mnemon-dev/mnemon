@@ -1,7 +1,7 @@
 # scripts/aml/scenario.jq: the summary of one run of a drill scenario, with its
-# criteria (drill.sh runs it: jq -n -f scripts/aml/scenario.jq, with the
-# arguments it names). Its inputs: the scenario's row ($name, $class, $type,
-# $spec, $what, $window, $effect, $want…); the times $tstart, $tfault, $tend
+# criteria (drill.sh runs it: jq -n -L scripts/aml -f scripts/aml/scenario.jq,
+# with the arguments it names). Its inputs: the scenario's row ($name, $class,
+# $type, $spec, $what, $window, $effect, $want…); the times $tstart, $tfault, $tend
 # and $tidle (null when the backlog did not drain); $residual, $heldSeconds,
 # $without; the limits $minSearches, $drainLimit, $residualLimit and
 # $recoverLimit; the requests' latencies and codes, and the second each
@@ -9,6 +9,7 @@
 # the metrics ($mb, $ma) and the fake provider's counts ($fb, $fa) before and
 # after, the samples of /admin/status ($samples) and the degraded reasons
 # ($reasons).
+include "poisson";
 def outcomesList: ["ok", "throttled", "invalid", "rejected", "retryable", "failed", "breaker-open", "bulkhead-full", "budget"];
 # A series is picked by its name and its label pairs, in any order.
 def pick($m; $name; $labels): [$m | to_entries[] | select((.key | startswith($name + "{") or . == $name)
@@ -23,17 +24,22 @@ def fakeDelta: [$fa[0] | to_entries[] | .key as $k | {($k): ([.value | to_entrie
 def verdictOf($ok): if $ok then "pass" else "fail" end;
 # The bound a degraded or partial column states, for a run that answered
 # $answered Searches: null for - (not judged), {atMost} or {atLeast} for the
-# others, with what it was derived from. Ruling R82's, fixed in advance:
+# others, with what it was derived from. Fixed in advance (rulings R82, R84):
 #   - P^A, a fault random per attempt at rate P that the policy gives A
-#     attempts: a Search makes callsPerSearch model calls, each failing when
-#     all its attempts do (P^A), with a margin of 2 for chance: at most
-#     max(1, ⌈N × min(1, 2·10·P^A)⌉) of the N Searches. The product is
-#     rounded to 9 decimals before the ceiling, so that float noise
-#     (0.05^2 × 20 × 20 = 1.0000000000000002) cannot add one.
+#     attempts (R84, in place of R82's factor of 2, which a healthy service
+#     exceeded by chance about once in 14 runs of a 5% fault). A model call
+#     fails when all its A attempts do (P^A). A Search makes callsPerSearch
+#     calls and degrades when any fails: q = 1 - (1 - P^A)^callsPerSearch. Of
+#     the N Searches a run answers it degrades λ = N × q on average, and about
+#     Poisson(λ) many. The bound is the smallest k with P(X > k) < 1% for X
+#     Poisson with mean λ (poisson.jq), at least 1 and at most N: a healthy
+#     service exceeds it by chance less than once in a hundred runs.
 #   - window+S, a fault over the window from $tfault to $tend: at most the
-#     Searches that started in it or within S seconds after it.
+#     Searches that started in it or within S seconds after it. It is a count
+#     of Searches: those that started before the fault add nothing to the
+#     allowance, but no single Search is judged.
 def callsPerSearch: 10;
-def round9: . * 1e9 | round / 1e9;
+def tailProbability: 0.01;
 def bound($want; $answered):
 	if $want == "-" then null
 	elif $want == "0" then {form: $want, rule: "none may", atMost: 0}
@@ -43,9 +49,12 @@ def bound($want; $answered):
 		| [$searchStarts[] | select(. >= $tfault and . <= $tend + $after)] as $started
 		| {form: $want, rule: "a fault over the window", from: $tfault, to: ($tend + $after), atMost: ($started | length)}
 	else ($want | split("^") | map(tonumber)) as [$p, $attempts]
-		| ([1, 2 * callsPerSearch * pow($p; $attempts)] | min | round9) as $share
+		| (1 - pow(1 - pow($p; $attempts); callsPerSearch)) as $share
+		| ($answered * $share) as $lambda
+		| poissonQuantile($lambda; tailProbability) as $quantile
 		| {form: $want, rule: "a fault random per attempt", rate: $p, attempts: $attempts, callsPerSearch: callsPerSearch,
-			searches: $answered, share: $share, atMost: ([1, ($answered * $share | round9 | ceil)] | max)}
+			searches: $answered, share: $share, lambda: $lambda, tail: tailProbability, quantile: $quantile,
+			atMost: ([1, ([$answered, $quantile] | min)] | max)}
 	end;
 def within($bound; $value): if $bound == null then null elif $bound.atLeast != null then $value >= $bound.atLeast else $value <= $bound.atMost end;
 ($sa[0]) as $a | ($sb[0]) as $b |

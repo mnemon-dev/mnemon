@@ -995,9 +995,9 @@ submit the placeholders. The declared concurrency must stay at or below the inst
 Measure with the load test, [`scripts/aml/load.sh`](../scripts/aml/README.md), run as root on
 the host against the scratch instance `n`. It reads the API key and the admin token from the
 instance's env file (its `AML_API_KEY=` and `MNEMON_ADMIN_TOKEN=` lines), never from a command
-line, and it settles the consolidation scheduler between steps through the admin listener. The
-host has no Go: copy `scripts/aml/` there, with a vegeta v12.13.0 binary that `VEGETA` names,
-built on the build machine (`GOOS=linux GOARCH=amd64 go install
+line, and it settles the consolidation scheduler through the admin listener before every step,
+the first included. The host has no Go: copy `scripts/aml/` there, with a vegeta v12.13.0
+binary that `VEGETA` names, built on the build machine (`GOOS=linux GOARCH=amd64 go install
 github.com/tsenart/vegeta/v12@v12.13.0`, with `GOBIN` unset, puts it in
 `$(go env GOPATH)/bin/linux_amd64/`). Every request reaches the real providers and spends the
 instance's budget, so start at low rates:

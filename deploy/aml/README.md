@@ -252,7 +252,7 @@ each number. None is reported in this draft.>`
 ## Open points to confirm before submitting
 
 - The capacity numbers and the rate limit above, from the load test on the evaluation host
-  (Task 12).
+  (`scripts/aml/load.sh`, as the runbook's "Capacity declaration" describes).
 - The Windows CI job (`windows-memory`) has not yet run the new `cmd/memory` tests: they are
   the first Windows tests to open AML stores and the budget file, and must pass before the
   branch merges.

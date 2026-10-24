@@ -32,13 +32,18 @@
 #
 # Exit status, the drill's own: 0 when every hard criterion held, 1 when one
 # did not (or a secret reached DIR), 2 when the drill could not run (a usage
-# error, a tool or a server that failed, an interruption).
+# error, a tool or a server that failed, an interruption, an abort of its
+# own). It exits 0 or 1 only when it ends on purpose (lib.sh's aml_exit); any
+# other end is a 2, for bash 3.2 reads an abort, an unbound variable say, as 0.
 #
 # Test hooks: AML_DRILL_FAIL_AT=fault makes the drill fail (exit 2) right
 # after it applied the first scenario's fault, while the workload and the
 # sampler run, so that a test can check the cleanup leaves no process.
 # AML_DRILL_SCENARIOS=FILE runs the table in FILE (the columns below) in
 # place of this one; AML_DRILL_RESIDUAL_LIMIT=N sets the residual limit.
+# AML_TEST_UNBOUND=early|late expands a variable that is not set when the
+# drill starts (early) or once its cleanup is set (late), so that a test can
+# check that the drill then exits 2 and not 0.
 #
 # The scenario table: name|class|window|fault type|its specification|
 # searches|effect|degraded|partial|p95|breaker|retries|what it is; lines
@@ -58,19 +63,24 @@
 #     retries, failed, breaker-open, throttled, invalid or rejected may show.
 #   - degraded, partial: the bound on the degraded, and on the partially
 #     degraded, Searches of a run: 0 (none may), >0 (some must), K (at most
-#     K), - (not judged), or one of ruling R82's, fixed in advance from the
-#     retry policy:
+#     K), - (not judged), or one of two forms fixed in advance from the
+#     retry policy (rulings R82 and R84):
 #       - P^A, for a fault random per attempt at rate P, which the policy
 #         gives A attempts (2 for an invalid reply, retried once; 4, the
-#         Interactive attempts, for a reset, a 5xx, a spike or a stall): at
-#         most max(1, ⌈N × min(1, 2·10·P^A)⌉) of the N Searches the run
-#         answered. A Search makes about 10 model calls, each of which fails
-#         when all its A attempts do (P^A); the 2 is a margin for chance.
-#       - window+S, for a fault over the window: at most the Searches that
-#         started in the window or in the S seconds after it, and so none of
-#         those that started before it. S is 45, the Interactive deadline:
-#         the longest an attempt of a Search's call waits (the planner's
-#         timeout; JEV's is 20 s).
+#         Interactive attempts, for a reset, a 5xx, a spike or a stall). A
+#         model call fails when its A attempts all do (P^A), and a Search
+#         makes 10 calls, so it degrades with q = 1 - (1 - P^A)^10: of the N
+#         Searches the run answered, λ = N × q degrade on average, and about
+#         Poisson(λ) many. The bound (R84) is the smallest K with P(X > K) <
+#         1% for X Poisson with mean λ, at least 1 and at most N, so that a
+#         healthy service exceeds it by chance less than once in a hundred.
+#         The table derives λ and K for each row.
+#       - window+S, for a fault over the window: at most as many degraded
+#         Searches as started in the window or in the S seconds after it. It
+#         is a count of Searches: those that started before the fault add
+#         nothing to the allowance, but no single Search is judged. S is 45,
+#         the Interactive deadline: the longest an attempt of a Search's call
+#         waits (the planner's timeout; JEV's is 20 s).
 #   - p95: the most seconds the Search p95 may take, or -.
 #   - breaker: cycle (a breaker opens during the fault and every one has
 #     closed again within 180 s of its end), steady (none opens, with
@@ -113,9 +123,9 @@
 # late for 40 s, 30% of connections reset, malformed replies of both kinds
 # at 5%, and stalls of 5% (their Search p95 under the 180 s Flush attempt
 # cap). Those whose fault is random or holds over a window are bounded by
-# R82 (above), each bound derived in the table; the deterministic ones keep
-# exact bounds. The expected ones go past the policy: connections refused for
-# 120 s, and an empty balance (402) of either kind.
+# R84 and R82 (above), each bound derived in the table; the deterministic
+# ones keep exact bounds. The expected ones go past the policy: connections
+# refused for 120 s, and an empty balance (402) of either kind.
 set -euo pipefail
 umask 077
 export LC_ALL=C
@@ -124,6 +134,7 @@ readonly PROG=aml-drill
 # shellcheck source=scripts/aml/lib.sh
 . "$(dirname "$0")/lib.sh"
 aml_trap_exit
+aml_test_unbound early
 
 OUT= ONLY= REPEAT=1 BINARY= BUILT_FROM= SEARCH_RATE=0.25 ADD_RATE=0.5 USERS=4 SEED_ADDS=10 ERROR_STATUS=503 PORT_BASE=18700
 readonly PRE=10 POST=15 RECOVER_LIMIT=180 MESSAGES=10 DRAIN_LIMIT=600 HELD_LIMIT=90
@@ -191,11 +202,16 @@ scenarios() {
 		else
 			cat <<EOF
 # The bounds on degraded and partial Searches of the rows whose fault is
-# random or holds over a window are ruling R82's (see the header), derived
-# here before any run: N is the Searches a run answers, about (25 + window) / 4
-# rounded up at 0.25 a second (10 s before the fault, 15 s after it: 14 for a
-# window of 30 s, 17 for 40, 18 for 45, 22 for 60), and c = 10 model calls a
-# Search. The other rows are deterministic and keep exact bounds.
+# random or holds over a window are rulings R84's and R82's (see the header),
+# derived here before any run. N is the Searches a run answers, about
+# (25 + window) / 4 rounded up at 0.25 a second (10 s before the fault, 15 s
+# after it: 14 for a window of 30 s, 17 for 40, 18 for 45, 22 for 60), and a
+# Search makes 10 model calls. For a fault random per attempt, P^A: q = 1 -
+# (1 - P^A)^10 is the chance that a Search degrades, λ = N × q the Searches a
+# run degrades on average, and k the smallest count with P(X > k) < 1% for X
+# Poisson with mean λ; the bound is at most max(1, k), and never more than N.
+# A line "P^A at N n: q …, λ …, k …, at most …" states one. The other rows are
+# deterministic and keep exact bounds.
 baseline|hard|60|none|-|12|none|0|0|-|steady|-|no fault: the workload alone
 # outage-30s, over a window of 30 s: the Searches started in it or in the 45 s
 # after it; the workload ends 15 s after it, so 11 of N 14 at 0.25 a second,
@@ -208,24 +224,26 @@ outage-30s|hard|30|toxic|both timeout downstream 1 {"timeout":0}|8|retries|windo
 # the 3 started before it.
 slow-past-timeout|hard|40|toxic|both latency downstream 1 {"latency":50000}|9|retries|window+45|window+45|-|-|-|every reply of both kinds 50 s late (past both attempt timeouts) for 40 s
 # resets: p 0.3 (a new connection reset; one kept alive is not), a 4 (a reset
-# is retried within the Interactive attempts): 2·10·0.3^4 = 0.162, N 14:
-# ⌈2.27⌉ = 3.
+# is retried within the Interactive attempts).
+#   0.3^4 at N 14: q 0.07811, λ 1.094, k 4, at most 4
 resets|hard|30|toxic|both reset_peer downstream 0.3 {"timeout":0}|8|retries|0.3^4|0.3^4|-|-|-|30% of the connections to both providers reset for 30 s
 latency-2x|measured|60|fake|deepseek={"latency":"4s"} jev={"latency":"3s"}|12|fake:all:slow|-|-|-|-|-|latency doubled (DeepSeek 4 s, JEV 3 s), below the attempt timeouts
 latency-4x|measured|60|fake|deepseek={"latency":"8s"} jev={"latency":"6s"}|12|fake:all:slow|-|-|-|-|-|latency 4x (DeepSeek 8 s, JEV 6 s), below the attempt timeouts
-# The spikes: p 0.05 or 0.2, a 4 (an attempt past its timeout is retried):
-# 2·10·0.05^4 = 0.000125 and 2·10·0.2^4 = 0.032, N 22: max(1, ⌈0.003⌉) and
-# max(1, ⌈0.70⌉), 1 each.
+# The spikes: p 0.05 or 0.2, a 4 (an attempt past its timeout is retried).
+#   0.05^4 at N 22: q 0.00006, λ 0.001, k 0, at most 1
+#   0.2^4 at N 22: q 0.01589, λ 0.349, k 2, at most 2
 jev-spikes-5|measured|60|fake|jev={"spikeRate":0.05,"spikeLatency":"25s"}|12|fake:jev:spike|0.05^4|0.05^4|-|-|-|5% of JEV calls 25 s slower (past the 20 s attempt timeout)
 jev-spikes-20|measured|60|fake|jev={"spikeRate":0.2,"spikeLatency":"25s"}|12|fake:jev:spike|0.2^4|0.2^4|-|-|-|20% of JEV calls 25 s slower
 deepseek-spikes-5|measured|60|fake|deepseek={"spikeRate":0.05,"spikeLatency":"50s"}|12|fake:deepseek:spike|0.05^4|0.05^4|-|-|-|5% of DeepSeek calls 50 s slower (past the 45 s attempt timeout)
 deepseek-spikes-20|measured|60|fake|deepseek={"spikeRate":0.2,"spikeLatency":"50s"}|12|fake:deepseek:spike|0.2^4|0.2^4|-|-|-|20% of DeepSeek calls 50 s slower
-# 5xx: p 0.1 or 0.3, a 4 (a 5xx is retried): 2·10·0.1^4 = 0.002, N 22:
-# max(1, ⌈0.04⌉) = 1; 2·10·0.3^4 = 0.162, N 22: ⌈3.56⌉ = 4.
+# 5xx: p 0.1 or 0.3, a 4 (a 5xx is retried).
+#   0.1^4 at N 22: q 0.00100, λ 0.022, k 1, at most 1
+#   0.3^4 at N 22: q 0.07811, λ 1.718, k 5, at most 5
 5xx-10|measured|60|fake|all={"errorRate":0.1,"errorStatus":$ERROR_STATUS}|12|retries|0.1^4|0.1^4|-|-|-|10% of the calls of both kinds answered $ERROR_STATUS
 5xx-30|measured|60|fake|all={"errorRate":0.3,"errorStatus":$ERROR_STATUS}|12|retries|0.3^4|0.3^4|-|-|-|30% of the calls of both kinds answered $ERROR_STATUS
-# Malformed replies: p 0.05 or 0.2, a 2 (an invalid reply is retried once):
-# 2·10·0.05^2 = 0.05, N 18: ⌈0.9⌉ = 1; 2·10·0.2^2 = 0.8, N 18: ⌈14.4⌉ = 15.
+# Malformed replies: p 0.05 or 0.2, a 2 (an invalid reply is retried once).
+#   0.05^2 at N 18: q 0.02472, λ 0.445, k 3, at most 3
+#   0.2^2 at N 18: q 0.33517, λ 6.033, k 12, at most 12
 malformed-invalid-json-5|hard|45|fake|all={"malformedRate":0.05,"malformed":"invalid-json"}|10|invalid|0.05^2|0.05^2|-|steady|-|5% of the replies of both kinds prose where the caller parses JSON (JEV; DeepSeek extraction)
 malformed-invalid-json-20|measured|45|fake|all={"malformedRate":0.2,"malformed":"invalid-json"}|10|invalid|0.2^2|0.2^2|-|steady|-|20% of the replies of both kinds prose where the caller parses JSON
 malformed-empty-5|hard|45|fake|all={"malformedRate":0.05,"malformed":"empty"}|10|invalid|0.05^2|0.05^2|-|steady|-|5% of the replies of both kinds empty (DeepSeek: no choices or no content; JEV: answers {})
@@ -234,8 +252,8 @@ malformed-truncated-5|hard|45|fake|all={"malformedRate":0.05,"malformed":"trunca
 malformed-truncated-20|measured|45|fake|all={"malformedRate":0.2,"malformed":"truncated"}|10|invalid|0.2^2|0.2^2|-|steady|-|20% of the replies of both kinds cut short
 malformed-wrong-schema-5|hard|45|fake|all={"malformedRate":0.05,"malformed":"wrong-schema"}|10|invalid|0.05^2|0.05^2|-|steady|-|5% of the replies of both kinds valid JSON of the wrong schema
 malformed-wrong-schema-20|measured|45|fake|all={"malformedRate":0.2,"malformed":"wrong-schema"}|10|invalid|0.2^2|0.2^2|-|steady|-|20% of the replies of both kinds valid JSON of the wrong schema
-# stalls-5: p 0.05, a 4 (a stall is cut at its attempt timeout and retried):
-# 2·10·0.05^4 = 0.000125, N 22: 1.
+# stalls-5: p 0.05, a 4 (a stall is cut at its attempt timeout and retried).
+#   0.05^4 at N 22: q 0.00006, λ 0.001, k 0, at most 1
 stalls-5|hard|60|fake|all={"stallRate":0.05}|12|retries|0.05^4|0.05^4|180|-|-|5% of the replies of both kinds send headers and half the body, then hang
 # outage-sustained holds over a window too, but outlasts the policy: some
 # Searches must degrade, and the breaker must cycle.
@@ -346,6 +364,7 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'exit 2' INT TERM
+aml_test_unbound late
 
 aml_secret "$KEY_FILE"
 aml_secret "$AML_ADMIN_TOKEN_FILE"
@@ -634,8 +653,10 @@ run() {
 		--slurpfile sb "$dir/status-before.json" --slurpfile sa "$dir/status-after.json" \
 		--slurpfile mb "$dir/metrics-before.json" --slurpfile ma "$dir/metrics-after.json" \
 		--slurpfile fb "$dir/fake-before.json" --slurpfile fa "$dir/fake-after.json" \
-		--slurpfile samples "$dir/samples.jsonl" --slurpfile reasons "$dir/degraded-reasons.json" -f "$AML_REPO/scripts/aml/scenario.jq" >"$dir/scenario.json"
-	aml_say "  $(jq -r 'def shown: if . == null then "" elif .atLeast != null then " (at least \(.atLeast))" else " (at most \(.atMost))" end;
+		--slurpfile samples "$dir/samples.jsonl" --slurpfile reasons "$dir/degraded-reasons.json" \
+		-L "$AML_REPO/scripts/aml" -f "$AML_REPO/scripts/aml/scenario.jq" >"$dir/scenario.json"
+	aml_say "  $(jq -r 'def shown: if . == null then "" elif .atLeast != null then " (at least \(.atLeast))"
+			elif .lambda != null then " (at most \(.atMost), λ \(.lambda * 1000 | round / 1000))" else " (at most \(.atMost))" end;
 		"\(.verdict); searches \(.searches.answered) (at least \(.expect.searches)), degraded \(.searches.degraded)\(.bounds.degraded | shown), partial \(.searches.partial)\(.bounds.partial | shown), effect \(.effect.signal) \(.effect.value), search p95 \(.latency.search.p95 // "-") s, trips \(.breakerTrips), drain \(.backlog.drainSeconds // "none") s, held \(.held.after | map_values(if fabs < 1e-9 then 0 else . end))"' "$dir/scenario.json")"
 }
 
@@ -695,7 +716,7 @@ jq -n --arg started "$STARTED" --arg finished "$(date -u +%Y-%m-%dT%H:%M:%SZ)" -
 	},
 	criteria: {
 		validity: "searches (at least the table minimum), effect (the fault signal above 0, or none with no fault), non2xx (no non-2xx but deliberate 503 sheds), held (every account back to 0 within 90 s), withoutJEV (no line, no link fallback): they fail any run",
-		outcome: "degraded and partial (0, >0, a number, P^A for a fault random per attempt or window+S for a fault over a window as ruling R82 derives them, or -; the bound of each run and its derivation are in its bounds), searchP95 (at most the table bound), breaker (cycle, closed again within 180 s of the fault end, or steady, with samples), retries (0 for a kind), drain (no scheduler work within 600 s of the fault end), residual (largest backlog then below \($residualLimit) characters: the batch threshold of 10000 plus 5% for the record headers the estimate counts): they fail hard and expected scenarios"
+		outcome: "degraded and partial (0, >0, a number, P^A for a fault random per attempt (ruling R84: the 99% quantile of a Poisson count of mean λ = Searches × (1 - (1 - P^A)^10), at least 1 and at most the Searches) or window+S for a fault over a window (ruling R82), or -; the bound of each run and its derivation, λ included, are in its bounds), searchP95 (at most the table bound), breaker (cycle, closed again within 180 s of the fault end, or steady, with samples), retries (0 for a kind), drain (no scheduler work within 600 s of the fault end), residual (largest backlog then below \($residualLimit) characters: the batch threshold of 10000 plus 5% for the record headers the estimate counts): they fail hard and expected scenarios"
 	},
 	secretsInOutput: ($leaked == 1),
 	matrix: [$scenarios[] | {name, run, class, fault, window: .windowSeconds, searches: .searches.answered, minSearches: .expect.searches,
@@ -718,7 +739,8 @@ jq -n --arg started "$STARTED" --arg finished "$(date -u +%Y-%m-%dT%H:%M:%SZ)" -
 # most, ≥ the least, - not judged); throttled, invalid and rejected (by
 # kind) in columns of their own, the other attempt outcomes in one.
 jq -r '
-	def bound: if . == null then "-" elif .atLeast != null then "≥\(.atLeast)" else "≤\(.atMost)" end;
+	def bound: if . == null then "-" elif .atLeast != null then "≥\(.atLeast)"
+		elif .lambda != null then "≤\(.atMost), λ \(.lambda * 1000 | round / 1000)" else "≤\(.atMost)" end;
 	"| scenario | run | class | Searches (min) | degraded (bound) | partial (bound) | Search p50/p95/p99 s | Add p95 ms | throttled | invalid | rejected ds/jev | ok/retryable/failed/breaker-open/bulkhead-full/budget | retries | trips ds/jev | closed s | drain s | residual | held ds/jev | non-2xx/shed | effect | verdict |",
 	"|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
 	(.matrix[] | "| \(.name) | \(.run) | \(.class) | \(.searches) (\(.minSearches)) | \(.degraded) (\(.bounds.degraded | bound)) | \(.partial) (\(.bounds.partial | bound)) | \(.searchP50 // "-")/\(.searchP95 // "-")/\(.searchP99 // "-") | \(if .addP95 then (.addP95 * 1000 | round) else "-" end) | \(.throttled) | \(.invalid) | \(.rejectedByKind.deepseek)/\(.rejectedByKind.jev) | \(.attempts.ok)/\(.attempts.retryable)/\(.attempts.failed)/\(.attempts["breaker-open"])/\(.attempts["bulkhead-full"])/\(.attempts.budget) | \(.retries) | \(.breakerTrips.deepseek)/\(.breakerTrips.jev) | \(.breakersClosedSeconds // "-") | \(.drainSeconds // "none") | \(.residualBacklog // "-") | \(.heldAfter.deepseek | . * 10000 | round / 10000)/\(.heldAfter.jev | . * 10000 | round / 10000) | \(.non2xx)/\(.shed) | \(.effect.signal) \(.effect.value) | \(.verdict) |")' \
@@ -728,14 +750,12 @@ aml_say "report: $OUT/report.json"
 summary=$(jq -r '"\(.matrix | length) scenario runs\(if .partialRun then ", a partial run (\(if .table == "built-in" then "--only" else "the table \(.table)" end))" else "" end); measured that did not hold: \(if (.measuredNotHeld | length) == 0 then "none" else "\(.measuredNotHeld | length) (\(.measuredNotHeld | join("; ")))" end)"' "$OUT/report.json")
 if [ "$leaked" = 1 ]; then
 	aml_say "FAIL: a secret appears in $OUT ($summary)"
-	AML_EXIT_OURS=1
-	exit 1
+	aml_exit 1
 fi
 if jq -e '.pass' "$OUT/report.json" >/dev/null; then
 	aml_say "PASS: every hard criterion held ($summary)"
-else
-	jq -r '.failed[] | "FAIL " + .' "$OUT/report.json" >&2
-	aml_say "FAIL: $(jq -r '.failed | length | "\(.) hard criteri\(if . == 1 then "on" else "a" end)"' "$OUT/report.json") did not hold ($summary)"
-	AML_EXIT_OURS=1
-	exit 1
+	aml_exit 0
 fi
+jq -r '.failed[] | "FAIL " + .' "$OUT/report.json" >&2
+aml_say "FAIL: $(jq -r '.failed | length | "\(.) hard criteri\(if . == 1 then "on" else "a" end)"' "$OUT/report.json") did not hold ($summary)"
+aml_exit 1

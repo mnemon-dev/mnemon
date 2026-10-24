@@ -66,12 +66,16 @@
 # measured. Exit status, the script's own: 0 when the run completed (its
 # knee is a measurement, not a verdict), 1 when a secret reached DIR, 2 when
 # the run could not be made (a usage error, a tool or a server that failed,
-# an interruption).
+# an interruption, an abort of its own). It exits 0 or 1 only when it ends on
+# purpose (lib.sh's aml_exit); any other end is a 2, for bash 3.2 reads an
+# abort, an unbound variable say, as 0.
 #
-# Test hook: AML_LOAD_FAIL_AT=prepare makes the script fail (exit 2) while
+# Test hooks: AML_LOAD_FAIL_AT=prepare makes the script fail (exit 2) while
 # the preparation's Adds are in flight, and AML_LOAD_FAIL_AT=step while the
 # first step's attacks and sampler run, so that a test can check the
-# cleanup leaves no process.
+# cleanup leaves no process. AML_TEST_UNBOUND=early|late expands a variable
+# that is not set when the script starts (early) or once its cleanup is set
+# (late), so that a test can check that it then exits 2 and not 0.
 set -euo pipefail
 umask 077
 export LC_ALL=C
@@ -80,6 +84,7 @@ readonly PROG=aml-load
 # shellcheck source=scripts/aml/lib.sh
 . "$(dirname "$0")/lib.sh"
 aml_trap_exit
+aml_test_unbound early
 
 BASE_URL= KEY_ARG= MODE= RATES= DURATION= USERS=16 MESSAGES=20 PREPARE= TIMEOUT=300 SETTLE=900 MIN_BASELINE=50
 KEEP_GOING=0 VALIDATE=0 OUT= AML_ADMIN_URL= TOKEN_ARG= LOCAL=0 BINARY= BUILT_FROM= DS_LATENCY=2s JEV_LATENCY=1.5s
@@ -184,6 +189,7 @@ cleanup() {
 }
 trap cleanup EXIT
 trap 'exit 2' INT TERM
+aml_test_unbound late
 
 if [ "$LOCAL" = 1 ]; then
 	[ -z "$BASE_URL$KEY_ARG$AML_ADMIN_URL$TOKEN_ARG" ] || aml_die "--local makes its own URLs and secrets"
@@ -479,9 +485,9 @@ rm -f "$OUT/steps.jsonl"
 for secret in "$KEY_FILE" ${AML_ADMIN_TOKEN_FILE:+"$AML_ADMIN_TOKEN_FILE"}; do
 	if grep -rqF -f "$secret" "$OUT"; then
 		aml_say "FAIL: a secret appears in $OUT"
-		AML_EXIT_OURS=1
-		exit 1
+		aml_exit 1
 	fi
 done
 jq -r '.knee | to_entries[] | "knee \(.key): \(if .value.knee == null then "none: \(.value.reason)" else "\(.value.knee.rate)/s, p50 \(.value.knee.p50 * 1000 | round / 1000) s, p95 \(.value.knee.p95 * 1000 | round / 1000) s, peak in flight \(.value.knee.peakInFlight)\(if .value.void then " (\(.value.void))" else "" end)" end)"' "$OUT/report.json" >&2
 aml_say "report: $OUT/report.json"
+aml_exit 0

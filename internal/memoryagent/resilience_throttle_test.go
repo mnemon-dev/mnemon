@@ -172,8 +172,9 @@ func throttleStorm(t *testing.T, storm time.Duration) *endpoint {
 
 // R67 and R71: an Interactive or a Flush call refused with 429 and no
 // Retry-After waits it out patiently. Its k-th throttled retry waits
-// max(the class's backoff, 2 s × 2^(k−1) × U[0.75, 1.0]): at most 2, 4, 8
-// and 16 s, jittered so that calls throttled together do not retry in step.
+// max(the class's backoff, 2 s × 2^(k−1) × U[0.75, 1.0]): a jittered floor
+// of at most 2, 4, 8 and 16 s, or the class's backoff when that is longer;
+// the jitter keeps calls throttled together from retrying in step.
 // It makes up to 5 of them, which are not among the class's attempts, and
 // waits 30 s in all at most per call, never past the caller's deadline; a
 // caller that gives up during a wait ends it at once. A Retry-After of 0, an

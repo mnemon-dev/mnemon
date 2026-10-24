@@ -13,9 +13,13 @@
 #
 # Exit codes, the scripts' own: 0 when every hard criterion held, 1 when one
 # failed (or a secret reached the output), 2 when the run could not be made
-# (a usage error, a tool or a server that failed, an interruption). A
-# failing command never passes its own status through: aml_exit_status, run
-# on exit, turns any other status into 2.
+# (a usage error, a tool or a server that failed, an interruption, an abort).
+# Only a script that ends on purpose (aml_exit) exits 0 or 1. aml_exit_status,
+# run on exit, turns every other status into 2: a failing command's own, and
+# a 0 that no script chose. Bash 3.2 (macOS) leaves $? as the last command
+# left it when a fatal error of the shell's own ends a script (an unbound
+# variable, a bad substitution, a division by zero), so that an EXIT trap sees
+# that status, usually 0, whatever it captures first.
 
 AML_TOXIPROXY_SERVER=github.com/Shopify/toxiproxy/v2/cmd/server@v2.12.0
 AML_VEGETA_MODULE=github.com/tsenart/vegeta/v12@v12.13.0
@@ -28,18 +32,33 @@ aml_die() {
 }
 aml_say() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" >&2; }
 
-# AML_EXIT_OURS is set just before a script exits 1 on purpose.
+# AML_EXIT_OURS is set (by aml_exit) just before a script ends on purpose,
+# with the status it means: 0 when the run completed, 1 when a criterion
+# failed.
 AML_EXIT_OURS=
 
-# aml_exit_status STATUS: the status a script exits with: STATUS when it is
-# 0, 2, or a 1 the script chose (AML_EXIT_OURS); else 2, saying so.
+# aml_exit STATUS: ends the script, on purpose, with STATUS (0 or 1).
+aml_exit() {
+	AML_EXIT_OURS=1
+	exit "$1"
+}
+
+# aml_exit_status STATUS: the status a script exits with, when its EXIT trap saw
+# STATUS. 2 stands (a usage error, aml_die, an interruption). 0 and 1 stand
+# only after aml_exit; any other status is a 2, saying so. A 0 needs the
+# script's say-so because the trap cannot tell a script that ended from one
+# that an error of the shell's own stopped (see above).
 aml_exit_status() {
-	if [ "$1" -gt 2 ] || { [ "$1" = 1 ] && [ -z "$AML_EXIT_OURS" ]; }; then
-		printf '%s: stopped by a command that failed (status %s)\n' "${PROG:-aml}" "$1" >&2
-		echo 2
+	if [ "$1" = 2 ] || { [ "$1" -le 1 ] && [ -n "$AML_EXIT_OURS" ]; }; then
+		echo "$1"
 		return
 	fi
-	echo "$1"
+	if [ "$1" = 0 ]; then
+		printf '%s: stopped before its end by an error of the shell'"'"'s own (an unbound variable, say)\n' "${PROG:-aml}" >&2
+	else
+		printf '%s: stopped by a command that failed (status %s)\n' "${PROG:-aml}" "$1" >&2
+	fi
+	echo 2
 }
 
 # aml_trap_exit: until a script's cleanup takes the EXIT trap over, any exit
@@ -49,6 +68,17 @@ aml_exit_status() {
 aml_trap_exit() {
 	trap 'aml_status_was=$?; exit "$(aml_exit_status "$aml_status_was")"' EXIT
 	trap 'exit 2' INT TERM
+}
+
+# aml_test_unbound POINT: a test hook. With AML_TEST_UNBOUND=POINT it expands a
+# variable that is not set, as a bug of a script's might, so that a test can
+# check that the script still exits non-zero. A script has two points: early,
+# right after its first EXIT trap, and late, right after its own cleanup is set.
+aml_test_unbound() {
+	if [ "${AML_TEST_UNBOUND:-}" = "$1" ]; then
+		# shellcheck disable=SC2154
+		: "$AML_TEST_UNSET"
+	fi
 }
 
 # aml_need TOOL...: every tool is on PATH.

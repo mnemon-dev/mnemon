@@ -11,8 +11,8 @@
 #   1. drill.sh: every scenario, --repeat N times (default 1), into DIR/drill;
 #   2. load.sh --local --mode search, rates 0.25 to 3 a second, 300 s steps,
 #      into DIR/load-search;
-#   3. load.sh --local --mode add, rates 1 to 32 a second, 60 s steps settled
-#      in between, into DIR/load-add.
+#   3. load.sh --local --mode add, rates 1 to 32 a second, 60 s steps, each
+#      from a settled scheduler, into DIR/load-add.
 # DIR is a new dated directory (default .testdata/aml/final-<UTC time>; it
 # must not exist). It then prints, and writes to DIR/summary.md, the drill's
 # matrix, the drill's numbers against an earlier run's scenario by scenario,
@@ -24,7 +24,14 @@
 # --summary DIR prints the summary of a run directory again, running nothing.
 #
 # It takes about two hours. Exit status: the drill's (0 when every hard
-# criterion held, 1 when one did not), or 2 when a step could not run.
+# criterion held, 1 when one did not), or 2 when a step could not run or the
+# script itself aborted. It exits 0 or 1 only when it ends on purpose
+# (lib.sh's aml_exit); any other end is a 2, for bash 3.2 reads an abort, an
+# unbound variable say, as 0.
+#
+# Test hook: AML_TEST_UNBOUND=early|late expands a variable that is not set
+# when the script starts (early) or once its cleanup is set (late), so that a
+# test can check that it then exits 2 and not 0.
 set -euo pipefail
 umask 077
 export LC_ALL=C
@@ -33,6 +40,7 @@ readonly PROG=aml-final
 # shellcheck source=scripts/aml/lib.sh
 . "$(dirname "$0")/lib.sh"
 aml_trap_exit
+aml_test_unbound early
 
 REV=HEAD OUT= COMPARE=$AML_REPO/.testdata/aml/drill-task16/task16-matrix.json REPEAT=1 SUMMARY=
 usage() {
@@ -92,14 +100,8 @@ summary() {
 if [ -n "$SUMMARY" ]; then
 	[ -s "$SUMMARY/drill/report.json" ] || aml_die "$SUMMARY holds no drill/report.json"
 	summary "$SUMMARY"
-	exit 0
+	aml_exit 0
 fi
-aml_need git go tar jq
-SHA=$(git -C "$AML_REPO" rev-parse --verify "$REV^{commit}" 2>/dev/null) || aml_die "$REV is no commit of $AML_REPO"
-[ -n "$OUT" ] || OUT=$AML_REPO/.testdata/aml/final-$(date -u +%Y%m%dT%H%M%SZ)
-[ ! -e "$OUT" ] || aml_die "$OUT exists: a final run writes a new directory"
-mkdir -p "$OUT"
-OUT=$(cd "$OUT" && pwd)
 TREE=$(mktemp -d "${TMPDIR:-/tmp}/aml-final.XXXXXX")
 on_exit() {
 	local status=$?
@@ -108,6 +110,13 @@ on_exit() {
 }
 trap on_exit EXIT
 trap 'exit 2' INT TERM
+aml_test_unbound late
+aml_need git go tar jq
+SHA=$(git -C "$AML_REPO" rev-parse --verify "$REV^{commit}" 2>/dev/null) || aml_die "$REV is no commit of $AML_REPO"
+[ -n "$OUT" ] || OUT=$AML_REPO/.testdata/aml/final-$(date -u +%Y%m%dT%H%M%SZ)
+[ ! -e "$OUT" ] || aml_die "$OUT exists: a final run writes a new directory"
+mkdir -p "$OUT"
+OUT=$(cd "$OUT" && pwd)
 
 aml_say "extracting $SHA and building mnemon from it"
 git -C "$AML_REPO" archive "$SHA" | tar -x -C "$TREE"
@@ -133,5 +142,4 @@ bash "$TREE/scripts/aml/load.sh" --local --binary "$TREE/mnemon" --built-from "$
 
 summary "$OUT" | tee "$OUT/summary.md"
 aml_say "final run: $OUT (summary.md, drill/, load-search/, load-add/)"
-AML_EXIT_OURS=1
-exit "$status"
+aml_exit "$status"

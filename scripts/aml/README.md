@@ -11,13 +11,18 @@ curl, jq and awk.
 | `drill.sh` | The fault drill: each scenario against a steady Add and Search workload, judged both ways |
 | `load.sh` | The load test: Adds, Searches or both at rising rates, and the knee of each, locally or against a base URL |
 | `fakeprovider/` | The fake DeepSeek and JEV: deterministic replies, and faults set at run time through a loopback-only `POST /_fault` |
-| `lib.sh`, `scenario.jq`, `knee.jq` | What the scripts share (sourced), the drill's criteria for one run of a scenario, and the knee rule (jq programs) |
+| `lib.sh`, `scenario.jq`, `poisson.jq`, `knee.jq` | What the scripts share (sourced), the drill's criteria for one run of a scenario, the Poisson quantile its bounds use, and the knee rule (jq programs) |
 
 Exit status of every script: **0** when the run completed and its hard criteria held, **1** when
 a hard criterion failed or a secret reached the output, **2** when the run could not be made (a
-usage error, a tool or a server that failed, an interruption). These are the scripts' own codes,
-never a tool's: an option without its value, or a failure before a run starts, is a 2. `load.sh`
-has no hard criteria: its knee is a measurement.
+usage error, a tool or a server that failed, an interruption, an abort of the script itself).
+These are the scripts' own codes, never a tool's: an option without its value, or a failure before
+a run starts, is a 2. `load.sh` has no hard criteria: its knee is a measurement.
+
+A script exits 0 or 1 only when it ends on purpose (`aml_exit` in `lib.sh`); on exit, every other
+status becomes 2. This matters on macOS, where bash 3.2 leaves `$?` as the last command left it
+when a fatal error of the shell's own ends a script (an unbound variable, a bad substitution), so
+that an EXIT trap sees a 0 and the abort would read as a pass, whatever the trap captures first.
 
 ## The final run
 
@@ -62,13 +67,19 @@ not judge, such as `=0` for `0`.
 
 **The bounds on degraded and partial Searches** are `0`, `>0`, a number, or `-` (not judged). The
 scenarios whose fault is random or holds over a window have bounds fixed in advance from the
-retry policy (ruling R82), each derived in the table:
+retry policy (rulings R84 and R82), each derived in the table:
 - `P^A`, a fault random per attempt at rate `P`, which the policy gives `A` attempts (2 for an
-  invalid reply, retried once; 4, the Interactive attempts, for resets, 5xx, spikes and stalls):
-  at most max(1, ⌈N × min(1, 2·10·P^A)⌉) of the N Searches a run answers. A Search makes about 10
-  model calls; the 2 is a margin for chance. A broken retry layer still fails it.
-- `window+45`, a fault over a window: at most the Searches that started in the window or in the
-  45 s after it (the Interactive deadline), and so none of those that started before it.
+  invalid reply, retried once; 4, the Interactive attempts, for resets, 5xx, spikes and stalls).
+  A model call fails when its `A` attempts all do (`P^A`), and a Search makes 10 calls, so it
+  degrades with q = 1 − (1 − `P^A`)^10. Of the N Searches a run answers, λ = N × q degrade on
+  average, and about Poisson(λ) many. The bound is the smallest K with P(X > K) < 1% for X
+  Poisson with mean λ, at least 1 and at most N: a healthy service exceeds it by chance less than
+  once in a hundred. The table states q, λ and K for each row, and `report.json` has them for
+  each run. A broken retry layer is still caught: with no retries at all, a 5%-malformed run
+  degrades about 7 of 18 Searches against a bound of 3, and passes by chance 7 times in 100.
+- `window+45`, a fault over a window: at most as many degraded Searches as started in the window
+  or in the 45 s after it (the Interactive deadline). It is a count of Searches: those that
+  started before the fault add nothing to the allowance, but no single Search is judged.
 
 **Criteria every scenario must meet:**
 - no non-2xx answer, other than deliberate 503 sheds;
@@ -94,6 +105,9 @@ what they were derived from, are in its `bounds` in `report.json`.
 - `AML_DRILL_SCENARIOS=FILE` runs a table of your own (lines starting with `#` are comments).
 - `AML_DRILL_RESIDUAL_LIMIT=N` sets the residual-backlog limit.
 - `AML_DRILL_FAIL_AT=fault` fails the run just after the first fault is applied.
+- `AML_TEST_UNBOUND=early` or `late` (every script) expands a variable that is not set, as a bug
+  would: right after the first EXIT trap (early) or right after the script's own cleanup is set
+  (late). The script must then exit 2, and the cleanup must still run.
 
 ## The load test
 
