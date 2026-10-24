@@ -27,8 +27,12 @@
 //     replies that send their headers and half their body, then hang until
 //     the client gives up or "stallFor" passes (15m by default).
 //   - DELETE /_fault ends every profile; GET /_fault shows them.
-//   - GET /_stats counts what each kind answered: statuses, and the spikes,
-//     malformed replies and stalls among them.
+//   - GET /_stats counts what each kind answered: statuses, and the slowed
+//     replies (a profile's latency), spikes, malformed replies and stalls
+//     among them.
+//
+// An error answers {"error":{"message":…}} with the status's text, except a
+// 402, which says "Insufficient Balance" as DeepSeek's does.
 //
 // The faults a call meets are drawn from a generator seeded by -seed, so a
 // run's sequence of draws repeats; the reply itself depends only on the
@@ -234,6 +238,7 @@ func loopbackOnly(next http.HandlerFunc) http.HandlerFunc {
 // plan is what one call meets, drawn when it arrives.
 type plan struct {
 	latency    time.Duration
+	slowed     bool // the latency is a profile's, not the flag's
 	spiked     bool
 	status     int // an error status to answer at once; 0 for none
 	retryAfter string
@@ -255,7 +260,7 @@ func (s *server) draw(kind string) plan {
 		return p
 	}
 	if f.latency != nil {
-		p.latency = *f.latency
+		p.latency, p.slowed = *f.latency, true
 	}
 	if s.hit(f.errorRate) {
 		p.status, p.retryAfter = f.errorStatus, f.retryAfter
@@ -314,8 +319,11 @@ func (s *server) provider(kind string, build func(body []byte) (reply, error)) h
 			if p.retryAfter != "" {
 				w.Header().Set("Retry-After", p.retryAfter)
 			}
-			writeJSON(w, p.status, errorBody(http.StatusText(p.status)))
+			writeJSON(w, p.status, errorBody(errorText(p.status)))
 			return
+		}
+		if p.slowed {
+			s.count(kind, "slow")
 		}
 		if p.spiked {
 			s.count(kind, "spike")
@@ -490,6 +498,15 @@ func (s *server) stats(w http.ResponseWriter, _ *http.Request) {
 	}
 	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, out)
+}
+
+// errorText is the message of an error status: a 402 is DeepSeek's
+// "Insufficient Balance", any other its status text.
+func errorText(status int) string {
+	if status == http.StatusPaymentRequired {
+		return "Insufficient Balance"
+	}
+	return http.StatusText(status)
 }
 
 func errorBody(message string) any {

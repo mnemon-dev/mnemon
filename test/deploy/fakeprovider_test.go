@@ -325,6 +325,17 @@ func TestFakeProviderFaults(t *testing.T) {
 	}
 	clear()
 
+	// An empty balance is a 402 with DeepSeek's words, which the provider
+	// reports as such.
+	set(`{"kind":"deepseek","errorRate":1,"errorStatus":402}`)
+	if status, _, raw := fake.post(t, http.MethodPost, "/chat/completions", "k", `{"model":"deepseek-flash","messages":[{"role":"user","content":"x"}]}`); status != http.StatusPaymentRequired || !bytes.Contains(raw, []byte("Insufficient Balance")) {
+		t.Errorf("an empty balance answered %d %s, want 402 Insufficient Balance", status, raw)
+	}
+	if _, _, err := deepseek.CompleteWith(ctx, plannerSystem, cuePrompt, 400); err == nil || !strings.Contains(err.Error(), "model HTTP 402") {
+		t.Errorf("a completion against an empty balance: %v, want model HTTP 402", err)
+	}
+	clear()
+
 	// A profile the fake cannot apply is refused.
 	if status, _, _ := fake.post(t, http.MethodPost, "/_fault", "", `{"kind":"jev","malformedRate":1,"malformed":"garbled"}`); status != http.StatusBadRequest {
 		t.Errorf("an unknown malformation answered %d, want 400", status)
@@ -348,8 +359,8 @@ func TestFakeProviderFaults(t *testing.T) {
 	// R61); a completion cut at its limit and an extraction in prose are
 	// replies the provider accepts, asked for once.
 	want := map[string]map[string]int{
-		"jev":      {"429": 1, "malformed:wrong-schema": 2, "malformed:truncated": 2, "stall": 1, "spike": 1},
-		"deepseek": {"malformed:truncated": 1, "malformed:invalid-json": 1, "malformed:empty": 2},
+		"jev":      {"429": 1, "malformed:wrong-schema": 2, "malformed:truncated": 2, "stall": 1, "spike": 1, "slow": 1},
+		"deepseek": {"malformed:truncated": 1, "malformed:invalid-json": 1, "malformed:empty": 2, "402": 2},
 	}
 	for kind, outcomes := range want {
 		for outcome, n := range outcomes {

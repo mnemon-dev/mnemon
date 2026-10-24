@@ -10,6 +10,12 @@
 # Tools run at pinned versions with `go run …@version`, never through go.mod:
 # toxiproxy v2.12.0 (drill.sh) and vegeta v12.13.0 (load.sh; VEGETA may name a
 # vegeta binary instead, for a host without Go).
+#
+# Exit codes, the scripts' own: 0 when every hard criterion held, 1 when one
+# failed (or a secret reached the output), 2 when the run could not be made
+# (a usage error, a tool or a server that failed, an interruption). A
+# failing command never passes its own status through: aml_exit_status, run
+# on exit, turns any other status into 2.
 
 AML_TOXIPROXY_SERVER=github.com/Shopify/toxiproxy/v2/cmd/server@v2.12.0
 AML_VEGETA_MODULE=github.com/tsenart/vegeta/v12@v12.13.0
@@ -21,6 +27,20 @@ aml_die() {
 	exit 2
 }
 aml_say() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" >&2; }
+
+# AML_EXIT_OURS is set just before a script exits 1 on purpose.
+AML_EXIT_OURS=
+
+# aml_exit_status STATUS: the status a script exits with: STATUS when it is
+# 0, 2, or a 1 the script chose (AML_EXIT_OURS); else 2, saying so.
+aml_exit_status() {
+	if [ "$1" -gt 2 ] || { [ "$1" = 1 ] && [ -z "$AML_EXIT_OURS" ]; }; then
+		printf '%s: stopped by a command that failed (status %s)\n' "${PROG:-aml}" "$1" >&2
+		echo 2
+		return
+	fi
+	echo "$1"
+}
 
 # aml_need TOOL...: every tool is on PATH.
 aml_need() {
@@ -36,6 +56,24 @@ aml_secret() {
 	(
 		umask 077
 		printf 'aml-test-%s\n' "$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')" >"$1"
+	)
+}
+
+# aml_private_copy SRC NAME DST: copies the secret of the file SRC into DST
+# (mode 0600): the value of its line NAME=value when it has one (a line of
+# an instance's env file), else its first line, without quotes around it.
+aml_private_copy() {
+	local line
+	line=$(grep -m1 "^$2=" "$1" 2>/dev/null) || IFS= read -r line <"$1" || [ -n "$line" ] || aml_die "cannot read the secret file $1"
+	line=${line#"$2"=}
+	line=${line#\"}
+	line=${line%\"}
+	line=${line#\'}
+	line=${line%\'}
+	[ -n "$line" ] || aml_die "the secret file $1 holds no secret"
+	(
+		umask 077
+		printf '%s\n' "$line" >"$3"
 	)
 }
 
@@ -81,30 +119,66 @@ aml_sum() {
 	jq --arg pattern "$2" '[to_entries[] | select(.key | test($pattern)) | .value] | add // 0' "$1"
 }
 
-# aml_stop PID...: stops each process and its children (go run's binary), in
-# order, waiting up to 40 s for each before killing it: aml-serve first, so
-# that its drain still reaches the providers.
+# aml_kill_tree SIGNAL PID: sends SIGNAL to PID and all its descendants: a
+# run's jobs, the shells that drive requests and what they start. Each
+# process is stopped before its children are listed, so that none it starts
+# meanwhile escapes, and gets SIGNAL again once continued: a Go program
+# (vegeta) loses a signal that arrives while it is stopped.
+aml_kill_tree() {
+	local child
+	[ -n "$2" ] || return 0
+	kill -STOP "$2" 2>/dev/null || return 0
+	for child in $(pgrep -P "$2" 2>/dev/null); do
+		aml_kill_tree "$1" "$child"
+	done
+	kill "-$1" "$2" 2>/dev/null || true
+	kill -CONT "$2" 2>/dev/null || true
+	kill "-$1" "$2" 2>/dev/null || true
+}
+
+# aml_stop PID...: stops each server in order with one TERM (and go run's
+# binary under it), waiting up to 40 s for it before killing what is left:
+# aml-serve first, so that its drain still reaches the providers. (A second
+# TERM would end aml-serve at once, without its drain.)
 aml_stop() {
-	local pid deadline
+	local pid child deadline
 	for pid in "$@"; do
 		[ -n "$pid" ] || continue
-		pkill -TERM -P "$pid" 2>/dev/null || true
+		for child in $(pgrep -P "$pid" 2>/dev/null); do
+			kill -TERM "$child" 2>/dev/null || true
+		done
 		kill -TERM "$pid" 2>/dev/null || true
 		deadline=$(($(date +%s) + 40))
 		while kill -0 "$pid" 2>/dev/null && [ "$(date +%s)" -lt "$deadline" ]; do
 			sleep 0.5
 		done
-		pkill -KILL -P "$pid" 2>/dev/null || true
-		kill -KILL "$pid" 2>/dev/null || true
+		aml_kill_tree KILL "$pid"
 		wait "$pid" 2>/dev/null || true
 	done
 }
 
-# aml_build DIR: builds mnemon and the fake provider of this checkout into
-# DIR.
-aml_build() {
-	(cd "$AML_REPO" && go build -o "$1/mnemon" . && go build -o "$1/fakeprovider" ./scripts/aml/fakeprovider) ||
-		aml_die "the build failed"
+# aml_build_fake DIR: builds the fake provider of these scripts into
+# DIR/fakeprovider (standard library only).
+aml_build_fake() {
+	(cd "$AML_REPO" && go build -o "$1/fakeprovider" ./scripts/aml/fakeprovider) || aml_die "the fake provider's build failed"
+}
+
+# aml_build_mnemon DIR: builds mnemon from the tree these scripts are in
+# into DIR/mnemon. A run against another build takes --binary instead.
+aml_build_mnemon() {
+	(cd "$AML_REPO" && go build -o "$1/mnemon" .) || aml_die "the build of mnemon failed"
+}
+
+# aml_provenance: where the build came from, as JSON: {"commit","dirty"} of
+# the git tree these scripts are in (the scripts' tree), null outside one.
+aml_provenance() {
+	local commit dirty
+	if commit=$(git -C "$AML_REPO" rev-parse HEAD 2>/dev/null); then
+		dirty=$([ -n "$(git -C "$AML_REPO" status --porcelain --untracked-files=no 2>/dev/null)" ] && echo true || echo false)
+		printf '{"commit":"%s","dirty":%s}\n' "$commit" "$dirty"
+	else
+		printf '{"commit":null,"dirty":null}\n'
+	fi
 }
 
 # aml_config FILE DEEPSEEK_URL JEV_URL BUDGET_FILE: the shipped configuration
