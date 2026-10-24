@@ -564,6 +564,27 @@ make help           # show all targets
 
 See [Development and Deployment](docs/DEPLOYMENT.md) for Docker, Compose, Ollama embedding, and release setup.
 
+## Run as a cloud instance
+
+Mnemon is also the core runtime engine of a small memory cloud: `mnemon memory-agent
+aml-serve` serves the Agent Memory Leaderboard's Add/Search API over one records store per
+user, with the memory-agent strategy, an admin API (metrics, readiness, status and a store
+overview) and a per-host deploy kit. The website and the console that observes the instances
+live in `mnemon-fe`.
+
+One account is one engine instance, with its own process, API key, admin token, data root,
+model budget and limits. On a host with the kit installed, one command opens one:
+
+```bash
+mnemon-instance new beta-alice --layout shared --public-url https://beta.example.com/i/beta-alice --admin-ip 10.77.0.3
+```
+
+It prints the base URL and the API key for the account holder, and the admin token and a
+registration JSON for the console, once. `mnemon-instance` also suspends, resumes, rotates the
+key of and deletes an instance, and deletes one user's data; `mnemon-preflight` checks an
+instance before a job. See the [AML adapter runbook](docs/aml-adapter.md) and the
+[Admin API](docs/admin-api.md).
+
 ## Documentation
 
 - [Agency Preview](docs/AGENCY.md) — maturity boundary, Pi setup, operating model, completion semantics, and optional peers
@@ -573,6 +594,8 @@ See [Development and Deployment](docs/DEPLOYMENT.md) for Docker, Compose, Ollama
 - [Memory Import Guide](docs/IMPORT.md) — schema and LLM prompt for importing historical chats
 - [Architecture Diagrams](docs/diagrams/) — system architecture, pipelines, lifecycle management
 - [Memory Agent (experimental)](experimental/memory-agent/) — research preview of Mnemon as a memory agent on DSH, with Jev as its System 1 decision model; paper, code and run records
+- [AML adapter runbook](docs/aml-adapter.md) — the Agent Memory Leaderboard service as memory cloud instances: install, open, operate, alerts, data deletion
+- [Admin API](docs/admin-api.md) — an instance's admin listener: token, private bind, metrics, readiness, status and store overview
 
 ## Star History
 

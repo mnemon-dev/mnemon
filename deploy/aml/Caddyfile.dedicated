@@ -1,0 +1,49 @@
+# Caddy for a dedicated host: one instance, slot 0, whose data listener is
+# 127.0.0.1:8090, at its own domain. Install once per host as
+# /etc/caddy/Caddyfile and replace eval.example.com with the instance's
+# domain; see docs/aml-adapter.md. Only directives Caddy 2.6 has are used.
+#
+# The platform waits up to 31 minutes for an Add or a Search (its I/O timeout
+# is 1,800 s), so no proxy timeout may be shorter. aml-serve itself limits
+# bodies to 30 MiB and answers /health without a key.
+{
+	servers {
+		timeouts {
+			read_body 35m
+			read_header 30s
+			write 35m
+			idle 5m
+		}
+	}
+}
+
+eval.example.com {
+	# Certificates come from Let's Encrypt (ports 80 and 443 must reach this
+	# host). To use certificate files issued elsewhere, add:
+	#   tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
+
+	# The adapter's own limit is 30 MiB (31457280 bytes).
+	request_body {
+		max_size 30MiB
+	}
+
+	reverse_proxy 127.0.0.1:8090 {
+		# Through a restart of aml-serve (a new key, an upgrade, a crash) Caddy
+		# holds a request and dials again every 250 ms, for up to 30 s. It
+		# retries a POST only when its dial failed: such a request was never
+		# sent, so a POST is never sent twice. (A GET, such as /health, may
+		# also be retried after other errors.)
+		lb_try_duration 30s
+		lb_try_interval 250ms
+
+		transport http {
+			# Idle upstream connections close before aml-serve's own 2-minute
+			# idle timeout, so Caddy never reuses one the server is closing.
+			keepalive 60s
+			dial_timeout 5s
+			response_header_timeout 35m
+			read_timeout 35m
+			write_timeout 35m
+		}
+	}
+}

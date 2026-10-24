@@ -1,0 +1,42 @@
+# systemd template for one run of the alert watcher of instance %i: it reads
+# aml-serve@%i's /ready and /admin/status and the public /health, and posts
+# what fires or clears to the host's Feishu or WeCom bot. aml-watch@.timer
+# runs it every minute. Install once per host as
+# /etc/systemd/system/aml-watch@.service; see docs/aml-adapter.md ("Alerts").
+#
+# It has no [Install] section (its timer starts it) and does not require
+# aml-serve@%i: it must run, and alert, while aml-serve is down.
+[Unit]
+Description=Mnemon AML alert watcher, one run for instance %i
+After=network-online.target wg-quick@wg0.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mnemon
+Group=mnemon
+# AML_ALERT_WEBHOOK, AML_ALERT_KIND, AML_PUBLIC_URL, AML_ADMIN_LISTEN (the
+# engine's own value) and MNEMON_ADMIN_TOKEN; never a provider key or the API
+# key. Mode 0600, root's.
+EnvironmentFile=/etc/mnemon-aml/%i/watch.env
+ExecStart=/usr/local/bin/mnemon memory-agent aml-watch --instance %i --admin http://${AML_ADMIN_LISTEN} --admin-token-env MNEMON_ADMIN_TOKEN --public-url ${AML_PUBLIC_URL} --state /var/lib/mnemon-aml-watch/%i/state.json
+# A run ends within a minute; one that hangs is killed, which gives back its
+# lock on state.json.lock.
+TimeoutStartSec=90
+
+# The same sandboxing as aml-serve@.service; the state lives apart from the
+# engine's data root.
+StateDirectory=mnemon-aml-watch/%i
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true

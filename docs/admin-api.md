@@ -42,6 +42,24 @@ show it. Bind a private address only on a network whose firewall lets just the h
 the listener reach it: the token is the second lock, not the first, and it crosses that network
 in clear text.
 
+### In the memory cloud
+
+Every engine instance has its admin listener on its host's WireGuard address, with a token
+([runbook](aml-adapter.md), "Instances" and "Private network"):
+
+- `aml-serve@.service` passes `--admin-listen ${AML_ADMIN_LISTEN} --admin-token-env MNEMON_ADMIN_TOKEN`.
+  `mnemon-instance new` sets `AML_ADMIN_LISTEN` to the host's overlay address (`--admin-ip`) and
+  the instance's admin port: 8091 on a dedicated host, 8101 + 10 × the slot on a shared one.
+- It makes the token, `mnm_` and 32 random bytes in base64url without padding (47 characters),
+  and writes it as `MNEMON_ADMIN_TOKEN` into the instance's two environment files, `env` and
+  `watch.env`, and into the one-time registration JSON for the console. Nowhere else holds it
+  but the console's registry.
+- The instance's watcher (`aml-watch@<n>`, `--admin-token-env MNEMON_ADMIN_TOKEN`), the console
+  and, through the console, Prometheus read the listener. The instance hosts' firewalls admit
+  the admin ports (8091 to 8600) only from the overlay's hub, `10.77.0.1`, on `wg0`.
+- Rotating the token is a manual step: write the new one into both environment files, restart
+  `aml-serve@<n>`, and set it in the console.
+
 ## Authentication
 
 With an admin token set, **every** request to the admin listener must carry

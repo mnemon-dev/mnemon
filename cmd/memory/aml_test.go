@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path"
 	"path/filepath"
 	"reflect"
 	"regexp"
@@ -358,56 +359,328 @@ func TestIndustrialConfigLoadsAndStarts(t *testing.T) {
 	}
 }
 
-// The systemd unit and the Caddyfile must name flags, paths and a port the
-// command really has.
-func TestDeployKitMatchesTheCommand(t *testing.T) {
-	unit, err := os.ReadFile(deployFile(t, "aml-serve.service"))
+// systemdUnit is a unit file's settings: by section, each key's values in
+// file order (a key may be given more than once).
+type systemdUnit map[string]map[string][]string
+
+// readUnit parses the kit's unit file name. Comments and blank lines are
+// skipped. A setting continued on the next line is refused, so that every
+// setting, ExecStart above all, is one line, the same for every instance.
+func readUnit(t *testing.T, name string) systemdUnit {
+	t.Helper()
+	raw, err := os.ReadFile(deployFile(t, name))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var execStart string
-	for _, line := range strings.Split(string(unit), "\n") {
-		if value, ok := strings.CutPrefix(line, "ExecStart="); ok {
-			execStart = value
+	unit, section := systemdUnit{}, ""
+	// A Windows checkout may end the lines with \r\n.
+	for _, line := range strings.Split(strings.ReplaceAll(string(raw), "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";"):
+		case strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]"):
+			section = strings.Trim(line, "[]")
+			if unit[section] == nil {
+				unit[section] = map[string][]string{}
+			}
+		default:
+			key, value, ok := strings.Cut(line, "=")
+			if !ok || section == "" || strings.HasSuffix(value, `\`) {
+				t.Fatalf("%s: %q is not a one-line setting of a section", name, line)
+			}
+			key = strings.TrimSpace(key)
+			unit[section][key] = append(unit[section][key], strings.TrimSpace(value))
 		}
 	}
-	fields := strings.Fields(execStart)
-	if len(fields) < 4 || fields[0] != "/usr/local/bin/mnemon" || fields[1] != "memory-agent" || fields[2] != "aml-serve" {
-		t.Fatal("ExecStart:", execStart)
+	return unit
+}
+
+// get is the one value of key in section; a missing or repeated key fails.
+func (u systemdUnit) get(t *testing.T, section, key string) string {
+	t.Helper()
+	if values := u[section][key]; len(values) == 1 {
+		return values[0]
 	}
-	command := newAMLServeCommand()
-	if err := command.ParseFlags(fields[3:]); err != nil {
+	t.Fatalf("[%s] %s is %q, want one value", section, key, u[section][key])
+	return ""
+}
+
+// systemdSpan reads a systemd time span of one number and a unit: none
+// (seconds), ms, s or min.
+func systemdSpan(t *testing.T, span string) time.Duration {
+	t.Helper()
+	match := regexp.MustCompile(`^([0-9]+)(ms|s|min)?$`).FindStringSubmatch(span)
+	if match == nil {
+		t.Fatalf("time span %q is not one number and a unit", span)
+	}
+	n, _ := time.ParseDuration(match[1] + "s")
+	switch match[2] {
+	case "ms":
+		return n / 1000
+	case "min":
+		return n * 60
+	}
+	return n
+}
+
+// execArgs is the command line systemd runs for execStart in instance, whose
+// EnvironmentFile holds env: %i is the instance and ${NAME} is NAME's value.
+// The templates use neither %I, which would turn the dashes of a name into
+// slashes, nor $NAME, which systemd splits at whitespace.
+func execArgs(t *testing.T, execStart, instance string, env map[string]string) []string {
+	t.Helper()
+	line := strings.ReplaceAll(execStart, "%i", instance)
+	var unknown []string
+	line = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`).ReplaceAllStringFunc(line, func(ref string) string {
+		value, ok := env[ref[2:len(ref)-1]]
+		if !ok {
+			unknown = append(unknown, ref)
+		}
+		return value
+	})
+	if len(unknown) > 0 || strings.ContainsAny(line, "$%") {
+		t.Fatalf("ExecStart %q uses %q, which the instance's environment file does not set, or a $ or %% this test does not expand", execStart, unknown)
+	}
+	return strings.Fields(line)
+}
+
+// unitSandbox is the sandboxing aml-serve@.service sets and
+// aml-watch@.service repeats.
+var unitSandbox = []string{
+	"UMask", "NoNewPrivileges", "PrivateTmp", "PrivateDevices", "ProtectSystem", "ProtectHome",
+	"ProtectKernelTunables", "ProtectKernelModules", "ProtectControlGroups", "RestrictSUIDSGID",
+	"LockPersonality", "RestrictRealtime",
+}
+
+// The instance templates must run aml-serve and aml-watch with flags the
+// commands have once systemd has filled an instance in, and carry the
+// settings the runbook and the memory cloud design rely on.
+func TestServiceUnitFlagsParse(t *testing.T) {
+	// No file of the kit mentions Ollama: retrieval is BM25 only.
+	err := filepath.WalkDir(deployFile(t, ""), func(file string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() {
+			return err
+		}
+		raw, err := os.ReadFile(file)
+		if err == nil && strings.Contains(strings.ToLower(string(raw)), "ollama") {
+			t.Errorf("%s mentions Ollama", file)
+		}
+		return err
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
-	for flag, value := range map[string]string{
-		"listen":             "127.0.0.1:8090",
-		"data-root":          "/var/lib/mnemon-aml/data",
-		"memory-config":      "/etc/mnemon-aml/memory-config.json",
-		"consolidate-on-add": "true",
-		"max-open-stores":    "16",
-		"auth-key-env":       "AML_API_KEY",
+
+	// A dedicated instance's environment file, as mnemon-instance new writes
+	// it: the addresses and the flag values.
+	const instance = "eval"
+	env := map[string]string{
+		"AML_LISTEN": "127.0.0.1:8090", "AML_ADMIN_LISTEN": "10.0.0.5:8091", "AML_PUBLIC_URL": "https://eval.example.com",
+		"AML_MAX_ADDS": "16", "AML_MAX_SEARCHES": "16", "AML_MAX_OPEN_STORES": "16", "AML_WORKERS": "4",
+	}
+
+	serve := readUnit(t, "aml-serve@.service")
+	args := execArgs(t, serve.get(t, "Service", "ExecStart"), instance, env)
+	if len(args) < 3 || !slices.Equal(args[:3], []string{"/usr/local/bin/mnemon", "memory-agent", "aml-serve"}) {
+		t.Fatal("aml-serve@.service runs", args)
+	}
+	command := newAMLServeCommand()
+	if err := command.ParseFlags(args[3:]); err != nil {
+		t.Fatal(err)
+	}
+	if rest := command.Flags().Args(); len(rest) > 0 {
+		t.Fatal("aml-serve@.service passes arguments that are not flags:", rest)
+	}
+	for flag, want := range map[string]string{
+		"listen":                  "127.0.0.1:8090",
+		"admin-listen":            "10.0.0.5:8091",
+		"admin-token-env":         "MNEMON_ADMIN_TOKEN",
+		"auth-key-env":            "AML_API_KEY",
+		"data-root":               "/var/lib/mnemon-aml/eval/data",
+		"memory-config":           "/etc/mnemon-aml/eval/memory-config.json",
+		"consolidate":             "background",
+		"consolidation-workers":   "4",
+		"max-open-stores":         "16",
+		"max-concurrent-adds":     "16",
+		"max-concurrent-searches": "16",
+		"log-format":              "json",
 	} {
-		if got := command.Flags().Lookup(flag).Value.String(); got != value {
-			t.Fatalf("--%s = %q, want %q", flag, got, value)
+		if f := command.Flags().Lookup(flag); !f.Changed || f.Value.String() != want {
+			t.Errorf("aml-serve@.service passes --%s %q, want %q", flag, f.Value.String(), want)
 		}
 	}
-	for _, line := range []string{"EnvironmentFile=/etc/mnemon-aml/env", "User=mnemon", "Restart=on-failure", "LimitNOFILE=65536"} {
-		if !strings.Contains("\n"+string(unit), "\n"+line+"\n") {
-			t.Fatalf("service lacks %q", line)
+	if command.Flags().Changed("consolidate-on-add") {
+		t.Error("aml-serve@.service passes --consolidate-on-add")
+	}
+	// The admin listener binds the host's private overlay address, which
+	// aml-serve accepts only with the admin token.
+	if err := checkAdminListen(env["AML_ADMIN_LISTEN"], true); err != nil {
+		t.Fatal(err)
+	}
+	if checkAdminListen(env["AML_ADMIN_LISTEN"], false) == nil {
+		t.Fatal("a private admin listener is accepted without a token")
+	}
+	for _, s := range []struct{ section, key, want string }{
+		{"Unit", "StartLimitIntervalSec", "0"},
+		{"Service", "Type", "notify"},
+		{"Service", "NotifyAccess", "main"},
+		{"Service", "Restart", "always"},
+		{"Service", "RestartSec", "5"},
+		{"Service", "TimeoutStopSec", "60"},
+		{"Service", "User", "mnemon"},
+		{"Service", "Group", "mnemon"},
+		{"Service", "EnvironmentFile", "/etc/mnemon-aml/%i/env"},
+		// The data root and the budget file are under /var/lib/mnemon-aml/<n>/.
+		{"Service", "StateDirectory", "mnemon-aml/%i"},
+		{"Service", "StateDirectoryMode", "0700"},
+		{"Service", "LimitNOFILE", "65536"},
+		{"Install", "WantedBy", "multi-user.target"},
+	} {
+		if got := serve.get(t, s.section, s.key); got != s.want {
+			t.Errorf("aml-serve@.service [%s] %s=%s, want %s", s.section, s.key, got, s.want)
+		}
+	}
+	if watchdog := systemdSpan(t, serve.get(t, "Service", "WatchdogSec")); watchdog < amlMinWatchdog {
+		t.Errorf("WatchdogSec %s is below the %s aml-serve accepts", watchdog, amlMinWatchdog)
+	}
+	// The shutdown (aml_process.go) fits in TimeoutStopSec: the requests in
+	// flight and the scheduler's drain share amlShutdownGrace, the requests
+	// canceled then have amlCancelGrace more, and the stores and models close
+	// within the same window.
+	if stop := systemdSpan(t, serve.get(t, "Service", "TimeoutStopSec")); stop <= amlShutdownGrace+amlCancelGrace {
+		t.Errorf("TimeoutStopSec %s does not outlast the shutdown's %s", stop, amlShutdownGrace+amlCancelGrace)
+	}
+	// The limits are per instance, in its drop-in, so the template is the
+	// same for every instance.
+	for _, key := range []string{"MemoryMax", "CPUQuota"} {
+		if _, ok := serve["Service"][key]; ok {
+			t.Errorf("aml-serve@.service sets %s, which belongs in the instance's limits.conf drop-in", key)
 		}
 	}
 
-	caddy, err := os.ReadFile(deployFile(t, "Caddyfile"))
-	if err != nil {
+	watch := readUnit(t, "aml-watch@.service")
+	args = execArgs(t, watch.get(t, "Service", "ExecStart"), instance, env)
+	if len(args) < 3 || !slices.Equal(args[:3], []string{"/usr/local/bin/mnemon", "memory-agent", "aml-watch"}) {
+		t.Fatal("aml-watch@.service runs", args)
+	}
+	command = newAMLWatchCommand()
+	if err := command.ParseFlags(args[3:]); err != nil {
 		t.Fatal(err)
 	}
-	// Compare with the column alignment collapsed.
-	normalized := strings.Join(strings.Fields(string(caddy)), " ")
-	// Upstream keep-alive stays below aml-serve's 2-minute idle timeout.
-	for _, want := range []string{"reverse_proxy 127.0.0.1:8090 {", "max_size 30MiB", "read_timeout 35m", "write_timeout 35m", "keepalive 60s"} {
-		if !strings.Contains(normalized, want) {
-			t.Fatalf("Caddyfile lacks %q", want)
+	if rest := command.Flags().Args(); len(rest) > 0 {
+		t.Fatal("aml-watch@.service passes arguments that are not flags:", rest)
+	}
+	for flag, want := range map[string]string{
+		"admin":           "http://" + env["AML_ADMIN_LISTEN"],
+		"admin-token-env": "MNEMON_ADMIN_TOKEN",
+		"public-url":      env["AML_PUBLIC_URL"],
+		"instance":        instance,
+		"state":           "/var/lib/mnemon-aml-watch/eval/state.json",
+	} {
+		if f := command.Flags().Lookup(flag); !f.Changed || f.Value.String() != want {
+			t.Errorf("aml-watch@.service passes --%s %q, want %q", flag, f.Value.String(), want)
 		}
+	}
+	state := command.Flags().Lookup("state").Value.String()
+	if !path.IsAbs(state) || path.Clean(state) != state || !strings.HasPrefix(state, "/var/lib/mnemon-aml-watch/") {
+		t.Errorf("--state %q is not an absolute path under /var/lib/mnemon-aml-watch/", state)
+	}
+	for flag, value := range map[string]string{"--admin": "http://" + env["AML_ADMIN_LISTEN"], "--public-url": env["AML_PUBLIC_URL"]} {
+		if _, err := watchBaseURL(flag, value); err != nil {
+			t.Error(err)
+		}
+	}
+	if !watchInstance.MatchString(instance) {
+		t.Errorf("aml-watch refuses --instance %q", instance)
+	}
+	for _, s := range []struct{ key, want string }{
+		{"Type", "oneshot"},
+		{"User", "mnemon"},
+		{"Group", "mnemon"},
+		{"EnvironmentFile", "/etc/mnemon-aml/%i/watch.env"},
+		{"StateDirectory", "mnemon-aml-watch/%i"},
+		{"StateDirectoryMode", "0700"},
+		// A wedged run is killed, which gives its run lock back.
+		{"TimeoutStartSec", "90"},
+	} {
+		if got := watch.get(t, "Service", s.key); got != s.want {
+			t.Errorf("aml-watch@.service %s=%s, want %s", s.key, got, s.want)
+		}
+	}
+	// The timer runs the watcher, which must run while aml-serve is down.
+	if _, ok := watch["Install"]; ok {
+		t.Error("aml-watch@.service has an [Install] section; its timer starts it")
+	}
+	if requires, ok := watch["Unit"]["Requires"]; ok {
+		t.Errorf("aml-watch@.service requires %q: the watcher must run while aml-serve is down", requires)
+	}
+	for _, key := range unitSandbox {
+		if want := serve["Service"][key]; len(want) == 0 || !slices.Equal(watch["Service"][key], want) {
+			t.Errorf("%s is %q in aml-serve@.service and %q in aml-watch@.service, want one value in both", key, want, watch["Service"][key])
+		}
+	}
+
+	timer := readUnit(t, "aml-watch@.timer")
+	for _, s := range []struct{ section, key, want string }{
+		{"Timer", "OnBootSec", "2min"},
+		{"Timer", "OnUnitActiveSec", "1min"},
+		{"Timer", "AccuracySec", "1s"},
+		{"Install", "WantedBy", "timers.target"},
+	} {
+		if got := timer.get(t, s.section, s.key); got != s.want {
+			t.Errorf("aml-watch@.timer [%s] %s=%s, want %s", s.section, s.key, got, s.want)
+		}
+	}
+}
+
+// The Caddyfiles must proxy to the ports the instances listen on, hold
+// requests through a restart, and keep the platform's limits. The shared
+// host's snippets are the instance script's (test/deploy).
+func TestDeployKitMatchesTheCommand(t *testing.T) {
+	read := func(name string) string {
+		raw, err := os.ReadFile(deployFile(t, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Compare without the comments and with the column alignment collapsed.
+		var kept []string
+		for _, line := range strings.Split(string(raw), "\n") {
+			if before, _, found := strings.Cut(line, "#"); found {
+				line = before
+			}
+			kept = append(kept, line)
+		}
+		return strings.Join(strings.Fields(strings.Join(kept, "\n")), " ")
+	}
+	// The platform waits up to 31 minutes for an Add or a Search, and
+	// aml-serve takes bodies of up to 30 MiB.
+	limits := []string{"read_body 35m", "read_header 30s", "write 35m", "idle 5m", "max_size 30MiB"}
+
+	dedicated := read("Caddyfile.dedicated")
+	// Slot 0 of a dedicated host: data 127.0.0.1:8090. Caddy dials again
+	// through a restart, and its upstream keep-alive stays below aml-serve's
+	// 2-minute idle timeout.
+	for _, want := range append([]string{
+		"reverse_proxy 127.0.0.1:8090 {", "lb_try_duration 30s", "lb_try_interval 250ms",
+		"keepalive 60s", "dial_timeout 5s", "response_header_timeout 35m", "read_timeout 35m", "write_timeout 35m",
+	}, limits...) {
+		if !strings.Contains(dedicated, want) {
+			t.Errorf("Caddyfile.dedicated lacks %q", want)
+		}
+	}
+
+	shared := read("Caddyfile.shared")
+	for _, want := range append([]string{
+		"import /etc/caddy/mnemon-instances/*.caddy",
+		"handle { header Content-Type application/json respond `{\"error\":\"not found\"}` 404 }",
+	}, limits...) {
+		if !strings.Contains(shared, want) {
+			t.Errorf("Caddyfile.shared lacks %q", want)
+		}
+	}
+	// A shared host reaches its instances through their snippets only.
+	if strings.Contains(shared, "reverse_proxy") {
+		t.Error("Caddyfile.shared proxies outside the instances' snippets")
 	}
 }
 

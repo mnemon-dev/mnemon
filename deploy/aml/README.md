@@ -7,12 +7,21 @@ with [`docs/aml-adapter.md`](../../docs/aml-adapter.md).
 
 ## Kit contents
 
+The kit runs each account as one engine instance of the memory cloud; the evaluation is the
+dedicated instance `eval`.
+
 | File | Purpose |
 |---|---|
-| `memory-config.industrial.json` | The memory strategy configuration (install as `/etc/mnemon-aml/memory-config.json`). |
-| `aml-serve.service` | systemd unit for `mnemon memory-agent aml-serve`. |
-| `Caddyfile` | TLS reverse proxy with 31-minute timeouts and a 30 MiB body limit. |
-| `../../docs/aml-adapter.md` | Runbook: install, operate, capacity, troubleshooting, data deletion. |
+| `memory-config.industrial.json` | The memory strategy configuration, installed once per host as `/usr/local/share/mnemon-aml/memory-config.industrial.json`; `mnemon-instance new` writes each instance's copy with its caps. |
+| `aml-serve@.service` | systemd template of an instance's `mnemon memory-agent aml-serve`, per instance through `%i`. |
+| `aml-watch@.service`, `aml-watch@.timer` | The instance's alert watcher, run every minute. |
+| `Caddyfile.dedicated` | TLS reverse proxy of a dedicated host: one instance at its domain's root, 31-minute timeouts, a 30 MiB body limit, requests held through a restart. |
+| `Caddyfile.shared` | The same for a shared host: instance `<n>` at `/i/<n>`, one snippet per instance. |
+| `instance.sh` | Installed as `/usr/local/sbin/mnemon-instance`: `new`, `suspend`, `resume`, `rotate-key`, `delete`, `delete-user`, `list`. |
+| `preflight.sh` | Installed as `/usr/local/sbin/mnemon-preflight`: the checks before a job, for one instance. |
+| `wg0.conf.example` | The WireGuard spoke of an instance host: the admin listeners' private network. |
+| `../../docs/aml-adapter.md` | Runbook: install, instances, operate, alerts, capacity, troubleshooting, data deletion. |
+| `../../docs/admin-api.md` | The admin listener: token, private bind, routes. |
 | `make build-linux-amd64` | Builds the static `bin/mnemon-linux-amd64`. |
 
 ## System
@@ -24,7 +33,7 @@ with [`docs/aml-adapter.md`](../../docs/aml-adapter.md).
 | Track | Industrial (commercial products), textual |
 | Team / organization | `<team>` / `<organization>` |
 | Contact | `<name, email>` |
-| Endpoint | `https://<domain>` (`POST /add`, `POST /search`, `GET /health`) |
+| Endpoint | `https://<domain>`, the instance `eval` on its own host (`POST /add`, `POST /search`, `GET /health`) |
 | Implementation | Go, one static binary: `mnemon memory-agent aml-serve` |
 
 ## Summary
@@ -90,10 +99,12 @@ may do (see step 6 below).
    continues a stored one, whether a new fact is the same attribute of the same thing as a
    stored fact, and whether its value contradicts the stored one. At read time JEV selects the
    topics that matter for the question, and the layer adds blocks (topics, timelines, value
-   histories, directives) with the linked records before the evidence. With
-   `--consolidate-on-add`, an Add folds every full batch (10,000 characters) of the user's new
-   records before it returns, and the rest of the conversation is folded before that user's
-   next Search, as the reference implementation folds a conversation once it pauses.
+   histories, directives) with the linked records before the evidence. The deployment
+   consolidates in the background (`--consolidate background`): an Add returns once its
+   records are persisted and searchable, and supervised workers fold every full batch (10,000
+   characters) of the user's new records; an Add waits only while its user's backlog is above
+   one job's window (160,000 characters). The rest of the conversation is folded before that
+   user's next Search, as the reference implementation folds a conversation once it pauses.
 7. **Search returns evidence only.** The response lists the consolidation blocks first, then
    the stored record texts of the View (verbatim, with the conversation heading and date) in
    time order, earlier first (`view.order: "time"`); records of one time keep the order they
@@ -117,10 +128,10 @@ stored ones all rank by shared words (BM25). Nothing is embedded and no embeddin
 runs.
 
 During a Search, the question, the planner's searches and candidate record texts go to the
-DeepSeek and JEV APIs; during consolidation (in an Add, or before a user's next Search), the
-conversation text goes to the DeepSeek API, and the events and facts it extracts from the
-conversation (topic titles, dated event texts, fact keys and values) go to the JEV API. Raw
-records stay on the submission host. `<confirm that the track rules allow
+DeepSeek and JEV APIs; during consolidation (in the background workers, or before a user's
+next Search), the conversation text goes to the DeepSeek API, and the events and facts it
+extracts from the conversation (topic titles, dated event texts, fact keys and values) go to
+the JEV API. Raw records stay on the submission host. `<confirm that the track rules allow
 external model APIs, and add their data-retention terms if the rules require them>`.
 
 ## Changes from the reference implementation
@@ -140,10 +151,11 @@ external model APIs, and add their data-retention terms if the rules require the
    The change itself is how a batch is joined to the memory, and it costs JEV calls during
    consolidation.
 3. **AML adapter.** An HTTP service for the Add/Search contract: per-user stores, idempotent
-   Add by `request_id`, conversation packing at write time, optional consolidation (full
-   batches during Add, the rest before the user's next Search), authentication (`Bearer`,
-   `Token` or `X-Api-Key`), unauthenticated health check, graceful degradation of Search, and
-   bounded stores kept open.
+   Add by `request_id`, conversation packing at write time, consolidation in supervised
+   background workers (full batches after the Add returns, the rest before the user's next
+   Search), authentication (`Bearer`, `Token` or `X-Api-Key`), unauthenticated health check,
+   graceful degradation of Search, load shedding, bounded stores kept open, and an admin
+   listener for metrics, readiness and status, on a private address behind a token.
 4. **Large evidence lists.** Up to 100 records and 240,000 characters per Search (the reference
    View holds 16 records and 12,000 characters). The judged list is not capped at 16 records:
    it is bounded by the shortlist JEV judges (at most 64 records, and at most 8 more linked
@@ -177,27 +189,42 @@ Fill these from the measurements described in the runbook ("Capacity declaration
 
 | Field | Value |
 |---|---|
-| Host | `<vCPU>` vCPU, `<RAM>` GB, `<disk>` GB, Ubuntu `<version>` amd64 |
-| Concurrent Add requests | `<TBD: measured>` |
-| Concurrent Search requests | `<TBD: measured>` |
+| Host | 12 vCPU, 48 GB, 387 GB, Ubuntu 24.04 amd64, dedicated to the evaluation instance (`<confirm>`) |
+| Concurrent Add requests | `<TBD: measured>`, at most the instance's `--max-concurrent-adds` (16, provisional) |
+| Concurrent Search requests | `<TBD: measured>`, at most the instance's `--max-concurrent-searches` (16, provisional) |
 | Add latency (20 messages), p50 / p95 | `<TBD>` / `<TBD>` |
 | Search latency (`top_k` 100), p50 / p95 | `<TBD>` / `<TBD>` |
 | Rate limit | `<TBD>` requests per minute |
 | Request timeout accepted | 31 minutes (the platform's I/O timeout is 30 minutes); a Search's memory read stops after 10 minutes (`--search-timeout`) and answers the raw ranking |
 | Stores kept open | 16 (`--max-open-stores`) |
 | Request body limit | 30 MiB |
-| Retries | Add retries with the same `request_id` are idempotent; 503 marks a retryable failure |
+| Retries | Add retries with the same `request_id` are idempotent; 503 marks a retryable failure, with `Retry-After: 5` when no slot frees within 30 s; a restart cuts no request: requests in flight have 30 s to finish, and the proxy holds new ones for up to 30 s |
 | Model spending caps | JEV USD 60 (reads and consolidation links), DeepSeek CNY 600 (planning and extraction); `budgets` in the configuration |
+
+## Deployment
+
+- The evaluation runs as the dedicated instance `eval` of the memory cloud: its own host,
+  process (`aml-serve@eval`), API key, data root, model budget and limits. Beta accounts are
+  other instances on another host and share nothing with it.
+- The data plane listens on loopback behind Caddy (TLS). The admin listener (metrics,
+  readiness, status, store overview, profiler) binds the host's private WireGuard address,
+  requires a bearer token on every request, and is reachable only from the ops host; the
+  firewall denies everything else but ssh, HTTP and HTTPS.
+- systemd supervises the process (readiness, watchdog, restart), and a watcher posts alerts to
+  the operators' Feishu or WeCom group every minute, independently of the console.
+- Retrieval is BM25 only; no embedding model runs on the host.
 
 ## Data handling
 
-- All user data (records, consolidation index) lives under one data root on the
-  submission host, one directory per `user_id`; users cannot reach each other's records.
+- All user data (records, consolidation index) lives under the instance's data root on the
+  submission host (`/var/lib/mnemon-aml/eval/data`), one directory per `user_id`; users
+  cannot reach each other's records.
 - Request bodies and user identifiers are not logged.
 - The model budget file keeps metering and the SHA-256 hashes of model requests, never their
   text; it is deleted together with the data root.
 - After the job the data root and the budget file are deleted within 30 days, with the
-  procedure in the runbook ("Data deletion"). Planned deletion date: `<date>`.
+  procedure in the runbook ("Data deletion": `mnemon-instance delete eval`; one user with
+  `mnemon-instance delete-user eval`). Planned deletion date: `<date>`.
 
 ## Evaluation evidence
 
@@ -211,8 +238,11 @@ each number. None is reported in this draft.>`
 - Whether the track rules treat the consolidation blocks (model-written topic, timeline and value
   summaries built from the stored records as conversations are added and before the next Search,
   never from the question) as
-  retrieved evidence. Search can be run without them by starting `aml-serve` without
-  `--consolidate-on-add`, at the cost of the layer.
+  retrieved evidence. Search can be run without them by running the instance's `aml-serve`
+  with `--consolidate off` (an `ExecStart=` drop-in), at the cost of the layer.
 - That external model APIs are allowed in the industrial track, and the retention terms of
   DeepSeek and JEV for the data sent to them.
 - The capacity numbers and the rate limit above.
+- The Windows CI job (`windows-memory`) has not yet run the new `cmd/memory` tests: they are
+  the first Windows tests to open AML stores and the budget file, and must pass before the
+  branch merges.
