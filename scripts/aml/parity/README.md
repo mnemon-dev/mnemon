@@ -89,8 +89,9 @@ python3 -I scripts/aml/parity/replay.py --root "$ROOT" --inputs "$INPUTS" \
     replay my-build --binary "$NEWBUILD" --built-from <commit>
 ```
 
-This runs the new build over the whole sequence and compares it with `ROOT/old`. The server is
-given what makes it safe to run anywhere:
+This runs the new build over the whole sequence and compares it with `ROOT/old` (the label must
+be another than `old`: `--force` replaces a run's directory, and the replay refuses to take the
+baseline's). The server is given what makes it safe to run anywhere:
 
 - **placeholder provider keys:** the real ones are never read, so the server could not
   authenticate to a provider even if it tried;

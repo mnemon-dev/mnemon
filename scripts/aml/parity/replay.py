@@ -584,6 +584,8 @@ def cmd_run(args, keys=None, dead_proxy=False):
     kind = args.which
     if not pathlib.Path(args.binary).is_file():
         raise SystemExit(f'{args.binary}: no such binary')
+    if kind == 'new' and label == 'old':
+        raise SystemExit("a run of the new build must not take the label 'old', the baseline's directory")
     out_dir = layout.root / label
     if out_dir.exists():
         if not args.force:
@@ -892,6 +894,8 @@ def cmd_replay(args):
     The result is ROOT/LABEL/compare-report.json; ROOT/report.json (the comparison of a live pair) is left alone. Exit 0
     when the verdict is PASS: every body identical, the same requests, 0 paid calls, no fault in the log."""
     layout = Layout(args.dry)
+    if args.label == args.old:
+        raise SystemExit(f'the replay must not replace the run it compares with: {args.label!r} is the old run; choose another label')
     if not (layout.root / args.old / 'manifest.json').is_file():
         raise SystemExit(f'{layout.root / args.old / "manifest.json"} is missing: record the old run first (run old), or point --old at it')
     cache_before = cache_entries(layout)

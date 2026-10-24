@@ -1422,6 +1422,7 @@ func TestParityReplayPlanAndRefusals(t *testing.T) {
 		{"inputs without a dataset file", nil, []string{"--root", root, "--inputs", missing, "plan"}, 1, "is missing: --inputs must hold"},
 		{"a live run without a key", nil, []string{"--root", root, "--inputs", inputs, "run", "old", "--binary", binary}, 1, "DEEPSEEK_API_KEY is not set"},
 		{"a run without a binary", secrets, []string{"--root", root, "--inputs", inputs, "run", "old", "--binary", filepath.Join(t.TempDir(), "none")}, 1, "no such binary"},
+		{"a replay over the old run", nil, []string{"--root", root, "--inputs", inputs, "replay", "old", "--force", "--binary", binary}, 1, "must not replace the run it compares with"},
 		{"a replay without the recorded run", nil, []string{"--root", root, "--inputs", inputs, "replay", "label", "--binary", binary}, 1, "record the old run first"},
 		{"a scrub without keys", nil, []string{"--root", root, "scrub"}, 1, "is not set in the environment"},
 	} {
