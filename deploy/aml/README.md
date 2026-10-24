@@ -32,7 +32,7 @@ dedicated instance `eval`.
 | Version | v0.2.x: a v0.2.x release follows this work (the `VERSION` given to `make build-linux-amd64`), commit `<release commit>` |
 | Track | Industrial (commercial products), textual |
 | Team / organization | Mnemon Team / Mnemon |
-| Contact | `<name, email>` |
+| Contact | `grivn.wang@gmail.com` |
 | Endpoint | `https://aml.mnemon.dev`, the instance `eval` on its own host, the dedicated 12 vCPU / 48 GB / 387 GB evaluation host (`POST /add`, `POST /search`, `GET /health`) |
 | Implementation | Go, one static binary: `mnemon memory-agent aml-serve` |
 | Paper | *Raw Records, Fast Judgments, Slow Thoughts*: Guangren Wang, <https://arxiv.org/abs/2609.36059> (arXiv, 2026) |
@@ -190,16 +190,23 @@ participants choose their models, and DeepSeek and JEV retain no data.
 
 ## Capacity, timeouts and limits
 
-Fill these from the measurements described in the runbook ("Capacity declaration").
+Fill these from the measurements described in the runbook ("Capacity declaration"). The
+values marked "local, fake providers" are not the host's: they come from
+`scripts/aml/load.sh --local` on a development machine (18 cores), with the fake provider
+answering every DeepSeek call in 2 s and every JEV call in 1.5 s, the dedicated limits
+(16 Adds, 16 Searches, 16 open stores, 4 workers) and 16 users, at rising rates of 60 s
+(Searches) or 30 s (Adds) each. The knee is the highest rate whose p95 stays within twice the
+lowest rate's p95 with no non-2xx answer. The host's values come from the same script on a
+scratch instance there (Task 12c).
 
 | Field | Value |
 |---|---|
 | Host | 12 vCPU, 48 GB, 387 GB, Ubuntu 24.04 amd64, dedicated to the evaluation instance |
-| Concurrent Add requests | `<TBD: measured>`, at most the instance's `--max-concurrent-adds` (16, provisional) |
-| Concurrent Search requests | `<TBD: measured>`, at most the instance's `--max-concurrent-searches` (16, provisional) |
-| Add latency (20 messages), p50 / p95 | `<TBD>` / `<TBD>` |
-| Search latency (`top_k` 100), p50 / p95 | `<TBD>` / `<TBD>` |
-| Rate limit | `<TBD>` requests per minute |
+| Concurrent Add requests | `<TBD: measured>`, at most the instance's `--max-concurrent-adds` (16, provisional). Local, fake providers: 8 Adds a second of 20 messages is the knee, under 1 in flight; at 16 a second, after the lower steps, the users' backlogs reach the lag bound, Adds wait for consolidation (p95 21 s) and 8 of 480 are shed |
+| Concurrent Search requests | `<TBD: measured>`, at most the instance's `--max-concurrent-searches` (16, provisional). Local, fake providers: 1.5 Searches a second fill the 16 slots with no wait; 2 a second is the knee, queueing for slots (39 in flight or waiting at the peak); 3 a second shed 30 of 180 |
+| Add latency (20 messages), p50 / p95 | `<TBD>` / `<TBD>`. Local, fake providers, at 8 a second: 3 ms / 5 ms |
+| Search latency (`top_k` 100), p50 / p95 | `<TBD>` / `<TBD>`. Local, fake providers: 9.6 s / 11.1 s up to 1.5 a second; 15.4 s / 21.9 s at the knee, 2 a second |
+| Rate limit | `<TBD>` requests per minute. Local, fake providers: 120 Searches and 480 Adds a minute (the knees) |
 | Request timeout accepted | 31 minutes (the platform's I/O timeout is 30 minutes); a Search's memory read stops after 10 minutes (`--search-timeout`) and answers the raw ranking |
 | Stores kept open | 16 (`--max-open-stores`) |
 | Request body limit | 30 MiB |
