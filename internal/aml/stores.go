@@ -15,8 +15,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"golang.org/x/sync/singleflight"
 )
 
 // The store overview: what the console reads of the data root. A scan lists
@@ -55,9 +53,10 @@ type storeScan struct {
 
 // storeScanner keeps the latest scan of the data root and makes the next one
 // when it is older than storesCacheFor. Callers that come while a scan runs
-// wait for it (singleflight). A scan runs on the goroutine of the caller that
-// starts it, ends with that caller's context, and holds no lock while it
-// reads the disk.
+// wait for it, each until its own context ends (a scrape's after
+// scrapeWait), not the scan's caller's: the final review's parked T14-a. A
+// scan runs on the goroutine of the caller that starts it, ends with that
+// caller's context, and holds no lock while it reads the disk.
 type storeScanner struct {
 	root string
 	now  func() time.Time
@@ -66,12 +65,20 @@ type storeScanner struct {
 	// logf tells of a scan that failed; it must not block.
 	logf func(format string, args ...any)
 
-	flight singleflight.Group
 	// failing says the last scan failed: another failure is no news.
 	failing atomic.Bool
 
-	mu   sync.Mutex
-	last *storeScan // guarded by mu
+	mu      sync.Mutex
+	last    *storeScan  // guarded by mu
+	running *scanFlight // the scan under way, guarded by mu; nil when none
+}
+
+// scanFlight is a scan under way, which the callers that come meanwhile wait
+// for: done is closed once its result (scan or err) is set.
+type scanFlight struct {
+	done chan struct{}
+	scan *storeScan
+	err  error
 }
 
 func newStoreScanner(root string, now func() time.Time, logf func(format string, args ...any)) *storeScanner {
@@ -79,32 +86,70 @@ func newStoreScanner(root string, now func() time.Time, logf func(format string,
 }
 
 // scan is the latest scan while it is younger than storesCacheFor, else a new
-// one. A caller that waited for another's scan, and finds that it ended
-// because that caller left, scans again (at most storeScanTries times in all)
-// rather than fail with a context that is not its own.
+// one, made by this caller or by another whose scan is under way; a caller
+// that waits for another's leaves when its own context ends. A caller that
+// waited for another's scan, and finds that it ended because that caller
+// left, scans again (at most storeScanTries times in all) rather than fail
+// with a context that is not its own.
 func (c *storeScanner) scan(ctx context.Context) (*storeScan, error) {
 	var err error
 	for range storeScanTries {
 		if scan := c.cached(); scan != nil {
 			return scan, nil
 		}
-		var result any
-		var shared bool
-		result, err, shared = c.flight.Do("scan", func() (any, error) {
-			// A scan may have ended while this call waited its turn.
-			if scan := c.cached(); scan != nil {
-				return scan, nil
-			}
-			return c.run(ctx)
-		})
-		if err == nil {
-			return result.(*storeScan), nil
+		flight, lead := c.join()
+		if lead {
+			return c.lead(ctx, flight)
 		}
-		if !shared || ctx.Err() != nil || !endedWithItsContext(err) {
+		select {
+		case <-flight.done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if err = flight.err; err == nil {
+			return flight.scan, nil
+		}
+		if ctx.Err() != nil || !endedWithItsContext(err) {
 			return nil, err
 		}
 	}
 	return nil, err
+}
+
+// join is the scan under way, or a new one this caller leads (lead): it must
+// then make it and land it.
+func (c *storeScanner) join() (flight *scanFlight, lead bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.running != nil {
+		return c.running, false
+	}
+	c.running = &scanFlight{done: make(chan struct{})}
+	return c.running, true
+}
+
+// lead makes the scan of the flight this caller leads, on its goroutine and
+// context, and lands it however the scan ends: the callers waiting for it
+// have its result, or an error.
+func (c *storeScanner) lead(ctx context.Context, flight *scanFlight) (*storeScan, error) {
+	flight.err = errors.New("the store scan did not end")
+	defer c.land(flight)
+	// A scan may have ended while this call came.
+	if scan := c.cached(); scan != nil {
+		flight.scan, flight.err = scan, nil
+		return scan, nil
+	}
+	flight.scan, flight.err = c.run(ctx)
+	return flight.scan, flight.err
+}
+
+// land ends the scan flight its leader made, its result set: the callers
+// waiting for it have it.
+func (c *storeScanner) land(flight *scanFlight) {
+	c.mu.Lock()
+	c.running = nil
+	c.mu.Unlock()
+	close(flight.done)
 }
 
 // endedWithItsContext reports whether err is the end of a context.
@@ -247,9 +292,16 @@ type storeEntry struct {
 }
 
 // serveStores answers GET /admin/v1/stores?limit=<1..500, default 100>&after=<cursor>
-// from the latest scan of the data root. A malformed limit or cursor is a 400.
+// from the latest scan of the data root. A malformed limit or cursor is a 400,
+// and so is a query whose percent-encoding is malformed: it is not read as the
+// query without that pair (the final review's parked T14-b).
 func (s *Server) serveStores(w http.ResponseWriter, r *http.Request) {
-	limit, after, err := storesQuery(r.URL.Query(), defaultStoresPage)
+	query, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "the query string is malformed: its percent-encoding is invalid")
+		return
+	}
+	limit, after, err := storesQuery(query, defaultStoresPage)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -265,7 +317,7 @@ func (s *Server) serveStores(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, http.StatusOK, s.storesPage(scan, limit, after))
+	writeJSON(w, http.StatusOK, s.pageOf(scan, limit, after))
 }
 
 // fieldError is the error of a malformed field of a request: its message is
@@ -314,9 +366,9 @@ func storesAfter(stores []storeStat, after string, limit int) ([]storeStat, *str
 	return stores[start:end], nil
 }
 
-// storesPage is the page of scan that follows the cursor after (exclusive; ""
+// pageOf is the page of scan that follows the cursor after (exclusive; ""
 // for the first page), limit stores at most.
-func (s *Server) storesPage(scan *storeScan, limit int, after string) storesPage {
+func (s *Server) pageOf(scan *storeScan, limit int, after string) storesPage {
 	stores, next := storesAfter(scan.stores, after, limit)
 	page := storesPage{
 		Total: len(scan.stores), Bytes: scan.bytes, ScannedAt: scan.at.UTC().Format(time.RFC3339),

@@ -172,7 +172,7 @@ func checkInspectConfig(config *InspectConfig) error {
 	case !filepath.IsAbs(config.DataRoot):
 		return errors.New("the inspect service requires an absolute data root")
 	case config.Token != "" && len(config.Token) < MinAdminTokenLength:
-		return fmt.Errorf("the inspect token must hold at least %d characters", MinAdminTokenLength)
+		return fmt.Errorf("the inspect token must hold at least %d bytes", MinAdminTokenLength)
 	case config.MaxConcurrent < 0:
 		return errors.New("max concurrent must not be negative")
 	case config.MemoryConfig.Strategy != "simple":

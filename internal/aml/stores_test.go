@@ -241,10 +241,13 @@ func TestStoresOverview(t *testing.T) {
 		t.Error(raw)
 	}
 
-	// A malformed cursor or limit is the client's error.
+	// A malformed cursor or limit is the client's error, and so is a query
+	// whose percent-encoding is malformed: it is not read as a query without
+	// that pair (parked T14-b).
 	for _, query := range []string{
 		"after=xyz", "after=" + fixture[0].key[:31], "after=" + fixture[0].key + "0", "after=ABCDEF00000000000000000000000000",
 		"after=" + strings.Repeat("g", 32), "after=", "limit=0", "limit=501", "limit=a", "limit=-1", "limit=", "limit=1.5", "limit=2&after=bad",
+		"after=%zz", "limit=%G1", "limit=1&after=%",
 	} {
 		response := h.adminCall("GET", "/admin/v1/stores?"+query)
 		responses = append(responses, response.Body.String())
@@ -429,6 +432,39 @@ func TestStoresScanOutlivesTheCallerThatStartedIt(t *testing.T) {
 	}
 }
 
+// Parked T14-a (final review): a caller that waits behind another's scan
+// leaves at its own deadline, as a scrape must (scrapeWait), however long the
+// scan it waits for runs: here the scan of an overview request, which has no
+// deadline of its own. The scan goes on for its own caller, who gets it.
+func TestAScanFollowerLeavesAtItsDeadline(t *testing.T) {
+	h := newHarness(t, nil)
+	makeStore(t, h.root, userKey("a"), storeFile{"records.db", 10, fixtureBase})
+	entered, release := make(chan struct{}), make(chan struct{})
+	read := h.server.stores.read
+	h.server.stores.read = func(ctx context.Context, root string) ([]storeStat, error) {
+		close(entered)
+		<-release
+		return read(ctx, root)
+	}
+	// A scan held back for longer than the follower waits; it is released
+	// at the latest when the test would otherwise hang.
+	defer time.AfterFunc(3*time.Second, func() { close(release) }).Stop()
+	leader := make(chan *httptest.ResponseRecorder, 1)
+	go func() { leader <- h.adminCall("GET", "/admin/v1/stores") }()
+	<-entered
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	scan, err := h.server.stores.scan(ctx)
+	if waited := time.Since(start); !errors.Is(err, context.DeadlineExceeded) || scan != nil || waited > time.Second {
+		t.Fatal("the follower waited", waited, "and got", scan, err)
+	}
+	close(release)
+	if got := received(t, leader); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), `"total":1`) {
+		t.Fatalf("the leader: %d %s", got.Code, got.Body.String())
+	}
+}
+
 // countdownContext lets Err say nil a few times and then that the context was
 // canceled, and counts the questions.
 type countdownContext struct {
@@ -519,102 +555,6 @@ func TestStoreScanErrorNamesAStoreByItsPrefix(t *testing.T) {
 	if code != http.StatusInternalServerError || !strings.Contains(logged, "store scan failed: store "+key[:8]+": ") || strings.Contains(logged+raw, key) {
 		t.Fatalf("%d %s\n%s", code, raw, logged)
 	}
-}
-
-// open is whether the registry holds the store, as OpenStores counts them; a
-// store it has dropped from its cache is not open.
-func TestRegistryIsOpen(t *testing.T) {
-	h := newHarness(t, func(config *ServerConfig) { config.MaxOpenStores = 1 })
-	a, b := userKey("u1"), userKey("u2")
-	if h.server.users.isOpen(a) {
-		t.Fatal("a store nobody opened is open")
-	}
-	h.mustAdd(t, addRequest("r1", "u1"))
-	if !h.server.users.isOpen(a) || h.server.users.isOpen(b) {
-		t.Fatal("after u1's Add:", h.server.users.isOpen(a), h.server.users.isOpen(b))
-	}
-	// A cache of one: u2 takes u1's place.
-	h.mustAdd(t, addRequest("r2", "u2"))
-	if h.server.users.isOpen(a) || !h.server.users.isOpen(b) {
-		t.Fatal("after u2's Add:", h.server.users.isOpen(a), h.server.users.isOpen(b))
-	}
-	if open := h.adminStatus(t).OpenStores; open != 1 {
-		t.Fatal(open)
-	}
-}
-
-// The scheduler's estimate of a user's backlog is known once a job has ended
-// and measured it; before that it is only what Adds have been told to it,
-// and a user it has dropped (idle, nothing pending) has none.
-func TestSchedulerBacklogIsKnownOnceMeasured(t *testing.T) {
-	a, b, c := userKey("a"), userKey("b"), userKey("c")
-	started := make(chan string, 10)
-	measure := make(chan int64)
-	s := newScheduler(1, 100, func(ctx context.Context, key string) (int64, error) {
-		started <- key
-		select {
-		case backlog := <-measure:
-			return backlog, nil
-		case <-ctx.Done():
-			return -1, ctx.Err()
-		}
-	}, (&logLines{}).logf, time.Now)
-	unknown := func(key, what string) {
-		t.Helper()
-		if chars, known := s.Backlog(key); known || chars != 0 {
-			t.Fatalf("%s: %d, known %v", what, chars, known)
-		}
-	}
-	known := func(key string, want int64, what string) {
-		t.Helper()
-		if chars, known := s.Backlog(key); !known || chars != want {
-			t.Fatalf("%s: %d, known %v, want %d", what, chars, known, want)
-		}
-	}
-	unknown(a, "a user the scheduler has never heard of")
-
-	// Notified of 500 characters, the scheduler has a number it has not
-	// measured: not an estimate to show.
-	s.Notify(context.Background(), a, 500)
-	if status := s.Status(); status.MaxBacklog != 500 {
-		t.Fatal(status)
-	}
-	unknown(a, "notified, no job yet")
-	startScheduler(t, s)
-	if key := next(t, started); key != a {
-		t.Fatal(key)
-	}
-	unknown(a, "the first job running")
-
-	// The job measures 120: known from then on, and Adds add to it.
-	measure <- 120
-	eventually(t, func() bool { _, known := s.Backlog(a); return known })
-	known(a, 120, "after the first job")
-	s.Notify(context.Background(), a, 30)
-	known(a, 150, "after a notification")
-	if key := next(t, started); key != a {
-		t.Fatal(key)
-	}
-	known(a, 150, "the second job running")
-
-	// A job that finds nothing pending: the scheduler drops the user.
-	measure <- 0
-	eventually(t, func() bool { _, known := s.Backlog(a); return !known })
-	unknown(a, "nothing pending")
-
-	// A job that cannot measure does not make a number known.
-	s.Notify(context.Background(), b, 10)
-	if key := next(t, started); key != b {
-		t.Fatal(key)
-	}
-	measure <- -1
-	eventually(t, func() bool { return idle(s) })
-	unknown(b, "a job that could not measure")
-
-	// A user held by a Search is known to the scheduler and has no estimate.
-	release := s.Hold(c)
-	unknown(c, "held")
-	release()
 }
 
 // open and backlog of the overview: a store the registry holds is open; a user

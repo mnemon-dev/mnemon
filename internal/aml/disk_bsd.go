@@ -1,4 +1,4 @@
-//go:build !windows && !linux
+//go:build darwin || freebsd || dragonfly
 
 package aml
 

@@ -37,7 +37,7 @@ func newAMLInspectCommand() *cobra.Command {
 	flags.String("data-root", "", "Absolute aml-serve data root to read (required); nothing in it is ever written")
 	flags.String("memory-config", "", "Absolute path of the instance's memory-strategy JSON configuration (required): the read's settings and models")
 	flags.String("listen", "127.0.0.1:8092", "IP address and port to listen on: a loopback address, or a private one (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) that needs --token-env")
-	flags.String("token-env", "", "Environment variable holding the token (32 characters at least) that every request must send as an Authorization: Bearer header; required for a private --listen; empty for no token")
+	flags.String("token-env", "", "Environment variable holding the token (32 bytes at least) that every request must send as an Authorization: Bearer header; required for a private --listen; empty for no token")
 	flags.String("debug-budget-file", "", "Absolute budget file full searches reserve and settle in, never the configuration's budgetFile; empty for no full searches")
 	flags.String("debug-caps", "", "The debug budget's caps by kind, such as deepseek=5,jev=1 (DeepSeek in CNY, JEV in USD); full searches are refused while none is set")
 	flags.Int("max-concurrent", 2, "Most requests reading stores at once; past it a request answers 503 with Retry-After")

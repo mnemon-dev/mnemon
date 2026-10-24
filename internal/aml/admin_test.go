@@ -713,8 +713,9 @@ func TestAdminWithoutTokenUnchanged(t *testing.T) {
 	h.scrape(t).is(t, 0, "mnemon_aml_admin_auth_failures_total")
 }
 
-// A token shorter than 32 characters is no token: the server is not made, and
-// what it says does not repeat the token.
+// A token shorter than 32 bytes is no token: the server is not made, and
+// what it says, in bytes (parked T14-c), does not repeat the token. Its
+// length is counted in bytes: eleven CJK characters, 33 bytes, are a token.
 func TestServerRefusesAShortAdminToken(t *testing.T) {
 	if MinAdminTokenLength != 32 {
 		t.Fatal("the shortest admin token is", MinAdminTokenLength)
@@ -730,9 +731,19 @@ func TestServerRefusesAShortAdminToken(t *testing.T) {
 		server.Close()
 		t.Fatal("a server was made with a 31-character admin token")
 	}
-	if strings.Contains(err.Error(), short) || !strings.Contains(err.Error(), "admin token") {
+	if strings.Contains(err.Error(), short) || !strings.Contains(err.Error(), "admin token") || !strings.Contains(err.Error(), "32 bytes") {
 		t.Fatal(err)
 	}
+	server, err = NewServer(ServerConfig{
+		DataRoot: t.TempDir(), MemoryConfig: simpleConfig(), AuthKey: testKey, AdminToken: strings.Repeat("日", 11),
+		Models: func(memoryagent.Config) (memoryagent.Models, error) {
+			return memoryagent.Models{Planner: &fakePlanner{}, Judge: &fakeJudge{}, Consolidator: &fakeConsolidator{}}, nil
+		},
+	})
+	if err != nil {
+		t.Fatal("a token of 33 bytes:", err)
+	}
+	server.Close()
 }
 
 // /admin/status says which build runs: the version the server is made with.

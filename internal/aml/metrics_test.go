@@ -2,10 +2,13 @@ package aml
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -635,5 +638,36 @@ func TestSearchWindowIsConcurrencySafe(t *testing.T) {
 	}
 	if served, partial := w.totals(); served != 4000 || partial != 4000 {
 		t.Fatal(served, partial)
+	}
+}
+
+// Parked T8-b (final review): a series the metrics cannot make, here a
+// budget account whose name is not UTF-8 (a damaged or foreign budget file),
+// is left out of the scrape. It never panics the scrape, which would end the
+// process: the registry collects on goroutines of its own.
+func TestScrapeLeavesOutASeriesItCannotMake(t *testing.T) {
+	h := newHarness(t, nil)
+	path := filepath.Join(t.TempDir(), "budget.db")
+	budget, err := memoryagent.OpenBudget(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.server.budget = budget // closed by the server
+	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: path}).String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, kind := range []string{"openai", "bad\xff"} {
+		if _, err := db.Exec(`INSERT INTO accounts(kind,cap,spent,held) VALUES(?,1,0.5,0)`, kind); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m := h.scrape(t)
+	m.is(t, 0.5, "mnemon_aml_budget_spent", "account", "openai")
+	for series := range m {
+		if strings.Contains(series, "bad") {
+			t.Fatal("a series with a label that is not UTF-8:", series)
+		}
 	}
 }

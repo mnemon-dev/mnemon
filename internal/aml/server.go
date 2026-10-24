@@ -204,7 +204,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	}
 	if config.AdminToken != "" && len(config.AdminToken) < MinAdminTokenLength {
 		// The error does not repeat the token.
-		return nil, fmt.Errorf("the admin token must hold at least %d characters", MinAdminTokenLength)
+		return nil, fmt.Errorf("the admin token must hold at least %d bytes", MinAdminTokenLength)
 	}
 	mode, err := consolidationMode(config)
 	if err != nil {

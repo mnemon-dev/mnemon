@@ -37,7 +37,7 @@ func newAMLServeCommand() *cobra.Command {
 	flags.Bool("consolidate-on-add", false, "Older spelling of --consolidate on-add")
 	flags.Int("consolidation-workers", 4, "Users --consolidate background folds at once")
 	flags.String("admin-listen", "", "IP address and port of the admin listener (/metrics, /ready, /admin/status, /admin/v1/stores, /debug/pprof/): a loopback address, or a private one (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) that needs --admin-token-env; empty for none")
-	flags.String("admin-token-env", "", "Environment variable holding the token (32 characters at least) that every admin request must send as an Authorization: Bearer header; required for a private --admin-listen; empty for no token")
+	flags.String("admin-token-env", "", "Environment variable holding the token (32 bytes at least) that every admin request must send as an Authorization: Bearer header; required for a private --admin-listen; empty for no token")
 	flags.Int("max-concurrent-adds", 0, "Most Adds served at once, 0 for no limit; past it an Add waits up to 30s for a slot, then answers 503 with Retry-After")
 	flags.Int("max-concurrent-searches", 0, "Most Searches served at once, 0 for no limit; past it a Search waits up to 30s for a slot, then answers 503 with Retry-After")
 	flags.String("log-format", "text", "Log format: text or json")
@@ -97,6 +97,10 @@ func amlServeFlags(cmd *cobra.Command) (amlServeOptions, error) {
 		return o, fmt.Errorf("--log-format must be text or json, not %q", o.logFormat)
 	}
 	tokenEnv, _ := flags.GetString("admin-token-env")
+	if tokenEnv != "" && tokenEnv == o.keyEnv {
+		// The API key, which every client holds, would be the admin token.
+		return o, fmt.Errorf("--admin-token-env names $%s, which --auth-key-env names too: the admin token and the API key must be two secrets, in two variables", tokenEnv)
+	}
 	if o.adminToken, err = amlAdminToken(tokenEnv); err != nil {
 		return o, err
 	}
@@ -126,8 +130,8 @@ func amlAdminToken(name string) (string, error) { return listenToken(adminListen
 
 // listenToken is the token the environment variable name holds, "" when
 // name is empty (no token). A variable that is unset, empty or shorter than
-// aml.MinAdminTokenLength is an error that names the flag and the variable
-// and says nothing of what it holds.
+// aml.MinAdminTokenLength bytes is an error that names the flag and the
+// variable and says nothing of what it holds.
 func listenToken(l tokenListener, name string) (string, error) {
 	if name == "" {
 		return "", nil
@@ -135,9 +139,9 @@ func listenToken(l tokenListener, name string) (string, error) {
 	token := os.Getenv(name)
 	switch {
 	case token == "":
-		return "", fmt.Errorf("%s names $%s, which is unset or empty: it must hold the %s, %d characters at least", l.tokenEnv, name, l.token, aml.MinAdminTokenLength)
+		return "", fmt.Errorf("%s names $%s, which is unset or empty: it must hold the %s, %d bytes at least", l.tokenEnv, name, l.token, aml.MinAdminTokenLength)
 	case len(token) < aml.MinAdminTokenLength:
-		return "", fmt.Errorf("%s names $%s, which holds fewer than %d characters: the %s must hold %d at least", l.tokenEnv, name, aml.MinAdminTokenLength, l.token, aml.MinAdminTokenLength)
+		return "", fmt.Errorf("%s names $%s, which holds fewer than %d bytes: the %s must hold %d bytes at least", l.tokenEnv, name, aml.MinAdminTokenLength, l.token, aml.MinAdminTokenLength)
 	}
 	return token, nil
 }

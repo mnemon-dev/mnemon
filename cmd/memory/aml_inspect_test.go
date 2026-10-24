@@ -43,7 +43,7 @@ func inspectFlags(t *testing.T, args ...string) (amlInspectOptions, error) {
 // aml-inspect's --listen and --token-env follow aml-serve's admin listener's
 // rules (E1), with the same cases: a loopback address needs no token, a
 // private one needs it, every other is refused; the token holds 32
-// characters at least, and no error shows it.
+// bytes at least, and no error shows it.
 func TestInspectAuthAndListen(t *testing.T) {
 	const variable = "AML_TEST_INSPECT_TOKEN"
 	token := strings.Repeat("t", 32)
@@ -97,7 +97,7 @@ func TestInspectAuthAndListen(t *testing.T) {
 		short := strings.Repeat("s", 31)
 		t.Setenv(variable, short)
 		_, err = inspectFlags(t, "--listen", addr, "--token-env", variable)
-		wantError(t, err, "--token-env", variable, "32 characters")
+		wantError(t, err, "--token-env", variable, "32 bytes")
 		if strings.Contains(err.Error(), short) {
 			t.Fatal("the error shows the token:", err)
 		}

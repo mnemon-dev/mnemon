@@ -281,6 +281,17 @@ var (
 	batchesDesc       = newDesc("consolidation_batches_total", "Batches of records by outcome: folded (taken off the pending records, those given up on included), deferred (left pending because linking failed) and dropped (drops: a batch, or half of a split one, the layer gave up on).", "outcome")
 )
 
+// constMetric sends a series of desc to ch, unless it cannot be made: a
+// label value that is not UTF-8 (a budget account a damaged or foreign
+// budget file names) leaves the series out of the scrape, which goes on. A
+// collector must not panic: the registry collects on goroutines of its own,
+// and a panic there ends the process (the final review's parked T8-b).
+func constMetric(ch chan<- prometheus.Metric, desc *prometheus.Desc, kind prometheus.ValueType, value float64, labels ...string) {
+	if metric, err := prometheus.NewConstMetric(desc, kind, value, labels...); err == nil {
+		ch <- metric
+	}
+}
+
 // totalsCollector exposes the counters that are atomics of metrics.
 type totalsCollector struct{ m *metrics }
 
@@ -293,7 +304,7 @@ func (totalsCollector) Describe(ch chan<- *prometheus.Desc) {
 
 func (c totalsCollector) Collect(ch chan<- prometheus.Metric) {
 	counter := func(desc *prometheus.Desc, count int64, labels ...string) {
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.CounterValue, float64(count), labels...)
+		constMetric(ch, desc, prometheus.CounterValue, float64(count), labels...)
 	}
 	counter(degradedDesc, c.m.degraded.Load())
 	counter(linkFallbacksDesc, c.m.linkFallbacks.Load())
@@ -309,7 +320,7 @@ var (
 	backingOffDesc = newDesc("consolidation_backing_off", "Users waiting to retry after a failed consolidation job.")
 	oldestDesc     = newDesc("consolidation_oldest_queued_seconds", "Age of the oldest work not yet consolidated: queued, running or backing off since a notification no successful job has covered.")
 	backlogDesc    = newDesc("consolidation_max_backlog_characters", "Largest backlog of any user, in the characters a job reads.")
-	storesDesc     = newDesc("open_stores", "User stores open now.")
+	openStoresDesc = newDesc("open_stores", "User stores open now.")
 	// The next two come from the scan of the data root that GET /admin/v1/stores
 	// shares: at most 60 seconds old.
 	storeCountDesc = newDesc("stores", "User stores in the data root, from the latest scan of it (at most 60 seconds old).")
@@ -321,7 +332,9 @@ var (
 	capDesc        = newDesc("budget_cap", "Cap of a paid account, in its currency.", "account")
 )
 
-// scrapeWait bounds the reads a scrape makes of the budget file.
+// scrapeWait bounds what a scrape waits for: its reads of the budget file,
+// and the scan of the data root, its own or one under way that it joins
+// (storeScanner.scan).
 const scrapeWait = 5 * time.Second
 
 // stateCollector reads the state the server keeps elsewhere when a scrape
@@ -329,14 +342,14 @@ const scrapeWait = 5 * time.Second
 type stateCollector struct{ s *Server }
 
 func (stateCollector) Describe(ch chan<- *prometheus.Desc) {
-	for _, desc := range []*prometheus.Desc{queuedDesc, runningDesc, backingOffDesc, oldestDesc, backlogDesc, lagBoundDesc, storesDesc, storeCountDesc, storeBytesDesc, breakerDesc, spentDesc, heldDesc, capDesc} {
+	for _, desc := range []*prometheus.Desc{queuedDesc, runningDesc, backingOffDesc, oldestDesc, backlogDesc, lagBoundDesc, openStoresDesc, storeCountDesc, storeBytesDesc, breakerDesc, spentDesc, heldDesc, capDesc} {
 		ch <- desc
 	}
 }
 
 func (c stateCollector) Collect(ch chan<- prometheus.Metric) {
 	gauge := func(desc *prometheus.Desc, value float64, labels ...string) {
-		ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, labels...)
+		constMetric(ch, desc, prometheus.GaugeValue, value, labels...)
 	}
 	queue := c.s.queueStatus()
 	gauge(queuedDesc, float64(queue.Queued))
@@ -345,7 +358,7 @@ func (c stateCollector) Collect(ch chan<- prometheus.Metric) {
 	gauge(oldestDesc, queue.OldestQueued.Seconds())
 	gauge(backlogDesc, float64(queue.MaxBacklog))
 	gauge(lagBoundDesc, float64(c.s.consolidationLagBound()))
-	gauge(storesDesc, float64(c.s.users.open()))
+	gauge(openStoresDesc, float64(c.s.users.open()))
 	for kind, state := range c.s.breakerStates() {
 		open := 0.0
 		if state == memoryagent.BreakerOpen {

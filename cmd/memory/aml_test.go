@@ -128,7 +128,7 @@ var (
 // is optional, or on a private one (10/8, 172.16/12, 192.168/16, fc00::/7),
 // where it is required. Every other address is refused, with a token or
 // without, as is a host name or an address with no port. A flag that names a
-// variable needs it to hold 32 characters at least.
+// variable needs it to hold 32 bytes at least.
 func TestAdminListenRules(t *testing.T) {
 	const variable = "AML_TEST_ADMIN_TOKEN"
 	token := strings.Repeat("t", 32)
@@ -176,7 +176,7 @@ func TestAdminListenRules(t *testing.T) {
 		wantError(t, err, "--admin-listen must be")
 	}
 
-	// The token: the variable the flag names must hold 32 characters at
+	// The token: the variable the flag names must hold 32 bytes at
 	// least, on any address; what the error says never repeats a value.
 	const missing = "AML_TEST_NO_SUCH_ADMIN_TOKEN"
 	for _, addr := range []string{"", "127.0.0.1:8091", "10.0.0.5:8091"} {
@@ -189,7 +189,7 @@ func TestAdminListenRules(t *testing.T) {
 		short := strings.Repeat("s", 31)
 		t.Setenv(variable, short)
 		_, err = amlFlags(t, "--admin-listen", addr, "--admin-token-env", variable)
-		wantError(t, err, "--admin-token-env", variable, "32 characters")
+		wantError(t, err, "--admin-token-env", variable, "32 bytes")
 		if strings.Contains(err.Error(), short) {
 			t.Fatal("the error shows the token:", err)
 		}
@@ -209,6 +209,26 @@ func TestAdminListenRules(t *testing.T) {
 	wantError(t, err, "--admin-token-env", missing)
 	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
 		t.Fatal("a refused command touched the data root", entries, err)
+	}
+}
+
+// Parked T14-d (final review): the admin token and the API key are two
+// secrets: --admin-token-env naming the variable --auth-key-env names would
+// make the API key, which every client holds, the admin token. It is
+// refused, whatever the variable holds, and the error shows no value.
+func TestAdminTokenIsNotTheAPIKey(t *testing.T) {
+	const shared = "AML_TEST_SHARED_SECRET"
+	secret := strings.Repeat("k", 40)
+	t.Setenv(shared, secret)
+	_, err := amlFlags(t, "--admin-listen", "127.0.0.1:8091", "--admin-token-env", shared, "--auth-key-env", shared)
+	if err == nil || !strings.Contains(err.Error(), "--admin-token-env") || !strings.Contains(err.Error(), "--auth-key-env") || strings.Contains(err.Error(), secret) {
+		t.Fatal(err)
+	}
+	// Two variables, even holding one value, are two flags' business: the
+	// kit writes two secrets.
+	t.Setenv("AML_TEST_OTHER_SECRET", secret)
+	if _, err := amlFlags(t, "--admin-listen", "127.0.0.1:8091", "--admin-token-env", "AML_TEST_OTHER_SECRET", "--auth-key-env", shared); err != nil {
+		t.Fatal(err)
 	}
 }
 

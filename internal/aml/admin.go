@@ -108,9 +108,9 @@ func (s *Server) adminRoutes() http.Handler {
 	mux.HandleFunc("GET /ready", s.serveReady)
 	mux.HandleFunc("GET /admin/status", s.serveStatus)
 	mux.HandleFunc("GET /admin/v1/stores", s.serveStores)
-	// The profiler's handlers are registered here by name rather than by
-	// importing net/http/pprof for its registration on the default mux, which
-	// nothing serves.
+	// The profiler's handlers are registered here by name. Importing
+	// net/http/pprof also registers them on http.DefaultServeMux, a side
+	// effect that is inert: no server of the process serves the default mux.
 	mux.HandleFunc("/debug/pprof/", pprof.Index)
 	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)

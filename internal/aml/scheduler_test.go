@@ -868,3 +868,126 @@ func TestSchedulerReportsJobOutcomes(t *testing.T) {
 		t.Fatal(jobOutcomes)
 	}
 }
+
+// The scheduler's estimate of a user's backlog is known once a job has ended
+// and measured it; before that it is only what Adds have been told to it,
+// and a user it has dropped (idle, nothing pending) has none.
+func TestSchedulerBacklogIsKnownOnceMeasured(t *testing.T) {
+	a, b, c := userKey("a"), userKey("b"), userKey("c")
+	started := make(chan string, 10)
+	measure := make(chan int64)
+	s := newScheduler(1, 100, func(ctx context.Context, key string) (int64, error) {
+		started <- key
+		select {
+		case backlog := <-measure:
+			return backlog, nil
+		case <-ctx.Done():
+			return -1, ctx.Err()
+		}
+	}, (&logLines{}).logf, time.Now)
+	unknown := func(key, what string) {
+		t.Helper()
+		if chars, known := s.Backlog(key); known || chars != 0 {
+			t.Fatalf("%s: %d, known %v", what, chars, known)
+		}
+	}
+	known := func(key string, want int64, what string) {
+		t.Helper()
+		if chars, known := s.Backlog(key); !known || chars != want {
+			t.Fatalf("%s: %d, known %v, want %d", what, chars, known, want)
+		}
+	}
+	unknown(a, "a user the scheduler has never heard of")
+
+	// Notified of 500 characters, the scheduler has a number it has not
+	// measured: not an estimate to show.
+	s.Notify(context.Background(), a, 500)
+	if status := s.Status(); status.MaxBacklog != 500 {
+		t.Fatal(status)
+	}
+	unknown(a, "notified, no job yet")
+	startScheduler(t, s)
+	if key := next(t, started); key != a {
+		t.Fatal(key)
+	}
+	unknown(a, "the first job running")
+
+	// The job measures 120: known from then on, and Adds add to it.
+	measure <- 120
+	eventually(t, func() bool { _, known := s.Backlog(a); return known })
+	known(a, 120, "after the first job")
+	s.Notify(context.Background(), a, 30)
+	known(a, 150, "after a notification")
+	if key := next(t, started); key != a {
+		t.Fatal(key)
+	}
+	known(a, 150, "the second job running")
+
+	// A job that finds nothing pending: the scheduler drops the user.
+	measure <- 0
+	eventually(t, func() bool { _, known := s.Backlog(a); return !known })
+	unknown(a, "nothing pending")
+
+	// A job that cannot measure does not make a number known.
+	s.Notify(context.Background(), b, 10)
+	if key := next(t, started); key != b {
+		t.Fatal(key)
+	}
+	measure <- -1
+	eventually(t, func() bool { return idle(s) })
+	unknown(b, "a job that could not measure")
+
+	// A user held by a Search is known to the scheduler and has no estimate.
+	release := s.Hold(c)
+	unknown(c, "held")
+	release()
+}
+
+// Parked T6-a: a measure taken outside a job, by an Add of a user the
+// scheduler had no measure of, is the estimate from then on, with what Adds
+// add after it. A user the scheduler has measured keeps its measure, one
+// whose job runs keeps the job's to come, and an unknown user gains none.
+func TestSchedulerTakesAnAddsMeasure(t *testing.T) {
+	a, b, stranger := userKey("a"), userKey("b"), userKey("stranger")
+	started := make(chan string, 10)
+	measure := make(chan int64)
+	s := newScheduler(1, 100, func(ctx context.Context, key string) (int64, error) {
+		started <- key
+		select {
+		case backlog := <-measure:
+			return backlog, nil
+		case <-ctx.Done():
+			return -1, ctx.Err()
+		}
+	}, (&logLines{}).logf, time.Now)
+	s.Measured(stranger, 100)
+	if _, known := s.Backlog(stranger); known {
+		t.Fatal("a measure made a user the scheduler does not know")
+	}
+	s.Notify(context.Background(), a, 50)
+	s.Measured(a, 900)
+	if chars, known := s.Backlog(a); !known || chars != 900 {
+		t.Fatal("after the measure:", chars, known)
+	}
+	s.Measured(a, 10)
+	s.Notify(context.Background(), a, 30)
+	if chars, known := s.Backlog(a); !known || chars != 930 {
+		t.Fatal("a second measure, then an Add:", chars, known)
+	}
+	// While b's job runs, the job's own measure wins.
+	startScheduler(t, s)
+	if key := next(t, started); key != a {
+		t.Fatal(key)
+	}
+	measure <- 0
+	s.Notify(context.Background(), b, 40)
+	if key := next(t, started); key != b {
+		t.Fatal(key)
+	}
+	s.Measured(b, 5000)
+	if _, known := s.Backlog(b); known {
+		t.Fatal("a measure taken while b's job ran")
+	}
+	measure <- 70
+	eventually(t, func() bool { chars, known := s.Backlog(b); return known && chars == 70 })
+}
