@@ -231,7 +231,7 @@ WHERE rev_from<=? AND (rev_to IS NULL OR rev_to>?) ORDER BY seq`, rev, rev)
 }
 
 // loadCurrent is the full reload of the current records that Put makes when it cannot resume the revision digest
-// (digest.go); tests wrap it to count those reloads.
+// (digest.go), inside Put's transaction with the transaction as its reader; tests wrap it to count those reloads.
 var loadCurrent = load
 
 func (s *Store) Get(ctx context.Context, req GetRequest) (Snapshot, error) {
@@ -259,9 +259,6 @@ func parseUpserts(values []Upsert) ([]record, error) {
 	}
 	return out, nil
 }
-
-// upsertMeta sets one meta key.
-const upsertMeta = "INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
 
 func (s *Store) Put(ctx context.Context, req PutRequest) (string, error) {
 	if s.readonly {

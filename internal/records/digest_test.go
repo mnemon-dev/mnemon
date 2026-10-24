@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"math/rand/v2"
 	"os"
 	"reflect"
@@ -117,6 +118,13 @@ func mustPut(t *testing.T, s *Store, req PutRequest) string {
 // new revision in meta: its revision label, and the SHA-256 state of the current records' prefix. It returns the digest.
 func putExpecting(t *testing.T, s *Store, loads *atomic.Int64, req PutRequest, wantLoads int64) string {
 	t.Helper()
+	hash, _ := putChecked(t, s, loads, req, wantLoads)
+	return hash
+}
+
+// putChecked is putExpecting that also returns the current records' JSON after the Put, in seq order.
+func putChecked(t *testing.T, s *Store, loads *atomic.Int64, req PutRequest, wantLoads int64) (string, []string) {
+	t.Helper()
 	before := loads.Load()
 	hash := mustPut(t, s, req)
 	if got := loads.Load() - before; got != wantLoads {
@@ -141,11 +149,11 @@ func putExpecting(t *testing.T, s *Store, loads *atomic.Int64, req PutRequest, w
 	if saved, ok := metaRow(t, s, "digest/state"); !ok || saved != want {
 		t.Fatalf("digest/state is %q (saved %v), want the state of the current records' prefix %q", saved, ok, want)
 	}
-	return hash
+	return hash, raws
 }
 
-// varyingContent changes length, so the saved state ends at every offset of SHA-256's 64-byte block, and carries
-// multi-byte characters.
+// varyingContent changes length, so that the saved states end at every offset of SHA-256's 64-byte block (the
+// property test checks that they do), and carries multi-byte characters.
 func varyingContent(rng *rand.Rand, step int) string {
 	return fmt.Sprintf("step %d %s", step, strings.Repeat("é日", rng.IntN(40)))
 }
@@ -174,8 +182,15 @@ func TestDigestMatchesFullRecompute(t *testing.T) {
 		}
 		return out
 	}
+	// Under the race detector, which makes every Put and check about 15 times slower, a quarter of the steps: the
+	// plain run makes them all.
+	steps := 400
+	if raceDetector {
+		steps = 100
+	}
+	offsets := map[int]bool{} // where in SHA-256's 64-byte block the saved states ended
 	var hash string
-	for step := 0; step < 400; step++ {
+	for step := 0; step < steps; step++ {
 		var req PutRequest
 		wantLoads := int64(0) // an append resumes the saved state
 		switch roll := rng.IntN(100); {
@@ -202,10 +217,15 @@ func TestDigestMatchesFullRecompute(t *testing.T) {
 		if step == 0 {
 			wantLoads = 1 // the first Put finds no digest state
 		}
-		hash = putExpecting(t, s, loads, req, wantLoads)
+		var raws []string
+		hash, raws = putChecked(t, s, loads, req, wantLoads)
+		offsets[len("["+strings.Join(raws, ","))%64] = true
 	}
 	if updates == 0 || deletes == 0 || revived == 0 {
 		t.Fatalf("the sequence did not exercise every operation: %d updates, %d deletes, %d revived ids", updates, deletes, revived)
+	}
+	if !raceDetector && len(offsets) != 64 {
+		t.Fatalf("the saved states ended at %d of the 64 offsets of a SHA-256 block", len(offsets))
 	}
 	snapshot, err := s.Get(context.Background(), GetRequest{})
 	if err != nil || snapshot.Revision != hash || len(snapshot.Records) != len(live) {
@@ -405,3 +425,17 @@ func TestDigestStateSurvivesReopen(t *testing.T) {
 	loads := countFullLoads(t)
 	putExpecting(t, s, loads, PutRequest{Upsert: []Upsert{sample("c", "three")}}, 0)
 }
+
+// A digest state that does not resume fails with an error that says it is the digest state's (the final review's
+// parked T1-c), whether resumed alone or to finish a digest.
+func TestDigestStateErrorsSayWhatFailed(t *testing.T) {
+	if _, err := resumeDigest([]byte("short")); err == nil || !strings.HasPrefix(err.Error(), "digest state: ") {
+		t.Fatal(err)
+	}
+	if _, err := finishDigest(unmarshalable{sha256.New()}); err == nil || !strings.HasPrefix(err.Error(), "digest state: ") {
+		t.Fatal(err)
+	}
+}
+
+// unmarshalable is a hash whose state cannot be marshaled.
+type unmarshalable struct{ hash.Hash }

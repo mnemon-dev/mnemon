@@ -183,21 +183,23 @@ func TestRuntimeReportsThroughStoreLogger(t *testing.T) {
 	}
 }
 
-// Without a logger (native mnemon) the report stays on standard error.
+// Without a logger (native mnemon) the report stays on standard error. The test catches it through the store's
+// standard error writer (standardError), not by swapping the process's os.Stderr, which every other test shares (the
+// final review's parked T7-d).
 func TestRuntimeReportsToStderrWithoutLogger(t *testing.T) {
 	read, write, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer read.Close()
-	stderr := os.Stderr
-	os.Stderr = write
+	stderr := standardError
+	standardError = write
 	s := testStore(t)
 	s.SetLogger(func(string, ...any) { t.Error("the cleared logger was called") })
 	s.SetLogger(nil)
 	stop, err := s.StartRuntime(context.Background())
 	if err != nil {
-		os.Stderr = stderr
+		standardError = stderr
 		t.Fatal(err)
 	}
 	s.readers.Close()
@@ -212,8 +214,8 @@ func TestRuntimeReportsToStderrWithoutLogger(t *testing.T) {
 	case got = <-line:
 	case <-time.After(5 * time.Second):
 	}
-	stop() // the worker has exited: nothing reads os.Stderr after this
-	os.Stderr = stderr
+	stop() // the worker has exited: nothing writes to standardError after this
+	standardError = stderr
 	write.Close()
 	if err != nil {
 		t.Fatal(err)

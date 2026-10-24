@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sync"
 	"time"
@@ -103,6 +104,11 @@ func (s *Store) SetLogger(logf func(format string, args ...any)) {
 	s.logf.Store(&logf)
 }
 
+// standardError is where report writes without a logger: the process's
+// standard error. Tests replace it rather than os.Stderr, which every test of
+// the process shares.
+var standardError io.Writer = os.Stderr
+
 // report tells the store's logger, or standard error, about a failure of the
 // runtime.
 func (s *Store) report(format string, args ...any) {
@@ -110,7 +116,7 @@ func (s *Store) report(format string, args ...any) {
 		(*logf)(format, args...)
 		return
 	}
-	fmt.Fprintf(os.Stderr, format+"\n", args...)
+	fmt.Fprintf(standardError, format+"\n", args...)
 }
 
 func (s *Store) Dispatch(ctx context.Context, raw []byte) (any, error) {

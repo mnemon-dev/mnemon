@@ -92,7 +92,7 @@ func digestPrefix(raws []string) hash.Hash {
 func finishDigest(h hash.Hash) (string, error) {
 	state, err := marshalDigest(h)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("digest state: %w", err)
 	}
 	closed, err := resumeDigest(state)
 	if err != nil {
@@ -157,15 +157,16 @@ func marshalDigest(h hash.Hash) ([]byte, error) {
 	return m.MarshalBinary()
 }
 
-// resumeDigest returns a new SHA-256 hash that has the state marshalDigest returned.
+// resumeDigest returns a new SHA-256 hash that has the state marshalDigest returned; its errors say they are the
+// digest state's.
 func resumeDigest(state []byte) (hash.Hash, error) {
 	h := sha256.New()
 	u, ok := h.(encoding.BinaryUnmarshaler)
 	if !ok {
-		return nil, errors.New("sha256 hash cannot unmarshal a state")
+		return nil, errors.New("digest state: sha256 hash cannot unmarshal a state")
 	}
 	if err := u.UnmarshalBinary(state); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("digest state: %w", err)
 	}
 	return h, nil
 }
@@ -181,3 +182,6 @@ func metaText(ctx context.Context, tx *sql.Tx, key string) (value string, ok boo
 	}
 	return value, true, nil
 }
+
+// upsertMeta sets one meta key.
+const upsertMeta = "INSERT INTO meta VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value"
