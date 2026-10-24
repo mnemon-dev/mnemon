@@ -105,24 +105,32 @@ func TestInspectAuthAndListen(t *testing.T) {
 }
 
 func TestAMLInspectFlags(t *testing.T) {
-	options, err := inspectFlags(t, "--debug-budget-file", "/var/lib/mnemon-aml-inspect/eval/debug-budget.db", "--debug-caps", "deepseek=5,jev=1.5", "--max-concurrent", "3", "--log-format", "json")
-	if err != nil || options.debugBudget != "/var/lib/mnemon-aml-inspect/eval/debug-budget.db" || options.caps["deepseek"] != 5 || options.caps["jev"] != 1.5 ||
+	// An absolute path on every system: "/d.db" is not one on Windows (R89).
+	debug := filepath.Join(t.TempDir(), "debug-budget.db")
+	options, err := inspectFlags(t, "--debug-budget-file", debug, "--debug-caps", "deepseek=5,jev=1.5", "--max-concurrent", "3", "--log-format", "json")
+	if err != nil || options.debugBudget != debug || options.caps["deepseek"] != 5 || options.caps["jev"] != 1.5 ||
 		len(options.caps) != 2 || options.maxConcurrent != 3 || options.logFormat != "json" {
 		t.Fatalf("%+v %v", options, err)
 	}
 	for args, want := range map[string]string{
 		"--debug-caps deepseek=5":                                "--debug-caps needs --debug-budget-file",
 		"--debug-budget-file debug.db":                           "--debug-budget-file must be an absolute path",
-		"--debug-budget-file /d.db --debug-caps deepseek":        `--debug-caps must be kind=amount pairs, such as deepseek=5,jev=1, not "deepseek"`,
-		"--debug-budget-file /d.db --debug-caps deepseek=x":      `--debug-caps must be kind=amount pairs, such as deepseek=5,jev=1, not "deepseek=x"`,
-		"--debug-budget-file /d.db --debug-caps deepseek=-1":     `--debug-caps must be kind=amount pairs, such as deepseek=5,jev=1, not "deepseek=-1"`,
-		"--debug-budget-file /d.db --debug-caps jev=1,jev=2":     `--debug-caps names jev twice`,
-		"--debug-budget-file /d.db --debug-caps claude=1":        `--debug-caps kind "claude": the kinds are deepseek, jev and openai`,
+		"--debug-budget-file DEBUG --debug-caps deepseek":        `--debug-caps must be kind=amount pairs, such as deepseek=5,jev=1, not "deepseek"`,
+		"--debug-budget-file DEBUG --debug-caps deepseek=x":      `--debug-caps must be kind=amount pairs, such as deepseek=5,jev=1, not "deepseek=x"`,
+		"--debug-budget-file DEBUG --debug-caps deepseek=-1":     `--debug-caps must be kind=amount pairs, such as deepseek=5,jev=1, not "deepseek=-1"`,
+		"--debug-budget-file DEBUG --debug-caps jev=1,jev=2":     `--debug-caps names jev twice`,
+		"--debug-budget-file DEBUG --debug-caps claude=1":        `--debug-caps kind "claude": the kinds are deepseek, jev and openai`,
 		"--max-concurrent 0":                                     "--max-concurrent must be at least 1",
 		"--log-format yaml":                                      `--log-format must be text or json, not "yaml"`,
-		"--debug-budget-file /d.db --debug-caps deepseek=5,,jev": `--debug-caps must be kind=amount pairs, such as deepseek=5,jev=1, not ""`,
+		"--debug-budget-file DEBUG --debug-caps deepseek=5,,jev": `--debug-caps must be kind=amount pairs, such as deepseek=5,jev=1, not ""`,
 	} {
-		if _, err := inspectFlags(t, strings.Fields(args)...); err == nil || err.Error() != want {
+		fields := strings.Fields(args)
+		for i, field := range fields {
+			if field == "DEBUG" {
+				fields[i] = debug
+			}
+		}
+		if _, err := inspectFlags(t, fields...); err == nil || err.Error() != want {
 			t.Errorf("%q: %v", args, err)
 		}
 	}

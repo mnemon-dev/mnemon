@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -104,7 +105,8 @@ func TestModelCacheFileIsAbsolutePrivateAndWAL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "eval", "model-cache.db")
 	cache := openTestCache(t, path)
 	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0600 {
+	// Windows reports 0666 for any writable file (R89).
+	if err != nil || !info.Mode().IsRegular() || runtime.GOOS != "windows" && info.Mode().Perm() != 0600 {
 		t.Fatal("cache file is not a private regular file", info, err)
 	}
 	// Several serve processes share one file: readers never wait for the
@@ -120,15 +122,63 @@ func TestModelCacheFileIsAbsolutePrivateAndWAL(t *testing.T) {
 	if _, err = OpenModelCache("relative/model-cache.db"); err == nil {
 		t.Fatal("relative cache path accepted")
 	}
-	shared := filepath.Join(t.TempDir(), "shared.db")
-	if err = os.WriteFile(shared, nil, 0644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err = OpenModelCache(shared); err == nil {
-		t.Fatal("cache file readable by others accepted")
+	if runtime.GOOS != "windows" {
+		shared := filepath.Join(t.TempDir(), "shared.db")
+		if err = os.WriteFile(shared, nil, 0644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err = OpenModelCache(shared); err == nil {
+			t.Fatal("cache file readable by others accepted")
+		}
 	}
 	if _, err = OpenModelCache(t.TempDir()); err == nil {
 		t.Fatal("directory accepted as cache file")
+	}
+}
+
+// R89: the budget file and the model cache must be private where POSIX modes
+// say who may read a file. On Windows they do not: Go reports 0666 for any
+// writable file, whoever its ACL lets in, so every file would be refused;
+// there the check is not made (posixModes false), and an open file of mode
+// 0644, as such a file reports, opens. Elsewhere it is refused, as is a
+// directory everywhere.
+func TestPrivateModeCheckIsPOSIXOnly(t *testing.T) {
+	open := map[string]func(string) error{
+		"budget file": func(path string) error {
+			b, err := OpenBudget(path)
+			if err == nil {
+				b.Close()
+			}
+			return err
+		},
+		"model cache": func(path string) error {
+			c, err := OpenModelCache(path)
+			if err == nil {
+				c.Close()
+			}
+			return err
+		},
+	}
+	for _, posix := range []bool{true, false} {
+		previous := posixModes
+		posixModes = posix
+		for name, open := range open {
+			readable := filepath.Join(t.TempDir(), "readable.db")
+			if err := os.WriteFile(readable, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			// Chmod, as WriteFile's mode passes through the umask.
+			if err := os.Chmod(readable, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := open(readable); posix && (err == nil || !strings.Contains(err.Error(), "must be a private regular file")) || !posix && err != nil {
+				t.Errorf("POSIX modes %v: a %s readable by others opened with %v", posix, name, err)
+			}
+			if err := open(t.TempDir()); err == nil {
+				t.Errorf("POSIX modes %v: a directory opened as a %s", posix, name)
+			}
+		}
+		posixModes = previous
 	}
 }
 

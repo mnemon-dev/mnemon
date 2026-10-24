@@ -685,15 +685,20 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 			t.Errorf("aml-inspect@.service passes --%s %q, want %q", flag, f.Value.String(), want)
 		}
 	}
-	t.Setenv("MNEMON_INSPECT_TOKEN", strings.Repeat("i", 47))
-	options, err := amlInspectFlags(command)
-	if err != nil || options.caps["deepseek"] != 5 || options.caps["jev"] != 1 {
-		t.Fatal("aml-inspect@.service's flags do not parse:", err)
+	// The units run on Linux: on Windows their paths are not absolute (R89),
+	// so there the flags are parsed but not checked.
+	if runtime.GOOS != "windows" {
+		t.Setenv("MNEMON_INSPECT_TOKEN", strings.Repeat("i", 47))
+		options, err := amlInspectFlags(command)
+		if err != nil || options.caps["deepseek"] != 5 || options.caps["jev"] != 1 {
+			t.Fatal("aml-inspect@.service's flags do not parse:", err)
+		}
 	}
+	debugBudget, dataRoot := command.Flags().Lookup("debug-budget-file").Value.String(), command.Flags().Lookup("data-root").Value.String()
 	// The debug budget lives in the service's own state, apart from the
 	// instance's budget file (memory-config.json's budgetFile).
-	if dir := path.Dir(options.debugBudget); dir != "/var/lib/mnemon-aml-inspect/eval" || options.debugBudget == "/var/lib/mnemon-aml/eval/model-budget.db" {
-		t.Errorf("--debug-budget-file %q is not in the service's state directory", options.debugBudget)
+	if dir := path.Dir(debugBudget); dir != "/var/lib/mnemon-aml-inspect/eval" || debugBudget == "/var/lib/mnemon-aml/eval/model-budget.db" {
+		t.Errorf("--debug-budget-file %q is not in the service's state directory", debugBudget)
 	}
 	for _, s := range []struct{ section, key, want string }{
 		{"Service", "Type", "simple"},
@@ -720,8 +725,8 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 			t.Errorf("aml-inspect@.service [%s] %s=%s, want %s", s.section, s.key, got, s.want)
 		}
 	}
-	if !strings.HasPrefix(options.dataRoot, strings.ReplaceAll(inspect.get(t, "Service", "ReadOnlyPaths"), "%i", instance)+"/") {
-		t.Errorf("--data-root %s is not under ReadOnlyPaths=", options.dataRoot)
+	if !strings.HasPrefix(dataRoot, strings.ReplaceAll(inspect.get(t, "Service", "ReadOnlyPaths"), "%i", instance)+"/") {
+		t.Errorf("--data-root %s is not under ReadOnlyPaths=", dataRoot)
 	}
 	if requires, ok := inspect["Unit"]["Requires"]; ok {
 		t.Errorf("aml-inspect@.service requires %q: it reads stores whether aml-serve runs or not", requires)

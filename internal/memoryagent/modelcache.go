@@ -40,7 +40,7 @@ type ModelCache struct {
 const modelCacheFormat = "mnemon-model-cache/v1"
 
 // OpenModelCache opens or creates the cache file at path, which must be
-// absolute and private, like the budget file.
+// absolute and private (privateFile), like the budget file.
 func OpenModelCache(path string) (*ModelCache, error) {
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("model cache must be an absolute path")
@@ -55,7 +55,7 @@ func OpenModelCache(path string) (*ModelCache, error) {
 		return nil, err
 	}
 	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+	if err != nil || !privateFile(info) {
 		return nil, errors.New("model cache must be a private regular file")
 	}
 	u := url.URL{Scheme: "file", Path: path}

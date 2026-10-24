@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
@@ -43,6 +44,19 @@ var (
 	reservations = map[string]float64{"jev": 0.01, "deepseek": 0.25, "openai": 0.01}
 	currencies   = map[string]string{"jev": "USD", "deepseek": "CNY", "openai": "USD"}
 )
+
+// posixModes says whether a file's permission bits say who may read it, as
+// POSIX systems' do. On Windows they do not: Go reports 0666 for any writable
+// file and 0444 for a read-only one, whoever its ACL lets in, so the budget
+// file and the model cache are checked to be private only elsewhere (ruling
+// R89). Tests set it.
+var posixModes = runtime.GOOS != "windows"
+
+// privateFile reports whether info is of a regular file that, where POSIX
+// modes mean something, neither its group nor others may read or write.
+func privateFile(info os.FileInfo) bool {
+	return info.Mode().IsRegular() && (!posixModes || info.Mode().Perm()&0o077 == 0)
+}
 
 // PaidKinds are the provider kinds a budget accounts (its caps' kinds), each
 // with the currency its caps, spending and costs count in. The map is the
@@ -81,7 +95,7 @@ func OpenBudgetWithCaps(path string, caps map[string]float64) (*Budget, error) {
 		return nil, err
 	}
 	info, err := os.Lstat(path)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+	if err != nil || !privateFile(info) {
 		return nil, errors.New("budget file must be a private regular file")
 	}
 	u := url.URL{Scheme: "file", Path: path}
