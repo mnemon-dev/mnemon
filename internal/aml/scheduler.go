@@ -138,8 +138,12 @@ type scheduler struct {
 	// block.
 	jobDone func(outcome string)
 
-	mu       sync.Mutex
-	users    map[string]*schedUser
+	mu    sync.Mutex
+	users map[string]*schedUser
+	// measured holds the users a job or an Add has measured since the
+	// scheduler was made, forgotten ones too (HasMeasured): one key per user
+	// store, as many as the data root holds.
+	measured map[string]bool
 	queue    *list.List // of *schedUser, queued in order
 	retries  retryHeap  // the users backing off, the next retry first
 	running  int        // users running
@@ -155,7 +159,7 @@ type scheduler struct {
 
 func newScheduler(workers, maxUsers int, run func(ctx context.Context, key string) (backlog int64, err error), logf func(ctx context.Context, format string, args ...any), now func() time.Time) *scheduler {
 	return &scheduler{workers: workers, maxUsers: maxUsers, run: run, logf: logf, now: now, jitter: rand.Float64,
-		users: map[string]*schedUser{}, queue: list.New(), changed: make(chan struct{})}
+		users: map[string]*schedUser{}, measured: map[string]bool{}, queue: list.New(), changed: make(chan struct{})}
 }
 
 // short is a user key as logs name it: its 8-hex-digit prefix.
@@ -403,7 +407,19 @@ func (s *scheduler) Measured(key string, chars int64) {
 		return
 	}
 	u.backlog, u.measured = chars, true
+	s.measured[key] = true
 	s.unlockChanged()
+}
+
+// HasMeasured reports whether a job or an Add has measured the user's
+// backlog since the scheduler was made, also when the scheduler has
+// forgotten the user since (a measure of 0): its estimate is then right from
+// what Adds tell it, and an Add need not measure it again (Server's
+// measureUnknown): one measure per user and start.
+func (s *scheduler) HasMeasured(key string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.measured[key]
 }
 
 // signal makes the workers look again, as after any change: a clock moved
@@ -503,6 +519,7 @@ func (s *scheduler) finish(ctx context.Context, u *schedUser, backlog int64, err
 	s.running--
 	if backlog >= 0 {
 		u.backlog, u.measured = backlog+u.added, true
+		s.measured[u.key] = true
 	}
 	u.added = 0
 	var line string

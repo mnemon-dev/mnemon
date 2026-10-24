@@ -895,13 +895,13 @@ func utf16Units(s string) int64 {
 }
 
 // measureUnknown is the user's backlog, measured now that its Add has
-// written, when the scheduler has no measure of it (after a start, or after
-// a Search's hold made the user known), so that the lag bound holds from this
-// Add on rather than from the user's first job (the final review's parked
-// T6-a): one measure per user and start. It is -1 when the scheduler has a
-// measure, or when the measure fails, which is logged.
+// written, when the scheduler has not measured the user since it started
+// (nor has a job), so that the lag bound holds from this Add on rather than
+// from the user's first job (the final review's parked T6-a): one measure per
+// user and start (scheduler.HasMeasured). It is -1 when the scheduler has
+// measured the user, or when the measure fails, which is logged.
 func (s *Server) measureUnknown(ctx context.Context, user *userEntry) int64 {
-	if _, known := s.sched.Backlog(user.key); known {
+	if s.sched.HasMeasured(user.key) {
 		return -1
 	}
 	backlog, err := user.agent.Backlog(ctx, records.Scope{})

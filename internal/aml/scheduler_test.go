@@ -991,3 +991,45 @@ func TestSchedulerTakesAnAddsMeasure(t *testing.T) {
 	measure <- 70
 	eventually(t, func() bool { chars, known := s.Backlog(b); return known && chars == 70 })
 }
+
+// The scheduler remembers which users it has measured since it started, a
+// job or an Add, also once it has forgotten one whose backlog measured 0: an
+// Add measures a user only once a start, not on every Add of a user that
+// keeps catching up.
+func TestSchedulerRemembersWhomItMeasured(t *testing.T) {
+	a, b := userKey("a"), userKey("b")
+	started := make(chan string, 10)
+	measure := make(chan int64)
+	s := newScheduler(1, 100, func(ctx context.Context, key string) (int64, error) {
+		started <- key
+		select {
+		case backlog := <-measure:
+			return backlog, nil
+		case <-ctx.Done():
+			return -1, ctx.Err()
+		}
+	}, (&logLines{}).logf, time.Now)
+	if s.HasMeasured(a) || s.HasMeasured(b) {
+		t.Fatal("measured before anything")
+	}
+	s.Notify(context.Background(), a, 50)
+	s.Measured(a, 900)
+	if !s.HasMeasured(a) || s.HasMeasured(b) {
+		t.Fatal("after an Add's measure:", s.HasMeasured(a), s.HasMeasured(b))
+	}
+	startScheduler(t, s)
+	if key := next(t, started); key != a {
+		t.Fatal(key)
+	}
+	measure <- 0 // a caught up: forgotten
+	eventually(t, func() bool { _, known := s.Backlog(a); return !known && idle(s) })
+	s.Notify(context.Background(), b, 10)
+	if key := next(t, started); key != b {
+		t.Fatal(key)
+	}
+	measure <- 0
+	eventually(t, func() bool { return idle(s) })
+	if !s.HasMeasured(a) || !s.HasMeasured(b) {
+		t.Fatal("forgotten, so measured no more:", s.HasMeasured(a), s.HasMeasured(b))
+	}
+}

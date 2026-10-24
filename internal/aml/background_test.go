@@ -1022,6 +1022,41 @@ func TestAddMeasuresABacklogTheSchedulerDoesNotKnow(t *testing.T) {
 	}
 }
 
+// T6-a's measure is once a start: a user whose job caught up (measured 0,
+// and so forgotten) is not measured again by its next Add, which only adds
+// what it wrote; a job measures it next.
+func TestAddMeasuresAUserOnceAStart(t *testing.T) {
+	settings := memoryagent.ConsolidationConfig{Mode: "timelines", BatchCharacters: 50000, MaxBatches: 64}
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &settings
+		config.Consolidation = ConsolidationBackground
+	})
+	h.consolidator.answer(parityReply)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- h.server.Run(ctx, nil) }()
+	h.mustAdd(t, noteAdd(0, "u1"))
+	// A Search folds the tail; then a job, as the startup scan queues one,
+	// finds nothing pending, measures 0, and the scheduler forgets u1.
+	h.settle(t)
+	h.search(t, SearchRequest{Query: question, UserID: "u1", TopK: 10})
+	h.server.sched.Notify(context.Background(), userKey("u1"), 0)
+	h.settle(t)
+	cancel()
+	if err := received(t, done); err != nil {
+		t.Fatal(err)
+	}
+	if _, known := h.server.sched.Backlog(userKey("u1")); known || !h.server.sched.HasMeasured(userKey("u1")) {
+		t.Fatal("u1 is not a user the scheduler measured and then forgot")
+	}
+	// No worker runs now: the next Add's estimate is what it wrote, not a
+	// measure.
+	h.mustAdd(t, noteAdd(1, "u1"))
+	if _, known := h.server.sched.Backlog(userKey("u1")); known {
+		t.Fatal("the Add measured a user already measured this start")
+	}
+}
+
 // Parked T6-b (final review): an Add adds what it wrote to the user's backlog
 // estimate in UTF-16 units, the units the backlog's measure and a job's
 // window count, not in runes: an emoji is two. Two Adds alike but for 100
