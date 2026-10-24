@@ -476,7 +476,11 @@ func (b *breaker) record(failed bool) {
 // retryBudget bounds a provider's retries to retryShare of the calls it
 // began over the last retryWindow seconds, and allows retryFloor a second
 // however few calls there were, so that an outage cannot multiply the load
-// on it (the SRE book's retry budget). It counts by second, in a ring.
+// on it (the SRE book's retry budget). It counts by second, in a ring. A
+// retry is taken from it as it starts, after its wait (modelCall.attempt),
+// so the floor counts a retry in the second it starts: a burst of failures
+// at low traffic whose jittered waits spread over several seconds retries
+// up to retryFloor in each of them (the final review's Minor 5).
 type retryBudget struct {
 	mu    sync.Mutex
 	slots [retryWindow]retrySlot
@@ -630,8 +634,13 @@ type modelCall[T meteredReply] struct {
 // attempt is one attempt of the call (the function the retry policy runs),
 // shown to the provider's observer; a rejected one is counted (R65). Its
 // reply is checked here, on the caller's goroutine, and not by its
-// request's: an abandoned request's reply is never read.
+// request's: an abandoned request's reply is never read. A retry first takes
+// its retry from the provider's retry budget, as it starts: when none is
+// left, the call ends with the last attempt's error (spent).
 func (c *modelCall[T]) attempt(exec failsafe.Execution[flightResult[T]]) (flightResult[T], error) {
+	if c.attempts > 0 && !c.p.retries.allow(time.Now()) {
+		return c.spent()
+	}
 	c.attempts++
 	start := time.Now()
 	res := c.try(exec.Context())
@@ -653,6 +662,16 @@ func (c *modelCall[T]) attempt(exec failsafe.Execution[flightResult[T]]) (flight
 	return res, res.err
 }
 
+// spent ends the call at a retry the provider's retry budget had none left
+// for: the retry is shown to the observer as a "budget" attempt, and the
+// last attempt's result answers, its error saying so, with no retry after it.
+func (c *modelCall[T]) spent() (flightResult[T], error) {
+	c.last.err = fmt.Errorf("%w; the provider's retry budget is spent", c.last.err)
+	c.last.retry = false
+	c.report("budget", c.attempts+1, 0, 0)
+	return c.last, c.last.err
+}
+
 // report shows an attempt to the provider's observer.
 func (c *modelCall[T]) report(outcome string, attempt int, took time.Duration, status int) {
 	c.p.observe(AttemptEvent{Kind: c.p.config.Kind, Class: c.policy.class.String(), Outcome: outcome, Attempt: attempt, Duration: took, Status: status, Retried: attempt > 1})
@@ -667,9 +686,8 @@ func (c *modelCall[T]) report(outcome string, attempt int, took time.Duration, s
 // gives 0 for each, no wait to honour. Such a retry is none of the
 // class's attempts; any other is one, and a call that has made them all
 // stops. So does a call whose wait would end at or past the caller's
-// deadline, and one the provider's retry budget has no retry left for (shown
-// to the observer as a "budget" attempt). The retry budget is drawn on by
-// patient retries too.
+// deadline. The provider's retry budget is drawn on when the retry starts,
+// after its wait (attempt), by patient retries too.
 func (c *modelCall[T]) stop() bool {
 	var retryAfter time.Duration
 	var status *statusError
@@ -691,13 +709,7 @@ func (c *modelCall[T]) stop() bool {
 	default:
 		c.delay = c.policy.retryDelay(c.attempts, retryAfter, c.p.jitter())
 	}
-	now := time.Now()
-	if deadline, ok := c.ctx.Deadline(); ok && !now.Add(c.delay).Before(deadline) {
-		return true
-	}
-	if !c.p.retries.allow(now) {
-		c.last.err = fmt.Errorf("%w; the provider's retry budget is spent", c.last.err)
-		c.report("budget", c.attempts+1, 0, 0)
+	if deadline, ok := c.ctx.Deadline(); ok && !time.Now().Add(c.delay).Before(deadline) {
 		return true
 	}
 	if patient {

@@ -1155,13 +1155,20 @@ func TestProvidersUseOwnTransport(t *testing.T) {
 		if transport.MaxIdleConnsPerHost != 48 || transport.MaxConnsPerHost != 48 {
 			t.Fatal(config.Kind, "connections per host", transport.MaxIdleConnsPerHost, transport.MaxConnsPerHost)
 		}
-		if transport.IdleConnTimeout != 90*time.Second || transport.TLSHandshakeTimeout != 10*time.Second || !transport.ForceAttemptHTTP2 {
-			t.Fatal(config.Kind, "timeouts or HTTP/2", transport.IdleConnTimeout, transport.TLSHandshakeTimeout, transport.ForceAttemptHTTP2)
+		if transport.IdleConnTimeout != 90*time.Second || transport.TLSHandshakeTimeout != 10*time.Second {
+			t.Fatal(config.Kind, "timeouts", transport.IdleConnTimeout, transport.TLSHandshakeTimeout)
 		}
-		// Dialing is bounded, and the proxy environment is honoured as it is
-		// by http.DefaultTransport.
+		// HTTP/1.1 only (R88): HTTP/2 is neither attempted nor negotiated.
+		if transport.ForceAttemptHTTP2 || transport.TLSNextProto == nil || len(transport.TLSNextProto) != 0 {
+			t.Fatal(config.Kind, "HTTP/2 enabled", transport.ForceAttemptHTTP2, transport.TLSNextProto)
+		}
+		// Dialing is bounded and keeps connections alive, and the proxy
+		// environment is honoured as it is by http.DefaultTransport.
 		if transport.DialContext == nil || transport.Proxy == nil {
 			t.Fatal(config.Kind, "dialer or proxy missing")
+		}
+		if d := providerDialer; d.Timeout <= 0 || d.Timeout > 5*time.Second || d.KeepAlive <= 0 || d.KeepAlive > 30*time.Second {
+			t.Fatal(config.Kind, "dial timeout or keep-alive", d.Timeout, d.KeepAlive)
 		}
 	}
 }

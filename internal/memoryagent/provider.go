@@ -3,6 +3,7 @@ package memoryagent
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -97,6 +98,11 @@ const defaultModelTimeout = 90 * time.Second
 // once (their bulkheads), abandoned ones included.
 const providerConns = interactiveCalls + flushCalls + backgroundCalls
 
+// providerDialer dials a provider's endpoint: a connection is made within 5
+// s or not at all, and TCP keep-alive probes it every 30 s. It is safe for
+// concurrent use.
+var providerDialer = &net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}
+
 // newTransport is a provider's own HTTP transport. http.DefaultTransport
 // keeps two idle connections per host, so concurrent calls to one endpoint
 // dial and handshake TLS again after every burst. This one keeps up to
@@ -104,11 +110,23 @@ const providerConns = interactiveCalls + flushCalls + backgroundCalls
 // at once. It bounds connecting (dial 5 s, TLS handshake 10 s) but not the
 // call, which the client's timeout bounds, and it honours the proxy
 // environment as http.DefaultTransport does.
+//
+// It speaks HTTP/1.1 only, also to an endpoint that offers HTTP/2 (ruling
+// R88): a request in flight then has a connection of its own, so a dropped
+// connection fails one attempt, which a retry absorbs. Over HTTP/2 every
+// request of a provider would share one connection, whose loss fails all of
+// them at once, enough availability failures in a row to open the breaker.
+// The pool still holds a connection for every request the provider may have
+// in flight: maxConns is the sum of its bulkheads (providerConns), and an
+// attempt keeps its permit until its request ends.
 func newTransport(maxConns int) *http.Transport {
 	return &http.Transport{
-		Proxy:               http.ProxyFromEnvironment,
-		DialContext:         (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-		ForceAttemptHTTP2:   true, // a custom dialer would otherwise switch HTTP/2 off
+		Proxy:       http.ProxyFromEnvironment,
+		DialContext: providerDialer.DialContext,
+		// Neither attempted nor negotiated: a non-nil, empty TLSNextProto
+		// keeps h2 out of ALPN.
+		ForceAttemptHTTP2:   false,
+		TLSNextProto:        map[string]func(string, *tls.Conn) http.RoundTripper{},
 		MaxIdleConnsPerHost: maxConns,
 		MaxConnsPerHost:     maxConns,
 		IdleConnTimeout:     90 * time.Second,
