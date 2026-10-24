@@ -174,6 +174,46 @@ func (a *Agent) Consolidated(ctx context.Context, scope records.Scope, pendingID
 	return c, true, nil
 }
 
+// Progress is a scope's records and its consolidation's progress, as the
+// inspect service's store rows show them (Agent.Progress).
+type Progress struct {
+	// Records counts the scope's searchable records, those
+	// records.Store.Page lists.
+	Records int
+	// Consolidates says the configuration consolidates (timelines or
+	// layered); Watermark and Pending are then Consolidation's, else 0.
+	Consolidates bool
+	Watermark    int64
+	Pending      int
+}
+
+// Progress reads the scope's records and its consolidation's progress
+// without decoding the consolidated memory: the state's watermark and the
+// records it holds back come from its payload (its digest and format
+// checked, as Consolidated checks them), and one statement counts the
+// records and those written after the watermark. Like Consolidated, it makes
+// no model call, takes no job lock and writes nothing.
+func (a *Agent) Progress(ctx context.Context, scope records.Scope) (Progress, error) {
+	var p Progress
+	held := 0
+	if a.config.Consolidation.Timelines() {
+		var err error
+		if p.Watermark, held, err = a.overlay.loadProgress(ctx, scope); err != nil {
+			return Progress{}, err
+		}
+		p.Consolidates = true
+	}
+	heads, after, err := a.store.Count(ctx, scope, p.Watermark)
+	if err != nil {
+		return Progress{}, err
+	}
+	p.Records = heads
+	if p.Consolidates {
+		p.Pending = held + after
+	}
+	return p, nil
+}
+
 // StoredRecord is a searchable record as the inspect service lists it: its
 // id, the date a read gives it (Evidence.Date, a Search item's created_at),
 // the session it was added under (data.session, "" for none) and its text.

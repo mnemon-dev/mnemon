@@ -116,11 +116,14 @@ type TraceItem struct {
 // topic, ID its id) or a fact key (Kind value, ID the key), the text JEV
 // read, how many of the View's records link to it (Lit), its rank among the
 // candidates nearest the question (-1 when it is not among them), and JEV's
-// answer whether the reply needs it.
+// answer whether the reply needs it. Events are a thread's events, by their
+// Consolidation ids ("e<i>", the items the timelines block names); none for
+// a key.
 type TraceLayerItem struct {
 	ID, Kind, Text string
 	Lit, Near      int
 	Needed         float64
+	Events         []string
 }
 
 // TraceLinked is a record linked from the layer's blocks that JEV judged,
@@ -296,9 +299,14 @@ func (r *simpleRun) traceLayer(in layerTrace) {
 		}
 		return n
 	}
+	_, threadEvents := eventThreads(in.memory)
 	items := []TraceLayerItem{}
 	for i, id := range in.topics {
-		items = append(items, TraceLayerItem{ID: id, Kind: "topic", Text: in.threadTexts[id], Lit: in.lit.Counts[id], Near: near(in.nearThreads, in.threadIDs, id), Needed: in.scores[i]})
+		events := []string{}
+		for _, e := range threadEvents[id] {
+			events = append(events, itemID("e", e))
+		}
+		items = append(items, TraceLayerItem{ID: id, Kind: "topic", Text: in.threadTexts[id], Lit: in.lit.Counts[id], Near: near(in.nearThreads, in.threadIDs, id), Needed: in.scores[i], Events: events})
 	}
 	for i, key := range in.values {
 		items = append(items, TraceLayerItem{ID: key, Kind: "value", Text: in.valueTexts[key], Lit: litValue(key), Near: near(in.nearValues, in.memory.FactOrder, key), Needed: in.scores[len(in.topics)+i]})

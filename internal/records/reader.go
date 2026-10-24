@@ -138,7 +138,8 @@ func unchanged(path string, stamp os.FileInfo) error {
 // Retryable reports whether err, from a reader, says the file could not be
 // read consistently now but may be soon: it changed under a quiescent read
 // (ErrChanged), SQLite was busy or locked, a read-only connection met a
-// recovery or an uninitialized -shm that the file's writer finishes, or a
+// recovery, an uninitialized -shm or a hot rollback journal (a writer's
+// crash left one) that the file's writer finishes or rolls back, or a
 // writer closed the file between the reader's look and its open.
 func Retryable(err error) bool {
 	if errors.Is(err, ErrChanged) {
@@ -152,7 +153,8 @@ func Retryable(err error) bool {
 	case code&0xff == sqlite3.SQLITE_BUSY, code&0xff == sqlite3.SQLITE_LOCKED:
 		return true
 	default:
-		return code == sqlite3.SQLITE_READONLY_RECOVERY || code == sqlite3.SQLITE_READONLY_CANTINIT || code == sqlite3.SQLITE_READONLY_DIRECTORY
+		return code == sqlite3.SQLITE_READONLY_RECOVERY || code == sqlite3.SQLITE_READONLY_CANTINIT || code == sqlite3.SQLITE_READONLY_DIRECTORY ||
+			code == sqlite3.SQLITE_READONLY_ROLLBACK
 	}
 }
 
@@ -235,6 +237,25 @@ func (s *Store) Page(ctx context.Context, scope Scope, after int64, limit int) (
 	}
 }
 
+// Record returns the current head of scope with id as Page lists it, and
+// false when Page lists none with that id: no record has it, or the record
+// is a document, an index item, not active or not in scope. One statement
+// reads it, by the index of current versions.
+func (s *Store) Record(ctx context.Context, scope Scope, id string) (PageRecord, bool, error) {
+	var v pageVersion
+	err := s.readDB().QueryRowContext(ctx, `SELECT seq,rowid,record_json,kind,scope,workspace_id,session_id,state FROM record_versions
+WHERE id=? AND rev_to IS NULL`, id).Scan(&v.seq, &v.version, &v.raw, &v.Kind, &v.Scope, &v.WorkspaceID, &v.SessionID, &v.State)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return PageRecord{}, false, nil
+	case err != nil:
+		return PageRecord{}, false, err
+	case !isHead(v.record, scope):
+		return PageRecord{}, false, nil
+	}
+	return PageRecord{Seq: v.seq, Version: v.version, JSON: v.raw}, true, nil
+}
+
 // pageVersion is a current version as Page reads it.
 type pageVersion struct {
 	record
@@ -288,6 +309,36 @@ WHERE rev_to IS NULL AND rowid>? ORDER BY rowid`, version)
 		}
 	}
 	return count, ids, rows.Err()
+}
+
+// Count counts the current heads of scope (as Heads lists them, the records
+// Page lists) and, of them, those whose version is above version (as Tail
+// counts them): a store's records, and those written after a
+// consolidation's watermark. One statement reads them.
+func (s *Store) Count(ctx context.Context, scope Scope, version int64) (heads, after int, err error) {
+	rows, err := s.readDB().QueryContext(ctx, `SELECT rowid,kind,scope,workspace_id,session_id,state FROM record_versions WHERE rev_to IS NULL`)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var r record
+		var v int64
+		if err := rows.Scan(&v, &r.Kind, &r.Scope, &r.WorkspaceID, &r.SessionID, &r.State); err != nil {
+			return 0, 0, err
+		}
+		if !isHead(r, scope) {
+			continue
+		}
+		heads++
+		if v > version {
+			after++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, 0, err
+	}
+	return heads, after, nil
 }
 
 // LexicalScores returns, for each query, the words score (BM25) of each of

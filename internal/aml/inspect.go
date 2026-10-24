@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"log/slog"
 	"maps"
 	"math"
@@ -50,8 +52,19 @@ const (
 	busyRetry, storeBusyRetry = "2", "1"
 )
 
-// paidKinds are the provider kinds a budget accounts, with their currencies.
-var paidKinds = map[string]string{"deepseek": "CNY", "jev": "USD", "openai": "USD"}
+// paidKinds are the provider kinds a budget accounts, with their currencies
+// (memoryagent.PaidKinds).
+var paidKinds = memoryagent.PaidKinds()
+
+// PaidKindNames names the kinds a debug cap is for, in order: "deepseek,
+// jev and openai".
+func PaidKindNames() string {
+	kinds := slices.Sorted(maps.Keys(paidKinds))
+	if len(kinds) < 2 {
+		return strings.Join(kinds, "")
+	}
+	return strings.Join(kinds[:len(kinds)-1], ", ") + " and " + kinds[len(kinds)-1]
+}
 
 // InspectConfig configures an Inspector.
 type InspectConfig struct {
@@ -167,6 +180,9 @@ func checkInspectConfig(config *InspectConfig) error {
 	case config.MemoryConfig.Embedding != nil:
 		// Lexical mode calls no model, and the memory cloud ships no embedder.
 		return errors.New("the inspect service reads configurations without an embedder (BM25 only)")
+	case config.MemoryConfig.Index.Enabled():
+		// A trace's scores are the words (BM25) scores of a search's records.
+		return errors.New("the inspect service reads configurations without an index policy: a trace's scores are BM25 scores, and an index policy's ranking fuses other routes, so they would not be the scores it sorted by")
 	}
 	if !dataRoot(config.DataRoot) {
 		return fmt.Errorf("%s is not an aml-serve data root: it has neither a users/ directory nor aml-serve's %s", config.DataRoot, dataRootLock)
@@ -176,7 +192,7 @@ func checkInspectConfig(config *InspectConfig) error {
 	}
 	for kind, cap := range config.DebugCaps {
 		if _, ok := paidKinds[kind]; !ok {
-			return fmt.Errorf("debug cap kind %q: the kinds are deepseek, jev and openai", kind)
+			return fmt.Errorf("debug cap kind %q: the kinds are %s", kind, PaidKindNames())
 		}
 		if math.IsNaN(cap) || math.IsInf(cap, 0) || cap < 0 {
 			return fmt.Errorf("the debug cap of %s must be a finite amount of at least 0", kind)
@@ -188,6 +204,8 @@ func checkInspectConfig(config *InspectConfig) error {
 		}
 		return nil
 	}
+	// The service opens the file by the name it checks.
+	config.DebugBudgetFile = filepath.Clean(config.DebugBudgetFile)
 	return checkDebugBudget(config.DebugBudgetFile, config.MemoryConfig.BudgetFile, config.DataRoot)
 }
 
@@ -207,19 +225,34 @@ func dataRoot(dir string) bool {
 }
 
 // checkDebugBudget refuses a debug budget file that is relative, inside the
-// data root, or the instance's budget file, however it is spelled.
+// data root, or the instance's budget file, however a path spells them. The
+// paths are compared by the names the file system resolves them to
+// (canonicalPath), so that neither "." and ".." nor a symbolic link passes
+// for another file, even one not made yet; and two files that exist by their
+// identity, so that a hard link does not either. debug is clean.
 func checkDebugBudget(debug, instance, dataRoot string) error {
 	if !filepath.IsAbs(debug) {
 		return errors.New("the debug budget file must be an absolute path")
 	}
-	debug = filepath.Clean(debug)
-	if rel, err := filepath.Rel(filepath.Clean(dataRoot), debug); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	debugName, err := canonicalPath(debug)
+	if err != nil {
+		return fmt.Errorf("the debug budget file: %w", err)
+	}
+	root, err := canonicalPath(filepath.Clean(dataRoot))
+	if err != nil {
+		return fmt.Errorf("the data root: %w", err)
+	}
+	if rel, err := filepath.Rel(root, debugName); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return errors.New("the debug budget file must be outside the data root, which the service only reads")
 	}
 	if instance == "" {
 		return nil
 	}
-	if debug == filepath.Clean(instance) {
+	instanceName, err := canonicalPath(filepath.Clean(instance))
+	if err != nil {
+		return fmt.Errorf("the configuration's budgetFile: %w", err)
+	}
+	if debugName == instanceName {
 		return errors.New("the debug budget file must differ from the configuration's budgetFile: full searches never spend the instance's budget")
 	}
 	a, errA := os.Stat(debug)
@@ -228,6 +261,27 @@ func checkDebugBudget(debug, instance, dataRoot string) error {
 		return errors.New("the debug budget file is the configuration's budgetFile under another name: full searches never spend the instance's budget")
 	}
 	return nil
+}
+
+// canonicalPath is the name the file system resolves the clean path to: its
+// nearest ancestor that exists (path itself, when it does) with every
+// symbolic link resolved (filepath.EvalSymlinks), joined with the names
+// below it, which do not exist yet. Two paths of the same canonical name
+// name one file, or will once it is made. A symbolic link that leads
+// nowhere is left as a name: the budget refuses to open one anyway.
+func canonicalPath(path string) (string, error) {
+	rest := ""
+	for dir := path; ; {
+		resolved, err := filepath.EvalSymlinks(dir)
+		if err == nil {
+			return filepath.Join(resolved, rest), nil
+		}
+		parent := filepath.Dir(dir)
+		if !errors.Is(err, fs.ErrNotExist) || parent == dir {
+			return "", err
+		}
+		rest, dir = filepath.Join(filepath.Base(dir), rest), parent
+	}
 }
 
 // readKinds are the paid kinds of the read's models: the planner's and the
@@ -375,8 +429,16 @@ func (i *Inspector) routes() http.Handler {
 	route("/v1/resolve", http.MethodPost, true, i.serveResolve)
 	route("/v1/stores/{key}/records", http.MethodGet, true, i.serveRecords)
 	route("/v1/stores/{key}/memory", http.MethodGet, true, i.serveMemory)
+	// The lookups by id; {$} takes an empty id, which is refused.
+	route("/v1/stores/{key}/records/{id}", http.MethodGet, true, i.serveRecord)
+	route("/v1/stores/{key}/records/{$}", http.MethodGet, true, i.serveRecord)
+	route("/v1/stores/{key}/memory/{section}/{id}", http.MethodGet, true, i.serveMemoryItem)
+	route("/v1/stores/{key}/memory/{section}/{$}", http.MethodGet, true, i.serveMemoryItem)
 	route("/v1/search", http.MethodPost, true, i.serveSearch)
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { inspectError(w, http.StatusNotFound, "not_found") })
+	notFound := func(w http.ResponseWriter, _ *http.Request) { inspectError(w, http.StatusNotFound, "not_found") }
+	// Not a route: without it, ServeMux would redirect it to its {$}.
+	mux.HandleFunc("/v1/stores/{key}/memory/{section}", notFound)
+	mux.HandleFunc("/", notFound)
 	refuse := func(w http.ResponseWriter) {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="mnemon-inspect"`)
 		inspectError(w, http.StatusUnauthorized, "unauthorized")
@@ -475,10 +537,18 @@ func invalid(w http.ResponseWriter, field string) {
 	inspectJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid", "field": field})
 }
 
-// decodeBody reads a JSON object of at most inspectBody bytes into fields;
-// on failure it has answered 413 too_large or 400 invalid (body).
+// decodeBody reads a JSON object of at most inspectBody bytes into fields,
+// then the body to its end: nothing may follow the object but white space.
+// net/http watches a request's connection only once its body has reached
+// its end; from then on a client that leaves cancels the request's context,
+// and a full search's model calls with it. On failure it has answered 413
+// too_large or 400 invalid (body).
 func decodeBody(w http.ResponseWriter, r *http.Request, fields *map[string]json.RawMessage) bool {
-	err := json.NewDecoder(http.MaxBytesReader(w, r.Body, inspectBody)).Decode(fields)
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, inspectBody))
+	err := decoder.Decode(fields)
+	if err == nil {
+		err = readEnd(decoder)
+	}
 	var tooLarge *http.MaxBytesError
 	switch {
 	case errors.As(err, &tooLarge):
@@ -489,6 +559,19 @@ func decodeBody(w http.ResponseWriter, r *http.Request, fields *map[string]json.
 		return true
 	}
 	return false
+}
+
+// readEnd reads what follows a decoded JSON value to the end of its input:
+// nil when that is white space alone.
+func readEnd(decoder *json.Decoder) error {
+	switch _, err := decoder.Token(); {
+	case errors.Is(err, io.EOF):
+		return nil
+	case err == nil:
+		return errors.New("data follows the JSON object")
+	default:
+		return err
+	}
 }
 
 // usageByKind is an amount of each paid kind the console shows: deepseek and

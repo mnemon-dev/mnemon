@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/mnemon-dev/mnemon/internal/aml"
+	"github.com/mnemon-dev/mnemon/internal/memoryagent"
 	"github.com/spf13/cobra"
 )
 
@@ -104,10 +105,8 @@ func debugCaps(value string) (map[string]float64, error) {
 		if !ok || err != nil || math.IsNaN(cap) || math.IsInf(cap, 0) || cap < 0 {
 			return nil, fmt.Errorf("--debug-caps must be kind=amount pairs, such as deepseek=5,jev=1, not %q", pair)
 		}
-		switch kind {
-		case "deepseek", "jev", "openai":
-		default:
-			return nil, fmt.Errorf("--debug-caps kind %q: the kinds are deepseek, jev and openai", kind)
+		if _, paid := memoryagent.PaidKinds()[kind]; !paid {
+			return nil, fmt.Errorf("--debug-caps kind %q: the kinds are %s", kind, aml.PaidKindNames())
 		}
 		if _, dup := caps[kind]; dup {
 			return nil, fmt.Errorf("--debug-caps names %s twice", kind)

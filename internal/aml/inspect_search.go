@@ -140,6 +140,16 @@ func (i *Inspector) serveSearch(w http.ResponseWriter, r *http.Request) {
 		return err
 	})
 	switch {
+	case err != nil && answer.read && storeBusy(err):
+		// The store changed under a full search, or SQLite was busy: what it
+		// read is not answered, but what it cost is, with its trace.
+		trace := answer.trace
+		if !q.tracing {
+			trace = nil
+		}
+		w.Header().Set("Retry-After", storeBusyRetry)
+		inspectJSON(w, http.StatusServiceUnavailable, map[string]any{"error": "store_busy", "trace": trace, "usage": answer.usage})
+		return
 	case err != nil:
 		i.storeFailure(w, r, q.key, "search", err)
 		return
@@ -149,10 +159,16 @@ func (i *Inspector) serveSearch(w http.ResponseWriter, r *http.Request) {
 	inspectJSON(w, answer.status, answer.body)
 }
 
-// searchOutcome is a search's answer: its status and body.
+// searchOutcome is a search's answer: its status and body. Once a full
+// search's read has run (read), it also keeps what the read cost (usage) and
+// the trace (nil before its stages are built), for an answer that cannot
+// give the result.
 type searchOutcome struct {
 	status int
 	body   map[string]any
+	read   bool
+	usage  searchUsage
+	trace  []any
 }
 
 // rawWarn logs, by the store's prefix, what a raw ranking fell back from.
@@ -211,6 +227,8 @@ func (i *Inspector) fullSearch(ctx context.Context, s *readStore, q inspectSearc
 	view, readErr := i.read(ctx, s, trace, memoryagent.ReadRequest{Question: q.question(), MaxItems: maxItems})
 	usage := traceUsage(trace)
 	i.countFull(usage.Cost)
+	// From here on every outcome, failed or not, keeps what the read cost.
+	paid := searchOutcome{read: true, usage: usage}
 	var result []SearchItem
 	if readErr == nil {
 		result = searchItems(view, q.topK)
@@ -218,27 +236,31 @@ func (i *Inspector) fullSearch(ctx context.Context, s *readStore, q inspectSearc
 	}
 	stages, err := i.fullStages(ctx, s, pending, trace, view, result)
 	if err != nil {
-		return searchOutcome{}, err
+		return paid, err
 	}
+	paid.trace = stages
 	switch {
 	case readErr == nil:
 		degraded := view.Stats.Degraded
 		if degraded == nil {
 			degraded = []string{}
 		}
-		return searchOutcome{status: http.StatusOK, body: map[string]any{"store": short(s.key), "mode": "full", "result": result, "degraded": degraded, "trace": stages, "usage": usage}}, nil
+		paid.status, paid.body = http.StatusOK, map[string]any{"store": short(s.key), "mode": "full", "result": result, "degraded": degraded, "trace": stages, "usage": usage}
+		return paid, nil
 	case ctx.Err() != nil:
-		return searchOutcome{}, ctx.Err()
+		return paid, ctx.Err()
 	case errors.Is(readErr, memoryagent.ErrBudgetCap):
-		return searchOutcome{status: http.StatusPaymentRequired, body: map[string]any{"error": "debug_budget_exhausted", "trace": stages, "usage": usage}}, nil
+		paid.status, paid.body = http.StatusPaymentRequired, map[string]any{"error": "debug_budget_exhausted", "trace": stages, "usage": usage}
+		return paid, nil
 	}
 	i.log.Warn(fmt.Sprintf("full search failed (store %s): %v", short(s.key), withoutPath(readErr)))
 	ranking, err := rawRanking(ctx, s.store, s.agent, i.config.MemoryConfig, q.query, q.topK, i.rawWarn(s.key))
 	if err != nil {
-		return searchOutcome{}, err
+		return paid, err
 	}
 	scoreByPosition(ranking.items)
-	return searchOutcome{status: http.StatusBadGateway, body: map[string]any{"error": "provider_failed", "result": ranking.items, "trace": stages, "usage": usage}}, nil
+	paid.status, paid.body = http.StatusBadGateway, map[string]any{"error": "provider_failed", "result": ranking.items, "trace": stages, "usage": usage}
+	return paid, nil
 }
 
 // read is the store's read within fullSearchTimeout, traced; a read that

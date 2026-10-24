@@ -13,7 +13,10 @@ fields; a field is never renamed or repurposed.
 ## Conventions
 
 - Every answer is JSON (`Content-Type: application/json`) with `Cache-Control: no-store`.
-  Request bodies are JSON objects of at most 65,536 bytes.
+  Request bodies are JSON objects of at most 65,536 bytes, which only white space may follow
+  (else `400 invalid`, `field` `body`). The service reads every body to its end, and from then
+  on watches the connection: a client that closes it cancels its request (a full search stops
+  its model calls, and is not answered).
 - **Numbers.** Counts, positions and sequence numbers are integers. Probabilities are numbers
   from 0 to 1. `ms` is milliseconds of wall time, rounded to 0.1. Costs are DeepSeek's CNY and
   JEV's USD, unrounded. Any number may be written in exponent form (`4.2e-06`).
@@ -59,6 +62,7 @@ never logged or answered.
 | `GET /v1/stores/{key}/records` page | `limit` 1–200, default 50 |
 | `GET /v1/stores/{key}/memory` page | `limit` 1–200, default 50 |
 | pending record ids | the first 100 |
+| a lookup's `{id}` (`/records/{id}`, `/memory/{section}/{id}`) | 1–256 bytes, decoded, no control character |
 | `POST /v1/search` `top_k` | 1–100; default the View's `maxItems` (100 in the shipped configuration) |
 | `POST /v1/search` `query` | 1–12,000 bytes, not blank |
 | trace excerpts | 200 characters |
@@ -75,7 +79,9 @@ never logged or answered.
 | `GET /v1/stores?limit&after` | a page of the data root's stores |
 | `POST /v1/resolve` | the store of a user id |
 | `GET /v1/stores/{key}/records?after&limit` | a page of a store's records |
+| `GET /v1/stores/{key}/records/{id}` | one record, by its id |
 | `GET /v1/stores/{key}/memory?section&after&limit` | a page of a store's consolidated memory |
+| `GET /v1/stores/{key}/memory/{section}/{id}` | one memory item, by its section and id |
 | `POST /v1/search` | a retrieval: its result, trace and usage |
 
 Any other path answers `404 {"error":"not_found"}`; another method on a route answers
@@ -203,6 +209,24 @@ scope, as `/search` returns them, without the archived documents they are cut fr
 malformed `after` or `limit` is `400 invalid`. An unknown key is `404 store_not_found`; a key that
 is not 32 lowercase hex digits is `400 invalid` (`field` `key`).
 
+### `GET /v1/stores/{key}/records/{id}`
+
+One record, by the id a `result` item, a trace or a memory item's `records` names.
+
+```json
+{"record": {"id": "aml-5c1f…-00000", "seq": 12, "created_at": "2023-05-08T13:56:00Z", "session": "s1",
+            "content": "Conversation s1 on 2023/05/08 (Mon) 13:56:\nuser: I adopted a dog named Biscuit …"}}
+```
+
+- `record` is the very object `/records` lists for that record: the same fields and bytes.
+- `{id}` is the record's id as one path segment, URL-encoded. Decoded, it is 1–256 bytes with
+  no control character, else `400 invalid` (`field` `id`).
+- A store with no such record among those `/records` lists (an unknown id, or a document that
+  records are cut from) is `404 record_not_found`; an unknown store is `404 store_not_found`.
+- To show the record in its context, page `/records` with `after` = its `seq` − 1: the page
+  starts with it.
+- The id is never logged.
+
 ### `GET /v1/stores/{key}/memory?section=threads|events|facts|directives&after=<n>&limit=1..200`
 
 The store's consolidated memory, one section a page, in memory order, and its consolidation
@@ -247,6 +271,30 @@ Item ids are what a trace's `compose` blocks name (`items`). Record ids link to 
 `result`. Consolidation only appends items, so positions are stable from page to page.
 **Paging** is `after` = a `position` (exclusive), as for records; an unknown `section` is
 `400 invalid` (`field` `section`).
+
+### `GET /v1/stores/{key}/memory/{section}/{id}`
+
+One memory item, by its section and the id a trace's `compose` block or a `judge.layer`
+candidate names.
+
+```json
+{"section": "facts",
+ "item": {"position": 0, "id": "pet · name", "key": "pet · name", "values": [
+   {"value": "Biscuit", "date": "2023/05/08", "records": ["aml-…-00000"], "conflict": false, "supersedes": null}]}}
+```
+
+- `item` is the very object `/memory?section=<section>` lists for that item, `position`
+  included: the same fields and bytes.
+- `{section}` is `threads`, `events`, `facts` or `directives`, else `400 invalid`
+  (`field` `section`).
+- `{id}` is the item's `id` as one path segment, URL-encoded: a fact's key holds spaces and
+  `·` (`pet%20%C2%B7%20name`). Decoded, it is 1–256 bytes with no control character, else
+  `400 invalid` (`field` `id`).
+- A section with no item of that id is `404 item_not_found`, an id of another section
+  included (`events/T1`); an unknown store is `404 store_not_found`.
+- To show the item in its context, page `/memory` with its `section` and `after` = its
+  `position` − 1 (no `after` for position 0).
+- The id is never logged: a fact's key is content.
 
 ### `POST /v1/search`
 
@@ -303,9 +351,16 @@ neither, is `field` `key`); an unknown store is `404 store_not_found`.
   a call (`trace` is null when it was refused before anything ran);
 - `502 {"error":"provider_failed","result":[…],"trace":[…],"usage":{…}}` when the read failed
   otherwise (a provider, the breaker, the 10-minute bound): `result` is then what `/search`
-  would answer, the raw ranking, as lexical returns it.
+  would answer, the raw ranking, as lexical returns it;
+- `503 {"error":"store_busy","trace":[…],"usage":{…}}`, with `Retry-After`, when the store
+  changed while the search read it, or SQLite was busy, once its read (the model calls) had
+  run: nothing it read is answered, but what the read cost is. `trace` is null when its
+  stages could not be built, or `trace` was `false`. A search that meets the same before its
+  read (and any lexical one) answers `{"error":"store_busy"}` alone.
 
-A read in which a stage fell back answers 200 and names the stages in `degraded`.
+A read in which a stage fell back answers 200 and names the stages in `degraded`. A client that
+closes its connection cancels its full search: the search's model calls stop, and it is not
+answered (the debug budget keeps what they cost).
 
 ## The trace
 
@@ -388,7 +443,9 @@ JEV's answers, per candidate.
   reach the record (`needed` is then its screen, and `superseded` 0).
 - `decision`, for a record: `superseded` (superseded ≥ 0.5), else `needed` (needed ≥ 0.5), else
   `kept` (shown all the same: the View's fill), else `dropped`. For a layer candidate or a
-  linked record: `kept` (the View shows it) or `dropped`.
+  linked record: `kept` (the View shows it) or `dropped`. A topic is shown when the topics
+  block lists it, or when the timelines block shows any of its events (the topics block lists
+  a topic only while it has room).
 - `shown` says whether `result` shows the record.
 
 ### `need` (full)
@@ -430,10 +487,12 @@ The View as `result` shows it, item by item.
 | Status | `error` | When |
 | --- | --- | --- |
 | 200 | | success |
-| 400 | `invalid` | a malformed field, named in `field`: `limit`, `after`, `key`, `section`, `user_id`, `query`, `options`, `top_k`, `mode`, `trace`, or `body` (not a JSON object) |
+| 400 | `invalid` | a malformed field, named in `field`: `limit`, `after`, `key`, `section`, `id`, `user_id`, `query`, `options`, `top_k`, `mode`, `trace`, or `body` (not a JSON object, or more than white space after it) |
 | 401 | `unauthorized` | no bearer token, or another one |
 | 402 | `debug_budget_exhausted` | a full search the debug budget refused; partial `trace` and `usage` |
 | 404 | `store_not_found` | no store with that key |
+| 404 | `record_not_found` | `/records/{id}`: no record of that id among those `/records` lists |
+| 404 | `item_not_found` | `/memory/{section}/{id}`: no item of that id in the section |
 | 404 | `not_found` | no such route |
 | 405 | `method_not_allowed` | another method on a route |
 | 409 | `full_disabled` | a full search while `modes.full` is false |
@@ -441,7 +500,7 @@ The View as `result` shows it, item by item.
 | 500 | `internal` | a failure retrying will not help (for example a damaged store) |
 | 502 | `provider_failed` | a full search whose read failed; `result` (the raw ranking), partial `trace` and `usage` |
 | 503 | `busy` | `--max-concurrent` requests are reading, or the service is stopping; `Retry-After` says when to retry |
-| 503 | `store_busy` | the store changed while it was read without a write-ahead log, or SQLite was busy; `Retry-After` |
+| 503 | `store_busy` | the store changed while it was read without a write-ahead log, SQLite was busy, or a writer's crash left a journal its writer must roll back first; `Retry-After`. A full search whose read had run adds its `trace` and `usage` |
 
 ## Side effects: none, by construction
 
@@ -456,4 +515,5 @@ The View as `result` shows it, item by item.
   file (`--debug-budget-file`, which must differ from the instance's `budgetFile`) under its caps
   (`--debug-caps`); the model cache is off; the service has no metrics.
 - **Logs** carry the method, the route, the status, the time and the store's 8-digit prefix,
-  never a key, a user id, a query or any content; `/v1/resolve` logs no store at all.
+  never a key, a user id, a query, a looked-up id or any content; `/v1/resolve` logs no store
+  at all.

@@ -239,10 +239,10 @@ func TestReadTraceRecordsTheStages(t *testing.T) {
 	for _, item := range trace.Layer {
 		layer[item.Kind+" "+item.ID] = item
 	}
-	if t1 := layer["topic T1"]; t1.Lit != 1 || t1.Needed != 0.9 || !strings.HasPrefix(t1.Text, "Mission: 1 events") {
+	if t1 := layer["topic T1"]; t1.Lit != 1 || t1.Needed != 0.9 || !strings.HasPrefix(t1.Text, "Mission: 1 events") || !slices.Equal(t1.Events, []string{"e0"}) {
 		t.Fatalf("%+v", trace.Layer)
 	}
-	if value := layer["value mission · codename"]; value.Needed != 0.9 || value.Lit == 0 {
+	if value := layer["value mission · codename"]; value.Needed != 0.9 || value.Lit == 0 || value.Events != nil {
 		t.Fatalf("%+v", trace.Layer)
 	}
 	blocks := map[string][]string{}

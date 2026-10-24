@@ -1054,6 +1054,30 @@ func TestModelTimeoutSeconds(t *testing.T) {
 	}
 }
 
+// The paid kinds are the kinds a budget caps and reserves, each with the
+// currency it bills in; a caller gets its own copy.
+func TestPaidKinds(t *testing.T) {
+	kinds := PaidKinds()
+	if len(kinds) != 3 || kinds["deepseek"] != "CNY" || kinds["jev"] != "USD" || kinds["openai"] != "USD" {
+		t.Fatal(kinds)
+	}
+	for kind := range kinds {
+		if _, ok := defaultCaps[kind]; !ok {
+			t.Fatal("no default cap for", kind)
+		}
+		if _, ok := reservations[kind]; !ok {
+			t.Fatal("no reservation for", kind)
+		}
+	}
+	if len(defaultCaps) != len(kinds) || len(reservations) != len(kinds) {
+		t.Fatal(defaultCaps, reservations)
+	}
+	kinds["claude"] = "USD"
+	if _, ok := PaidKinds()["claude"]; ok {
+		t.Fatal("PaidKinds shares its map")
+	}
+}
+
 func TestBudgetAccountsReport(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "budget.db")
 	b, err := OpenBudgetWithCaps(path, map[string]float64{"deepseek": 200})

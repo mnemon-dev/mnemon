@@ -4,12 +4,17 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -144,8 +149,8 @@ func (ih *inspectHarness) refused(t *testing.T, method, path string, body any, s
 }
 
 // startFakeProvider builds scripts/aml/fakeprovider and runs it on a free
-// loopback port until the test ends; it returns its base URL.
-func startFakeProvider(t *testing.T) string {
+// loopback port, with args, until the test ends; it returns its base URL.
+func startFakeProvider(t *testing.T, args ...string) string {
 	t.Helper()
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("go is missing; the fake provider is built with it")
@@ -160,7 +165,7 @@ func startFakeProvider(t *testing.T) string {
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build the fake provider: %v\n%s", err, out)
 	}
-	command := exec.Command(binary, "-listen", "127.0.0.1:0")
+	command := exec.Command(binary, append([]string{"-listen", "127.0.0.1:0"}, args...)...)
 	stderr, err := command.StderrPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -281,7 +286,22 @@ func TestNewInspectorRefuses(t *testing.T) {
 		}}
 	}
 	instance := filepath.Join(t.TempDir(), "model-budget.db")
-	for name, edit := range map[string]func(*InspectConfig){
+	sep := string(filepath.Separator)
+	// A directory that is a symbolic link to the instance's budget file's,
+	// and one to the data root; and a hard link to an instance's budget file
+	// that exists.
+	links := t.TempDir()
+	toInstance, toRoot := filepath.Join(links, "instance"), filepath.Join(links, "root")
+	existing := filepath.Join(t.TempDir(), "model-budget.db")
+	budget, err := memoryagent.OpenBudgetWithCaps(existing, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	budget.Close()
+	hardLink := filepath.Join(filepath.Dir(existing), "debug-budget.db")
+	linked := errors.Join(os.Symlink(filepath.Dir(instance), toInstance), os.Symlink(h.root, toRoot), os.Link(existing, hardLink))
+	existingBefore := fileStates(t, filepath.Dir(existing))
+	cases := map[string]func(*InspectConfig){
 		"relative data root": func(c *InspectConfig) { c.DataRoot = "data" },
 		"not a data root":    func(c *InspectConfig) { c.DataRoot = t.TempDir() },
 		"short token":        func(c *InspectConfig) { c.Token = "short" },
@@ -290,13 +310,16 @@ func TestNewInspectorRefuses(t *testing.T) {
 			c.DebugBudgetFile = instance
 			c.DebugCaps = map[string]float64{"deepseek": 1}
 		},
-		"the instance's budget, spelled otherwise": func(c *InspectConfig) {
+		"the instance's budget, spelled with . and ..": func(c *InspectConfig) {
 			c.MemoryConfig.BudgetFile = instance
-			c.DebugBudgetFile = filepath.Join(filepath.Dir(instance), ".", "model-budget.db")
+			c.DebugBudgetFile = filepath.Dir(instance) + sep + "." + sep + "sub" + sep + ".." + sep + "model-budget.db"
 		},
 		"a budget in the data root": func(c *InspectConfig) { c.DebugBudgetFile = filepath.Join(h.root, "debug.db") },
-		"a relative budget":         func(c *InspectConfig) { c.DebugBudgetFile = "debug.db" },
-		"caps without a budget":     func(c *InspectConfig) { c.DebugCaps = map[string]float64{"jev": 1} },
+		"a budget in the data root, spelled with ..": func(c *InspectConfig) {
+			c.DebugBudgetFile = h.root + sep + "users" + sep + ".." + sep + "debug.db"
+		},
+		"a relative budget":     func(c *InspectConfig) { c.DebugBudgetFile = "debug.db" },
+		"caps without a budget": func(c *InspectConfig) { c.DebugCaps = map[string]float64{"jev": 1} },
 		"an unknown kind": func(c *InspectConfig) {
 			c.DebugBudgetFile = filepath.Join(t.TempDir(), "debug.db")
 			c.DebugCaps = map[string]float64{"claude": 1}
@@ -310,7 +333,24 @@ func TestNewInspectorRefuses(t *testing.T) {
 			c.MemoryConfig.Embedding = &records.EmbeddingConfig{URL: "http://127.0.0.1:1/api/embed", Model: "nomic-embed-text"}
 		},
 		"memory-agent/v1": func(c *InspectConfig) { c.MemoryConfig.Strategy, c.MemoryConfig.View = "", nil },
-	} {
+	}
+	if linked != nil {
+		t.Log("no links here, so no case of them:", linked)
+	} else {
+		cases["the instance's budget, not made yet, through a linked directory"] = func(c *InspectConfig) {
+			c.MemoryConfig.BudgetFile = instance
+			c.DebugBudgetFile = filepath.Join(toInstance, "model-budget.db")
+		}
+		cases["the instance's budget, through a hard link"] = func(c *InspectConfig) {
+			c.MemoryConfig.BudgetFile = existing
+			c.DebugBudgetFile = hardLink
+			c.DebugCaps = map[string]float64{"deepseek": 1}
+		}
+		cases["a budget in the data root, through a linked directory"] = func(c *InspectConfig) {
+			c.DebugBudgetFile = filepath.Join(toRoot, "debug.db")
+		}
+	}
+	for name, edit := range cases {
 		config := base()
 		edit(&config)
 		if inspector, err := NewInspector(config); err == nil {
@@ -320,6 +360,23 @@ func TestNewInspectorRefuses(t *testing.T) {
 	}
 	if _, err := os.Stat(instance); !os.IsNotExist(err) {
 		t.Fatal("a refused service touched the instance's budget file", err)
+	}
+	if !sameMap(existingBefore, fileStates(t, filepath.Dir(existing))) {
+		t.Fatal("a refused service changed the instance's budget file")
+	}
+	if _, err := os.Stat(filepath.Join(h.root, "debug.db")); !os.IsNotExist(err) {
+		t.Fatal("a refused service made a file in the data root", err)
+	}
+
+	// An index policy fuses other routes into the ranking, which then does
+	// not sort by the words scores the trace shows: refused, saying so.
+	config := base()
+	config.MemoryConfig.Index = &records.IndexPolicy{Version: 1, Lexical: true, Entities: true}
+	if inspector, err := NewInspector(config); err == nil || !strings.Contains(err.Error(), "index policy") || !strings.Contains(err.Error(), "BM25") {
+		if inspector != nil {
+			inspector.Close()
+		}
+		t.Fatal("an index policy:", err)
 	}
 }
 
@@ -366,18 +423,27 @@ func TestInspectRoutesAndMethods(t *testing.T) {
 		{"POST", "/healthz", "GET"}, {"POST", "/v1/info", "GET"}, {"DELETE", "/v1/stores", "GET"},
 		{"GET", "/v1/resolve", "POST"}, {"POST", "/v1/stores/" + key + "/records", "GET"},
 		{"PUT", "/v1/stores/" + key + "/memory", "GET"}, {"GET", "/v1/search", "POST"},
+		{"POST", "/v1/stores/" + key + "/records/r1", "GET"}, {"DELETE", "/v1/stores/" + key + "/memory/threads/T1", "GET"},
 	} {
 		response := ih.refused(t, c.method, c.path, nil, http.StatusMethodNotAllowed, "method_not_allowed", "")
 		if response.Header().Get("Allow") != c.allow {
 			t.Fatal(c, response.Header())
 		}
 	}
-	for _, path := range []string{"/", "/v1", "/v1/stores/", "/v1/stores/" + key, "/v1/stores/" + key + "/other", "/admin/v1/stores", "/search"} {
+	for _, path := range []string{"/", "/v1", "/v1/stores/", "/v1/stores/" + key, "/v1/stores/" + key + "/other", "/admin/v1/stores", "/search",
+		"/v1/stores/" + key + "/records/a/b", "/v1/stores/" + key + "/memory/threads", "/v1/stores/" + key + "/memory/threads/T1/x"} {
 		ih.refused(t, "GET", path, nil, http.StatusNotFound, "not_found", "")
 	}
 	ih.refused(t, "POST", "/v1/resolve", strings.Repeat(" ", 70000), http.StatusRequestEntityTooLarge, "too_large", "")
 	ih.refused(t, "POST", "/v1/resolve", "[1]", http.StatusBadRequest, "invalid", "body")
 	ih.refused(t, "POST", "/v1/search", "{", http.StatusBadRequest, "invalid", "body")
+	// The body is read to its end: white space may follow the object, and
+	// nothing else; the bound counts what follows it.
+	ih.ok(t, "POST", "/v1/resolve", "{\"user_id\":\"u1\"}\r\n\t "+strings.Repeat(" ", 2000), nil)
+	for _, body := range []string{`{"user_id":"u1"} x`, `{"user_id":"u1"}{"user_id":"u2"}`, `{"user_id":"u1"}]`, `{"user_id":"u1"} 7`} {
+		ih.refused(t, "POST", "/v1/resolve", body, http.StatusBadRequest, "invalid", "body")
+	}
+	ih.refused(t, "POST", "/v1/resolve", `{"user_id":"u1"}`+strings.Repeat(" ", 70000), http.StatusRequestEntityTooLarge, "too_large", "")
 }
 
 type storesAnswer struct {
@@ -458,6 +524,87 @@ func TestInspectStores(t *testing.T) {
 	if !strings.Contains(ih.log.String(), "GET /v1/stores 200") {
 		t.Fatal(ih.log.String())
 	}
+}
+
+// spoilMemory rewrites every stored timelines state of the derived index at
+// path with a memory that does not decode, and the digest of the payload
+// that results (the token is the payload's SHA-256, timelines_store.go).
+func spoilMemory(t *testing.T, path string) {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var scope, raw string
+	if err := db.QueryRow(`SELECT scope,payload FROM timelines`).Scan(&scope, &raw); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatal(err)
+	}
+	payload["memory"] = json.RawMessage(`{"threads":7}`)
+	spoiled := string(must(json.Marshal(payload)))
+	sum := sha256.Sum256([]byte(spoiled))
+	if _, err := db.Exec(`UPDATE timelines SET payload=?,token=? WHERE scope=?`, spoiled, hex.EncodeToString(sum[:]), scope); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// copyStore copies the files of the store directory from into to.
+func copyStore(t *testing.T, from, to string) {
+	t.Helper()
+	entries, err := os.ReadDir(from)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(to, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		raw, err := os.ReadFile(filepath.Join(from, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(to, entry.Name()), raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// A page of 100 store rows decodes no consolidated memory: every row of a
+// store whose stored memory does not decode is whole (records, watermark,
+// pending), while /memory, which decodes it, cannot read the store.
+func TestInspectStoresPageDecodesNoMemory(t *testing.T) {
+	h := layeredHarness(t)
+	for _, id := range []string{"r1", "r2", "r3"} {
+		h.mustAdd(t, addRequest(id, "u1")) // r1 and r2 fold; r3 is pending
+	}
+	ih := newInspector(t, h, nil)
+	var before storesAnswer
+	ih.ok(t, "GET", "/v1/stores", nil, &before)
+	want := before.Stores[0]
+	if want.Records == nil || want.Consolidation == nil || want.Consolidation.Watermark == 0 || want.Consolidation.Pending != 1 {
+		t.Fatalf("%+v", want)
+	}
+	h.server.Close()
+	source := filepath.Join(h.root, "users", userKey("u1"))
+	spoilMemory(t, filepath.Join(source, "memory-index.db"))
+	for n := 1; n < 100; n++ {
+		copyStore(t, source, filepath.Join(h.root, "users", fmt.Sprintf("%032x", n)))
+	}
+	var page storesAnswer
+	ih.ok(t, "GET", "/v1/stores?limit=100", nil, &page)
+	if page.Total != 100 || len(page.Stores) != 100 || page.Next != nil {
+		t.Fatalf("%d stores, %d rows", page.Total, len(page.Stores))
+	}
+	for _, row := range page.Stores {
+		if row.Error != "" || row.Records == nil || *row.Records != *want.Records || row.Consolidation == nil || *row.Consolidation != *want.Consolidation {
+			t.Fatalf("%+v, want %+v", row, want)
+		}
+	}
+	ih.refused(t, "GET", "/v1/stores/"+userKey("u1")+"/memory", nil, http.StatusInternalServerError, "internal", "")
 }
 
 func TestInspectResolve(t *testing.T) {
@@ -550,6 +697,158 @@ func TestInspectRecords(t *testing.T) {
 	ih.refused(t, "GET", "/v1/stores/"+userKey("nobody")+"/records", nil, http.StatusNotFound, "store_not_found", "")
 	ih.refused(t, "GET", "/v1/stores/not-a-key/records", nil, http.StatusBadRequest, "invalid", "key")
 	if log := ih.log.String(); !strings.Contains(log, "GET /v1/stores/{key}/records 200") || !strings.Contains(log, "store "+key[:8]) || strings.Contains(log, key) {
+		t.Fatal(log)
+	}
+}
+
+// rawItems is a page's items (key "records" or "items"), each as the page's
+// bytes.
+func rawItems(t *testing.T, page []byte, key string) []json.RawMessage {
+	t.Helper()
+	var body map[string]json.RawMessage
+	var items []json.RawMessage
+	if err := json.Unmarshal(page, &body); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(body[key], &items); err != nil {
+		t.Fatal(err)
+	}
+	return items
+}
+
+// badIDs are path segments that are no lookup's id: empty, too long, or
+// with a control character.
+var badIDs = []string{"", strings.Repeat("x", 257), "a%00b", "a%0Ab", "%7F", "a%C2%85b"}
+
+// A record by its id: the very object its page lists, byte for byte; a
+// record the page does not list, or none, is record_not_found; the id is
+// never logged.
+func TestInspectRecord(t *testing.T) {
+	h := layeredHarness(t)
+	talk(t, h, "u1", 3)
+	ih := newInspector(t, h, nil)
+	key := userKey("u1")
+	base := "/v1/stores/" + key + "/records/"
+	page := rawItems(t, ih.ok(t, "GET", "/v1/stores/"+key+"/records", nil, nil), "records")
+	if len(page) != 3 {
+		t.Fatal(len(page))
+	}
+	ids := []string{}
+	for _, item := range page {
+		var record struct{ ID string }
+		json.Unmarshal(item, &record)
+		ids = append(ids, record.ID)
+		var answer map[string]json.RawMessage
+		ih.ok(t, "GET", base+url.PathEscape(record.ID), nil, &answer)
+		if len(answer) != 1 || !bytes.Equal(answer["record"], item) {
+			t.Fatalf("%s:\n%s\n%s", record.ID, answer["record"], item)
+		}
+	}
+	// The documents the records are cut from are not listed: not found.
+	store, err := records.OpenReader(filepath.Join(h.root, "users", key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := store.Get(context.Background(), records.GetRequest{})
+	store.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing := []string{"no-such-record-4711", strings.Repeat("y", 256)}
+	for _, raw := range snapshot.Records {
+		var record struct{ ID, Kind string }
+		json.Unmarshal([]byte(raw), &record)
+		if record.Kind == "memory-document" {
+			missing = append(missing, record.ID)
+		}
+	}
+	if len(missing) == 2 {
+		t.Fatal("no document")
+	}
+	for _, id := range missing {
+		ih.refused(t, "GET", base+url.PathEscape(id), nil, http.StatusNotFound, "record_not_found", "")
+	}
+	ih.refused(t, "GET", "/v1/stores/"+userKey("nobody")+"/records/"+url.PathEscape(ids[0]), nil, http.StatusNotFound, "store_not_found", "")
+	ih.refused(t, "GET", "/v1/stores/NOT-A-KEY/records/x", nil, http.StatusBadRequest, "invalid", "key")
+	for _, id := range badIDs {
+		ih.refused(t, "GET", base+id, nil, http.StatusBadRequest, "invalid", "id")
+	}
+	log := ih.log.String()
+	for _, id := range append(ids, missing...) {
+		if strings.Contains(log, id) {
+			t.Fatalf("the log holds the id %q:\n%s", id, log)
+		}
+	}
+	if !strings.Contains(log, "GET /v1/stores/{key}/records/{id} 200") || !strings.Contains(log, "(store "+key[:8]+")") || strings.Contains(log, key) {
+		t.Fatal(log)
+	}
+}
+
+// A memory item by its section and id: the very object its section's page
+// lists, byte for byte, a fact's key with its spaces and "·" included; an id
+// the section does not have is item_not_found; the id is never logged (a
+// fact's key is content).
+func TestInspectMemoryItem(t *testing.T) {
+	h := layeredHarness(t)
+	h.consolidator.answer(func(context.Context, string) (string, error) {
+		return `{"events":[{"thread":"new: Support group","date":"2023/05/08","text":"Caroline went to the support group.","records":["r0"]},{"thread":"new: Stories","date":"2023/05/08","text":"Everyone shared stories.","records":["r1"]}],` +
+			`"facts":[{"key":"group · day","value":"Monday","date":"2023/05/08","records":["r0"],"conflict":false},{"key":"group · day","value":"Tuesday","date":"2023/05/09","records":["r1"],"conflict":true},{"key":"secret fact key","value":"x","date":"2023/05/09","records":["r1"]}],` +
+			`"directives":[{"text":"Answer briefly.","date":"2023/05/08","records":["r1"]}]}`, nil
+	})
+	for _, id := range []string{"r1", "r2", "r3"} {
+		h.mustAdd(t, addRequest(id, "u1"))
+	}
+	ih := newInspector(t, h, nil)
+	key := userKey("u1")
+	base := "/v1/stores/" + key + "/memory/"
+	ids := []string{}
+	for _, section := range []string{"threads", "events", "facts", "directives"} {
+		items := rawItems(t, ih.ok(t, "GET", base[:len(base)-1]+"?section="+section, nil, nil), "items")
+		if len(items) == 0 {
+			t.Fatal("no", section)
+		}
+		for _, item := range items {
+			var head struct{ ID string }
+			json.Unmarshal(item, &head)
+			ids = append(ids, head.ID)
+			var answer map[string]json.RawMessage
+			ih.ok(t, "GET", base+section+"/"+url.PathEscape(head.ID), nil, &answer)
+			if len(answer) != 2 || string(answer["section"]) != `"`+section+`"` || !bytes.Equal(answer["item"], item) {
+				t.Fatalf("%s %s:\n%s\n%s", section, head.ID, answer["item"], item)
+			}
+		}
+	}
+	if !slices.Contains(ids, "group · day") {
+		t.Fatal(ids)
+	}
+	var fact struct {
+		Item struct {
+			Key    string            `json:"key"`
+			Values []json.RawMessage `json:"values"`
+		} `json:"item"`
+	}
+	ih.ok(t, "GET", base+"facts/group%20%C2%B7%20day", nil, &fact)
+	if fact.Item.Key != "group · day" || len(fact.Item.Values) != 2 {
+		t.Fatalf("%+v", fact)
+	}
+	for _, path := range []string{"threads/T99", "threads/e0", "events/e99", "events/T1", "facts/group", "facts/no-such-item-4711", "directives/d9"} {
+		ih.refused(t, "GET", base+path, nil, http.StatusNotFound, "item_not_found", "")
+	}
+	ih.refused(t, "GET", "/v1/stores/"+userKey("nobody")+"/memory/threads/T1", nil, http.StatusNotFound, "store_not_found", "")
+	ih.refused(t, "GET", "/v1/stores/NOT-A-KEY/memory/threads/T1", nil, http.StatusBadRequest, "invalid", "key")
+	for _, section := range []string{"nope", "thread", "Threads"} {
+		ih.refused(t, "GET", base+section+"/T1", nil, http.StatusBadRequest, "invalid", "section")
+	}
+	for _, id := range badIDs {
+		ih.refused(t, "GET", base+"facts/"+id, nil, http.StatusBadRequest, "invalid", "id")
+	}
+	log := ih.log.String()
+	for _, secret := range []string{"group · day", "group%20", "secret fact key", "no-such-item-4711"} {
+		if strings.Contains(log, secret) {
+			t.Fatalf("the log holds %q:\n%s", secret, log)
+		}
+	}
+	if !strings.Contains(log, "GET /v1/stores/{key}/memory/{section}/{id} 200") {
 		t.Fatal(log)
 	}
 }
@@ -656,7 +955,8 @@ func TestInspectBusy(t *testing.T) {
 		done <- ih.callContext(t, ctx, "POST", "/v1/search", map[string]any{"key": userKey("u1"), "query": question, "mode": "full"})
 	}()
 	eventually(t, func() bool { return h.judge.blocked.Load() > 0 })
-	for _, path := range []string{"/v1/stores", "/v1/stores/" + userKey("u1") + "/records"} {
+	for _, path := range []string{"/v1/stores", "/v1/stores/" + userKey("u1") + "/records", "/v1/stores/" + userKey("u1") + "/records/r1",
+		"/v1/stores/" + userKey("u1") + "/memory/threads/T1"} {
 		response := ih.refused(t, "GET", path, nil, http.StatusServiceUnavailable, "busy", "")
 		if response.Header().Get("Retry-After") != "2" {
 			t.Fatal(response.Header())

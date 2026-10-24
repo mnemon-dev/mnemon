@@ -17,6 +17,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // fileState is what a reader must leave as it was: a file's size, time,
@@ -314,6 +317,88 @@ func TestOpenReaderDBModes(t *testing.T) {
 	}
 }
 
+// hotJournal makes a rollback-journal database as a writer's crash in the
+// middle of a write transaction leaves it, and returns its path: the
+// transaction had spilled changed pages into the main file, so its -journal
+// is hot (it holds the pages' originals, which must be rolled back before
+// the file is read).
+func hotJournal(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "index.db")
+	// A cache of 8 pages makes a transaction that changes more spill them.
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=cache_size(8)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec(`CREATE TABLE t(x); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<400) INSERT INTO t SELECT randomblob(1000) FROM n`); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE t SET x=randomblob(1000)`); err != nil {
+		t.Fatal(err)
+	}
+	// The crash: the files as the transaction left them so far.
+	crash := filepath.Join(t.TempDir(), "index.db")
+	for _, suffix := range []string{"", "-journal"} {
+		raw, err := os.ReadFile(path + suffix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(crash+suffix, raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return crash
+}
+
+// A reader cannot read a database whose -journal is hot: SQLite must roll
+// the journal back first, which a reader may not do
+// (SQLITE_READONLY_ROLLBACK). That is retryable, as the file's writer rolls
+// it back when it opens the file again, and the reader changes nothing.
+func TestOpenReaderDBOfAHotJournal(t *testing.T) {
+	path := hotJournal(t)
+	dir := filepath.Dir(path)
+	readOnlyDir(t, dir)
+	before := dirState(t, dir)
+	_, _, err := OpenReaderDB(path)
+	var e *sqlite.Error
+	if !errors.As(err, &e) || e.Code() != sqlite3.SQLITE_READONLY_ROLLBACK {
+		t.Fatalf("a reader of a hot journal: %v", err)
+	}
+	if !Retryable(err) {
+		t.Fatalf("a hot journal is not retryable: %v", err)
+	}
+	if after := dirState(t, dir); !reflect.DeepEqual(before, after) {
+		t.Fatalf("the reader changed the directory:\nbefore %v\nafter  %v", before, after)
+	}
+	// The writer, opening the file again, rolls the journal back; then the
+	// file reads.
+	os.Chmod(dir, 0o755)
+	for name := range before {
+		os.Chmod(filepath.Join(dir, name), 0o644)
+	}
+	writer, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := writer.QueryRow(`SELECT count(*) FROM t`).Scan(&n); err != nil || n != 400 {
+		t.Fatal(n, err)
+	}
+	writer.Close()
+	db, _, err := OpenReaderDB(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+}
+
 // Page lists the heads Heads lists (active, neither documents nor index
 // items) in write order, a page at a time.
 func TestPage(t *testing.T) {
@@ -376,6 +461,59 @@ func TestTail(t *testing.T) {
 	}
 }
 
+// Record finds a head by its id as Page lists it, and nothing for an id Page
+// does not list: a document, an index item, an archived record or none.
+func TestRecord(t *testing.T) {
+	dir := storeWith(t)
+	reader, err := OpenReader(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	ctx := context.Background()
+	page, _, err := reader.Page(ctx, Scope{}, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, id := range pageIDs(t, page) {
+		if got, found, err := reader.Record(ctx, Scope{}, id); err != nil || !found || got != page[i] {
+			t.Fatalf("%s: %+v %v %v, want %+v", id, got, found, err, page[i])
+		}
+	}
+	for _, id := range []string{"doc-1", "idx-1", "old-1", "nobody", ""} {
+		if got, found, err := reader.Record(ctx, Scope{}, id); err != nil || found {
+			t.Fatalf("%q: %+v %v %v", id, got, found, err)
+		}
+	}
+}
+
+// Count counts the heads Page lists and, of them, those written after a
+// version, as Tail counts them.
+func TestCount(t *testing.T) {
+	dir := storeWith(t)
+	reader, err := OpenReader(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	ctx := context.Background()
+	_, heads, err := reader.Heads(ctx, "", Scope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, _, err := reader.Page(ctx, Scope{}, 0, 100)
+	if err != nil || len(page) != 3 {
+		t.Fatal(len(page), err)
+	}
+	for _, version := range []int64{0, heads[0].Version, heads[2].Version} {
+		total, after, err := reader.Count(ctx, Scope{}, version)
+		tail, _, tailErr := reader.Tail(ctx, Scope{}, version, 0)
+		if err != nil || tailErr != nil || total != len(page) || after != tail {
+			t.Fatalf("after version %d: %d heads, %d after (Tail %d): %v %v", version, total, after, tail, err, tailErr)
+		}
+	}
+}
+
 // LexicalScores are the words scores the ranking sorts by: the query's
 // ranked ids have positive, non-increasing scores, and an id it did not rank
 // scores 0.
@@ -416,21 +554,27 @@ func TestLexicalScoresFollowTheRanking(t *testing.T) {
 			}
 		}
 	}
-	// The same scores with the store's query runtime: its prepared and cached
-	// indexes change nothing.
+	// The scores are the revision's: a write after it changes the words
+	// statistics of the current records, not those at the revision, which a
+	// trace's searches read.
 	writer, err := Open(dir, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer writer.Close()
-	stop, err := writer.StartRuntime(ctx)
+	mustPut(t, writer, PutRequest{Upsert: []Upsert{kindRecord("doc-3-00000", "memory-record", "active", "the support group met by the lake on Tuesday")}})
+	live, err := OpenReader(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer stop()
-	again, err := writer.LexicalScores(ctx, snapshot.Revision, Scope{}, queries, ranked)
-	if err != nil || !reflect.DeepEqual(again, scores) {
-		t.Fatal(again, scores, err)
+	defer live.Close()
+	pinned, err := live.LexicalScores(ctx, snapshot.Revision, Scope{}, queries, ranked)
+	if err != nil || !reflect.DeepEqual(pinned, scores) {
+		t.Fatal(pinned, scores, err)
+	}
+	current, err := live.LexicalScores(ctx, "", Scope{}, queries, ranked)
+	if err != nil || reflect.DeepEqual(current, scores) {
+		t.Fatal("a write changed no score", current, err)
 	}
 }
 

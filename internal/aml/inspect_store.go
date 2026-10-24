@@ -10,7 +10,9 @@ import (
 	"runtime/debug"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
 	"github.com/mnemon-dev/mnemon/internal/records"
@@ -147,7 +149,11 @@ type storeConsolidation struct {
 
 // serveStores answers GET /v1/stores?limit&after: the data root's stores in
 // key order, as the overview lists them (readStores, storesAfter), each
-// opened to count its records and its consolidation.
+// opened to count its records and read its consolidation's progress. A
+// page's work is bounded: a row is one state read and one scan of its
+// store's records (memoryagent.Agent.Progress), at most limit rows, and the
+// page stops opening stores once its request has ended (the client left,
+// or the service stops), answering 503 busy.
 func (i *Inspector) serveStores(w http.ResponseWriter, r *http.Request) {
 	limit, after, err := storesQuery(r.URL.Query(), defaultStoresPage)
 	if err != nil {
@@ -164,32 +170,39 @@ func (i *Inspector) serveStores(w http.ResponseWriter, r *http.Request) {
 	page, next := storesAfter(stores, after, limit)
 	rows := make([]inspectStoreRow, 0, len(page))
 	for _, stat := range page {
+		if r.Context().Err() != nil {
+			break
+		}
 		rows = append(rows, i.storeRow(r.Context(), stat))
+	}
+	if err := r.Context().Err(); err != nil {
+		i.storeFailure(w, r, "", "the store page", err)
+		return
 	}
 	inspectJSON(w, http.StatusOK, map[string]any{"total": len(stores), "stores": rows, "next": next})
 }
 
 // storeRow is a store's row: what the scan measured, and its records and
-// consolidation, or why they could not be read.
+// consolidation's progress, read without decoding its consolidated memory,
+// or why they could not be read.
 func (i *Inspector) storeRow(ctx context.Context, stat storeStat) inspectStoreRow {
 	row := inspectStoreRow{Store: short(stat.key), Key: stat.key, Bytes: stat.bytes, Modified: stat.modified.UTC().Format(time.RFC3339)}
-	var count int
-	var c memoryagent.Consolidation
-	var consolidates bool
+	var p memoryagent.Progress
 	err := i.readFrom(stat.key, func(s *readStore) (err error) {
-		if count, _, err = s.store.Tail(ctx, records.Scope{}, 0, 0); err != nil {
-			return err
-		}
-		c, consolidates, err = s.agent.Consolidated(ctx, records.Scope{}, 0)
+		p, err = s.agent.Progress(ctx, records.Scope{})
 		return err
 	})
-	if err != nil {
+	switch {
+	case err != nil && ctx.Err() != nil:
+		row.Error = "store_busy" // the page ends unanswered: nothing to log
+		return row
+	case err != nil:
 		row.Error = i.rowError(stat.key, err)
 		return row
 	}
-	row.Records = &count
-	if consolidates {
-		row.Consolidation = &storeConsolidation{Watermark: c.Watermark, Pending: c.Pending}
+	row.Records = &p.Records
+	if p.Consolidates {
+		row.Consolidation = &storeConsolidation{Watermark: p.Watermark, Pending: p.Pending}
 	}
 	return row
 }
@@ -236,18 +249,76 @@ func (i *Inspector) serveRecords(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]inspectRecord, 0, len(page))
 	for _, raw := range page {
-		record, ok := memoryagent.DecodeRecord(raw.JSON)
+		record, ok := recordOf(raw)
 		if !ok {
-			i.storeFailure(w, r, key, "records", errors.New("a stored record does not decode"))
+			i.storeFailure(w, r, key, "records", errUndecodable)
 			return
 		}
-		out = append(out, inspectRecord{ID: record.ID, Seq: raw.Seq, CreatedAt: record.Date, Session: record.Session, Content: record.Text})
+		out = append(out, record)
 	}
 	var next *int64
 	if more {
 		next = &out[len(out)-1].Seq
 	}
 	inspectJSON(w, http.StatusOK, map[string]any{"records": out, "next": next})
+}
+
+// errUndecodable is the error of a stored record that does not decode.
+var errUndecodable = errors.New("a stored record does not decode")
+
+// recordOf is a record of a page as the API lists it.
+func recordOf(raw records.PageRecord) (inspectRecord, bool) {
+	record, ok := memoryagent.DecodeRecord(raw.JSON)
+	return inspectRecord{ID: record.ID, Seq: raw.Seq, CreatedAt: record.Date, Session: record.Session, Content: record.Text}, ok
+}
+
+// lookupIDMax bounds the {id} of a lookup, in bytes.
+const lookupIDMax = 256
+
+// lookupID is the {id} of a lookup's path, decoded: 1 to lookupIDMax bytes,
+// no control character; on failure it has answered 400 invalid (id). Like
+// content, it is never logged.
+func lookupID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	id := r.PathValue("id")
+	if id == "" || len(id) > lookupIDMax || strings.ContainsFunc(id, unicode.IsControl) {
+		invalid(w, "id")
+		return "", false
+	}
+	return id, true
+}
+
+// serveRecord answers GET /v1/stores/{key}/records/{id}: the record with id
+// as the store's records page lists it (records.Store.Record), or 404
+// record_not_found when the page lists none with that id.
+func (i *Inspector) serveRecord(w http.ResponseWriter, r *http.Request) {
+	key, ok := storeKey(w, r)
+	if !ok {
+		return
+	}
+	id, ok := lookupID(w, r)
+	if !ok {
+		return
+	}
+	var raw records.PageRecord
+	var found bool
+	err := i.readFrom(key, func(s *readStore) (err error) {
+		raw, found, err = s.store.Record(r.Context(), records.Scope{}, id)
+		return err
+	})
+	if err != nil {
+		i.storeFailure(w, r, key, "record", err)
+		return
+	}
+	if !found {
+		inspectError(w, http.StatusNotFound, "record_not_found")
+		return
+	}
+	record, ok := recordOf(raw)
+	if !ok {
+		i.storeFailure(w, r, key, "record", errUndecodable)
+		return
+	}
+	inspectJSON(w, http.StatusOK, map[string]any{"record": record})
 }
 
 // memorySections are the sections of GET /v1/stores/{key}/memory.
@@ -307,6 +378,41 @@ func (i *Inspector) serveMemory(w http.ResponseWriter, r *http.Request) {
 	inspectJSON(w, http.StatusOK, answer)
 }
 
+// serveMemoryItem answers GET /v1/stores/{key}/memory/{section}/{id}: the
+// item with id as the section's page lists it, or 404 item_not_found when
+// the section has none.
+func (i *Inspector) serveMemoryItem(w http.ResponseWriter, r *http.Request) {
+	key, ok := storeKey(w, r)
+	if !ok {
+		return
+	}
+	section := r.PathValue("section")
+	if !slices.Contains(memorySections, section) {
+		invalid(w, "section")
+		return
+	}
+	id, ok := lookupID(w, r)
+	if !ok {
+		return
+	}
+	var c memoryagent.Consolidation
+	err := i.readFrom(key, func(s *readStore) (err error) {
+		c, _, err = s.agent.Consolidated(r.Context(), records.Scope{}, 0)
+		return err
+	})
+	if err != nil {
+		i.storeFailure(w, r, key, "memory item", err)
+		return
+	}
+	for _, item := range memoryItems(c, section) {
+		if item.itemID() == id {
+			inspectJSON(w, http.StatusOK, map[string]any{"section": section, "item": item})
+			return
+		}
+	}
+	inspectError(w, http.StatusNotFound, "item_not_found")
+}
+
 // The items of the memory sections, in the contract's field order.
 type (
 	memoryThread struct {
@@ -348,9 +454,17 @@ type (
 	}
 )
 
+// memoryItem is an item of a memory section, with its id.
+type memoryItem interface{ itemID() string }
+
+func (t memoryThread) itemID() string    { return t.ID }
+func (e memoryEvent) itemID() string     { return e.ID }
+func (f memoryFact) itemID() string      { return f.ID }
+func (d memoryDirective) itemID() string { return d.ID }
+
 // memoryItems is a section of the consolidated memory as the API lists it.
-func memoryItems(c memoryagent.Consolidation, section string) []any {
-	items := []any{}
+func memoryItems(c memoryagent.Consolidation, section string) []memoryItem {
+	items := []memoryItem{}
 	switch section {
 	case "threads":
 		for p, t := range c.Threads {

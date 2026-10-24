@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"maps"
 	"math"
 	"net/url"
 	"os"
@@ -35,12 +36,18 @@ var ErrBudgetCap = errors.New("model spending cap reached, including unresolved 
 var errInvalidMetering = errors.New("invalid model metering")
 
 // Paid accounts by provider kind. Caps are USD for jev and openai, CNY for
-// deepseek. A reservation is at least the flat amount held for one bounded
-// request; larger completions hold more (Provider.reservation).
+// deepseek (currencies). A reservation is at least the flat amount held for
+// one bounded request; larger completions hold more (Provider.reservation).
 var (
 	defaultCaps  = map[string]float64{"jev": 10, "deepseek": 50, "openai": 5}
 	reservations = map[string]float64{"jev": 0.01, "deepseek": 0.25, "openai": 0.01}
+	currencies   = map[string]string{"jev": "USD", "deepseek": "CNY", "openai": "USD"}
 )
+
+// PaidKinds are the provider kinds a budget accounts (its caps' kinds), each
+// with the currency its caps, spending and costs count in. The map is the
+// caller's.
+func PaidKinds() map[string]string { return maps.Clone(currencies) }
 
 func OpenBudget(path string) (*Budget, error) { return OpenBudgetWithCaps(path, nil) }
 

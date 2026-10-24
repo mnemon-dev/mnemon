@@ -757,7 +757,10 @@ operator decides otherwise after checking the submission's rules.
   degraded Search with, byte for byte.
 - It runs at a low priority within small limits: `Nice=10`, `IOSchedulingClass=idle`,
   `MemoryMax=1G` (and `GOMEMLIMIT=819MiB`), `CPUQuota=100%`, two requests reading stores at
-  once (`--max-concurrent`).
+  once (`--max-concurrent`). On a disk whose I/O scheduler honours the idle class (`bfq`, and
+  `mq-deadline` since Linux 5.14), a heavily loaded host could delay aml-serve's consolidation
+  writes to `memory-index.db` by up to their 10-second busy timeout while a slow inspect read
+  holds its read lock; NVMe's usual scheduler, `none`, ignores the class.
 - Its log lines name the method, the route, the status, the time and the store by its
   8-digit prefix (`journalctl -u aml-inspect@<n>`), never a key, a user id, a query or any
   content; resolving a user id logs no store at all.
@@ -803,6 +806,10 @@ inspect only while it is on.
 and `inspect disable` then `inspect enable` with higher caps starts a new one.
 `502 provider_failed`: the read failed (a provider, the breaker, the 10-minute bound); the
 answer carries the raw ranking `/search` would have given, and what the read did.
+`503 store_busy`: the store changed under the search (aml-serve opened it and wrote), SQLite was
+busy, or a crash left a journal aml-serve rolls back when it next opens the index; the console
+retries, and a full search's answer still carries what it cost. Closing the connection cancels a
+full search.
 
 ## Logs
 

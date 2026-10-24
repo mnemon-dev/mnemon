@@ -7,8 +7,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
+	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -340,8 +343,8 @@ func lockDown(t *testing.T, root string) {
 
 // fakeInstance is a data root of two users, consolidated on Add in timelines
 // mode with one record of each left pending, that no aml-serve holds; and an
-// inspect service over it whose full searches call the fake provider. The
-// instance's own budget file exists, as on a host.
+// inspect service over it whose full searches call the fake provider (run
+// with providerArgs). The instance's own budget file exists, as on a host.
 type fakeInstance struct {
 	h              *harness
 	ih             *inspectHarness
@@ -349,9 +352,9 @@ type fakeInstance struct {
 	debugBudget    string
 }
 
-func newFakeInstance(t *testing.T, edit func(*InspectConfig)) *fakeInstance {
+func newFakeInstance(t *testing.T, edit func(*InspectConfig), providerArgs ...string) *fakeInstance {
 	t.Helper()
-	base := startFakeProvider(t)
+	base := startFakeProvider(t, providerArgs...)
 	h := layeredHarness(t)
 	talk(t, h, "u1", 5)
 	talk(t, h, "u2", 3)
@@ -599,6 +602,83 @@ func TestInspectFullFailures(t *testing.T) {
 	}
 }
 
+// serveInspect serves the inspect service on a loopback listener of its own,
+// with the server the command runs (HTTPServer), until the test ends; it
+// returns the listener's address.
+func serveInspect(t *testing.T, ih *inspectHarness) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := ih.inspector.HTTPServer()
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(listener) }()
+	t.Cleanup(func() {
+		ih.inspector.CancelRequests() // a search the test left running ends
+		server.Close()
+		<-served
+	})
+	return listener.Addr().String()
+}
+
+// A client that leaves cancels its full search, even when the decoder found
+// the whole JSON object before the body's end: the model call in flight
+// stops within 2 s, and the debug budget holds nothing afterwards.
+func TestInspectDisconnectCancelsAFullSearch(t *testing.T) {
+	// Every JEV call waits 10 minutes, unless its client leaves first.
+	f := newFakeInstance(t, nil, "-jev-latency", "10m")
+	ih := f.ih
+	addr := serveInspect(t, ih)
+	held := func() map[string]float64 {
+		var info infoAnswer
+		ih.ok(t, "GET", "/v1/info", nil, &info)
+		return info.Debug.Held
+	}
+	object := `{"user_id":"u1","query":"When did Caroline go to the support group?","mode":"full"}`
+	head := "POST /v1/search HTTP/1.1\r\nHost: inspect\r\nContent-Type: application/json\r\n"
+	for n, send := range []func(conn net.Conn) error{
+		// White space after the object: the decoder's first read ends before
+		// the body does.
+		func(conn net.Conn) error {
+			body := object + strings.Repeat(" ", 4096)
+			_, err := fmt.Fprintf(conn, "%sContent-Length: %d\r\n\r\n%s", head, len(body), body)
+			return err
+		},
+		// A chunked body whose last chunk comes after the object, as a proxy
+		// that streams forwards it.
+		func(conn net.Conn) error {
+			if _, err := fmt.Fprintf(conn, "%sTransfer-Encoding: chunked\r\n\r\n%x\r\n%s\r\n", head, len(object), object); err != nil {
+				return err
+			}
+			time.Sleep(200 * time.Millisecond)
+			_, err := io.WriteString(conn, "0\r\n\r\n")
+			return err
+		},
+	} {
+		conn, err := net.Dial("tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := send(conn); err != nil {
+			t.Fatal(err)
+		}
+		// The search waits in a JEV call, which holds a reservation.
+		eventually(t, func() bool { return held()["jev"] > 0 && ih.openStores() == 1 })
+		conn.Close()
+		left := time.Now()
+		for ih.openStores() != 0 || strings.Count(ih.log.String(), "POST /v1/search 503") != n+1 {
+			if time.Since(left) > 2*time.Second {
+				t.Fatalf("request %d: the search went on after its client left: %d stores open\n%s", n, ih.openStores(), ih.log.String())
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if now := held(); now["jev"] != 0 || now["deepseek"] != 0 {
+			t.Fatalf("request %d: the debug budget still holds %v", n, now)
+		}
+	}
+}
+
 // Every route, lexical and full searches included, over a data root the
 // service may not write: everything answers, and no file of the data root
 // or of the instance's budget changes, none is created, nothing
@@ -678,6 +758,184 @@ func TestInspectNoFlush(t *testing.T) {
 	h.search(t, SearchRequest{Query: question, UserID: "u1", TopK: 10})
 	if h.consolidator.calls.Load() != folds+1 {
 		t.Fatal("the Search did not fold the tail")
+	}
+}
+
+// gatedJudge answers as judge does, every answer metering use; its first
+// call, once it has begun, waits until release is closed or its context
+// ends.
+type gatedJudge struct {
+	judge          memoryagent.Decider
+	begun, release chan struct{}
+	once           sync.Once
+}
+
+func newGatedJudge(judge memoryagent.Decider) *gatedJudge {
+	return &gatedJudge{judge: judge, begun: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (g *gatedJudge) Decide(ctx context.Context, state any, questions map[string]memoryagent.Question) (map[string]float64, memoryagent.Usage, error) {
+	first := false
+	g.once.Do(func() { first = true; close(g.begun) })
+	if first {
+		select {
+		case <-g.release:
+		case <-ctx.Done():
+			return nil, memoryagent.Usage{}, ctx.Err()
+		}
+	}
+	answers, _, err := g.judge.Decide(ctx, state, questions)
+	return answers, memoryagent.Usage{InputTokens: 100, OutputTokens: 2, USD: 0.001}, err
+}
+
+// addAnew is another aml-serve over h's data root adding req, then closing:
+// a writer changes the store, and its close checkpoints into the store's
+// main file.
+func addAnew(t *testing.T, h *harness, req AddRequest) {
+	t.Helper()
+	server, err := NewServer(h.server.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest("POST", "/add", bytes.NewReader(raw))
+	request.Header.Set("Authorization", "Bearer "+testKey)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+	if err := server.Close(); err != nil || recorder.Code != http.StatusOK {
+		t.Fatal(recorder.Code, recorder.Body.String(), err)
+	}
+}
+
+// A store that no aml-serve held when the full search opened it (read
+// quiescent), and that a writer changed while the search waited in its
+// judge, answers 503 store_busy with Retry-After: 1: nothing of what was
+// read, but what the read cost (usage), and its trace unless the request
+// asked for none.
+func TestInspectStoreChangedUnderAFullSearch(t *testing.T) {
+	h := layeredHarness(t)
+	talk(t, h, "u1", 3)
+	h.server.Close() // quiescent
+	key := userKey("u1")
+	records := filepath.Join(h.root, "users", key, "records.db")
+	for n, tracing := range []bool{true, false} {
+		judge := newGatedJudge(h.judge)
+		ih := newInspector(t, h, func(c *InspectConfig) {
+			c.Models = func(memoryagent.Config) (memoryagent.Models, error) {
+				return memoryagent.Models{Planner: h.planner, Judge: judge}, nil
+			}
+		})
+		done := make(chan *httptest.ResponseRecorder, 1)
+		go func() {
+			done <- ih.call(t, "POST", "/v1/search", map[string]any{"key": key, "query": question, "mode": "full", "trace": tracing})
+		}()
+		<-judge.begun
+		before, err := os.Stat(records)
+		if err != nil {
+			t.Fatal(err)
+		}
+		addAnew(t, h, AddRequest{RequestID: fmt.Sprintf("late-%d", n), UserID: "u1", SessionID: "late", Messages: []Message{{Role: "user", Content: "Caroline here: one more thing about the support group."}}})
+		if after, err := os.Stat(records); err != nil || after.Size() == before.Size() && after.ModTime().Equal(before.ModTime()) {
+			t.Fatal("the writer did not change the store's main file", err)
+		}
+		close(judge.release)
+		response := <-done
+		var body struct {
+			Error  string            `json:"error"`
+			Result json.RawMessage   `json:"result"`
+			Trace  []json.RawMessage `json:"trace"`
+			Usage  *usageAnswer      `json:"usage"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || response.Code != http.StatusServiceUnavailable || response.Header().Get("Retry-After") != "1" || body.Error != "store_busy" {
+			t.Fatalf("%d %v %s", response.Code, response.Header(), response.Body.String())
+		}
+		if body.Result != nil || body.Usage == nil || body.Usage.Calls == 0 || body.Usage.Tokens.Input == 0 || body.Usage.Cost["jev"] <= 0 {
+			t.Fatalf("the answer must keep the usage and give no result: %s", response.Body.String())
+		}
+		switch {
+		case !tracing && body.Trace != nil:
+			t.Fatal("a trace that was not asked for:", response.Body.String())
+		case body.Trace != nil:
+			if names := stageNames(t, searchAnswer{Trace: body.Trace}); names[0] != "pending" || !slices.Contains(names, "judge") {
+				t.Fatal(names)
+			}
+		}
+		if ih.openStores() != 0 {
+			t.Fatal("the search left its store open")
+		}
+	}
+}
+
+// A topic the View shows through its events alone, in the timelines block,
+// because the topics block (1500 characters) ran out of room, is kept: the
+// View shows it.
+func TestInspectTopicShownByItsEvents(t *testing.T) {
+	h := layeredHarness(t)
+	// Four topics whose titles are so long that the topics block lists three
+	// of them, while the timelines block shows all four.
+	events := []string{}
+	for _, name := range []string{"Alpha", "Bravo", "Charlie", "Delta"} {
+		events = append(events, `{"thread":"new: `+name+" "+strings.Repeat("x", 440)+`","date":"2023/05/08","text":"Caroline talked about `+name+`.","records":["r0"]}`)
+	}
+	h.consolidator.answer(func(context.Context, string) (string, error) {
+		return `{"events":[` + strings.Join(events, ",") + `]}`, nil
+	})
+	for _, id := range []string{"r1", "r2", "r3"} {
+		h.mustAdd(t, addRequest(id, "u1")) // r1 and r2 fold
+	}
+	ih := newInspector(t, h, nil)
+	key := userKey("u1")
+	var memory memoryAnswer
+	ih.ok(t, "GET", "/v1/stores/"+key+"/memory?section=events", nil, &memory)
+	thread := map[string]string{} // event id: its thread
+	for _, raw := range memory.Items {
+		var event struct{ ID, Thread string }
+		json.Unmarshal(raw, &event)
+		thread[event.ID] = event.Thread
+	}
+	if len(thread) != 4 {
+		t.Fatal(memory.Items)
+	}
+	answer := ih.search(t, map[string]any{"key": key, "query": question, "mode": "full"})
+	var compose struct {
+		Blocks []blockJSON `json:"blocks"`
+	}
+	stage(t, answer, "compose", &compose)
+	listed, timelines := []string{}, []string{} // the threads the topics block lists; those the timelines block shows events of
+	for _, block := range compose.Blocks {
+		for _, item := range block.Items {
+			switch block.Layer {
+			case "topics":
+				listed = append(listed, item)
+			case "timelines":
+				timelines = append(timelines, thread[item])
+			}
+		}
+	}
+	var judge struct {
+		Layer []struct {
+			ID       string `json:"id"`
+			Kind     string `json:"kind"`
+			Decision string `json:"decision"`
+		} `json:"layer"`
+	}
+	stage(t, answer, "judge", &judge)
+	byEvents := 0
+	for _, item := range judge.Layer {
+		shown := slices.Contains(listed, item.ID) || slices.Contains(timelines, item.ID)
+		if item.Kind != "topic" || item.Decision != map[bool]string{true: "kept", false: "dropped"}[shown] {
+			t.Errorf("%+v: shown %v (topics block %v, timelines of %v)", item, shown, listed, timelines)
+		}
+		if !slices.Contains(listed, item.ID) && slices.Contains(timelines, item.ID) {
+			byEvents++
+		}
+	}
+	if len(judge.Layer) != 4 || byEvents != 1 {
+		t.Fatalf("%d topics, %d shown by their events alone: topics block %v, timelines of %v", len(judge.Layer), byEvents, listed, timelines)
 	}
 }
 

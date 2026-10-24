@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -127,6 +128,83 @@ func TestConsolidated(t *testing.T) {
 	}
 }
 
+// spoilMemory rewrites the scope's stored state in the index at path with a
+// memory that does not decode, its digest kept right.
+func spoilMemory(t *testing.T, path string) {
+	t.Helper()
+	writer, err := OpenOverlay(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	var raw string
+	if err := writer.db.QueryRow(`SELECT payload FROM timelines WHERE scope=?`, scopeKey(records.Scope{})).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatal(err)
+	}
+	payload["memory"] = json.RawMessage(`{"threads":7}`)
+	spoiled, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.db.Exec(`UPDATE timelines SET payload=?,token=? WHERE scope=?`, string(spoiled), reference("timelines", string(spoiled)).Hash, scopeKey(records.Scope{})); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Progress is what a store row shows: the records Page lists, and the
+// watermark and pending count Consolidated reports, read without decoding
+// the consolidated memory: a memory that does not decode leaves it whole.
+// The state's digest and format are checked all the same.
+func TestProgress(t *testing.T) {
+	dir := consolidatedStore(t)
+	store, a := readerAgent(t, dir, readerConfig())
+	ctx := context.Background()
+	c, _, err := a.Consolidated(ctx, records.Scope{}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, _, err := store.Page(ctx, records.Scope{}, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Progress{Records: len(page), Consolidates: true, Watermark: c.Watermark, Pending: c.Pending}
+	if p, err := a.Progress(ctx, records.Scope{}); err != nil || p != want || want.Pending != 4 || want.Watermark == 0 {
+		t.Fatalf("%+v, want %+v: %v", p, want, err)
+	}
+
+	index := filepath.Join(dir, "memory-index.db")
+	spoilMemory(t, index)
+	if _, _, err := a.Consolidated(ctx, records.Scope{}, 0); err == nil {
+		t.Fatal("the spoiled memory decodes")
+	}
+	if p, err := a.Progress(ctx, records.Scope{}); err != nil || p != want {
+		t.Fatalf("%+v, want %+v: %v", p, want, err)
+	}
+	writer, err := OpenOverlay(index, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	if _, err := writer.db.Exec(`UPDATE timelines SET token='0'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.Progress(ctx, records.Scope{}); err == nil {
+		t.Fatal("a state whose digest changed")
+	}
+
+	// Without consolidation, the records alone.
+	config := readerConfig()
+	config.Consolidation = nil
+	_, plain := readerAgent(t, dir, config)
+	if p, err := plain.Progress(ctx, records.Scope{}); err != nil || p != (Progress{Records: len(page)}) {
+		t.Fatalf("%+v %v", p, err)
+	}
+}
+
 // A store not consolidated yet (no memory-index.db): every record is
 // pending.
 func TestConsolidatedBeforeTheFirstJob(t *testing.T) {
@@ -141,6 +219,9 @@ func TestConsolidatedBeforeTheFirstJob(t *testing.T) {
 	c, ok, err := a.Consolidated(context.Background(), records.Scope{}, 100)
 	if err != nil || !ok || c.Watermark != 0 || c.Pending != 3 || len(c.PendingIDs) != 3 || len(c.Events) != 0 {
 		t.Fatalf("%+v %v %v", c, ok, err)
+	}
+	if p, err := a.Progress(context.Background(), records.Scope{}); err != nil || p != (Progress{Records: 3, Consolidates: true, Pending: 3}) {
+		t.Fatalf("%+v %v", p, err)
 	}
 	if _, err := os.Stat(filepath.Join(dir, "memory-index.db")); !os.IsNotExist(err) {
 		t.Fatal("the reader made the derived index", err)

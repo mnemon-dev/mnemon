@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/mnemon-dev/mnemon/internal/records"
@@ -23,21 +24,54 @@ func (o *Overlay) loadTimelines(ctx context.Context, scope records.Scope) (timel
 	if o == nil {
 		return state, "", nil
 	}
-	var raw, token string
-	err := o.db.QueryRowContext(ctx, `SELECT token,payload FROM timelines WHERE scope=?`, scopeKey(scope)).Scan(&token, &raw)
+	raw, token, found, err := o.timelinesPayload(ctx, scope)
+	if err == nil && found {
+		if err = json.Unmarshal([]byte(raw), &state); err == nil {
+			err = state.normalize()
+		}
+	}
+	return state, token, err
+}
+
+// timelinesPayload reads the scope's stored state and its token, its digest
+// checked; found is false for a scope never written, or a readonly database
+// from before the table.
+func (o *Overlay) timelinesPayload(ctx context.Context, scope records.Scope) (raw, token string, found bool, err error) {
+	err = o.db.QueryRowContext(ctx, `SELECT token,payload FROM timelines WHERE scope=?`, scopeKey(scope)).Scan(&token, &raw)
 	if errors.Is(err, sql.ErrNoRows) || err != nil && o.readonly && strings.Contains(err.Error(), "no such table") {
-		return state, "", nil
+		return "", "", false, nil
 	}
 	if err == nil && token != reference("timelines", raw).Hash {
 		err = errors.New("timelines payload digest changed")
 	}
-	if err == nil {
-		err = json.Unmarshal([]byte(raw), &state)
+	return raw, token, err == nil, err
+}
+
+// loadProgress returns the watermark of the scope's state and how many
+// records it holds back (Pending), as loadTimelines would give them, checking
+// the state as loadTimelines does (its digest and format) but decoding no
+// more of it: neither its memory nor a held-back record's text. A scope never
+// written gives 0 and 0.
+func (o *Overlay) loadProgress(ctx context.Context, scope records.Scope) (watermark int64, held int, err error) {
+	if o == nil {
+		return 0, 0, nil
 	}
-	if err == nil {
-		err = state.normalize()
+	raw, _, found, err := o.timelinesPayload(ctx, scope)
+	if err != nil || !found {
+		return 0, 0, err
 	}
-	return state, token, err
+	var head struct {
+		Format    string     `json:"format"`
+		Watermark int64      `json:"watermark"`
+		Pending   []struct{} `json:"pending"`
+	}
+	if err := json.Unmarshal([]byte(raw), &head); err != nil {
+		return 0, 0, err
+	}
+	if head.Format != timelineFormat {
+		return 0, 0, fmt.Errorf("unsupported timelines format %q", head.Format)
+	}
+	return head.Watermark, len(head.Pending), nil
 }
 
 // saveTimelines replaces the state read with token previous ("" for none)

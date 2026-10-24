@@ -291,7 +291,9 @@ func candidatesOf(head stageHead, trace *memoryagent.ReadTrace, scores map[[2]in
 }
 
 // judgeOf is JEV's answers per candidate, with their decisions: shown are
-// the ids result shows, items the memory items its blocks show.
+// the ids result shows, items the memory items its blocks show. A topic is
+// shown when the topics block lists it, or when the timelines block shows
+// any of its events (it lists a topic only while it has room).
 func judgeOf(head stageHead, trace *memoryagent.ReadTrace, shown, items map[string]bool) judgeStage {
 	stage := judgeStage{stageHead: head, Records: []judgedRecord{}, Layer: []judgedLayer{}, Linked: []judgedLinked{}}
 	for _, item := range trace.Items {
@@ -319,7 +321,8 @@ func judgeOf(head stageHead, trace *memoryagent.ReadTrace, shown, items map[stri
 		return "dropped"
 	}
 	for _, item := range trace.Layer {
-		stage.Layer = append(stage.Layer, judgedLayer{ID: item.ID, Kind: item.Kind, Source: "layer", Excerpt: excerpt(item.Text), Needed: item.Needed, Decision: keptOr(items[item.ID])})
+		kept := items[item.ID] || slices.ContainsFunc(item.Events, func(event string) bool { return items[event] })
+		stage.Layer = append(stage.Layer, judgedLayer{ID: item.ID, Kind: item.Kind, Source: "layer", Excerpt: excerpt(item.Text), Needed: item.Needed, Decision: keptOr(kept)})
 	}
 	for _, item := range trace.Linked {
 		stage.Linked = append(stage.Linked, judgedLinked{ID: item.ID, Source: "layer", Excerpt: excerpt(item.Text), Needed: item.Needed, Decision: keptOr(shown[item.ID]), Shown: shown[item.ID]})
