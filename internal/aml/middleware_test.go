@@ -504,3 +504,49 @@ func TestUserStoreReportsThroughTheServerLogger(t *testing.T) {
 		return len(h.logLines("level=WARN", `msg="records query preparation: `, "(user "+userKey("u1")[:8]+`)"`)) > 0
 	})
 }
+
+// Minor 3 (final review), spec §5: every line of a request carries its id
+// and, once the request has named its user, the user's 8-hex prefix as user:
+// the request line of an Add and of a Search, one for a user with no store
+// included, and the lines their handling logs. A request that names no user
+// carries none. The user id, the store key and the API key never appear.
+func TestRequestLinesCarryTheUserPrefix(t *testing.T) {
+	h := newHarness(t, nil)
+	const user = "carol-the-private-user@example.com"
+	prefix := " user=" + userKey(user)[:8]
+	added := h.call("POST", "/add", addRequest("r1", user), withAuth("X-Request-Id", "add-1")...)
+	if added.Code != http.StatusOK {
+		t.Fatal(added.Code, added.Body.String())
+	}
+	if lines := h.logLines(" request_id=add-1", prefix, "POST /add 200 "); len(lines) != 1 {
+		t.Fatal(h.log.String())
+	}
+	// A failing judge makes the Search log a line of its own (degraded).
+	h.judge.fail.Store(true)
+	if searched := h.call("POST", "/search", searchBody(user), withAuth("X-Request-Id", "search-1")...); searched.Code != http.StatusOK {
+		t.Fatal(searched.Code, searched.Body.String())
+	}
+	if lines := h.logLines(" request_id=search-1", prefix); len(lines) != 2 || !strings.Contains(lines[0], "degraded search") || !strings.Contains(lines[1], "POST /search 200 ") {
+		t.Fatal(lines, h.log.String())
+	}
+	const stranger = "nobody-added-anything@example.com"
+	if searched := h.call("POST", "/search", searchBody(stranger), withAuth("X-Request-Id", "search-2")...); searched.Code != http.StatusOK {
+		t.Fatal(searched.Code, searched.Body.String())
+	}
+	if lines := h.logLines(" request_id=search-2", " user="+userKey(stranger)[:8], "POST /search 200 "); len(lines) != 1 {
+		t.Fatal(h.log.String())
+	}
+	// No user named: a body that does not decode, and an unknown path.
+	h.call("POST", "/add", "{", withAuth("X-Request-Id", "bad-1")...)
+	h.call("GET", "/nope", nil, withAuth("X-Request-Id", "nope-1")...)
+	for _, id := range []string{"bad-1", "nope-1"} {
+		if lines := h.logLines(" request_id=" + id); len(lines) != 1 || strings.Contains(lines[0], " user=") {
+			t.Fatal(id, lines)
+		}
+	}
+	for _, secret := range []string{user, stranger, userKey(user), userKey(stranger), testKey} {
+		if strings.Contains(h.log.String(), secret) {
+			t.Fatalf("the log holds %q:\n%s", secret, h.log.String())
+		}
+	}
+}

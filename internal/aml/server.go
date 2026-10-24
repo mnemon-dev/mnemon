@@ -777,6 +777,7 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	nameUser(ctx, userKey(req.UserID))
 	parts, skipped, err := req.parts()
 	if err != nil {
 		s.fail(ctx, w, "pack", "", err)
@@ -1089,12 +1090,13 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	ctx := r.Context()
+	nameUser(ctx, userKey(req.UserID))
 	if strings.TrimSpace(req.Query) == "" {
 		s.answer(w, []SearchItem{})
 		return
 	}
 	topK := s.topK(req.TopK)
-	ctx := r.Context()
 	user, err := s.users.acquire(ctx, req.UserID, false)
 	if err != nil {
 		s.fail(ctx, w, "open store", "", err)
@@ -1303,7 +1305,8 @@ func retryable(err error) bool {
 }
 
 // logged writes one line per request but health checks: method, path, status
-// and duration, never bodies.
+// and duration, never bodies; with its id, and the user's prefix once the
+// request named a user (contextHandler).
 func (s *Server) logged(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/health" || r.URL.Path == "/" {

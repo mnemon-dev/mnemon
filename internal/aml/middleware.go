@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"log/slog"
 	"net/http"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sync/semaphore"
@@ -39,6 +40,43 @@ func withRequestID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, requestIDKey{}, id)
 }
 
+type requestUserKey struct{}
+
+// requestUser holds the user a request names, by the 8-hex prefix of the
+// user's store key (short), once its handler knows it (nameUser): the lines
+// the request logs from then on carry it as user, its request line among
+// them (contextHandler; spec §5, the final review's Minor 3). It never holds
+// a user id or a key. The handler sets it and a line may read it on another
+// goroutine.
+type requestUser struct{ prefix atomic.Pointer[string] }
+
+// withRequestUser is ctx with an empty holder of the user its request will
+// name.
+func withRequestUser(ctx context.Context) context.Context {
+	return context.WithValue(ctx, requestUserKey{}, &requestUser{})
+}
+
+// nameUser records that ctx's request is for the user whose store key is
+// key (userKey): its lines carry the key's 8-hex prefix from now on. Outside
+// a request it does nothing.
+func nameUser(ctx context.Context, key string) {
+	if holder, ok := ctx.Value(requestUserKey{}).(*requestUser); ok {
+		prefix := short(key)
+		holder.prefix.Store(&prefix)
+	}
+}
+
+// userPrefix is the prefix of the user ctx's request named, "" when it
+// named none or ctx is not a request's.
+func userPrefix(ctx context.Context) string {
+	if holder, ok := ctx.Value(requestUserKey{}).(*requestUser); ok {
+		if prefix := holder.prefix.Load(); prefix != nil {
+			return *prefix
+		}
+	}
+	return ""
+}
+
 // usableRequestID reports whether a client's id may be used: 1 to 128
 // printable ASCII characters (0x21 to 0x7e), which a header and a log line
 // carry without being split.
@@ -64,7 +102,7 @@ func newRequestID() string {
 // identified gives a request its id: the X-Request-Id it came with when that
 // is usable, else a new one. The id is echoed in the response header and
 // travels in the request's context to every line the request logs
-// (contextHandler).
+// (contextHandler), as does the holder of the user it names (requestUser).
 func identified(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get(requestIDHeader)
@@ -72,19 +110,26 @@ func identified(next http.Handler) http.Handler {
 			id = newRequestID()
 		}
 		w.Header().Set(requestIDHeader, id)
-		next.ServeHTTP(w, r.WithContext(withRequestID(r.Context(), id)))
+		next.ServeHTTP(w, r.WithContext(withRequestUser(withRequestID(r.Context(), id))))
 	})
 }
 
 // contextHandler adds the request_id attribute to the records whose context
-// belongs to a request (see identified), and wraps what it derives, so the
-// loggers made with With and WithGroup keep adding it.
+// belongs to a request (see identified), and the user attribute, the user's
+// 8-hex prefix, once the request has named one (nameUser); and it wraps what
+// it derives, so the loggers made with With and WithGroup keep adding them.
 type contextHandler struct{ slog.Handler }
 
 func (h contextHandler) Handle(ctx context.Context, record slog.Record) error {
-	if id := requestID(ctx); id != "" {
+	id, user := requestID(ctx), userPrefix(ctx)
+	if id != "" || user != "" {
 		record = record.Clone()
+	}
+	if id != "" {
 		record.AddAttrs(slog.String("request_id", id))
+	}
+	if user != "" {
+		record.AddAttrs(slog.String("user", user))
 	}
 	return h.Handler.Handle(ctx, record)
 }
