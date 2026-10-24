@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -89,11 +90,17 @@ type ServerConfig struct {
 	SearchTimeout time.Duration
 	// MaxOpenStores bounds the cached open user stores (default 64).
 	MaxOpenStores int
+	// MaxConcurrentAdds and MaxConcurrentSearches bound the Adds and the
+	// Searches served at once (0 for no limit). A request that finds no free
+	// slot waits for one; past 30 seconds it is shed with 503 and a
+	// Retry-After, which the platform retries.
+	MaxConcurrentAdds, MaxConcurrentSearches int
 	// Models builds the models from MemoryConfig; nil builds its configured
 	// providers. Tests inject scripted models here.
 	Models func(memoryagent.Config) (memoryagent.Models, error)
 	// Logger receives operational lines, never request bodies; nil logs text
-	// to standard error.
+	// to standard error. The server adds the request_id attribute to the
+	// lines of a request.
 	Logger *slog.Logger
 }
 
@@ -116,6 +123,14 @@ type Server struct {
 	lagBound int64
 	users    *registry
 	log      *slog.Logger
+	// addGate and searchGate admit the Adds and the Searches (nil: without
+	// limit); a request waits admitWait for a slot before it is shed.
+	addGate, searchGate *gate
+	admitWait           time.Duration
+	// baseCtx is the context of every request HTTPServer's servers run;
+	// CancelRequests ends it.
+	baseCtx        context.Context
+	cancelRequests context.CancelFunc
 	// Served requests, and Searches answered by the raw ranking (degraded)
 	// or by a read with a stage that fell back (partial).
 	adds, searches, degraded, partial atomic.Int64
@@ -147,6 +162,12 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if config.MaxOpenStores < 1 {
 		return nil, errors.New("max open stores must be at least 1")
 	}
+	if config.MaxConcurrentAdds < 0 {
+		return nil, errors.New("max concurrent adds must not be negative")
+	}
+	if config.MaxConcurrentSearches < 0 {
+		return nil, errors.New("max concurrent searches must not be negative")
+	}
 	if config.SearchTimeout == 0 {
 		config.SearchTimeout = defaultSearchTimeout
 	}
@@ -167,10 +188,12 @@ func NewServer(config ServerConfig) (*Server, error) {
 	consolidation := config.MemoryConfig.Consolidation
 	s := &Server{config: config, key: sha256.Sum256([]byte(config.AuthKey)), log: config.Logger,
 		timelines: consolidation.Timelines(), mode: mode,
+		addGate: newGate(config.MaxConcurrentAdds), searchGate: newGate(config.MaxConcurrentSearches), admitWait: admissionWait,
 		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout}
 	if s.log == nil {
 		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
+	s.log = slog.New(contextHandler{s.log.Handler()})
 	if config.Models != nil {
 		s.models, err = config.Models(config.MemoryConfig)
 	} else {
@@ -183,6 +206,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 		s.closeModels()
 		return nil, err
 	}
+	s.baseCtx, s.cancelRequests = context.WithCancel(context.Background())
 	s.users = newRegistry(config.DataRoot, config.MaxOpenStores, s.openUser)
 	if mode == ConsolidationBackground {
 		s.sched = newScheduler(config.ConsolidationWorkers, maxConsolidationUsers, s.consolidateUser, s.schedulerLog, time.Now)
@@ -456,15 +480,18 @@ func (s *Server) LogStatus(ctx context.Context, every time.Duration) {
 }
 
 // Handler routes POST /add and POST /search (authenticated) and GET /health
-// and GET / (not); anything else is 404.
+// and GET / (not); anything else is 404. Every response carries the request's
+// id in X-Request-Id.
 func (s *Server) Handler() http.Handler { return s.handler }
 
 // HTTPServer is the HTTP server for addr with the service's timeouts: an Add
-// may consolidate for up to the platform's 30-minute I/O timeout.
+// may consolidate for up to the platform's 30-minute I/O timeout. Its requests
+// run on a context CancelRequests ends.
 func (s *Server) HTTPServer(addr string) *http.Server {
 	return &http.Server{
 		Addr:              addr,
 		Handler:           s.handler,
+		BaseContext:       func(net.Listener) context.Context { return s.baseCtx },
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       5 * time.Minute,
 		WriteTimeout:      31 * time.Minute,
@@ -473,6 +500,13 @@ func (s *Server) HTTPServer(addr string) *http.Server {
 	}
 }
 
+// CancelRequests ends the context of every request being served through the
+// servers HTTPServer made, and of those that arrive later, as a forced
+// shutdown does once its grace has ended: their model calls and waits stop and
+// the handlers answer 503, which the platform retries. It does not touch the
+// background scheduler (Run's context ends that), and may be called again.
+func (s *Server) CancelRequests() { s.cancelRequests() }
+
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	health := func(w http.ResponseWriter, _ *http.Request) {
@@ -480,12 +514,12 @@ func (s *Server) routes() http.Handler {
 	}
 	mux.HandleFunc("GET /{$}", health)
 	mux.HandleFunc("GET /health", health)
-	mux.Handle("POST /add", s.authorized(s.recovered("add", s.add)))
-	mux.Handle("POST /search", s.authorized(s.recovered("search", s.search)))
+	mux.Handle("POST /add", s.guarded("add", s.addGate, s.add))
+	mux.Handle("POST /search", s.guarded("search", s.searchGate, s.search))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 	})
-	return s.logged(mux)
+	return identified(s.logged(mux))
 }
 
 // authorized accepts `Authorization: Bearer <key>`, `Authorization: Token
@@ -1026,7 +1060,7 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request, into any) bool {
 }
 
 // fail logs an internal error and answers 503 when retrying can help (a busy
-// or changed store, shutdown), else 500.
+// or changed store, shutdown, a canceled request), else 500.
 func (s *Server) fail(ctx context.Context, w http.ResponseWriter, operation, user string, err error) {
 	if len(user) > 8 {
 		user = user[:8]
@@ -1041,7 +1075,7 @@ func (s *Server) fail(ctx context.Context, w http.ResponseWriter, operation, use
 
 func retryable(err error) bool {
 	message := err.Error()
-	return errors.Is(err, records.ErrConflict) || errors.Is(err, errClosing) || errors.Is(err, context.DeadlineExceeded) ||
+	return errors.Is(err, records.ErrConflict) || errors.Is(err, errClosing) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) ||
 		strings.Contains(message, "database is locked") || strings.Contains(message, "SQLITE_BUSY") || strings.Contains(message, "too many open files")
 }
 

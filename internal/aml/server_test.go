@@ -185,6 +185,12 @@ func newHarness(t *testing.T, edit func(*ServerConfig)) *harness {
 // call sends one request through the handler with the test key (unless
 // headers say otherwise) and returns the recorded response.
 func (h *harness) call(method, path string, body any, headers ...string) *httptest.ResponseRecorder {
+	return h.callContext(context.Background(), method, path, body, headers...)
+}
+
+// callContext is call for a client that can leave: ctx is the request's
+// context.
+func (h *harness) callContext(ctx context.Context, method, path string, body any, headers ...string) *httptest.ResponseRecorder {
 	var reader *bytes.Reader
 	switch value := body.(type) {
 	case nil:
@@ -197,7 +203,7 @@ func (h *harness) call(method, path string, body any, headers ...string) *httpte
 		raw, _ := json.Marshal(value)
 		reader = bytes.NewReader(raw)
 	}
-	request := httptest.NewRequest(method, path, reader)
+	request := httptest.NewRequest(method, path, reader).WithContext(ctx)
 	request.Header.Set("Content-Type", "application/json")
 	if len(headers) == 0 {
 		headers = []string{"Authorization", "Bearer " + testKey}
@@ -945,11 +951,13 @@ func TestNewServerValidates(t *testing.T) {
 	}
 	root := t.TempDir()
 	for name, config := range map[string]ServerConfig{
-		"no key":           {DataRoot: root, MemoryConfig: simpleConfig(), Models: models},
-		"relative root":    {DataRoot: "data", MemoryConfig: simpleConfig(), AuthKey: testKey, Models: models},
-		"bad config":       {DataRoot: root, MemoryConfig: memoryagent.Config{Version: 2}, AuthKey: testKey, Models: models},
-		"no models":        {DataRoot: root, MemoryConfig: simpleConfig(), AuthKey: testKey},
-		"negative timeout": {DataRoot: root, MemoryConfig: simpleConfig(), AuthKey: testKey, Models: models, SearchTimeout: -time.Second},
+		"no key":            {DataRoot: root, MemoryConfig: simpleConfig(), Models: models},
+		"relative root":     {DataRoot: "data", MemoryConfig: simpleConfig(), AuthKey: testKey, Models: models},
+		"bad config":        {DataRoot: root, MemoryConfig: memoryagent.Config{Version: 2}, AuthKey: testKey, Models: models},
+		"no models":         {DataRoot: root, MemoryConfig: simpleConfig(), AuthKey: testKey},
+		"negative timeout":  {DataRoot: root, MemoryConfig: simpleConfig(), AuthKey: testKey, Models: models, SearchTimeout: -time.Second},
+		"negative adds":     {DataRoot: root, MemoryConfig: simpleConfig(), AuthKey: testKey, Models: models, MaxConcurrentAdds: -1},
+		"negative searches": {DataRoot: root, MemoryConfig: simpleConfig(), AuthKey: testKey, Models: models, MaxConcurrentSearches: -1},
 		"model error": {DataRoot: root, MemoryConfig: simpleConfig(), AuthKey: testKey, Models: func(memoryagent.Config) (memoryagent.Models, error) {
 			return memoryagent.Models{}, errors.New("no credentials")
 		}},
