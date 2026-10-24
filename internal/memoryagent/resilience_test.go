@@ -399,7 +399,7 @@ func TestBreakerOpensAndFailsFast(t *testing.T) {
 	log := &attemptLog{}
 	Models{Planner: p}.Observe(log)
 	ctx := context.Background()
-	for i := range 5 {
+	for i := range breakerConsecutive {
 		if _, _, err := p.Complete(ctx, "s", "p"); !errors.Is(err, ErrModelUnavailable) || errors.Is(err, ErrBreakerOpen) {
 			t.Fatal(i, err)
 		}
@@ -409,10 +409,10 @@ func TestBreakerOpensAndFailsFast(t *testing.T) {
 	if elapsed := time.Since(start); !errors.Is(err, ErrBreakerOpen) || elapsed > 10*time.Millisecond {
 		t.Fatal(err, elapsed)
 	}
-	if e.requests() != 5 || len(budgetAttempts(t, budget)) != 5 {
+	if e.requests() != breakerConsecutive || len(budgetAttempts(t, budget)) != breakerConsecutive {
 		t.Fatal("the open breaker sent or reserved", e.requests(), len(budgetAttempts(t, budget)))
 	}
-	if got := log.outcomes(); got != "retryable retryable retryable retryable retryable breaker-open" {
+	if got := log.outcomes(); got != strings.Repeat("retryable ", breakerConsecutive)+"breaker-open" {
 		t.Fatal(got)
 	}
 }
@@ -450,49 +450,6 @@ func TestBulkheadFullFailsAfterAttemptTimeout(t *testing.T) {
 	// A full Background bulkhead leaves Flush calls their own.
 	if _, _, err := p.Complete(WithCallClass(context.Background(), Flush), "s", "p"); err != nil || e.requests() != 1 {
 		t.Fatal(err, e.requests())
-	}
-}
-
-func TestBreakerCountsRatioAndHalfOpens(t *testing.T) {
-	b := newBreaker()
-	// Half of the last 20 attempts failing opens it, with no two failures in
-	// a row.
-	for i := range 20 {
-		if !b.permit() {
-			t.Fatal("opened early", i)
-		}
-		b.record(i%2 == 1)
-	}
-	if !b.open() || b.cb.RemainingDelay() <= 19*time.Second {
-		t.Fatal("10 failures of 20 did not open it for 20 s", b.cb.State(), b.cb.RemainingDelay())
-	}
-	// Past its delay it admits two probes, and two successes close it.
-	b.cb.HalfOpen()
-	if b.open() || !b.permit() || !b.permit() || b.permit() {
-		t.Fatal("half-open admits two probes")
-	}
-	b.record(false)
-	b.record(false)
-	if !b.cb.IsClosed() {
-		t.Fatal(b.cb.State())
-	}
-	// Five failures in a row open it; a failed probe opens it again.
-	for i := range 5 {
-		if !b.permit() {
-			t.Fatal("opened early", i)
-		}
-		b.record(true)
-	}
-	if !b.open() {
-		t.Fatal("5 consecutive failures did not open it")
-	}
-	b.cb.HalfOpen()
-	if !b.permit() {
-		t.Fatal("no probe")
-	}
-	b.record(true)
-	if !b.open() {
-		t.Fatal("a failed probe did not open it")
 	}
 }
 
@@ -606,41 +563,6 @@ func TestRequestFailingBeforeAConnectionIsReleased(t *testing.T) {
 	}
 }
 
-func TestInteractiveCompletionRetriesUnparsedReplyOnce(t *testing.T) {
-	unparsed := `{"choices":[]}`
-	// The first reply does not parse; the second does.
-	e := newEndpoint(t, func(n int, w http.ResponseWriter) {
-		if n == 1 {
-			io.WriteString(w, unparsed)
-			return
-		}
-		io.WriteString(w, deepseekReply)
-	})
-	p, budget := deepseekOn(t, e, ModelConfig{}, nil)
-	if text, _, err := p.Complete(context.Background(), "s", "p"); err != nil || text != "ok" || e.requests() != 2 {
-		t.Fatal(text, err, e.requests())
-	}
-	// The unparsed reply may have been processed: its reservation is held.
-	if attempts := budgetAttempts(t, budget); len(attempts) != 2 || attempts[0].actual != nil || !settled(attempts[1:]) {
-		t.Fatal(attempts)
-	}
-	// It is retried once only, and only on the read path.
-	always := newEndpoint(t, func(_ int, w http.ResponseWriter) { io.WriteString(w, unparsed) })
-	p, _ = deepseekOn(t, always, ModelConfig{}, nil)
-	if _, _, err := p.Complete(context.Background(), "s", "p"); err == nil || errors.Is(err, ErrModelUnavailable) || always.requests() != 2 {
-		t.Fatal(err, always.requests())
-	}
-	if _, _, err := p.Complete(WithCallClass(context.Background(), Background), "s", "p"); err == nil || always.requests() != 3 {
-		t.Fatal(err, always.requests())
-	}
-	// A JEV reply that does not parse is not retried.
-	jev := newEndpoint(t, func(_ int, w http.ResponseWriter) { io.WriteString(w, `{"answers":{}}`) })
-	j, _ := jevOn(t, jev, ModelConfig{})
-	if _, _, err := j.Decide(context.Background(), "evidence", map[string]Question{"a": binary("Relevant?")}); err == nil || jev.requests() != 1 {
-		t.Fatal(err, jev.requests())
-	}
-}
-
 func TestCacheHitMakesNoAttempt(t *testing.T) {
 	e := newEndpoint(t, func(_ int, w http.ResponseWriter) { io.WriteString(w, deepseekReply) })
 	p, budget := deepseekOn(t, e, ModelConfig{}, nil)
@@ -708,10 +630,11 @@ func TestClassPoliciesByKindAndConfig(t *testing.T) {
 		want   want
 	}{
 		{ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1"}, want{[3]time.Duration{45 * time.Second, 90 * time.Second, 90 * time.Second}, [3]int{4, 3, 3}}},
-		{ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1", TimeoutSeconds: 600}, want{[3]time.Duration{45 * time.Second, 600 * time.Second, 600 * time.Second}, [3]int{4, 3, 3}}},
+		// A Flush attempt waits at most 180 s (R62), within the hard timeout.
+		{ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1", TimeoutSeconds: 600}, want{[3]time.Duration{45 * time.Second, 180 * time.Second, 600 * time.Second}, [3]int{4, 3, 3}}},
 		{ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1", TimeoutSeconds: 30}, want{[3]time.Duration{30 * time.Second, 30 * time.Second, 30 * time.Second}, [3]int{4, 3, 3}}},
-		// Flush and Background attempts take the hard timeout, for every kind:
-		// they are never abandoned. attemptTimeoutSeconds is the Interactive one.
+		// Background attempts take the hard timeout, for every kind: they are
+		// never abandoned. attemptTimeoutSeconds is the Interactive one.
 		{ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CREDENTIAL"}, want{[3]time.Duration{20 * time.Second, 90 * time.Second, 90 * time.Second}, [3]int{4, 3, 3}}},
 		{ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CREDENTIAL", TimeoutSeconds: 45}, want{[3]time.Duration{20 * time.Second, 45 * time.Second, 45 * time.Second}, [3]int{4, 3, 3}}},
 		{ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CREDENTIAL", AttemptTimeoutSeconds: 5, MaxAttempts: 2}, want{[3]time.Duration{5 * time.Second, 90 * time.Second, 90 * time.Second}, [3]int{2, 2, 2}}},

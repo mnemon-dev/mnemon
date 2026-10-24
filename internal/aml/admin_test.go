@@ -45,8 +45,9 @@ func (h *harness) roomy() {
 }
 
 // holdBudget gives the server a budget file in which the openai account holds a
-// reservation of 0.01 (the flat amount) against a cap of cap: a request the
-// endpoint hung up on may have been processed, so its reservation stays held.
+// reservation of 0.01 (the flat amount) against a cap of cap: a request in
+// flight holds its reservation, and this one's endpoint keeps it waiting until
+// the test ends. (A request that ends settles or releases its reservation.)
 func holdBudget(t *testing.T, h *harness, cap float64) {
 	t.Helper()
 	budget, err := memoryagent.OpenBudgetWithCaps(filepath.Join(t.TempDir(), "budget.db"), map[string]float64{"openai": cap})
@@ -54,21 +55,38 @@ func holdBudget(t *testing.T, h *harness, cap float64) {
 		t.Fatal(err)
 	}
 	h.server.budget = budget // closed by the server
-	hangup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	arrived, release := make(chan struct{}, 1), make(chan struct{})
+	waiting := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		io.Copy(io.Discard, r.Body)
-		if conn, _, err := w.(http.Hijacker).Hijack(); err == nil {
-			conn.Close()
+		arrived <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
 		}
+		w.WriteHeader(http.StatusServiceUnavailable)
 	}))
-	t.Cleanup(hangup.Close)
+	t.Cleanup(waiting.Close)
 	t.Setenv("ADMIN_TEST_OPENAI", "test-only-placeholder")
-	provider, err := memoryagent.NewProvider(memoryagent.ModelConfig{Kind: "openai", Model: "gpt-4.1-mini", BaseURL: hangup.URL + "/v1", KeyEnv: "ADMIN_TEST_OPENAI", MaxAttempts: 1}, budget)
+	provider, err := memoryagent.NewProvider(memoryagent.ModelConfig{Kind: "openai", Model: "gpt-4.1-mini", BaseURL: waiting.URL + "/v1", KeyEnv: "ADMIN_TEST_OPENAI", MaxAttempts: 1}, budget)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { provider.Close() }) // before the server closes the budget
-	if _, _, err := provider.Complete(context.Background(), "s", "p"); err == nil {
-		t.Fatal("a request the endpoint hung up on succeeded")
+	called := make(chan error, 1)
+	go func() {
+		_, _, err := provider.Complete(context.Background(), "s", "p")
+		called <- err
+	}()
+	// First of the cleanups: the endpoint answers, and the call ends.
+	t.Cleanup(func() {
+		close(release)
+		<-called
+	})
+	select {
+	case <-arrived:
+	case err := <-called:
+		called <- err // for the cleanup
+		t.Fatal("the request ended before the test:", err)
 	}
 }
 

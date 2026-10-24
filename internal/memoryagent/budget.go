@@ -15,10 +15,11 @@ import (
 
 // Budget is a durable prepare/call/settle boundary, shared across processes.
 // Every attempt of a call reserves on its own (the provider retries through
-// it, resilience.go). Ambiguous attempts retain their reservation; attempts
-// that provably cost nothing (never sent, or refused by the endpoint)
-// release it. It stores metering and request hashes, never prompts or
-// credentials.
+// it, resilience.go). Attempts that provably cost nothing (never sent, or
+// refused by the endpoint) release their reservation; the others settle it
+// when their request ends, at the reply's metering or, when none came back,
+// at the request's input estimate. Only a request still in flight holds one.
+// It stores metering and request hashes, never prompts or credentials.
 type Budget struct {
 	db   *sql.DB
 	caps map[string]float64
@@ -26,6 +27,12 @@ type Budget struct {
 
 // ErrBudgetCap is the error of a reservation the account's cap refuses.
 var ErrBudgetCap = errors.New("model spending cap reached, including unresolved reservations")
+
+// errInvalidMetering is the error of a settlement whose metering the budget
+// refuses: no input tokens, negative amounts, or a cost above the
+// reservation of a kind whose calls it bounds. The reservation is left as it
+// was.
+var errInvalidMetering = errors.New("invalid model metering")
 
 // Paid accounts by provider kind. Caps are USD for jev and openai, CNY for
 // deepseek. A reservation is at least the flat amount held for one bounded
@@ -182,7 +189,7 @@ func (b *Budget) settle(ctx context.Context, id string, usage Usage) error {
 	// exceeds the flat reservation: the money is spent, and the cap blocks the
 	// next reservation. Other kinds are bounded by their reservation.
 	if cost < 0 || cost > held && kind != "openai" || usage.InputTokens < 1 || usage.OutputTokens < 0 {
-		return errors.New("invalid model metering; reservation retained")
+		return errInvalidMetering
 	}
 	result, err := tx.ExecContext(ctx, `UPDATE attempts SET actual=?,input_tokens=?,output_tokens=? WHERE id=? AND actual IS NULL`, cost, usage.InputTokens, usage.OutputTokens, id)
 	if err != nil {

@@ -344,8 +344,11 @@ func TestFakeProviderFaults(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&stats); err != nil {
 		t.Fatal(err)
 	}
+	// A reply that does not parse or validate is asked for twice (ruling
+	// R61); a completion cut at its limit and an extraction in prose are
+	// replies the provider accepts, asked for once.
 	want := map[string]map[string]int{
-		"jev":      {"429": 1, "malformed:wrong-schema": 1, "malformed:truncated": 1, "stall": 1, "spike": 1},
+		"jev":      {"429": 1, "malformed:wrong-schema": 2, "malformed:truncated": 2, "stall": 1, "spike": 1},
 		"deepseek": {"malformed:truncated": 1, "malformed:invalid-json": 1, "malformed:empty": 2},
 	}
 	for kind, outcomes := range want {

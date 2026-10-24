@@ -53,14 +53,16 @@ func TestJEVRequiresMeteringAndTypedPresentAnswers(t *testing.T) {
 		t.Fatal(err)
 	}
 	body := `{"model":"jev-1.13.0","answers":{"a":{"type":"noul","noul":0.8}}}`
-	var attempts atomic.Int32
+	var attempts, size atomic.Int32
 	p.client.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
 		attempts.Add(1)
 		if req.URL.String() != "https://api.typesafe.ai/v1/systemone" || req.Header.Get("Authorization") == "" {
 			t.Fatal("provider routing or authentication failed")
 		}
+		raw, _ := io.ReadAll(req.Body)
+		size.Store(int32(len(raw)))
 		var request map[string]any
-		json.NewDecoder(req.Body).Decode(&request)
+		json.Unmarshal(raw, &request)
 		if request["model"] != "jev-1.13.0" {
 			t.Fatal("model was not pinned")
 		}
@@ -70,10 +72,13 @@ func TestJEVRequiresMeteringAndTypedPresentAnswers(t *testing.T) {
 	if _, _, err = p.Decide(context.Background(), "evidence", questions); err == nil {
 		t.Fatal("missing paid metering was accepted")
 	}
+	// A reply without metering is invalid: retried once (R61), and each
+	// attempt settled at its input estimate (R63), so nothing stays held.
+	estimate := float64(size.Load()) * 0.042 / 1e6
 	var held, spent float64
 	budget.db.QueryRow("SELECT held,spent FROM accounts WHERE kind='jev'").Scan(&held, &spent)
-	if held != 0.01 || spent != 0 || attempts.Load() != 1 {
-		t.Fatal("failed call retried or reservation refunded", held, spent, attempts.Load())
+	if !near(held, 0) || !near(spent, 2*estimate) || attempts.Load() != 2 {
+		t.Fatal("an unmetered reply was not retried once and settled at its estimate", held, spent, attempts.Load())
 	}
 	body = `{"model":"jev-1.13.0","answers":{"a":{"type":"noul","noul":null}},"usage":{"input_tokens":1000,"output_tokens":1}}`
 	if _, _, err = p.Decide(context.Background(), "evidence", questions); err == nil {
@@ -84,9 +89,10 @@ func TestJEVRequiresMeteringAndTypedPresentAnswers(t *testing.T) {
 	if err != nil || answers["a"] != 0.8 || usage.USD != 0.000042 {
 		t.Fatal(answers, usage, err)
 	}
+	// The null answers (retried once) and the answer settled at their usage.
 	budget.db.QueryRow("SELECT held,spent FROM accounts WHERE kind='jev'").Scan(&held, &spent)
-	if held < 0.009999 || held > 0.010001 || spent < 0.0000839 || spent > 0.0000841 {
-		t.Fatal("metering did not preserve ambiguous reservation", held, spent)
+	if !near(held, 0) || !near(spent, 2*estimate+3*0.000042) || attempts.Load() != 5 {
+		t.Fatal("metering was not settled", held, spent, attempts.Load())
 	}
 }
 
@@ -971,19 +977,24 @@ func TestFailedModelRequestReleasesOnlyUnsentOrRefused(t *testing.T) {
 		t.Fatal("an unsent call kept its reservation", held)
 	}
 	// A failure after the request may have been sent, or a malformed 2xx
-	// reply, keeps the reservation held.
-	p.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
+	// reply, may have been processed: it is settled at its input estimate,
+	// its input tokens at the input price (R63), and nothing stays held.
+	var size int
+	p.client.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		raw, _ := io.ReadAll(req.Body)
+		size = len(raw)
 		return nil, &net.OpError{Op: "read", Net: "tcp", Err: errors.New("connection reset by peer")}
 	})
-	if _, _, err = p.Complete(ctx, "s", "p"); err == nil {
-		t.Fatal("a reset succeeded")
+	if _, _, err = p.Complete(ctx, "s", "p"); err == nil || !strings.Contains(err.Error(), "settled at its input estimate") {
+		t.Fatal("a reset succeeded or was not settled", err)
 	}
 	p.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) { return mockResponse(`{"choices":[]}`), nil })
 	if _, _, err = p.Complete(ctx, "s", "p"); err == nil {
 		t.Fatal("a malformed reply succeeded")
 	}
-	if held, _ := accountHeld(t, budget, "openai"); !near(held, 0.02) {
-		t.Fatal("an ambiguous call released its reservation", held)
+	estimate := float64(size) / 4 * 0.40 / 1e6
+	if held, spent := accountHeld(t, budget, "openai"); !near(held, 0) || !near(spent, 2*estimate) || estimate <= 0 {
+		t.Fatal("an ambiguous call was not settled at its estimate", held, spent, estimate)
 	}
 	// A dial failure reported by the transport is recognized as unsent.
 	p.client.Transport = transportFunc(func(*http.Request) (*http.Response, error) {
@@ -992,8 +1003,8 @@ func TestFailedModelRequestReleasesOnlyUnsentOrRefused(t *testing.T) {
 	if _, _, err = p.Complete(ctx, "s", "p"); err == nil {
 		t.Fatal("a failed dial succeeded")
 	}
-	if held, _ := accountHeld(t, budget, "openai"); !near(held, 0.02) {
-		t.Fatal("a failed dial kept its reservation", held)
+	if held, spent := accountHeld(t, budget, "openai"); !near(held, 0) || !near(spent, 2*estimate) {
+		t.Fatal("a failed dial kept or spent its reservation", held, spent)
 	}
 	// A canceled caller's error says so.
 	canceled, cancel := context.WithCancel(ctx)

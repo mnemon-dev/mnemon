@@ -118,6 +118,7 @@ consolidation queue, it carries these, which the memory cloud console reads:
 | Series | Meaning |
 | --- | --- |
 | `mnemon_aml_admin_auth_failures_total` | admin requests refused with 401 (no labels) |
+| `mnemon_aml_model_attempts_total{kind,class,outcome}` | attempts of model calls. `outcome` is `ok`, `throttled` (refused with HTTP 429), `invalid` (a 200 reply that did not parse or failed validation), `retryable`, `failed`, `breaker-open`, `bulkhead-full` or `budget`; the console counts every outcome but `ok` as a model failure |
 | `mnemon_aml_open_stores` | user stores the server holds open now |
 | `mnemon_aml_stores` | user stores in the data root, from the latest scan (at most 60 s old) |
 | `mnemon_aml_store_bytes` | bytes of the regular files of those stores, from the same scan |

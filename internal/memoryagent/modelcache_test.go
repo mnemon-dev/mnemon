@@ -376,6 +376,11 @@ func TestProviderReplaysJEVDecision(t *testing.T) {
 	}))
 	defer scripted.Close()
 	p.endpoint = scripted.URL
+	// One attempt a call, one reply each: what is recorded is the subject
+	// here; the retry of an invalid reply is resilience's.
+	for class := range p.policies {
+		p.policies[class].maxAttempts = 1
+	}
 	one := map[string]Question{"a": binary("Relevant?")}
 	for i := range 3 {
 		if _, _, err := p.Decide(ctx, "evidence", one); err == nil {
