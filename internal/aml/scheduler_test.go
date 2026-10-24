@@ -466,6 +466,111 @@ func TestSchedulerStopsAndWaits(t *testing.T) {
 	}
 }
 
+// within is a context that ends after five seconds, the longest a test waits.
+func within(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	t.Cleanup(cancel)
+	return ctx
+}
+
+// Drain is the first step of a graceful shutdown: no job starts any more,
+// the job running goes on to its end, and WaitDrained waits for it.
+func TestSchedulerDrainStartsNoJob(t *testing.T) {
+	a, b := userKey("a"), userKey("b")
+	ran, gate := make(chan string, 10), make(chan struct{})
+	var cut atomic.Bool
+	s := newScheduler(1, 100, func(ctx context.Context, key string) (int64, error) {
+		ran <- key
+		select {
+		case <-gate:
+			return 0, nil
+		case <-ctx.Done():
+			cut.Store(true)
+			return -1, ctx.Err()
+		}
+	}, (&logLines{}).logf, time.Now)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	s.Notify(a, 1)
+	if key := next(t, ran); key != a {
+		t.Fatal(key)
+	}
+	s.Notify(b, 1)
+	s.Drain()
+	s.Drain() // a second call does nothing
+	// a's job goes on, uncut: a wait for it that ends first says so.
+	short, stop := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer stop()
+	if err := s.WaitDrained(short); !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "consolidation jobs still running: 1") {
+		t.Fatal(err)
+	}
+	if status := s.Status(); status.Running != 1 || cut.Load() {
+		t.Fatal("the drain cut the running job", status)
+	}
+	close(gate)
+	if err := s.WaitDrained(within(t)); err != nil {
+		t.Fatal(err)
+	}
+	// b stays queued and no job starts, nor after a notification: the
+	// workers have exited, so Run returns before its context ends.
+	s.Notify(userKey("c"), 1)
+	never(t, ran, "a job started after the drain")
+	if err := received(t, done); err != nil {
+		t.Fatal(err)
+	}
+	if status := s.Status(); status.Running != 0 || status.Queued != 2 {
+		t.Fatal(status)
+	}
+	if err := s.WaitDrained(within(t)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Once draining, no job will lower a backlog: the Adds waiting on one answer,
+// and a later Add does not wait.
+func TestSchedulerDrainEndsTheAddsWait(t *testing.T) {
+	a := userKey("a")
+	ran := make(chan string, 10)
+	s := newScheduler(1, 100, func(ctx context.Context, key string) (int64, error) {
+		ran <- key
+		<-ctx.Done()
+		return -1, ctx.Err()
+	}, (&logLines{}).logf, time.Now)
+	// Run has not started, so nothing would lower a's backlog.
+	s.Notify(a, 200000)
+	waited := make(chan error, 1)
+	go func() { waited <- s.WaitBacklog(context.Background(), a, 160000) }()
+	select {
+	case err := <-waited:
+		t.Fatal("returned above the limit", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	s.Drain()
+	if err := received(t, waited); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.WaitBacklog(context.Background(), a, 160000); err != nil {
+		t.Fatal(err)
+	}
+	// Nothing runs, so WaitDrained returns at once; and a Run that starts
+	// after the drain starts no job.
+	if err := s.WaitDrained(within(t)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- s.Run(context.Background()) }()
+	if err := received(t, done); err != nil {
+		t.Fatal(err)
+	}
+	never(t, ran, "a job ran after the drain")
+	if status := s.Status(); status.Queued != 1 || status.MaxBacklog != 200000 {
+		t.Fatal(status)
+	}
+}
+
 func TestWaitBacklogOnAnIdleUserQueuesAJob(t *testing.T) {
 	a := userKey("a")
 	ran, results := make(chan string, 10), make(chan int64)

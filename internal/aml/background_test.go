@@ -161,7 +161,7 @@ func (h *harness) run(t *testing.T) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- h.server.Run(ctx) }()
+	go func() { done <- h.server.Run(ctx, nil) }()
 	t.Cleanup(func() {
 		cancel()
 		if err := <-done; err != nil {
@@ -395,7 +395,7 @@ func TestSchedulerResumesAfterCutJob(t *testing.T) {
 	})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
-	go func() { done <- first.server.Run(ctx) }()
+	go func() { done <- first.server.Run(ctx, nil) }()
 	replay(t, first, adds, false)
 	<-blocked
 	// The batches before it link and are saved one by one.
@@ -619,12 +619,12 @@ func TestCloseStopsRun(t *testing.T) {
 		return "", ctx.Err()
 	})
 	done := make(chan error, 1)
-	go func() { done <- h.server.Run(context.Background()) }()
+	go func() { done <- h.server.Run(context.Background(), nil) }()
 	h.mustAdd(t, addRequest("r1", "u1"))
 	h.mustAdd(t, addRequest("r2", "u1"))
 	<-entered
 	// Run runs once at a time.
-	if err := h.server.Run(context.Background()); err == nil {
+	if err := h.server.Run(context.Background(), nil); err == nil {
 		t.Fatal("a second Run ran")
 	}
 	// Close stops the job in flight and Run before it closes the stores.
@@ -647,7 +647,7 @@ func TestCloseStopsRun(t *testing.T) {
 		t.Fatal(h.log.String())
 	}
 	// Nor does it run after Close.
-	if err := h.server.Run(context.Background()); err == nil {
+	if err := h.server.Run(context.Background(), nil); err == nil {
 		t.Fatal("Run ran after Close")
 	}
 }
@@ -774,6 +774,185 @@ func TestHeldUserJobStopsBetweenItsJobs(t *testing.T) {
 	h.mustAdd(t, addRequest("r8", "u1"))
 	if _, err := h.server.consolidateUser(context.Background(), userKey("u1")); err != nil || h.consolidator.calls.Load() != 3 {
 		t.Fatal(err, h.consolidator.calls.Load())
+	}
+}
+
+// Drain stops a user's work between its jobs, as a Search's hold does, and
+// leaves the user queued with the rest pending for the next start.
+func TestDrainedUserJobStopsBetweenItsJobs(t *testing.T) {
+	// Six records take three jobs (TestHeldUserJobStopsBetweenItsJobs).
+	settings := memoryagent.ConsolidationConfig{Mode: "timelines", BatchCharacters: 300, MaxBatches: 2}
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &settings
+		config.Consolidation = ConsolidationBackground
+	})
+	h.server.addWindow = 10 * time.Millisecond // the Adds outrun the bound
+	for i := 1; i <= 6; i++ {
+		h.mustAdd(t, addRequest(fmt.Sprintf("r%d", i), "u1"))
+	}
+	blocked, gate := make(chan struct{}, 1), make(chan struct{})
+	var first atomic.Bool
+	h.consolidator.answer(func(ctx context.Context, prompt string) (string, error) {
+		if first.CompareAndSwap(false, true) {
+			blocked <- struct{}{}
+			select {
+			case <-gate:
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		}
+		return parityReply(ctx, prompt)
+	})
+	h.run(t)
+	<-blocked
+	h.server.Drain()
+	close(gate)
+	// The first job ends uncut and saves its batch; no job follows it.
+	if err := h.server.WaitDrained(within(t)); err != nil {
+		t.Fatal(err)
+	}
+	if n := h.consolidator.calls.Load(); n != 1 {
+		t.Fatal("folds after the drain", n)
+	}
+	if status := h.server.sched.Status(); status.Running != 0 || status.Queued != 1 {
+		t.Fatal(status)
+	}
+	if backlog := h.backlog(t, "u1"); backlog.Records != 4 {
+		t.Fatal("pending after the drain", backlog)
+	}
+	if strings.Contains(h.log.String(), "consolidation failed") {
+		t.Fatal(h.log.String())
+	}
+}
+
+// A background Add waiting at the lag bound answers once the scheduler
+// drains: its records are stored, and no job would lower the backlog.
+func TestDrainAnswersAnAddWaitingAtTheBound(t *testing.T) {
+	settings := memoryagent.ConsolidationConfig{Mode: "timelines", BatchCharacters: 300, MaxBatches: 1}
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &settings
+		config.Consolidation = ConsolidationBackground
+	})
+	// No worker runs, so past the bound an Add would wait its whole window.
+	h.server.addWindow = time.Minute
+	h.mustAdd(t, addRequest("r1", "u1"))
+	answered := make(chan *httptest.ResponseRecorder, 1)
+	go func() { answered <- h.call("POST", "/add", addRequest("r2", "u1")) }()
+	select {
+	case response := <-answered:
+		t.Fatal("answered above the bound", response.Code)
+	case <-time.After(50 * time.Millisecond):
+	}
+	h.server.Drain()
+	if response := received(t, answered); response.Code != http.StatusOK {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	if strings.Contains(h.log.String(), "add outran consolidation") {
+		t.Fatal("a released Add counted as outrun", h.log.String())
+	}
+	// Without background consolidation there is nothing to drain.
+	plain := newHarness(t, nil)
+	plain.server.Drain()
+	if err := plain.server.WaitDrained(within(t)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Run calls ready once its background work runs: the startup scan has
+// queued the users, and the heartbeat has ticked. A Run that is refused
+// does not call it.
+func TestRunReportsReadyAfterTheStartupScan(t *testing.T) {
+	settings := memoryagent.ConsolidationConfig{Mode: "timelines", BatchCharacters: 300}
+	background := func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &settings
+		config.Consolidation = ConsolidationBackground
+	}
+	// An earlier process left a full batch pending.
+	earlier := newHarness(t, background)
+	earlier.server.addWindow = 10 * time.Millisecond
+	earlier.mustAdd(t, addRequest("r1", "u1"))
+	earlier.mustAdd(t, addRequest("r2", "u1"))
+	earlier.server.Close()
+	h := newHarness(t, func(config *ServerConfig) {
+		background(config)
+		config.DataRoot = earlier.root
+	})
+	// The fold blocks, so the user stays queued or running.
+	h.consolidator.answer(func(ctx context.Context, _ string) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	})
+	if !h.server.Heartbeat().IsZero() {
+		t.Fatal("a heartbeat before Run")
+	}
+	ready := make(chan SchedulerStatus, 2)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- h.server.Run(ctx, func() {
+			if h.server.Heartbeat().IsZero() {
+				t.Error("ready before the first heartbeat")
+			}
+			ready <- h.server.sched.Status()
+		})
+	}()
+	if status := received(t, ready); status.Queued+status.Running != 1 {
+		t.Fatal("the startup scan had not queued the user", status)
+	}
+	if err := h.server.Run(ctx, func() { t.Error("ready for a second Run") }); err == nil {
+		t.Fatal("a second Run ran")
+	}
+	cancel()
+	if err := received(t, done); err != nil {
+		t.Fatal(err)
+	}
+	h.server.Close()
+	if err := h.server.Run(context.Background(), func() { t.Error("ready after Close") }); err == nil {
+		t.Fatal("Run ran after Close")
+	}
+	if len(ready) != 0 {
+		t.Fatal("ready called again")
+	}
+}
+
+// The heartbeat ticks while Run runs, each tick once the scheduler and the
+// store registry answered; it stops when Run returns.
+func TestHeartbeatTicksWhileRunRuns(t *testing.T) {
+	settings := memoryagent.ConsolidationConfig{Mode: "timelines", BatchCharacters: 300}
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &settings
+		config.Consolidation = ConsolidationBackground
+	})
+	h.server.heartbeatEvery = 5 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- h.server.Run(ctx, nil) }()
+	eventually(t, func() bool { return !h.server.Heartbeat().IsZero() })
+	beats := func() bool {
+		beat := h.server.Heartbeat()
+		time.Sleep(30 * time.Millisecond)
+		return h.server.Heartbeat().After(beat)
+	}
+	if !beats() {
+		t.Fatal("the heartbeat does not tick")
+	}
+	// A tick waits for each lock: while one is held, the heartbeat stops.
+	for name, lock := range map[string]sync.Locker{"scheduler": &h.server.sched.mu, "registry": &h.server.users.mu} {
+		lock.Lock()
+		time.Sleep(20 * time.Millisecond) // a tick past the lock lands
+		stuck := beats()
+		lock.Unlock()
+		if stuck {
+			t.Fatal("the heartbeat ticked while the", name, "was locked")
+		}
+		eventually(t, beats)
+	}
+	cancel()
+	if err := received(t, done); err != nil {
+		t.Fatal(err)
+	}
+	if beats() {
+		t.Fatal("the heartbeat ticks after Run returned")
 	}
 }
 

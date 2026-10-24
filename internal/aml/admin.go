@@ -110,7 +110,7 @@ func (s *Server) status(ctx context.Context) AdminStatus {
 	m := s.metrics
 	searches, partial := m.recent.totals()
 	// An unreadable budget file shows as no accounts here; /ready says why.
-	accounts, _ := s.accounts(ctx)
+	accounts, _ := s.Accounts(ctx)
 	return AdminStatus{
 		StartedAt:       s.started,
 		Adds:            m.adds.Load(),
@@ -137,9 +137,10 @@ func (s *Server) queueStatus() SchedulerStatus {
 	return s.sched.Status()
 }
 
-// accounts reads the paid accounts calls have reserved on; none without a
-// budget file.
-func (s *Server) accounts(ctx context.Context) ([]memoryagent.BudgetAccount, error) {
+// Accounts reads the paid accounts calls have reserved on; none without a
+// budget file. Its error says the budget file does not answer, which
+// systemd's watchdog (aml-serve) checks.
+func (s *Server) Accounts(ctx context.Context) ([]memoryagent.BudgetAccount, error) {
 	if s.budget == nil {
 		return []memoryagent.BudgetAccount{}, nil
 	}
@@ -204,7 +205,7 @@ func (s *Server) serveReady(w http.ResponseWriter, r *http.Request) {
 // order.
 func (s *Server) notReadyReasons(ctx context.Context) []string {
 	reasons := append(s.storageReasons(), breakerReasons(s.breakerStates())...)
-	accounts, err := s.accounts(ctx)
+	accounts, err := s.Accounts(ctx)
 	if err != nil {
 		return append(reasons, "budget unreadable: "+err.Error())
 	}

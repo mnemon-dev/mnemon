@@ -403,6 +403,24 @@ func TestAdminStatusAccountFieldsAreStable(t *testing.T) {
 	}
 }
 
+// Accounts reads the paid accounts, as the command's watchdog does: none
+// without a budget file, an error once the file is closed.
+func TestAccountsReadTheBudget(t *testing.T) {
+	h := newHarness(t, nil)
+	if accounts, err := h.server.Accounts(context.Background()); err != nil || len(accounts) != 0 {
+		t.Fatal(accounts, err)
+	}
+	holdBudget(t, h, 1)
+	accounts, err := h.server.Accounts(context.Background())
+	if err != nil || len(accounts) != 1 || accounts[0].Kind != "openai" || accounts[0].Held <= 0 || accounts[0].Cap != 1 {
+		t.Fatal(accounts, err)
+	}
+	h.server.Close()
+	if _, err := h.server.Accounts(context.Background()); err == nil {
+		t.Fatal("the budget answered after Close")
+	}
+}
+
 func TestAdminStatusCountsWhatTheStatusLinePrints(t *testing.T) {
 	h := newHarness(t, nil)
 	h.mustAdd(t, addRequest("r1", "u1"))

@@ -16,6 +16,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -45,6 +46,9 @@ const (
 	embedBatch = 256
 	// statusEvery is how often Run logs the status line.
 	statusEvery = 10 * time.Minute
+	// heartbeatEvery is how often Run's heartbeat ticks (Heartbeat): well
+	// within any watchdog interval systemd is given.
+	heartbeatEvery = time.Second
 )
 
 // ConsolidationMode says when the server consolidates its users' records.
@@ -140,8 +144,12 @@ type Server struct {
 	freeDisk func(dir string) (uint64, error)
 	// The windows of an Add's consolidation, a Search's flush and its read.
 	addWindow, flushWindow, searchTimeout time.Duration
-	handler, admin                        http.Handler
-	once                                  sync.Once
+	// heartbeatEvery spaces the ticks of Run's heartbeat; beat holds the
+	// last one's time (nil before the first).
+	heartbeatEvery time.Duration
+	beat           atomic.Pointer[time.Time]
+	handler, admin http.Handler
+	once           sync.Once
 	// runMu guards Run's lifecycle: stopRun ends the running Run, which
 	// closes runDone once its goroutines have exited; closed refuses Run
 	// after Close.
@@ -193,7 +201,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	s := &Server{config: config, key: sha256.Sum256([]byte(config.AuthKey)), log: config.Logger,
 		timelines: consolidation.Timelines(), mode: mode,
 		addGate: newGate(config.MaxConcurrentAdds), searchGate: newGate(config.MaxConcurrentSearches), admitWait: admissionWait,
-		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout,
+		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout, heartbeatEvery: heartbeatEvery,
 		metrics: newMetrics(time.Now), started: time.Now().UTC(), freeDisk: freeDiskBytes}
 	if s.log == nil {
 		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -327,7 +335,9 @@ func (s *Server) openUser(dir string) (*records.Store, *memoryagent.Agent, func(
 
 // Close stops a running Run and waits for it, then closes the user stores
 // (held ones when their request ends) and the models' budget and model
-// cache. Stop the HTTP server first.
+// cache. Stop the HTTP server first. Closing the models waits for their
+// requests in flight, abandoned ones included, each until it ends or its hard
+// timeout (memoryagent.Provider.Close), so Close can take that long.
 func (s *Server) Close() error {
 	s.once.Do(func() {
 		s.runMu.Lock()
@@ -347,10 +357,15 @@ func (s *Server) Close() error {
 // Run runs the server's background work until ctx ends or Close is called:
 // in background mode the consolidation scheduler, which first queues every
 // user directory under <data-root>/users/ (a user with nothing pending costs
-// one state read), and the status line every 10 minutes. It returns once
-// all of it has exited, nil unless Run is already running or the server is
-// closed. No background work runs without Run.
-func (s *Server) Run(ctx context.Context) error {
+// one state read); the status line every 10 minutes; and the heartbeat
+// (Heartbeat). Once all of it runs, the users queued and the heartbeat's
+// first tick taken, it calls ready unless ready is nil: requests may come
+// from then on. It returns once all of it has exited, nil unless Run is
+// already running or the server is closed (ready is not called then). No
+// background work runs without Run. A graceful stop first drains the
+// scheduler (Drain, WaitDrained), then ends ctx, which cuts the jobs still
+// running.
+func (s *Server) Run(ctx context.Context, ready func()) error {
 	s.runMu.Lock()
 	switch {
 	case s.closed:
@@ -380,9 +395,79 @@ func (s *Server) Run(ctx context.Context) error {
 			s.sched.Run(ctx)
 		}()
 	}
-	s.LogStatus(ctx, statusEvery)
+	work.Add(1)
+	go func() {
+		defer work.Done()
+		s.LogStatus(ctx, statusEvery)
+	}()
+	s.tick()
+	if ready != nil {
+		ready()
+	}
+	s.heartbeat(ctx)
 	work.Wait()
 	return nil
+}
+
+// heartbeat ticks every heartbeatEvery until ctx ends.
+func (s *Server) heartbeat(ctx context.Context) {
+	ticker := time.NewTicker(s.heartbeatEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.tick()
+		}
+	}
+}
+
+// tick is one beat of the heartbeat: once the scheduler and the store
+// registry have answered (their locks were free), it records the time. A
+// tick that cannot take a lock waits for it, and the heartbeat stops.
+func (s *Server) tick() {
+	if s.sched != nil {
+		s.sched.runningJobs()
+	}
+	s.users.open()
+	now := time.Now()
+	s.beat.Store(&now)
+}
+
+// Heartbeat is when Run's heartbeat last ticked, zero before its first tick.
+// It ticks every second while Run runs, each tick once the consolidation
+// scheduler and the store registry have answered, so a heartbeat older than a
+// few seconds means that Run has stopped or that the server's locks are
+// stuck. systemd's watchdog (aml-serve) reads it.
+func (s *Server) Heartbeat() time.Time {
+	if beat := s.beat.Load(); beat != nil {
+		return *beat
+	}
+	return time.Time{}
+}
+
+// Drain is the first step of a graceful stop of the background
+// consolidation: from now on no job starts, a user's running job ends after
+// its current consolidation job (its batches saved), and no Add waits for
+// consolidation (its records are stored and searchable). It does not stop
+// Run; Run's context ending cuts the jobs still running, which resume after
+// a restart. Without background consolidation it does nothing. It may be
+// called again.
+func (s *Server) Drain() {
+	if s.sched != nil {
+		s.sched.Drain()
+	}
+}
+
+// WaitDrained drains the background consolidation (Drain) and returns nil
+// once no job runs; if ctx ends first, an error wrapping ctx's that counts
+// the jobs still running.
+func (s *Server) WaitDrained(ctx context.Context) error {
+	if s.sched == nil {
+		return nil
+	}
+	return s.sched.WaitDrained(ctx)
 }
 
 // queueUsers queues every user store under the data root for a job.
@@ -401,10 +486,10 @@ func (s *Server) queueUsers() {
 // consolidateUser is a background job of the user with key: through the
 // registry (so eviction cannot close the store under it), consolidate's held
 // jobs with DeferLinks until a job folds no full batch, or until the user's
-// Search holds it, then the layer warmed when anything folded. It returns
-// the user's backlog measured after them (negative when unknown) and the
-// failure of a job. A job that stopped with full batches left notifies the
-// scheduler, which runs the user again.
+// Search holds it or the scheduler drains, then the layer warmed when
+// anything folded. It returns the user's backlog measured after them
+// (negative when unknown) and the failure of a job. A job that stopped with
+// full batches left notifies the scheduler, which runs the user again.
 func (s *Server) consolidateUser(ctx context.Context, key string) (int64, error) {
 	user, err := s.users.acquireKey(ctx, key, false)
 	if err != nil {
@@ -415,7 +500,7 @@ func (s *Server) consolidateUser(ctx context.Context, key string) (int64, error)
 		return 0, nil
 	}
 	defer s.users.release(user)
-	outcome := s.consolidate(ctx, user, true, "consolidation", func() bool { return s.sched.held(key) })
+	outcome := s.consolidate(ctx, user, true, "consolidation", func() bool { return s.sched.yielding(key) })
 	if outcome.folded > 0 {
 		if err := user.agent.WarmLayer(ctx, records.Scope{}); err != nil {
 			s.logf(ctx, slog.LevelWarn, "layer embedding failed (user %s): %v", short(key), err)

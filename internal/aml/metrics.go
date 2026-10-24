@@ -344,7 +344,7 @@ func (c stateCollector) Collect(ch chan<- prometheus.Metric) {
 	ctx, cancel := context.WithTimeout(context.Background(), scrapeWait)
 	defer cancel()
 	// An unreadable budget file shows as missing accounts here; /ready says why.
-	accounts, _ := c.s.accounts(ctx)
+	accounts, _ := c.s.Accounts(ctx)
 	for _, account := range accounts {
 		gauge(spentDesc, account.Spent, account.Kind)
 		gauge(heldDesc, account.Held, account.Kind)

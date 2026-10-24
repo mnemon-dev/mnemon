@@ -132,15 +132,18 @@ type scheduler struct {
 	// block.
 	jobDone func(outcome string)
 
-	mu         sync.Mutex
-	users      map[string]*schedUser
-	queue      *list.List // of *schedUser, queued in order
-	retries    retryHeap  // the users backing off, the next retry first
-	running    int        // users running
-	retrySeq   uint64
-	changed    chan struct{} // closed, and replaced, at every change
-	started    bool          // Run is running
-	stopped    bool          // Run returned: nothing runs, no Add waits
+	mu       sync.Mutex
+	users    map[string]*schedUser
+	queue    *list.List // of *schedUser, queued in order
+	retries  retryHeap  // the users backing off, the next retry first
+	running  int        // users running
+	retrySeq uint64
+	changed  chan struct{} // closed, and replaced, at every change
+	started  bool          // Run is running
+	stopped  bool          // Run returned: nothing runs, no Add waits
+	// draining says Drain was called: no job starts and no Add waits from
+	// then on, while the jobs running go on to their end.
+	draining   bool
 	fullLogged time.Time
 }
 
@@ -193,9 +196,10 @@ func (s *scheduler) Notify(key string, addedChars int64) {
 }
 
 // WaitBacklog returns nil once the user's backlog is at most limit, or once
-// the scheduler has stopped, and ctx's error if ctx ends first. A user the
-// scheduler does not know has no backlog. Waiting on an idle user queues a
-// job, which measures its backlog, unless no job can be queued.
+// the scheduler has stopped or is draining (no job would lower it), and ctx's
+// error if ctx ends first. A user the scheduler does not know has no backlog.
+// Waiting on an idle user queues a job, which measures its backlog, unless no
+// job can be queued.
 func (s *scheduler) WaitBacklog(ctx context.Context, key string, limit int64) error {
 	now := s.now()
 	s.mu.Lock()
@@ -210,7 +214,7 @@ func (s *scheduler) WaitBacklog(ctx context.Context, key string, limit int64) er
 		s.forgetLocked(u)
 		s.mu.Unlock()
 	}()
-	for u.backlog > limit && !s.stopped {
+	for u.backlog > limit && !s.stopped && !s.draining {
 		var old chan struct{}
 		if u.state == userIdle {
 			if s.activeLocked() >= s.maxUsers {
@@ -259,18 +263,70 @@ func (s *scheduler) Hold(key string) (release func()) {
 	})
 }
 
-// held reports whether a Search holds the user.
-func (s *scheduler) held(key string) bool {
+// yielding reports whether the user's running job should end before its next
+// consolidation job: a Search holds the user, or the scheduler is draining.
+func (s *scheduler) yielding(key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	u := s.users[key]
-	return u != nil && u.holds > 0
+	return s.draining || u != nil && u.holds > 0
 }
 
-// Run runs the workers until ctx ends and returns once every one has
-// exited. A job running then sees ctx end, and its user, cut, is queued
-// again; its state is saved per batch, so the job resumes later. After Run
-// returns no job starts and no Add waits. One Run runs at a time.
+// Drain is the first step of a graceful stop: no job starts from now on,
+// and no Add waits for consolidation (WaitBacklog returns), while the jobs
+// running go on to their end; the workers exit once theirs has ended, so Run
+// returns then. Run's context ending still cuts a running job. Notifications
+// keep queueing users, for no job. Drain may be called again.
+func (s *scheduler) Drain() {
+	s.mu.Lock()
+	s.draining = true
+	s.unlockChanged()
+}
+
+// WaitDrained drains the scheduler (Drain) and returns nil once no job runs;
+// if ctx ends first, a drainError wrapping ctx's error.
+func (s *scheduler) WaitDrained(ctx context.Context) error {
+	s.Drain()
+	for {
+		s.mu.Lock()
+		running, changed := s.running, s.changed
+		s.mu.Unlock()
+		if running == 0 {
+			return nil
+		}
+		select {
+		case <-changed:
+		case <-ctx.Done():
+			return drainError{running: s.runningJobs(), cause: ctx.Err()}
+		}
+	}
+}
+
+// drainError says how many jobs still ran when WaitDrained's context ended;
+// it wraps that context's error.
+type drainError struct {
+	running int
+	cause   error
+}
+
+func (e drainError) Error() string {
+	return fmt.Sprintf("consolidation jobs still running: %d", e.running)
+}
+
+func (e drainError) Unwrap() error { return e.cause }
+
+// runningJobs counts the jobs running.
+func (s *scheduler) runningJobs() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.running
+}
+
+// Run runs the workers until ctx ends, or until a drain (Drain) and the
+// jobs running then have ended, and returns once every worker has exited. A
+// job running when ctx ends sees it end, and its user, cut, is queued again;
+// its state is saved per batch, so the job resumes later. After Run returns
+// no job starts and no Add waits. One Run runs at a time.
 func (s *scheduler) Run(ctx context.Context) error {
 	s.mu.Lock()
 	if s.started {
@@ -319,7 +375,7 @@ func (s *scheduler) signal() {
 	s.unlockChanged()
 }
 
-// work runs jobs until ctx ends.
+// work runs jobs until ctx ends or the scheduler drains.
 func (s *scheduler) work(ctx context.Context) {
 	for {
 		u := s.next(ctx)
@@ -333,7 +389,8 @@ func (s *scheduler) work(ctx context.Context) {
 
 // next waits for the next user to run and marks it running: the first user
 // of the queue no Search holds, once the users whose backoff has ended have
-// joined the back of the queue. It returns nil once ctx has ended.
+// joined the back of the queue. It returns nil once ctx has ended or the
+// scheduler drains.
 func (s *scheduler) next(ctx context.Context) *schedUser {
 	for ctx.Err() == nil {
 		// The change channel is taken before the clock is read: a change
@@ -343,6 +400,10 @@ func (s *scheduler) next(ctx context.Context) *schedUser {
 		s.mu.Unlock()
 		now := s.now()
 		s.mu.Lock()
+		if s.draining {
+			s.mu.Unlock()
+			return nil
+		}
 		s.retryDueLocked(now)
 		if u := s.firstUnheldLocked(); u != nil {
 			s.queue.Remove(u.elem)
