@@ -1134,8 +1134,9 @@ func lockFree(t *testing.T, root string) bool {
 }
 
 // The process starts its components in order and tells systemd READY=1 once
-// both listeners serve; a shutdown with nothing in flight tells it
-// STOPPING=1, closes everything and exits 0, giving the lock back.
+// the public listener serves, and the admin listener too when its address
+// bound (R91); a shutdown with nothing in flight tells it STOPPING=1, closes
+// everything and exits 0, giving the lock back.
 func TestAMLServeServesUntilStopped(t *testing.T) {
 	notified := recordNotifications(t)
 	// When READY=1 is sent, the public server already answers.
@@ -1458,7 +1459,8 @@ func TestSupervisorStartsInOrder(t *testing.T) {
 // running. Each settles its reservation at its input estimate before the
 // command returns, within a few seconds of the windows (TimeoutStopSec leaves
 // it more), non-zero, saying what it cut: nothing stays held, and the budget
-// file is closed.
+// file is closed. How many it cuts, one or two, is not the test's to say
+// (the re-review of the final fix's N1): see the comment at the Search.
 func TestShutdownCutsAbandonedModelRequests(t *testing.T) {
 	shortGrace(t, 100*time.Millisecond, 400*time.Millisecond)
 	notified := recordNotifications(t)
@@ -1473,8 +1475,15 @@ func TestShutdownCutsAbandonedModelRequests(t *testing.T) {
 	if code, body := run.post(t, "/add", noteAdd("r1", "u1")); code != http.StatusOK {
 		t.Fatal(code, body)
 	}
-	// The planner fails, so the Search answers the raw ranking; its two
-	// planner requests are abandoned, still waiting at the endpoint.
+	// The planner fails, so the Search answers the raw ranking. Its two
+	// planner calls, the cue plan and the need plan, send their requests at
+	// once, and they cancel each other when one fails (simple_plan.go, plan).
+	// When the first attempt's second is up, the other call may still be
+	// waiting: it is canceled with its plan, cuts its own request and settles
+	// it at its estimate before the shutdown, so one request is left
+	// abandoned. If its own second is up first, both are, waiting at the
+	// endpoint. Which it is, is a race between two timers, so the close cuts
+	// one request or two.
 	if code, body := run.post(t, "/search", searchRequest("u1")); code != http.StatusOK {
 		t.Fatal(code, body)
 	}
@@ -1486,11 +1495,11 @@ func TestShutdownCutsAbandonedModelRequests(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
 		t.Fatal("the shutdown waited for the abandoned requests", elapsed)
 	}
-	const cut = "deepseek: cut 2 model requests still in flight at the close's deadline: their reservations settled at their input estimates"
-	if err == nil || !strings.Contains(err.Error(), cut) || strings.Contains(err.Error(), "did not finish") || strings.Contains(err.Error(), "requests still running") {
+	const cut = `deepseek: cut [12] model requests? still in flight at the close's deadline: their reservations settled at their input estimates`
+	if err == nil || !regexp.MustCompile(cut).MatchString(err.Error()) || strings.Contains(err.Error(), "did not finish") || strings.Contains(err.Error(), "requests still running") {
 		t.Fatal(err, run.log.String())
 	}
-	if !strings.Contains(run.log.String(), "aml-serve: "+cut) {
+	if !regexp.MustCompile("aml-serve: " + cut).MatchString(run.log.String()) {
 		t.Fatal(run.log.String())
 	}
 	if held, spent := budgetAccount(t, configPath, "deepseek"); held != 0 || spent <= 0 {

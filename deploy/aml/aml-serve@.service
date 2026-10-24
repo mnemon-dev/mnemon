@@ -22,9 +22,10 @@ Wants=network-online.target wg-quick@wg0.service
 StartLimitIntervalSec=0
 
 [Service]
-# READY=1 once both listeners are bound and the background work runs;
-# WATCHDOG=1 while the liveness probe passes. aml-serve refuses a watchdog
-# interval under 2 s.
+# READY=1 once the public listener is bound and the background work runs; the
+# admin listener may bind later (After= above), so READY=1 does not wait for
+# it. WATCHDOG=1 while the liveness probe passes. aml-serve refuses a
+# watchdog interval under 2 s.
 Type=notify
 NotifyAccess=main
 WatchdogSec=60

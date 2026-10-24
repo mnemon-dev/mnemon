@@ -24,14 +24,15 @@ import (
 // which starts them in order and stops them in phases.
 //
 // Startup, once the flags are checked, the data root locked and the server
-// built (runAMLServe): the public and the admin listeners are bound; the
-// server's background work (aml.Server.Run) starts, and is ready once its
-// startup scan has queued every user and its heartbeat ticks; then the admin
-// server, the public server and systemd's watchdog start, each once the one
-// before is ready; then systemd is told READY=1. The data plane never
-// depends on the admin bind (ruling R91): an admin listener that cannot bind
-// (wg0 not up yet) is logged once, and the admin server binds it again every
-// amlAdminRetry in the background, while the public listener serves.
+// built (runAMLServe): the public listener is bound, and the admin listener
+// too when its address can be (see below); the server's background work
+// (aml.Server.Run) starts, and is ready once its startup scan has queued
+// every user and its heartbeat ticks; then the admin server, the public
+// server and systemd's watchdog start, each once the one before is ready;
+// then systemd is told READY=1. The data plane never depends on the admin
+// bind (ruling R91): an admin listener that cannot bind (wg0 not up yet) is
+// logged once, and the admin server binds it again every amlAdminRetry in the
+// background, while the public listener serves; READY=1 does not wait for it.
 //
 // Shutdown, on SIGINT or SIGTERM or when a component fails: the watchdog
 // stops, then systemd is told STOPPING=1; the public listener closes and the
