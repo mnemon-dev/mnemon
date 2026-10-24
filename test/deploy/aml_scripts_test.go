@@ -1553,24 +1553,27 @@ func TestParityReplayRefusesLabelsThatAreNotARun(t *testing.T) {
 		t.Skip("true is missing")
 	}
 	const baseline, kept, plain, link = "must not replace the run it compares with", "which a run never replaces", "is not a run label", "not the directory of a run"
-	outside := filepath.Join(t.TempDir(), "elsewhere")
-	writeFile(t, filepath.Join(outside, "marker"), "a directory that is not a run", 0o600)
 	for _, c := range []struct{ label, want string }{
 		{".", baseline}, {"..", baseline},
 		{"private", kept}, {"bin", kept}, {"src", kept}, {"dry", kept}, {"memory-config.json", kept}, {"report.json", kept},
-		{"again/", plain}, {"sub/again", plain}, {"../again", plain}, {outside, plain},
+		{"again/", plain}, {"sub/again", plain}, {"../again", plain}, {"{elsewhere}", plain},
 		{"link", link},
 	} {
 		for _, command := range []string{"replay", "run new"} {
 			t.Run(fmt.Sprintf("%s %q", command, c.label), func(t *testing.T) {
 				root, files := parityTask(t, c.label == "private")
-				files[filepath.Join(outside, "marker")] = "a directory that is not a run"
-				if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+				// A directory that is not a run, with a file in it that --force would remove: the absolute label
+				// "{elsewhere}" names it, and "link" is a link to it.
+				elsewhere := filepath.Join(t.TempDir(), "elsewhere")
+				files[filepath.Join(elsewhere, "marker")] = "a directory that is not a run"
+				writeFile(t, filepath.Join(elsewhere, "marker"), "a directory that is not a run", 0o600)
+				if err := os.Symlink(elsewhere, filepath.Join(root, "link")); err != nil {
 					t.Fatal(err)
 				}
-				args := []string{"--root", root, "--inputs", inputs, "replay", c.label, "--force", "--binary", binary}
+				label := strings.ReplaceAll(c.label, "{elsewhere}", elsewhere)
+				args := []string{"--root", root, "--inputs", inputs, "replay", label, "--force", "--binary", binary}
 				if command == "run new" {
-					args = []string{"--root", root, "--inputs", inputs, "run", "new", "--label", c.label, "--force", "--binary", binary}
+					args = []string{"--root", root, "--inputs", inputs, "run", "new", "--label", label, "--force", "--binary", binary}
 				}
 				parityRefused(t, script, nil, root, files, command+" "+c.label, c.want, args...)
 			})
