@@ -1,0 +1,266 @@
+package aml
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"maps"
+	"net/http"
+	"net/http/pprof"
+	"os"
+	"slices"
+	"time"
+
+	"github.com/mnemon-dev/mnemon/internal/memoryagent"
+)
+
+// The admin handler is the operator's side of the server: metrics, readiness,
+// a status the alert watcher reads and the profiler. It has no authentication,
+// so the command serves it on a loopback listener only (AdminHandler).
+
+const (
+	// minFreeDisk is the free space the data root's disk must have to be
+	// ready: 1 GiB.
+	minFreeDisk = 1 << 30
+	// readyBudgetCeiling is the share of its cap a paid account may have spent
+	// and held before the server is no longer ready: the last 5% is headroom.
+	readyBudgetCeiling = 0.95
+	// adminReadWait bounds the reads /ready and /admin/status make of the
+	// budget file.
+	adminReadWait = 5 * time.Second
+)
+
+// AdminStatus is what /admin/status answers, as JSON. The alert watcher
+// (aml-watch) reads it, so its field names are a contract: fields may be
+// added, never renamed or repurposed. Counters count from the process start
+// (StartedAt); users appear only as counts.
+//
+//	startedAt        when the server was made (RFC 3339): differs after every restart
+//	adds, searches   Adds and Searches answered 200
+//	degraded         Searches answered by the raw ranking because the memory read failed
+//	partial          Searches answered by a read in which a stage fell back
+//	dropped          drops of records from the consolidation layer (a batch, or half of one,
+//	                 that failed again after being split); the "consolidation dropped" lines
+//	linkFallbacks    batches linked without JEV because JEV failed
+//	addOutran        Adds that waited out their window for consolidation and answered anyway
+//	partialLast10m   partial Searches in the last ten one-minute buckets (the current minute
+//	                 and the nine before it)
+//	searchesLast10m  Searches answered in those buckets
+//	queue            the consolidation scheduler (zero unless consolidation is background):
+//	                 queued, running, backingOff and held users; oldestQueued, in nanoseconds,
+//	                 the age of the oldest work not yet consolidated; maxBacklog, the largest
+//	                 user backlog in characters
+//	breakers         the state of the circuit breaker of each provider kind: "closed", "open"
+//	                 (refusing calls) or "half-open" (probing); the worst of a kind's breakers
+//	budgets          each paid account that has been used: kind, cap, spent and held
+//	openStores       user stores open now
+type AdminStatus struct {
+	StartedAt       time.Time                   `json:"startedAt"`
+	Adds            int64                       `json:"adds"`
+	Searches        int64                       `json:"searches"`
+	Degraded        int64                       `json:"degraded"`
+	Partial         int64                       `json:"partial"`
+	Dropped         int64                       `json:"dropped"`
+	LinkFallbacks   int64                       `json:"linkFallbacks"`
+	AddOutran       int64                       `json:"addOutran"`
+	PartialLast10m  int64                       `json:"partialLast10m"`
+	SearchesLast10m int64                       `json:"searchesLast10m"`
+	Queue           SchedulerStatus             `json:"queue"`
+	Breakers        map[string]string           `json:"breakers"`
+	Budgets         []memoryagent.BudgetAccount `json:"budgets"`
+	OpenStores      int                         `json:"openStores"`
+}
+
+// AdminHandler serves the operator's endpoints: GET /metrics (Prometheus),
+// GET /ready, GET /admin/status and /debug/pprof/. It has no authentication:
+// serve it on a loopback address, never on the public listener, whose
+// Handler serves none of these. Profiles taken over several seconds
+// (/debug/pprof/profile, /debug/pprof/trace) need a server write timeout
+// longer than they run.
+func (s *Server) AdminHandler() http.Handler { return s.admin }
+
+func (s *Server) adminRoutes() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("GET /metrics", s.metrics.handler(s.log))
+	mux.HandleFunc("GET /ready", s.serveReady)
+	mux.HandleFunc("GET /admin/status", s.serveStatus)
+	// The profiler's handlers are registered here by name rather than by
+	// importing net/http/pprof for its registration on the default mux, which
+	// nothing serves.
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusNotFound, "not found")
+	})
+	return mux
+}
+
+func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), adminReadWait)
+	defer cancel()
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, s.status(ctx))
+}
+
+// status is the server's AdminStatus.
+func (s *Server) status(ctx context.Context) AdminStatus {
+	m := s.metrics
+	searches, partial := m.recent.totals()
+	// An unreadable budget file shows as no accounts here; /ready says why.
+	accounts, _ := s.accounts(ctx)
+	return AdminStatus{
+		StartedAt:       s.started,
+		Adds:            m.adds.Load(),
+		Searches:        m.searches.Load(),
+		Degraded:        m.degraded.Load(),
+		Partial:         m.partial.Load(),
+		Dropped:         m.batches[batchDropped].Load(),
+		LinkFallbacks:   m.linkFallbacks.Load(),
+		AddOutran:       m.addOutran.Load(),
+		PartialLast10m:  partial,
+		SearchesLast10m: searches,
+		Queue:           s.queueStatus(),
+		Breakers:        s.breakerStates(),
+		Budgets:         accounts,
+		OpenStores:      s.users.open(),
+	}
+}
+
+// queueStatus is the scheduler's status; zero without a scheduler.
+func (s *Server) queueStatus() SchedulerStatus {
+	if s.sched == nil {
+		return SchedulerStatus{}
+	}
+	return s.sched.Status()
+}
+
+// accounts reads the paid accounts calls have reserved on; none without a
+// budget file.
+func (s *Server) accounts(ctx context.Context) ([]memoryagent.BudgetAccount, error) {
+	if s.budget == nil {
+		return []memoryagent.BudgetAccount{}, nil
+	}
+	return s.budget.Accounts(ctx)
+}
+
+// breakerStates are the circuit breaker states of the providers by kind (the
+// planner and the consolidator can both be DeepSeek): a kind is as bad as the
+// worst of its breakers.
+func (s *Server) breakerStates() map[string]string {
+	states := map[string]string{}
+	for _, breaker := range s.models.Breakers() {
+		states[breaker.Kind] = worse(states[breaker.Kind], breaker.State)
+	}
+	return states
+}
+
+// worse is the worse of two breaker states, "" being no state at all: open,
+// then half-open, then closed.
+func worse(a, b string) string {
+	rank := func(state string) int {
+		switch state {
+		case memoryagent.BreakerOpen:
+			return 3
+		case memoryagent.BreakerHalfOpen:
+			return 2
+		case memoryagent.BreakerClosed:
+			return 1
+		}
+		return 0
+	}
+	if rank(b) > rank(a) {
+		return b
+	}
+	return a
+}
+
+// readiness is the body of /ready.
+type readiness struct {
+	Ready   bool     `json:"ready"`
+	Reasons []string `json:"reasons,omitempty"`
+}
+
+// serveReady answers 200 {"ready":true} when the server can take work, else
+// 503 with the reasons it cannot: the data root is not writable, the disk is
+// short of free space, a provider's breaker is open or a paid account is
+// within 5% of its cap.
+func (s *Server) serveReady(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), adminReadWait)
+	defer cancel()
+	w.Header().Set("Cache-Control", "no-store")
+	reasons := s.notReadyReasons(ctx)
+	if len(reasons) == 0 {
+		writeJSON(w, http.StatusOK, readiness{Ready: true})
+		return
+	}
+	writeJSON(w, http.StatusServiceUnavailable, readiness{Reasons: reasons})
+}
+
+// notReadyReasons lists why the server is not ready, empty if it is: the
+// storage, the open breakers (by kind) and the accounts nearly spent, in that
+// order.
+func (s *Server) notReadyReasons(ctx context.Context) []string {
+	reasons := append(s.storageReasons(), breakerReasons(s.breakerStates())...)
+	accounts, err := s.accounts(ctx)
+	if err != nil {
+		return append(reasons, "budget unreadable: "+err.Error())
+	}
+	return append(reasons, overBudget(accounts)...)
+}
+
+// breakerReasons name, by kind, the providers whose breaker refuses calls. A
+// half-open breaker is letting calls probe the provider, so it is not one.
+func breakerReasons(states map[string]string) []string {
+	reasons := []string{}
+	for _, kind := range slices.Sorted(maps.Keys(states)) {
+		if states[kind] == memoryagent.BreakerOpen {
+			reasons = append(reasons, "breaker open: "+kind)
+		}
+	}
+	return reasons
+}
+
+// storageReasons are the reasons the data root cannot take writes: it is not
+// writable (a file is created in it and removed) or its disk has less than
+// minFreeDisk free.
+func (s *Server) storageReasons() []string {
+	reasons := []string{}
+	if err := probeWritable(s.config.DataRoot); err != nil {
+		reasons = append(reasons, "data root is not writable: "+err.Error())
+	}
+	free, err := s.freeDisk(s.config.DataRoot)
+	switch {
+	case err != nil:
+		reasons = append(reasons, "free disk unreadable: "+err.Error())
+	case free < minFreeDisk:
+		reasons = append(reasons, fmt.Sprintf("free disk %d MiB is below %d GiB", free>>20, minFreeDisk>>30))
+	}
+	return reasons
+}
+
+// probeWritable creates a file in dir and removes it.
+func probeWritable(dir string) error {
+	probe, err := os.CreateTemp(dir, ".ready-")
+	if err != nil {
+		return err
+	}
+	return errors.Join(probe.Close(), os.Remove(probe.Name()))
+}
+
+// overBudget lists the accounts with more than readyBudgetCeiling of their cap
+// spent or held. A cap of zero has no share to measure.
+func overBudget(accounts []memoryagent.BudgetAccount) []string {
+	reasons := []string{}
+	for _, account := range accounts {
+		if account.Cap <= 0 {
+			continue
+		}
+		if used := (account.Spent + account.Held) / account.Cap; used > readyBudgetCeiling {
+			reasons = append(reasons, fmt.Sprintf("budget %s is at %.1f%% of its cap", account.Kind, 100*used))
+		}
+	}
+	return reasons
+}

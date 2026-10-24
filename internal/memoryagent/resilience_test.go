@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/failsafe-go/failsafe-go/bulkhead"
+	"github.com/failsafe-go/failsafe-go/circuitbreaker"
 )
 
 // endpoint is an httptest model endpoint: answer writes the reply to its
@@ -813,5 +814,54 @@ func TestConsolidateCallsAreBackgroundUnlessFlush(t *testing.T) {
 func TestAttemptTimeoutIsUnavailable(t *testing.T) {
 	if !errors.Is(ErrAttemptTimeout, ErrModelUnavailable) || countedError(context.Background(), fmt.Errorf("%w; any reservation remains held", ErrAttemptTimeout)) {
 		t.Fatal("a timeout counts toward drop mode")
+	}
+}
+
+// Breakers lists each distinct provider's breaker once, in role order, by the
+// state callers act on: open while it refuses calls, half-open once its delay
+// is over (the next calls probe the provider), else closed.
+func TestModelsBreakersReportEachProvidersState(t *testing.T) {
+	deepseek := &Provider{config: ModelConfig{Kind: "deepseek"}, breaker: newBreaker()}
+	jev := &Provider{config: ModelConfig{Kind: "jev"}, breaker: newBreaker()}
+	models := Models{Planner: deepseek, Judge: jev, Consolidator: deepseek}
+	want := func(states ...BreakerStatus) {
+		t.Helper()
+		if got := models.Breakers(); fmt.Sprint(got) != fmt.Sprint(states) {
+			t.Fatalf("got %v, want %v", got, states)
+		}
+	}
+	want(BreakerStatus{"deepseek", BreakerClosed}, BreakerStatus{"jev", BreakerClosed})
+
+	// A run of failures opens the provider's breaker, and only its own.
+	for range breakerConsecutive {
+		deepseek.breaker.record(true)
+	}
+	want(BreakerStatus{"deepseek", BreakerOpen}, BreakerStatus{"jev", BreakerClosed})
+
+	// Half-open admits probes; closed again once they succeed.
+	deepseek.breaker.cb.HalfOpen()
+	want(BreakerStatus{"deepseek", BreakerHalfOpen}, BreakerStatus{"jev", BreakerClosed})
+	deepseek.breaker.cb.Close()
+	want(BreakerStatus{"deepseek", BreakerClosed}, BreakerStatus{"jev", BreakerClosed})
+
+	// An open breaker whose delay is over no longer refuses: the next call
+	// takes its permit and probes, so it is reported half-open, not open.
+	short := &breaker{cb: circuitbreaker.NewBuilder[any]().WithDelay(300 * time.Millisecond).WithSuccessThreshold(1).Build()}
+	short.cb.Open()
+	if got := short.state(); got != BreakerOpen {
+		t.Fatal("a breaker inside its delay is", got)
+	}
+	for start := time.Now(); short.state() == BreakerOpen; time.Sleep(10 * time.Millisecond) {
+		if time.Since(start) > 10*time.Second {
+			t.Fatal("a breaker past its delay is still", short.state())
+		}
+	}
+	if got := short.state(); got != BreakerHalfOpen || short.open() {
+		t.Fatal("a breaker past its delay is", got)
+	}
+
+	// Models of no provider (scripted roles) have none to list.
+	if got := (Models{Planner: completeFunc(nil)}).Breakers(); got == nil || len(got) != 0 {
+		t.Fatalf("got %#v", got)
 	}
 }

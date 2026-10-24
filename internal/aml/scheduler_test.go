@@ -543,3 +543,198 @@ func TestSchedulerQueueBound(t *testing.T) {
 		t.Fatal(key)
 	}
 }
+
+// oldestQueued asserts the age of the oldest work not yet consolidated.
+func oldestQueued(t *testing.T, s *scheduler, want time.Duration) {
+	t.Helper()
+	if got := s.Status().OldestQueued; got != want {
+		t.Fatalf("oldest queued %s, want %s (%+v)", got, want, s.Status())
+	}
+}
+
+// OldestQueued is the age of the oldest notification no successful job has
+// covered. It starts at the first notification and is not restarted by later
+// ones, it keeps growing while the user runs, backs off after a failed job and
+// is queued again after a job the scheduler's end cut, and it ends with a job
+// that succeeds.
+func TestSchedulerOldestQueuedAge(t *testing.T) {
+	clock := newFakeClock()
+	a, b := userKey("a"), userKey("b")
+	started, results := make(chan string, 10), make(chan error)
+	s := newScheduler(1, 100, func(ctx context.Context, key string) (int64, error) {
+		started <- key
+		select {
+		case err := <-results:
+			return 0, err
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+	}, (&logLines{}).logf, clock.now)
+	s.jitter = func() float64 { return 0.5 } // a retry exactly 30 s after the failure
+
+	// Nothing waiting has no age. a's work ages from its first notification,
+	// whatever comes after; the oldest of the users counts.
+	oldestQueued(t, s, 0)
+	s.Notify(a, 1)
+	clock.advance(2 * time.Minute)
+	s.Notify(b, 1)
+	clock.advance(time.Minute)
+	s.Notify(a, 1)
+	oldestQueued(t, s, 3*time.Minute)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	// a runs first, and its work is as old as before while it does.
+	if key := next(t, started); key != a {
+		t.Fatal(key)
+	}
+	clock.advance(time.Minute)
+	oldestQueued(t, s, 4*time.Minute)
+
+	// Its job fails: it backs off with its work as old as ever, and b runs.
+	results <- errors.New("model HTTP 503")
+	if key := next(t, started); key != b {
+		t.Fatal(key)
+	}
+	eventually(t, func() bool { return s.Status().BackingOff == 1 })
+	oldestQueued(t, s, 4*time.Minute)
+	clock.advance(10 * time.Second)
+	oldestQueued(t, s, 4*time.Minute+10*time.Second)
+
+	// b's job covers b's work, so b no longer counts; a is still backing off.
+	results <- nil
+	eventually(t, func() bool { return s.Status().Running == 0 })
+	if status := s.Status(); status.BackingOff != 1 || status.Queued != 0 {
+		t.Fatal(status)
+	}
+	oldestQueued(t, s, 4*time.Minute+10*time.Second)
+
+	// a's retry is due 30 s after its failure, and runs.
+	clock.advance(20 * time.Second)
+	s.signal()
+	if key := next(t, started); key != a {
+		t.Fatal(key)
+	}
+	oldestQueued(t, s, 4*time.Minute+30*time.Second)
+
+	// The scheduler stops with a's job running: the job is cut, a is queued
+	// again, and its work keeps its age.
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if status := s.Status(); status.Queued != 1 || status.Running != 0 {
+		t.Fatal(status)
+	}
+	oldestQueued(t, s, 4*time.Minute+30*time.Second)
+
+	// A scheduler that runs again takes the work up, and a job that succeeds
+	// ends the age.
+	startScheduler(t, s)
+	if key := next(t, started); key != a {
+		t.Fatal(key)
+	}
+	results <- nil
+	eventually(t, func() bool { return idle(s) })
+	oldestQueued(t, s, 0)
+}
+
+// A notification that comes while a job runs may be work the job did not
+// cover: when the job succeeds, the user's age runs from that notification,
+// not from the first.
+func TestSchedulerOldestQueuedRestartsAfterACoveredJob(t *testing.T) {
+	clock := newFakeClock()
+	a := userKey("a")
+	started, finish := make(chan string, 10), make(chan struct{})
+	s := newScheduler(1, 100, func(ctx context.Context, key string) (int64, error) {
+		started <- key
+		select {
+		case <-finish:
+		case <-ctx.Done():
+		}
+		return 0, nil
+	}, (&logLines{}).logf, clock.now)
+	startScheduler(t, s)
+	s.Notify(a, 1)
+	next(t, started)
+	clock.advance(time.Minute)
+	oldestQueued(t, s, time.Minute)
+
+	s.Notify(a, 1)
+	clock.advance(30 * time.Second)
+	oldestQueued(t, s, 90*time.Second) // until the job that may not cover it ends
+	finish <- struct{}{}
+	next(t, started) // the user runs again
+	oldestQueued(t, s, 30*time.Second)
+	finish <- struct{}{}
+	eventually(t, func() bool { return idle(s) })
+	oldestQueued(t, s, 0)
+}
+
+// The scheduler reports how each job ended, while the job still counts as
+// running, so before the state that tells of it can be seen: ok, failed, paused (the budget reserve stopped it) or canceled
+// (the scheduler's end cut it).
+func TestSchedulerReportsJobOutcomes(t *testing.T) {
+	clock := newFakeClock()
+	a, b, c, d := userKey("a"), userKey("b"), userKey("c"), userKey("d")
+	failures := map[string]error{
+		b: errors.New("model HTTP 503"),
+		c: fmt.Errorf("%w: %w", memoryagent.ErrLinkDeferred, memoryagent.ErrBackgroundReserve),
+	}
+	ran := make(chan string, 10)
+	s := newScheduler(1, 100, func(ctx context.Context, key string) (int64, error) {
+		ran <- key
+		if key == d {
+			<-ctx.Done()
+			return -1, ctx.Err()
+		}
+		return 0, failures[key]
+	}, (&logLines{}).logf, clock.now)
+	var mu sync.Mutex
+	outcomes, running := []string{}, []int{}
+	s.jobDone = func(outcome string) {
+		// Told before the job stops counting as running, and so before its
+		// user is seen queued, backing off or idle.
+		status := s.Status()
+		mu.Lock()
+		outcomes, running = append(outcomes, outcome), append(running, status.Running)
+		mu.Unlock()
+	}
+	reported := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(outcomes)
+	}
+	for _, key := range []string{a, b, c, d} {
+		s.Notify(key, 1)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- s.Run(ctx) }()
+	for _, key := range []string{a, b, c, d} {
+		if got := next(t, ran); got != key {
+			t.Fatal(got, key)
+		}
+	}
+	// Once b and c are seen backing off, their outcomes have been reported.
+	eventually(t, func() bool { return s.Status().BackingOff == 2 })
+	if got := reported(); !slices.Equal(got, []string{"ok", "failed", "paused"}) {
+		t.Fatal(got)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if got := reported(); !slices.Equal(got, []string{"ok", "failed", "paused", "canceled"}) {
+		t.Fatal(got)
+	}
+	mu.Lock()
+	if !slices.Equal(running, []int{1, 1, 1, 1}) {
+		t.Fatal("a job was told as done after its state had changed:", running)
+	}
+	mu.Unlock()
+	if !slices.Equal(jobOutcomes, []string{"ok", "failed", "paused", "canceled"}) {
+		t.Fatal(jobOutcomes)
+	}
+}

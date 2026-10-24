@@ -233,8 +233,8 @@ func TestSearchShedsWith503(t *testing.T) {
 	if response := h.call("GET", "/health", nil, "X-None", ""); response.Code != http.StatusOK {
 		t.Fatal(response.Code)
 	}
-	if h.server.searches.Load() != 0 || h.server.DegradedSearches() != 0 {
-		t.Fatal(h.server.searches.Load(), h.server.DegradedSearches())
+	if h.server.metrics.searches.Load() != 0 || h.server.DegradedSearches() != 0 {
+		t.Fatal(h.server.metrics.searches.Load(), h.server.DegradedSearches())
 	}
 
 	// The client of the first leaves: its slot is free again.

@@ -113,11 +113,12 @@ func newGate(limit int) *gate {
 	return &gate{limit: limit, slots: semaphore.NewWeighted(int64(limit))}
 }
 
-// guarded is a route's handler chain, outermost first: the API key is
-// checked, a slot of the route's gate is taken (an unauthenticated request
-// never holds one), and a panic is contained.
+// guarded is a route's handler chain, outermost first: the request is counted
+// and timed (an answer of any kind: 401 and 503 too), the API key is checked,
+// a slot of the route's gate is taken (an unauthenticated request never holds
+// one), and a panic is contained.
 func (s *Server) guarded(operation string, g *gate, next http.HandlerFunc) http.Handler {
-	return s.authorized(s.admitted(operation, g, s.recovered(operation, next)))
+	return s.metrics.instrument(operation, s.authorized(s.admitted(operation, g, s.recovered(operation, next))))
 }
 
 // admitted runs next once g has a free slot for the request, and frees the
@@ -141,6 +142,7 @@ func (s *Server) admitted(operation string, g *gate, next http.HandlerFunc) http
 		case ctx.Err() != nil:
 			writeError(w, http.StatusServiceUnavailable, "request canceled")
 		default:
+			s.metrics.shed.WithLabelValues(operation).Inc()
 			s.logf(ctx, slog.LevelWarn, "%s shed: no free slot within %s (limit %d)", operation, s.admitWait, g.limit)
 			w.Header().Set("Retry-After", shedRetryAfter)
 			writeError(w, http.StatusServiceUnavailable, "busy; retry")

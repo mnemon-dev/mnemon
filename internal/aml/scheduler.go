@@ -44,10 +44,42 @@ const (
 // long the oldest work not yet consolidated has waited (queued, running or
 // backing off since the notification a successful job has not covered), and
 // the largest backlog, in characters.
+//
+// In /admin/status (AdminStatus.Queue) its fields are queued, running,
+// backingOff, held, oldestQueued (nanoseconds) and maxBacklog.
 type SchedulerStatus struct {
-	Queued, Running, BackingOff, Held int
-	OldestQueued                      time.Duration
-	MaxBacklog                        int64
+	Queued       int           `json:"queued"`
+	Running      int           `json:"running"`
+	BackingOff   int           `json:"backingOff"`
+	Held         int           `json:"held"`
+	OldestQueued time.Duration `json:"oldestQueued"`
+	MaxBacklog   int64         `json:"maxBacklog"`
+}
+
+// How a job ended, as jobDone is told: it succeeded, failed (the user backs
+// off), was paused by the budget reserve (it backs off for longer), or was cut
+// by the end of the scheduler (the user is queued again).
+const (
+	jobOK       = "ok"
+	jobFailed   = "failed"
+	jobPaused   = "paused"
+	jobCanceled = "canceled"
+)
+
+var jobOutcomes = []string{jobOK, jobFailed, jobPaused, jobCanceled}
+
+// jobOutcome is how a job that failed with err ended, cut says whether the
+// scheduler's end had cut it.
+func jobOutcome(cut bool, err error) string {
+	switch {
+	case cut:
+		return jobCanceled
+	case err == nil:
+		return jobOK
+	case errors.Is(err, memoryagent.ErrBackgroundReserve):
+		return jobPaused
+	}
+	return jobFailed
 }
 
 type userState uint8
@@ -95,6 +127,10 @@ type scheduler struct {
 	now  func() time.Time
 	// jitter is uniform in [0, 1): the backoff's jitter.
 	jitter func() float64
+	// jobDone, if set, is told how each job ended (jobOutcomes) before the
+	// scheduler's state tells of it. It runs without the lock and must not
+	// block.
+	jobDone func(outcome string)
 
 	mu         sync.Mutex
 	users      map[string]*schedUser
@@ -360,7 +396,10 @@ func (s *scheduler) call(ctx context.Context, key string) (backlog int64, err er
 // ran; after a failed one it backs off (retryDelay), for reservePause when
 // the budget reserve stopped it.
 func (s *scheduler) finish(ctx context.Context, u *schedUser, backlog int64, err error) {
-	now, jitter := s.now(), s.jitter()
+	now, jitter, cut := s.now(), s.jitter(), ctx.Err() != nil
+	if s.jobDone != nil {
+		s.jobDone(jobOutcome(cut, err))
+	}
 	s.mu.Lock()
 	s.running--
 	if backlog >= 0 {
@@ -369,7 +408,7 @@ func (s *scheduler) finish(ctx context.Context, u *schedUser, backlog int64, err
 	u.added = 0
 	var line string
 	switch {
-	case ctx.Err() != nil:
+	case cut:
 		s.enqueueLocked(u)
 	case err == nil:
 		u.failures = 0

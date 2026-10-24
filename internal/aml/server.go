@@ -16,7 +16,6 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
@@ -131,12 +130,17 @@ type Server struct {
 	// CancelRequests ends it.
 	baseCtx        context.Context
 	cancelRequests context.CancelFunc
-	// Served requests, and Searches answered by the raw ranking (degraded)
-	// or by a read with a stage that fell back (partial).
-	adds, searches, degraded, partial atomic.Int64
+	// metrics counts what the server serves and does (metrics.go): the
+	// requests, the Searches degraded or partly degraded, the consolidation
+	// batches, the models' attempts.
+	metrics *metrics
+	started time.Time // when NewServer made the server
+	// freeDisk is the free bytes of the disk holding a directory, which
+	// readiness measures.
+	freeDisk func(dir string) (uint64, error)
 	// The windows of an Add's consolidation, a Search's flush and its read.
 	addWindow, flushWindow, searchTimeout time.Duration
-	handler                               http.Handler
+	handler, admin                        http.Handler
 	once                                  sync.Once
 	// runMu guards Run's lifecycle: stopRun ends the running Run, which
 	// closes runDone once its goroutines have exited; closed refuses Run
@@ -189,7 +193,8 @@ func NewServer(config ServerConfig) (*Server, error) {
 	s := &Server{config: config, key: sha256.Sum256([]byte(config.AuthKey)), log: config.Logger,
 		timelines: consolidation.Timelines(), mode: mode,
 		addGate: newGate(config.MaxConcurrentAdds), searchGate: newGate(config.MaxConcurrentSearches), admitWait: admissionWait,
-		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout}
+		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout,
+		metrics: newMetrics(time.Now), started: time.Now().UTC(), freeDisk: freeDiskBytes}
 	if s.log == nil {
 		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
@@ -210,8 +215,14 @@ func NewServer(config ServerConfig) (*Server, error) {
 	s.users = newRegistry(config.DataRoot, config.MaxOpenStores, s.openUser)
 	if mode == ConsolidationBackground {
 		s.sched = newScheduler(config.ConsolidationWorkers, maxConsolidationUsers, s.consolidateUser, s.schedulerLog, time.Now)
+		s.sched.jobDone = s.metrics.job
 	}
+	// The providers' attempts, the queue, the stores, the breakers and the
+	// accounts reach the metrics from here on.
+	s.metrics.registry.MustRegister(stateCollector{s})
+	s.models.Observe(s.metrics)
 	s.handler = s.routes()
+	s.admin = s.adminRoutes()
 	return s, nil
 }
 
@@ -437,17 +448,18 @@ func (s *Server) closeModels() {
 
 // DegradedSearches counts the Searches answered by raw search because the
 // memory read failed.
-func (s *Server) DegradedSearches() int64 { return s.degraded.Load() }
+func (s *Server) DegradedSearches() int64 { return s.metrics.degraded.Load() }
 
 // PartialDegradedSearches counts the Searches answered by a memory read in
 // which a stage fell back (memoryagent.ReadStats.Degraded).
-func (s *Server) PartialDegradedSearches() int64 { return s.partial.Load() }
+func (s *Server) PartialDegradedSearches() int64 { return s.metrics.partial.Load() }
 
 // statusLine is the served Adds and Searches, the degraded and partially
 // degraded Searches and, with a budget file, each account's spent, held and
 // cap.
 func (s *Server) statusLine(ctx context.Context) string {
-	line := fmt.Sprintf("status: adds %d, searches %d, degraded %d, partially degraded %d", s.adds.Load(), s.searches.Load(), s.degraded.Load(), s.partial.Load())
+	m := s.metrics
+	line := fmt.Sprintf("status: adds %d, searches %d, degraded %d, partially degraded %d", m.adds.Load(), m.searches.Load(), m.degraded.Load(), m.partial.Load())
 	if s.budget == nil {
 		return line
 	}
@@ -509,16 +521,16 @@ func (s *Server) CancelRequests() { s.cancelRequests() }
 
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
-	health := func(w http.ResponseWriter, _ *http.Request) {
+	health := s.metrics.instrument(routeHealth, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
-	}
-	mux.HandleFunc("GET /{$}", health)
-	mux.HandleFunc("GET /health", health)
-	mux.Handle("POST /add", s.guarded("add", s.addGate, s.add))
-	mux.Handle("POST /search", s.guarded("search", s.searchGate, s.search))
-	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+	}))
+	mux.Handle("GET /{$}", health)
+	mux.Handle("GET /health", health)
+	mux.Handle("POST /add", s.guarded(routeAdd, s.addGate, s.add))
+	mux.Handle("POST /search", s.guarded(routeSearch, s.searchGate, s.search))
+	mux.Handle("/", s.metrics.instrument(routeOther, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
-	})
+	})))
 	return identified(s.logged(mux))
 }
 
@@ -607,7 +619,7 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		s.logf(ctx, slog.LevelInfo, "add skipped %d of %d messages without text", skipped, len(req.Messages))
 	}
 	if len(parts) == 0 {
-		s.adds.Add(1)
+		s.metrics.adds.Add(1)
 		writeJSON(w, http.StatusOK, done)
 		return
 	}
@@ -628,7 +640,7 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		s.sched.Notify(user.key, written)
 		s.awaitConsolidation(ctx, user.key, deadline)
 	}
-	s.adds.Add(1)
+	s.metrics.adds.Add(1)
 	writeJSON(w, http.StatusOK, done)
 }
 
@@ -679,6 +691,7 @@ func (s *Server) awaitConsolidation(ctx context.Context, key string, deadline ti
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	if err := s.sched.WaitBacklog(ctx, key, s.lagBound); errors.Is(err, context.DeadlineExceeded) {
+		s.metrics.addOutran.Add(1)
 		s.logf(ctx, slog.LevelWarn, "add outran consolidation (user %s)", short(key))
 	}
 }
@@ -834,6 +847,7 @@ func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, la
 		result, err := s.consolidateOnce(ctx, user, memoryagent.ConsolidateRequest{Hold: hold, DeferEdges: true, DeferLinks: s.mode == ConsolidationBackground})
 		outcome.folded += result.Folded
 		pending = pending || result.EdgesPending
+		s.metrics.consolidated(result)
 		for _, drop := range result.Drops {
 			s.logf(ctx, slog.LevelWarn, "consolidation dropped %d records (user %s): %s", drop.Records, user.key[:8], drop.Reason)
 		}
@@ -935,7 +949,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	view, err := s.read(ctx, user, memoryagent.ReadRequest{Question: req.question(), MaxItems: maxItems})
 	if err == nil {
 		if stages := view.Stats.Degraded; len(stages) > 0 {
-			n := s.partial.Add(1)
+			n := s.metrics.searchPartlyDegraded(stages)
 			s.logf(ctx, slog.LevelWarn, "partially degraded search %d (user %s): %s", n, user.key[:8], strings.Join(stages, ", "))
 		}
 		s.answer(w, searchItems(view, topK))
@@ -945,7 +959,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "request canceled")
 		return
 	}
-	n := s.degraded.Add(1)
+	n := s.metrics.searchDegraded()
 	s.logf(ctx, slog.LevelWarn, "degraded search %d (user %s): %v", n, user.key[:8], err)
 	items, err := s.rawSearch(ctx, user, req.Query, topK)
 	if err != nil {
@@ -987,7 +1001,7 @@ func (s *Server) answer(w http.ResponseWriter, items []SearchItem) {
 	for i := range items {
 		items[i].Score = 1 / float64(i+1)
 	}
-	s.searches.Add(1)
+	s.metrics.searchAnswered()
 	writeJSON(w, http.StatusOK, SearchResponse{Data: items})
 }
 

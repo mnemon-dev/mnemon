@@ -671,8 +671,8 @@ func (c *attemptClasses) all() []string {
 }
 
 // localConsolidator is a local provider whose endpoint folds with
-// parityReply, its attempts shown to classes.
-func localConsolidator(t *testing.T, classes *attemptClasses) *memoryagent.Provider {
+// parityReply.
+func localConsolidator(t *testing.T) *memoryagent.Provider {
 	t.Helper()
 	endpoint := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct{ Messages []struct{ Content string } }
@@ -685,7 +685,6 @@ func localConsolidator(t *testing.T, classes *attemptClasses) *memoryagent.Provi
 	if err != nil {
 		t.Fatal(err)
 	}
-	memoryagent.Models{Consolidator: provider}.Observe(classes)
 	return provider
 }
 
@@ -693,8 +692,7 @@ func TestSearchFlushCallsAreFlushClass(t *testing.T) {
 	settings := memoryagent.ConsolidationConfig{Mode: "timelines", BatchCharacters: 300}
 	for _, mode := range []ConsolidationMode{ConsolidationOnAdd, ConsolidationBackground} {
 		t.Run(string(mode), func(t *testing.T) {
-			classes := &attemptClasses{}
-			consolidator := localConsolidator(t, classes)
+			consolidator := localConsolidator(t)
 			h := newHarness(t, func(config *ServerConfig) {
 				config.MemoryConfig.Consolidation = &settings
 				config.Consolidation = mode
@@ -702,6 +700,10 @@ func TestSearchFlushCallsAreFlushClass(t *testing.T) {
 					return memoryagent.Models{Planner: &fakePlanner{}, Judge: &fakeJudge{}, Consolidator: consolidator}, nil
 				}
 			})
+			// The server shows the providers' attempts to its metrics; this
+			// test watches them instead.
+			classes := &attemptClasses{}
+			memoryagent.Models{Consolidator: consolidator}.Observe(classes)
 			if mode == ConsolidationBackground {
 				h.run(t)
 			}

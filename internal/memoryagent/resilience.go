@@ -291,6 +291,42 @@ func newBreaker() *breaker {
 // delay is not over. It takes no permit.
 func (b *breaker) open() bool { return b.cb.RemainingDelay() > 0 }
 
+// The states a breaker is reported in (BreakerStatus).
+const (
+	BreakerClosed   = "closed"
+	BreakerOpen     = "open"
+	BreakerHalfOpen = "half-open"
+)
+
+// state is the breaker's state as callers act on it: BreakerOpen while it
+// refuses calls, BreakerHalfOpen once its delay is over (the next call takes
+// a permit and probes the provider, so nothing is refused any more), else
+// BreakerClosed. It takes no permit.
+func (b *breaker) state() string {
+	switch {
+	case b.open():
+		return BreakerOpen
+	case b.cb.IsClosed():
+		return BreakerClosed
+	}
+	return BreakerHalfOpen
+}
+
+// BreakerStatus is the state of one provider's circuit breaker: the
+// provider's kind and BreakerClosed, BreakerOpen or BreakerHalfOpen.
+type BreakerStatus struct{ Kind, State string }
+
+// Breakers lists the circuit breaker of every provider among the models, once
+// each, in role order (planner, judge, consolidator). It changes nothing, and
+// is empty for models that are not providers.
+func (m Models) Breakers() []BreakerStatus {
+	out := []BreakerStatus{}
+	for _, p := range m.providers() {
+		out = append(out, BreakerStatus{Kind: p.config.Kind, State: p.breaker.state()})
+	}
+	return out
+}
+
 // permit takes the breaker's permission to send one request, which record
 // returns.
 func (b *breaker) permit() bool { return b.cb.TryAcquirePermit() }
