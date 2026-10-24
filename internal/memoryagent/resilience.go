@@ -40,10 +40,13 @@ import (
 //     which counts only availability failures, and opens on a run of them;
 //   - the class's bulkhead (failsafe-go's), whose permit a request holds until
 //     it ends;
-//   - the attempt timeout: past it an attempt stops waiting for its request,
-//     which runs on to its hard timeout (the client's) and settles or
-//     releases its reservation on its own. A reply that sends nothing for the
-//     body-idle timeout, once its headers came, is cut, in every class.
+//   - the attempt timeout of Interactive and Flush attempts (a Background
+//     attempt's is its hard timeout, so it is never abandoned): past it the
+//     attempt stops waiting for its request, which runs on to its hard
+//     timeout (the client's), or until the provider's close cuts it at its
+//     deadline, and settles or releases its reservation on its own. A reply
+//     that sends nothing for the body-idle timeout, once its headers came, is
+//     cut, in every class.
 //
 // The breaker and the bulkhead are used through their permits rather than
 // composed: a request keeps its bulkhead permit after its attempt stopped
@@ -406,7 +409,11 @@ const (
 // state is the breaker's state as callers act on it: BreakerOpen while it
 // refuses calls, BreakerHalfOpen once its delay is over (the next call takes
 // a permit and probes the provider, so nothing is refused any more), else
-// BreakerClosed. It takes no permit.
+// BreakerClosed. It takes no permit. It reads the breaker twice, its delay
+// and then whether it is closed, not at one instant: it is a moment's view,
+// which a change between the two reads can make a step stale (an opening
+// read as closed, or a closing as half-open), as any reading of a state that
+// moves on is the next moment.
 func (b *breaker) state() string {
 	switch {
 	case b.open():
@@ -562,23 +569,23 @@ type flightResult[T meteredReply] struct {
 func (r flightResult[T]) outcome() string {
 	switch {
 	case r.err == nil:
-		return "ok"
+		return OutcomeOK
 	case errors.Is(r.err, ErrBreakerOpen):
-		return "breaker-open"
+		return OutcomeBreakerOpen
 	case errors.Is(r.err, ErrBulkheadFull):
-		return "bulkhead-full"
+		return OutcomeBulkheadFull
 	case errors.Is(r.err, ErrBudgetCap):
-		return "budget"
+		return OutcomeBudget
 	case r.invalid:
-		return "invalid"
+		return OutcomeInvalid
 	case r.status == http.StatusTooManyRequests:
-		return "throttled"
+		return OutcomeThrottled
 	case rejectedStatus(r.status):
-		return "rejected"
+		return OutcomeRejected
 	case r.retry:
-		return "retryable"
+		return OutcomeRetryable
 	}
-	return "failed"
+	return OutcomeFailed
 }
 
 // send makes one model call of the encoded request body: attempts under the
@@ -657,7 +664,7 @@ func (c *modelCall[T]) attempt(exec failsafe.Execution[flightResult[T]]) (flight
 	}
 	c.last = res
 	outcome := res.outcome()
-	if outcome == "rejected" {
+	if outcome == OutcomeRejected {
 		c.p.rejected.Add(1)
 	}
 	c.report(outcome, c.attempts, time.Since(start), res.status)
@@ -670,7 +677,7 @@ func (c *modelCall[T]) attempt(exec failsafe.Execution[flightResult[T]]) (flight
 func (c *modelCall[T]) spent() (flightResult[T], error) {
 	c.last.err = fmt.Errorf("%w; the provider's retry budget is spent", c.last.err)
 	c.last.retry = false
-	c.report("budget", c.attempts+1, 0, 0)
+	c.report(OutcomeBudget, c.attempts+1, 0, 0)
 	return c.last, c.last.err
 }
 

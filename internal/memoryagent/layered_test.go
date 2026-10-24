@@ -1062,3 +1062,66 @@ func TestLoneExtractionTimeoutCounts(t *testing.T) {
 		})
 	}
 }
+
+// Parked T5-a (final review): in drop mode a half's timeout counts once both
+// halves ran, as foldLayered counts an extraction's error once the job's
+// extractions ended (R2). The head batch's first half times out before any
+// call of the job was answered, and its second half is answered: the
+// provider answers, only not that half, so the half is dropped, the other
+// kept, and the job goes on. Had both halves timed out, nothing would have
+// answered: an outage, which drops nothing.
+func TestDropModeHalfTimeoutCountsOnceBothHalvesRan(t *testing.T) {
+	for _, secondAnswers := range []bool{true, false} {
+		t.Run(fmt.Sprint("second half answers ", secondAnswers), func(t *testing.T) {
+			ctx := context.Background()
+			s, dir := agentStore(t)
+			seedTopics(t, s, 3)
+			timeout := fmt.Errorf("%w; any reservation remains held (after 3 attempts)", ErrAttemptTimeout)
+			var outage atomic.Bool
+			outage.Store(true)
+			model := &limitPlanner{reply: func(_, prompt string) (string, error) {
+				switch {
+				case outage.Load():
+					return "", fmt.Errorf("%w: model HTTP 503", ErrModelUnavailable)
+				case strings.Contains(prompt, "note 00"), !secondAnswers && strings.Contains(prompt, "note 02"):
+					return "", timeout
+				}
+				return layeredReply(prompt), nil
+			}}
+			// One extraction at a time: the head batch's halves run first, alone.
+			a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100, Parallel: 1}, model, topicJudge())
+			clock := &timelineClock{now: time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)}
+			a.now = clock.Now
+			// An outage reads the records into the pending state and folds nothing.
+			if _, err := a.Consolidate(ctx, ConsolidateRequest{}); !errors.Is(err, ErrModelUnavailable) {
+				t.Fatal(err)
+			}
+			// The head batch is due in drop mode: three counted failures, the
+			// first of them ten minutes ago.
+			state, token, err := overlay.loadTimelines(ctx, records.Scope{})
+			if err != nil || len(state.Pending) != 9 {
+				t.Fatal(len(state.Pending), err)
+			}
+			state.ModelErrors, state.FirstModelError = 3, clock.Now().Add(-10*time.Minute).UnixMilli()
+			if _, err := overlay.saveTimelines(ctx, records.Scope{}, token, state); err != nil {
+				t.Fatal(err)
+			}
+			outage.Store(false)
+			result, err := a.Consolidate(ctx, ConsolidateRequest{})
+			state = loadState(t, overlay)
+			if !secondAnswers {
+				if !errors.Is(err, ErrAttemptTimeout) || result.Dropped != 0 || result.Folded != 0 || state.Failed != 0 || len(state.Pending) != 9 {
+					t.Fatalf("result %+v %v, state %+v", result, err, state)
+				}
+				return
+			}
+			if err != nil || result.Dropped != 2 || len(result.Drops) != 1 || !strings.Contains(result.Drops[0].Reason, "attempt timed out") || result.Folded != 3 {
+				t.Fatalf("result %+v %v", result, err)
+			}
+			want := map[string][]string{"kayak": {"n03", "n06"}, "taxes": {"n04", "n07"}, "garden": {"n02", "n05", "n08"}}
+			if got := threadEvents(state); !reflect.DeepEqual(got, want) || state.Failed != 1 || state.ModelErrors != 0 || len(state.Pending) != 0 {
+				t.Fatalf("state %v %+v", got, state)
+			}
+		})
+	}
+}

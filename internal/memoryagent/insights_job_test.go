@@ -970,28 +970,40 @@ func TestConsolidateInsightsTimeoutCountsOnlyWhenAnswered(t *testing.T) {
 	}
 }
 
+// The half with E1 times out first. Its timeout counts once both halves
+// ran (the final review's parked T5-a): it is dropped when another call of
+// the job was answered, before it or by the other half after it; when
+// neither, both halves timing out, the outage ends the job, dropping
+// nothing.
 func TestInsightsDropModeCountsAnsweredTimeouts(t *testing.T) {
 	timeout := fmt.Errorf("%w; any reservation remains held (after 3 attempts)", ErrAttemptTimeout)
-	model := insightModel(func(prompt string) (string, error) {
-		if strings.Contains(prompt, "E1 ") {
-			return "", timeout
-		}
-		return `{"insights":[]}`, nil
-	})
-	a := linkAgent(t, &linkJudge{}, 8, nil)
 	batch := []insightItem{{id: "E1", line: "E1 (2024/01/01) a", date: "2024/01/01", dated: true}, {id: "E2", line: "E2 (2024/01/02) b", date: "2024/01/02", dated: true, index: 1}}
-	for _, answered := range []bool{false, true} {
+	for _, c := range []struct {
+		name                string
+		answered, secondOut bool
+		dropped             int
+	}{
+		{"answered before", true, false, 1},
+		{"answered by the other half", false, false, 1},
+		{"both halves time out, answered before", true, true, 2},
+		{"both halves time out", false, true, 0},
+	} {
+		model := insightModel(func(prompt string) (string, error) {
+			if strings.Contains(prompt, "E1 ") || c.secondOut && strings.Contains(prompt, "E2 ") {
+				return "", timeout
+			}
+			return `{"insights":[]}`, nil
+		})
+		a := linkAgent(t, &linkJudge{}, 8, nil)
 		job := &foldJob{}
-		if answered {
+		if c.answered {
 			job.answer()
 		}
 		var state timelineState
 		var result ConsolidateResult
 		err := a.extractInsightsDropping(withFoldJob(context.Background(), job), model, &state, batch, &result)
-		// The half with E1 times out first: dropped when another call of
-		// the job was answered, else the outage ends the job.
-		if answered && (err != nil || result.InsightsDropped != 1) || !answered && (!errors.Is(err, ErrAttemptTimeout) || result.InsightsDropped != 0) {
-			t.Fatal(answered, err, result.InsightsDropped)
+		if c.dropped > 0 && (err != nil || result.InsightsDropped != c.dropped) || c.dropped == 0 && (!errors.Is(err, ErrAttemptTimeout) || result.InsightsDropped != 0) {
+			t.Fatal(c.name, err, result.InsightsDropped)
 		}
 	}
 }

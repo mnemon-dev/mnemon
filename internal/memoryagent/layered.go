@@ -94,12 +94,24 @@ func (j *foldJob) answer() {
 // call that timed out (ErrAttemptTimeout) while another call of the job was
 // answered, so that the provider answers, only not this request. A timeout
 // in a job none of whose calls was answered is an outage, as is any other
-// unavailability, and counts nowhere.
+// unavailability, and counts nowhere. Decide it once the job's other calls
+// that run alongside have ended (foldLayered, foldDropping).
 func (j *foldJob) counts(ctx context.Context, err error) bool {
-	if countedError(ctx, err) {
-		return true
-	}
-	return j != nil && j.answered.Load() && errors.Is(err, ErrAttemptTimeout) && ctx.Err() == nil &&
+	return countedError(ctx, err) || j.timedOut(ctx, err) && j.answered.Load()
+}
+
+// mayCount reports whether a fold's error could count against its batch
+// once the job's other calls have ended (counts): a counted model error, or
+// in a layered job a timeout, which counts if another call is answered.
+// Anything else never counts, however they end.
+func (j *foldJob) mayCount(ctx context.Context, err error) bool {
+	return countedError(ctx, err) || j.timedOut(ctx, err)
+}
+
+// timedOut reports whether, in a layered job, err is a call's timeout, not
+// the job's cancellation or deadline.
+func (j *foldJob) timedOut(ctx context.Context, err error) bool {
+	return j != nil && errors.Is(err, ErrAttemptTimeout) && ctx.Err() == nil &&
 		!errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded)
 }
 

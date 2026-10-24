@@ -942,8 +942,14 @@ func (a *Agent) ruleDue(n int, first int64) bool {
 // each half folded on its own (foldTimelines without a further split). A half
 // whose fold fails with a counted model error (in a layered job, also a
 // timeout that counts: foldJob.counts) is dropped whole (Failed, and a Drop
-// naming the error); a half that folds is kept. Any other error ends the job
-// as in foldTimelines, dropping nothing.
+// naming the error); a half that folds is kept. Whether a half's error
+// counts is decided once both halves ran (the final review's parked T5-a),
+// as foldLayered decides an extraction's once the job's extractions ended:
+// a half that timed out before any call of the job was answered counts when
+// the other half is answered after it. An error that can never count (the
+// caller's cancellation, a spent budget, an outage) ends the job at once, as
+// in foldTimelines, and so does one that does not count once both ran: the
+// job then drops nothing.
 func (a *Agent) foldDropping(ctx context.Context, model Completer, spec foldSpec, state *timelineState, batch []pendingRecord, result *ConsolidateResult) error {
 	cause := fmt.Sprintf("%d failed jobs over %s", state.ModelErrors, a.now().Sub(time.UnixMilli(state.FirstModelError)).Round(time.Second))
 	parts := [][]pendingRecord{batch}
@@ -951,20 +957,39 @@ func (a *Agent) foldDropping(ctx context.Context, model Completer, spec foldSpec
 		half := (len(batch) + 1) / 2
 		parts = [][]pendingRecord{batch[:half], batch[half:]}
 	}
+	job := foldJobOf(ctx)
+	var failures []halfFailure
 	for _, part := range parts {
 		memory, batches, failed, drops := cloneMemory(state.Memory), state.Batches, state.Failed, len(result.Drops)
 		err := a.foldTimelines(ctx, model, spec, state, part, false, result)
 		if err == nil {
 			continue
 		}
-		if !foldJobOf(ctx).counts(ctx, err) {
+		// The half contributes nothing, whether it is dropped or not.
+		state.Memory, state.Batches, state.Failed = memory, batches, failed
+		result.keepDrops(drops)
+		if !job.mayCount(ctx, err) {
 			return err
 		}
-		state.Memory, state.Batches, state.Failed = memory, batches, failed+1
-		result.keepDrops(drops)
-		result.drop(len(part), fmt.Sprintf("model error after %s: %v", cause, err))
+		failures = append(failures, halfFailure{len(part), err})
+	}
+	for _, f := range failures {
+		if !job.counts(ctx, f.err) {
+			return f.err
+		}
+	}
+	for _, f := range failures {
+		state.Failed++
+		result.drop(f.records, fmt.Sprintf("model error after %s: %v", cause, f.err))
 	}
 	return nil
+}
+
+// halfFailure is a drop-mode half that failed: its size, in records or
+// items, and its error.
+type halfFailure struct {
+	records int
+	err     error
 }
 
 // lockTimelines waits until no other job of this agent consolidates scope.

@@ -169,7 +169,7 @@ func (m *metrics) instrument(route string, next http.Handler) http.Handler {
 func (m *metrics) ModelAttempt(e memoryagent.AttemptEvent) {
 	m.attempts.WithLabelValues(e.Kind, e.Class, e.Outcome).Inc()
 	switch e.Outcome {
-	case "breaker-open", "bulkhead-full", "budget":
+	case memoryagent.OutcomeBreakerOpen, memoryagent.OutcomeBulkheadFull, memoryagent.OutcomeBudget:
 		return
 	}
 	m.attemptSeconds.WithLabelValues(e.Kind, e.Class).Observe(e.Duration.Seconds())

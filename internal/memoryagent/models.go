@@ -79,6 +79,20 @@ type AttemptEvent struct {
 	Retried              bool
 }
 
+// The outcomes of an attempt (AttemptEvent.Outcome), which metrics label
+// attempts by.
+const (
+	OutcomeOK           = "ok"
+	OutcomeThrottled    = "throttled"
+	OutcomeInvalid      = "invalid"
+	OutcomeRejected     = "rejected"
+	OutcomeRetryable    = "retryable"
+	OutcomeFailed       = "failed"
+	OutcomeBreakerOpen  = "breaker-open"
+	OutcomeBulkheadFull = "bulkhead-full"
+	OutcomeBudget       = "budget"
+)
+
 // Observe shows the attempts of every provider among the models to o; nil
 // stops showing them.
 func (m Models) Observe(o ModelObserver) {

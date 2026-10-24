@@ -424,7 +424,10 @@ func insightsUnread(state timelineState) int {
 // jobs over dropAfter, the head batch is extracted in drop mode
 // (extractInsightsDropping). A batch whose linking stops the job
 // (linkInsights: with DeferLinks) stays unread with those after it, as
-// for records (linkStopped); its extraction is not kept. foldErr is the
+// for records (linkStopped); its extraction is not kept, so the
+// extractions still running are cut, not drained as foldLayered drains
+// those it keeps (only a job that defers links stops so, and background
+// consolidation, whose jobs do, refuses L2: ruling R22). foldErr is the
 // error the job ends with after saving; err another save error, returned
 // at once.
 func (a *Agent) foldInsights(ctx context.Context, model Completer, req ConsolidateRequest, state *timelineState, token *string, rest bool, dirty *bool, result *ConsolidateResult) (foldErr, err error) {
@@ -587,25 +590,37 @@ func (a *Agent) extractInsights(ctx context.Context, model Completer, state *tim
 // extractInsightsDropping extracts L2's head batch after repeated model
 // errors, as foldDropping folds L0's: split once, each half extracted on
 // its own without a further split; a half whose extraction fails with a
-// counted model error (also a timeout that counts: foldJob.counts) is
-// dropped whole (InsightsDropped), a half that is extracted is kept. Any
-// other error ends the job, dropping nothing.
+// counted model error (also a timeout that counts: foldJob.counts, decided
+// once both halves ran) is dropped whole (InsightsDropped), a half that is
+// extracted is kept. Any other error ends the job, dropping nothing.
 func (a *Agent) extractInsightsDropping(ctx context.Context, model Completer, state *timelineState, batch []insightItem, result *ConsolidateResult) error {
 	parts := [][]insightItem{batch}
 	if len(batch) > 1 {
 		half := (len(batch) + 1) / 2
 		parts = [][]insightItem{batch[:half], batch[half:]}
 	}
+	job := foldJobOf(ctx)
+	var failures []halfFailure
 	for _, part := range parts {
 		kept, dropped := len(state.Memory.Insights), result.InsightsDropped
 		err := a.extractInsights(ctx, model, state, part, false, result)
 		if err == nil {
 			continue
 		}
-		if !foldJobOf(ctx).counts(ctx, err) {
+		// The half contributes nothing, whether it is dropped or not.
+		state.Memory.Insights, result.InsightsDropped = state.Memory.Insights[:kept], dropped
+		if !job.mayCount(ctx, err) {
 			return err
 		}
-		state.Memory.Insights, result.InsightsDropped = state.Memory.Insights[:kept], dropped+len(part)
+		failures = append(failures, halfFailure{len(part), err})
+	}
+	for _, f := range failures {
+		if !job.counts(ctx, f.err) {
+			return f.err
+		}
+	}
+	for _, f := range failures {
+		result.InsightsDropped += f.records
 	}
 	return nil
 }
