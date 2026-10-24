@@ -145,12 +145,14 @@ const (
 // of every class fails once its reply has sent no byte for 60 s. An
 // Interactive or Flush call refused with a 429 and no Retry-After retries it
 // patiently, apart from its attempts: the k-th time after max(the class's
-// backoff, 2 s × 2^(k−1) × U[0.75, 1.0]), so at most 2, 4, 8 and 16 s, and
-// at most 5 times and 30 s of such waits per model call (the 30 s admit
-// four). A Search, which makes several calls, can wait longer in all, up to
-// its own deadline (--search-timeout). A model's attemptTimeoutSeconds
-// replaces the Interactive attempt timeout, its maxAttempts every class's
-// attempts.
+// backoff, 2 s × 2^(k−1) × U[0.75, 1.0]), a jittered floor of at most 2, 4,
+// 8 and 16 s, or the class's backoff when that is longer (after earlier 5xx
+// retries, whose retry number it carries); at most 5 times and 30 s of such
+// waits per model call (the 30 s admit four). A Search, which makes several
+// calls, can wait longer in all, up to its own deadlines: --search-timeout
+// for its read's calls, the 10-minute flush window for its flush's. A
+// model's attemptTimeoutSeconds replaces the Interactive attempt timeout,
+// its maxAttempts every class's attempts.
 const (
 	interactiveAttempts          = 4
 	interactiveCompletionTimeout = 45 * time.Second
@@ -178,15 +180,16 @@ const (
 	// times, none of them among the class's attempts, the k-th after
 	// throttleFloor×2^(k−1) less a random part of up to throttleJitter of it
 	// (or the class's backoff when that is longer), and with at most
-	// maxThrottleWait of such waits per model call. The
-	// cap is the call's: a Search, which makes several calls, can wait longer
-	// in all, up to its own deadline (--search-timeout). For this workload a
-	// degraded Search is worse than a slower one (the platform allows 30
-	// minutes a request), and throttling passes. In the fault drill's re-run
-	// after R59, a 12 s storm of 429s without Retry-After still degraded 5 of
-	// 10 Searches: an Interactive call's backoff gives up after about 3.5 s.
-	// The jitter keeps calls throttled together from retrying in step, which
-	// would send waves as large as the burst that was throttled.
+	// maxThrottleWait of such waits per model call. The cap is the call's: a
+	// Search, which makes several calls, can wait longer in all, up to its
+	// own deadlines (--search-timeout for its read, the 10-minute flush
+	// window for its flush). For this workload a degraded Search is worse
+	// than a slower one (the platform allows 30 minutes a request), and
+	// throttling passes. In the fault drill's re-run after R59, a 12 s storm
+	// of 429s without Retry-After still degraded 5 of 10 Searches: an
+	// Interactive call's backoff gives up after about 3.5 s. The jitter keeps
+	// calls throttled together from retrying in step, which would send waves
+	// as large as the burst that was throttled.
 	throttledRetries = 5
 	throttleFloor    = 2 * time.Second
 	maxThrottleWait  = 30 * time.Second

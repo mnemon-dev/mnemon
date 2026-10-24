@@ -356,9 +356,13 @@ func TestPatientThrottleWithoutRetryAfter(t *testing.T) {
 					t.Fatal(err, log.outcomes())
 				}
 				waited(t, e, 75*ms, 150*ms, 300*ms, 600*ms)
-				// Not the highest draw's 800 ms.
-				if gap := e.arrived(4).Sub(e.arrived(3)); gap >= 750*ms {
-					t.Fatal("the fourth wait was not jittered:", gap)
+				// The four waits sum to 1125 ms, not the highest draw's 1500
+				// ms. A timer never fires early, so waits that were not
+				// jittered (or were doubled) span 1500 ms at least; the sum
+				// leaves 375 ms for a slow host, where the fourth wait alone
+				// (600 ms, not 800) left 150.
+				if span := e.arrived(4).Sub(e.arrived(0)); span >= 1500*ms {
+					t.Fatal("the waits were not jittered:", span)
 				}
 				closed(t, p)
 				nothingHeld(t, budget, 0)
@@ -408,6 +412,8 @@ func TestPatientThrottleWithoutRetryAfter(t *testing.T) {
 				e := throttleStorm(t, time.Hour)
 				p, budget := deepseekOn(t, e, ModelConfig{}, nil)
 				patiently(p, 0.5)
+				// Waits of 175 and 350 ms: the caller gives up in the second.
+				p.policies[class].throttleFloor, p.policies[class].maxThrottleWait = 200*ms, 3*s
 				log := &attemptLog{}
 				Models{Planner: p}.Observe(log)
 				cut, cancel := context.WithCancel(ctx)
@@ -417,13 +423,15 @@ func TestPatientThrottleWithoutRetryAfter(t *testing.T) {
 					_, _, err := p.Complete(cut, "s", "p")
 					done <- err
 				}()
-				// The second refusal has come: its retry waits 175 ms.
-				for deadline := time.Now().Add(5 * s); e.requests() < 2; time.Sleep(time.Millisecond) {
+				// The second refusal has been answered and shown, which
+				// happens just before its retry's wait of 350 ms: the caller
+				// gives up inside that wait, however slow the host, with 350
+				// ms to spare where a fixed 10 ms after the request left 165.
+				for deadline := time.Now().Add(5 * s); strings.Count(log.outcomes(), "throttled") < 2; time.Sleep(time.Millisecond) {
 					if time.Now().After(deadline) {
-						t.Fatal("no second request")
+						t.Fatal("no second refusal:", log.outcomes())
 					}
 				}
-				time.Sleep(10 * ms)
 				canceled := time.Now()
 				cancel()
 				var err error
@@ -433,8 +441,8 @@ func TestPatientThrottleWithoutRetryAfter(t *testing.T) {
 					t.Fatal("the call went on")
 				}
 				// It ends at once, with the caller's error, and sends nothing
-				// more.
-				if took := time.Since(canceled); took >= 80*ms || !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "the caller gave up") ||
+				// more: well within the 350 ms the wait had left.
+				if took := time.Since(canceled); took >= 175*ms || !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "the caller gave up") ||
 					e.requests() != 2 || log.outcomes() != "throttled throttled" {
 					t.Fatal(took, err, e.requests(), log.outcomes())
 				}

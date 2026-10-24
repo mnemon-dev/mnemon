@@ -26,11 +26,13 @@
 # The method of the knee, per route:
 #   - A step lasts --duration seconds: at least 300 for search and mixed
 #     (their default), 60 by default for add.
-#   - Between steps, and after the preparation, the script waits up to
-#     --settle seconds (default 900; 0 for none) for the consolidation
-#     scheduler to have no work, so that a step does not inherit the backlog
-#     of the one before. It needs the admin listener; without it there is no
-#     Add knee.
+#   - Before every step, the first included, and after the preparation, the
+#     script waits up to --settle seconds (default 900; 0 for none) for the
+#     consolidation scheduler to have no work, so that a step does not
+#     inherit the backlog of the one before; each step records whether it
+#     started settled. It needs the admin listener; without it there is no
+#     Add knee. An Add step that did not start settled is void, and so is
+#     every step after it: the Add knee comes from the steps before it.
 #   - The lowest rate is the baseline, which needs --min-baseline answered
 #     requests (default 50).
 #   - The knee is the highest rate whose p95 stays within twice the
@@ -65,6 +67,11 @@
 # knee is a measurement, not a verdict), 1 when a secret reached DIR, 2 when
 # the run could not be made (a usage error, a tool or a server that failed,
 # an interruption).
+#
+# Test hook: AML_LOAD_FAIL_AT=prepare makes the script fail (exit 2) while
+# the preparation's Adds are in flight, and AML_LOAD_FAIL_AT=step while the
+# first step's attacks and sampler run, so that a test can check the
+# cleanup leaves no process.
 set -euo pipefail
 umask 077
 export LC_ALL=C
@@ -72,6 +79,7 @@ export LC_ALL=C
 readonly PROG=aml-load
 # shellcheck source=scripts/aml/lib.sh
 . "$(dirname "$0")/lib.sh"
+aml_trap_exit
 
 BASE_URL= KEY_ARG= MODE= RATES= DURATION= USERS=16 MESSAGES=20 PREPARE= TIMEOUT=300 SETTLE=900 MIN_BASELINE=50
 KEEP_GOING=0 VALIDATE=0 OUT= AML_ADMIN_URL= TOKEN_ARG= LOCAL=0 BINARY= BUILT_FROM= DS_LATENCY=2s JEV_LATENCY=1.5s
@@ -90,6 +98,11 @@ while [ $# -gt 0 ]; do
 		shift
 		continue
 		;;
+	esac
+	# Every other option takes a value: one without it is a usage error (2),
+	# never an unbound $2 under set -u.
+	[ $# -ge 2 ] || usage
+	case $1 in
 	--base-url) BASE_URL=${2%/} ;;
 	--key-file) KEY_ARG=$2 ;;
 	--mode) MODE=$2 ;;
@@ -112,7 +125,6 @@ while [ $# -gt 0 ]; do
 	--port-base) PORT_BASE=$2 ;;
 	*) usage ;;
 	esac
-	[ $# -ge 2 ] || usage
 	shift 2
 done
 
@@ -154,13 +166,16 @@ private() {
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/aml-load.XXXXXX")
 KEY_FILE=$WORK/api.key AML_ADMIN_TOKEN_FILE=
-AML_FAKE_PID= AML_SERVE_PID= SAMPLER= ATTACKERS=
+# The background jobs the cleanup kills, with what they started, before
+# anything is removed: the preparation's requests, a step's attacks and its
+# sampler.
+AML_FAKE_PID= AML_SERVE_PID= PREPARERS= SAMPLER= ATTACKERS=
 cleanup() {
 	local status=$? pid
-	for pid in $ATTACKERS $SAMPLER; do
+	for pid in $PREPARERS $ATTACKERS $SAMPLER; do
 		aml_kill_tree TERM "$pid"
 	done
-	for pid in $ATTACKERS $SAMPLER; do
+	for pid in $PREPARERS $ATTACKERS $SAMPLER; do
 		wait "$pid" 2>/dev/null || true
 	done
 	aml_stop "$AML_SERVE_PID" "$AML_FAKE_PID"
@@ -238,8 +253,6 @@ while [ "$k" -le "$USERS" ]; do
 done
 SESSION=1
 STEP=0
-# SETTLED says every step started from a scheduler with no work.
-SETTLED=$([ "$ADMIN" = 1 ] && [ "$SETTLE" -gt 0 ] && echo true || echo false)
 
 # post ROUTE BODY: one request with the key, for the preparation; prints the
 # status code.
@@ -249,9 +262,12 @@ post() {
 }
 
 # settle LIMIT: waits up to LIMIT seconds for the consolidation scheduler to
-# have no work (admin only); a wait that runs out marks the run unsettled.
+# have no work (admin only). SETTLED says whether it had none in time: true,
+# false, or null when nothing was checked (no admin access, or --settle 0).
+SETTLED=null
 settle() {
 	local deadline=$(($(date +%s) + $1))
+	SETTLED=null
 	[ "$ADMIN" = 1 ] && [ "$1" -gt 0 ] || return 0
 	until aml_admin /admin/status | jq -e '.queue | .queued + .running + .backingOff == 0' >/dev/null; do
 		if [ "$(date +%s)" -ge "$deadline" ]; then
@@ -261,6 +277,7 @@ settle() {
 		fi
 		sleep 2
 	done
+	SETTLED=true
 }
 
 # targets ROUTE N [BODIES]: N vegeta targets of ROUTE in its http format,
@@ -311,9 +328,12 @@ if [ "$PREPARE" -gt 0 ]; then
 			done
 		) &
 		pids="$pids $!"
+		PREPARERS=$pids
 	done
+	[ "${AML_LOAD_FAIL_AT:-}" != prepare ] || aml_die "failing on purpose while the preparation's Adds run (AML_LOAD_FAIL_AT=prepare)"
 	# shellcheck disable=SC2086
 	wait $pids
+	PREPARERS=
 	[ ! -e "$WORK/prepare.failed" ] || aml_die "preparing Adds answered $(sort -u "$WORK/prepare.failed" | tr '\n' ' ')"
 	settle "$SETTLE"
 	k=0 pids=
@@ -321,9 +341,11 @@ if [ "$PREPARE" -gt 0 ]; then
 		k=$((k + 1))
 		post search "$WORK/searches/$k.json" >/dev/null &
 		pids="$pids $!"
+		PREPARERS=$pids
 	done
 	# shellcheck disable=SC2086
 	wait $pids
+	PREPARERS=
 	settle "$SETTLE"
 fi
 
@@ -372,7 +394,10 @@ for rate in $RATE_LIST; do
 	STEP=$((STEP + 1))
 	dir=$WORK/step-$STEP
 	mkdir -p "$dir"
-	[ "$STEP" = 1 ] || settle "$SETTLE"
+	# Every step, the first too, starts from a scheduler with no work, or
+	# says it did not: STEP_SETTLED is recorded with the step.
+	settle "$SETTLE"
+	STEP_SETTLED=$SETTLED
 	aml_say "step $STEP: $MODE at $rate/s for ${DURATION}s"
 	before=$(counters)
 	if [ "$ADMIN" = 1 ]; then
@@ -389,6 +414,7 @@ for rate in $RATE_LIST; do
 		attack "$route" "$rate" "$dir" &
 		ATTACKERS="$ATTACKERS $!"
 	done
+	[ "${AML_LOAD_FAIL_AT:-}" != step ] || aml_die "failing on purpose while step $STEP runs (AML_LOAD_FAIL_AT=step)"
 	# shellcheck disable=SC2086
 	wait $ATTACKERS || aml_die "step $STEP: an attack failed"
 	ATTACKERS=
@@ -405,9 +431,9 @@ for rate in $RATE_LIST; do
 			peak=$(awk -v route="$route" 'index($0, "route=\"" route "\"") { if ($2 > m) m = $2 } END { printf "%d", m }' "$dir/inflight.txt")
 		fi
 		jq -c --arg route "$route" --argjson rate "$rate" --argjson duration "$DURATION" --argjson step "$STEP" \
-			--argjson before "$before" --argjson after "$after" --argjson peak "$peak" '
+			--argjson before "$before" --argjson after "$after" --argjson peak "$peak" --argjson settled "$STEP_SETTLED" '
 			def s: . / 1e9;
-			{step: $step, route: $route, rate: $rate, durationSeconds: $duration, requests,
+			{step: $step, route: $route, rate: $rate, durationSeconds: $duration, settled: $settled, requests,
 			 codes: .status_codes, non2xx: ([.status_codes | to_entries[] | select(.key | test("^2") | not) | .value] | add // 0),
 			 p50: (.latencies["50th"] | s), p95: (.latencies["95th"] | s), p99: (.latencies["99th"] | s), max: (.latencies.max | s),
 			 mean: (.latencies.mean | s), success, throughput, peakInFlight: $peak,
@@ -432,7 +458,7 @@ jq -s -L "$AML_REPO/scripts/aml" --arg started "$STARTED" --arg finished "$(date
 	--arg target "$BASE_URL" --argjson local "$LOCAL" --arg dsLatency "$DS_LATENCY" --arg jevLatency "$JEV_LATENCY" --arg limits "$LIMITS" \
 	--argjson duration "$DURATION" --argjson users "$USERS" --argjson messages "$MESSAGES" --argjson prepare "$PREPARE" \
 	--argjson timeout "$TIMEOUT" --arg stopped "$stopped" --arg run "$RUN" --argjson build "$BUILD" --argjson scripts "$SCRIPTS" \
-	--argjson validate "$VALIDATE" --argjson settle "$SETTLE" --argjson settled "$SETTLED" --argjson minBaseline "$MIN_BASELINE" \
+	--argjson validate "$VALIDATE" --argjson settle "$SETTLE" --argjson minBaseline "$MIN_BASELINE" \
 	--argjson searchStep "$SEARCH_STEP" 'include "knee";
 	. as $steps |
 	{kind: "aml-load", started: $started, finished: $finished, mode: $mode, rates: $rates, target: $target,
@@ -441,11 +467,11 @@ jq -s -L "$AML_REPO/scripts/aml" --arg started "$STARTED" --arg finished "$(date
 		limitsAre: "--max-concurrent-adds --max-concurrent-searches --max-open-stores --consolidation-workers",
 		configuration: "deploy/aml/memory-config.industrial.json; only testEndpoint (the fake provider) and budgetFile changed"} else null end),
 	 durationSeconds: $duration, users: $users, userPrefix: "load-\($run)-u", messagesPerAdd: $messages, preparedSessionsPerUser: $prepare,
-	 requestTimeoutSeconds: $timeout, settleSeconds: $settle, settledEveryStep: $settled, minBaselineRequests: $minBaseline,
+	 requestTimeoutSeconds: $timeout, settleSeconds: $settle, settledEveryStep: ([$steps[].settled] | all(. == true)), minBaselineRequests: $minBaseline,
 	 tool: "vegeta v12.13.0", stoppedAfterRate: (if $stopped == "" then null else ($stopped | tonumber) end),
-	 kneeRule: "the highest rate whose p95 stays within twice the baseline (lowest rate) p95 and whose p50 within twice its p50, with no non-2xx answer, every lower rate holding too; Search steps of \($searchStep) s at least, the scheduler settled before each step, at least \($minBaseline) answered requests at the baseline",
+	 kneeRule: "the highest rate whose p95 stays within twice the baseline (lowest rate) p95 and whose p50 within twice its p50, with no non-2xx answer, every lower rate holding too; Search steps of \($searchStep) s at least, the scheduler settled before each step (an Add step that did not start settled, and every one after it, is void), at least \($minBaseline) answered requests at the baseline",
 	 steps: $steps,
-	 knee: ([$steps[].route] | unique | map(. as $r | {($r): ([$steps[] | select(.route == $r)] | knee($r; $validate == 1; $minBaseline; $settled))}) | add)}' \
+	 knee: ([$steps[].route] | unique | map(. as $r | {($r): ([$steps[] | select(.route == $r)] | knee($r; $validate == 1; $minBaseline))}) | add)}' \
 	"$OUT/steps.jsonl" >"$OUT/report.json"
 rm -f "$OUT/steps.jsonl"
 
@@ -457,5 +483,5 @@ for secret in "$KEY_FILE" ${AML_ADMIN_TOKEN_FILE:+"$AML_ADMIN_TOKEN_FILE"}; do
 		exit 1
 	fi
 done
-jq -r '.knee | to_entries[] | "knee \(.key): \(if .value.knee == null then "none: \(.value.reason)" else "\(.value.knee.rate)/s, p50 \(.value.knee.p50 * 1000 | round / 1000) s, p95 \(.value.knee.p95 * 1000 | round / 1000) s, peak in flight \(.value.knee.peakInFlight)" end)"' "$OUT/report.json" >&2
+jq -r '.knee | to_entries[] | "knee \(.key): \(if .value.knee == null then "none: \(.value.reason)" else "\(.value.knee.rate)/s, p50 \(.value.knee.p50 * 1000 | round / 1000) s, p95 \(.value.knee.p95 * 1000 | round / 1000) s, peak in flight \(.value.knee.peakInFlight)\(if .value.void then " (\(.value.void))" else "" end)" end)"' "$OUT/report.json" >&2
 aml_say "report: $OUT/report.json"

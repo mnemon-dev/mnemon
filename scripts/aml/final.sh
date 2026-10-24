@@ -32,21 +32,25 @@ export LC_ALL=C
 readonly PROG=aml-final
 # shellcheck source=scripts/aml/lib.sh
 . "$(dirname "$0")/lib.sh"
+aml_trap_exit
 
 REV=HEAD OUT= COMPARE=$AML_REPO/.testdata/aml/drill-task16/task16-matrix.json REPEAT=1 SUMMARY=
+usage() {
+	sed -n '5,6p' "$0" | sed 's/^# \{0,1\}//' >&2
+	exit 2
+}
 while [ $# -gt 0 ]; do
+	case $1 in --summary | --rev | --out | --compare | --repeat) ;; *) usage ;; esac
+	# Every option takes a value: one without it is a usage error (2), never
+	# an unbound $2 under set -u, whose 1 would read as a failed drill.
+	[ $# -ge 2 ] || aml_die "$1 needs a value"
 	case $1 in
 	--summary) SUMMARY=$2 ;;
 	--rev) REV=$2 ;;
 	--out) OUT=$2 ;;
 	--compare) COMPARE=$2 ;;
 	--repeat) REPEAT=$2 ;;
-	*)
-		sed -n '5p' "$0" | sed 's/^# \{0,1\}//' >&2
-		exit 2
-		;;
 	esac
-	[ $# -ge 2 ] || aml_die "$1 needs a value"
 	shift 2
 done
 # summary DIR: the drill's matrix, the drill against the earlier run
@@ -78,9 +82,9 @@ summary() {
 		[ -s "$dir/load-$mode/report.json" ] || continue
 		jq -r --arg mode "$mode" '
 			"\($mode): " + (.knee | to_entries | map("\(.key) " + (if .value.knee == null then "no knee: \(.value.reason)"
-				else "knee \(.value.knee.rate)/s, p50 \(.value.knee.p50 * 1000 | round / 1000) s, p95 \(.value.knee.p95 * 1000 | round / 1000) s, peak \(.value.knee.peakInFlight) in flight; baseline \(.value.baseline.rate)/s p50 \(.value.baseline.p50 * 1000 | round / 1000) s, p95 \(.value.baseline.p95 * 1000 | round / 1000) s" end)) | join("; "))' \
+				else "knee \(.value.knee.rate)/s, p50 \(.value.knee.p50 * 1000 | round / 1000) s, p95 \(.value.knee.p95 * 1000 | round / 1000) s, peak \(.value.knee.peakInFlight) in flight; baseline \(.value.baseline.rate)/s p50 \(.value.baseline.p50 * 1000 | round / 1000) s, p95 \(.value.baseline.p95 * 1000 | round / 1000) s\(if .value.void then " (\(.value.void))" else "" end)" end)) | join("; "))' \
 			"$dir/load-$mode/report.json"
-		jq -r '.steps[] | "  \(.route) \(.rate)/s: \(.requests) requests, codes \(.codes), p50 \(.p50 * 1000 | round / 1000) s, p95 \(.p95 * 1000 | round / 1000) s, p99 \(.p99 * 1000 | round / 1000) s, peak \(.peakInFlight) in flight"' "$dir/load-$mode/report.json"
+		jq -r '.steps[] | "  \(.route) \(.rate)/s: \(.requests) requests, codes \(.codes), p50 \(.p50 * 1000 | round / 1000) s, p95 \(.p95 * 1000 | round / 1000) s, p99 \(.p99 * 1000 | round / 1000) s, peak \(.peakInFlight) in flight\(if .settled == false then ", did not start settled" else "" end)"' "$dir/load-$mode/report.json"
 	done
 	printf '\nThe capacity rows (deploy/aml/README.md), local and with fake providers: the Search and Add knees above, their p50 and p95, and 60 times each knee as the requests a minute.\n'
 }

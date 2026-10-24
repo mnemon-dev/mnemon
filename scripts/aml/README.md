@@ -11,12 +11,13 @@ curl, jq and awk.
 | `drill.sh` | The fault drill: each scenario against a steady Add and Search workload, judged both ways |
 | `load.sh` | The load test: Adds, Searches or both at rising rates, and the knee of each, locally or against a base URL |
 | `fakeprovider/` | The fake DeepSeek and JEV: deterministic replies, and faults set at run time through a loopback-only `POST /_fault` |
-| `lib.sh`, `knee.jq` | What the scripts share (sourced), and the knee rule (a jq module) |
+| `lib.sh`, `scenario.jq`, `knee.jq` | What the scripts share (sourced), the drill's criteria for one run of a scenario, and the knee rule (jq programs) |
 
 Exit status of every script: **0** when the run completed and its hard criteria held, **1** when
 a hard criterion failed or a secret reached the output, **2** when the run could not be made (a
 usage error, a tool or a server that failed, an interruption). These are the scripts' own codes,
-never a tool's. `load.sh` has no hard criteria: its knee is a measurement.
+never a tool's: an option without its value, or a failure before a run starts, is a 2. `load.sh`
+has no hard criteria: its knee is a measurement.
 
 ## The final run
 
@@ -54,12 +55,27 @@ scripts/aml/drill.sh [--only a,b] [--repeat 3] [--binary path/to/mnemon --built-
 
 **The scenario table.** Each scenario states its expectations as numbers: the fewest Searches,
 the signal that shows its fault took effect, the bounds on degraded and partial Searches, the
-Search p95, the breaker's behaviour (`cycle` or `steady`), and retries.
+Search p95, the breaker's behaviour (`cycle`: it opens during the fault and closes within 180 s
+of its end; `steady`: it never opens, with samples to show it), and retries. The drill checks
+every row before it starts anything, and refuses the run (2) if a column holds a value it could
+not judge, such as `=0` for `0`.
+
+**The bounds on degraded and partial Searches** are `0`, `>0`, a number, or `-` (not judged). The
+scenarios whose fault is random or holds over a window have bounds fixed in advance from the
+retry policy (ruling R82), each derived in the table:
+- `P^A`, a fault random per attempt at rate `P`, which the policy gives `A` attempts (2 for an
+  invalid reply, retried once; 4, the Interactive attempts, for resets, 5xx, spikes and stalls):
+  at most max(1, ⌈N × min(1, 2·10·P^A)⌉) of the N Searches a run answers. A Search makes about 10
+  model calls; the 2 is a margin for chance. A broken retry layer still fails it.
+- `window+45`, a fault over a window: at most the Searches that started in the window or in the
+  45 s after it (the Interactive deadline), and so none of those that started before it.
 
 **Criteria every scenario must meet:**
 - no non-2xx answer, other than deliberate 503 sheds;
 - the backlog drained within 600 s of the fault's end;
-- the largest backlog below 10,000 characters once drained;
+- the largest backlog below 10,500 characters once drained: an idle user may hold up to a batch,
+  10,000 characters, and the backlog's estimate also counts the records' headers, which a batch
+  does not; 5% covers them (ruling R78);
 - no reservation left held;
 - no "without JEV" line.
 
@@ -69,13 +85,14 @@ Search p95, the breaker's behaviour (`cycle` or `steady`), and retries.
   a non-2xx answer, a held reservation, or a link fallback. Its other criteria are reported.
 - A run with `--only` is a partial run, and its `report.json` and summary say so.
 
-**Output.** It writes `report.json` and `matrix.md`. Each outcome of
-`mnemon_aml_model_attempts_total` has a column, `throttled`, `invalid` and `rejected` among them,
-beside degraded and partial Searches.
+**Output.** It writes `report.json` and `matrix.md`. The matrix shows the degraded and partial
+Searches beside their bounds, `throttled`, `invalid` and `rejected` (by kind) in columns of their
+own, and the other outcomes of `mnemon_aml_model_attempts_total` in one. Each run's bounds, with
+what they were derived from, are in its `bounds` in `report.json`.
 
 **Test hooks.**
-- `AML_DRILL_SCENARIOS=FILE` runs a table of your own.
-- `AML_DRILL_RESIDUAL_LIMIT=N` lowers the residual-backlog limit.
+- `AML_DRILL_SCENARIOS=FILE` runs a table of your own (lines starting with `#` are comments).
+- `AML_DRILL_RESIDUAL_LIMIT=N` sets the residual-backlog limit.
 - `AML_DRILL_FAIL_AT=fault` fails the run just after the first fault is applied.
 
 ## The load test
@@ -93,8 +110,10 @@ scripts/aml/load.sh --base-url https://host --key-file key --admin-url http://10
 
 **The method of the knee:**
 - Search steps last at least 300 s. `--validate` runs shorter ones and reports no knee.
-- The scheduler is settled before each step. This needs the admin listener, and without it there
-  is no Add knee.
+- The scheduler is settled before each step, the first included, and each step records whether it
+  started settled. This needs the admin listener, and without it there is no Add knee. An Add
+  step that did not start settled is void, and so is every step after it: the Add knee comes from
+  the steps before it.
 - The baseline (the lowest rate) needs at least 50 answered requests.
 - The knee is the highest rate whose p95 and p50 both stay within twice the baseline's, with no
   non-2xx answer, every lower rate holding too.
@@ -107,6 +126,7 @@ scripts/aml/load.sh --base-url https://host --key-file key --admin-url http://10
   - It is never an argument.
   - Each script greps its own output for the secrets it used and fails on a match.
 - **The fake provider's control endpoint** answers loopback clients only.
-- **Cleanup.** A failed run stops its workload, sampler and servers before it removes anything.
-  The test `test/deploy/aml_scripts_test.go` checks that no process of a run failed midway
-  survives.
+- **Cleanup.** A failed run stops its workload, sampler and servers before it removes anything;
+  `load.sh` stops its preparation's requests and its attacks too. The tests in
+  `test/deploy/aml_scripts_test.go` check that no process of a drill or a load test failed midway
+  survives (`AML_LOAD_FAIL_AT=prepare` or `step` fails a load test on purpose).

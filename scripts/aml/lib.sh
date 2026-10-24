@@ -42,6 +42,15 @@ aml_exit_status() {
 	echo "$1"
 }
 
+# aml_trap_exit: until a script's cleanup takes the EXIT trap over, any exit
+# maps its status (aml_exit_status), and an interruption exits 2. A script
+# sets it first, before it reads its arguments, so that a failure that early
+# is a 2 as well.
+aml_trap_exit() {
+	trap 'aml_status_was=$?; exit "$(aml_exit_status "$aml_status_was")"' EXIT
+	trap 'exit 2' INT TERM
+}
+
 # aml_need TOOL...: every tool is on PATH.
 aml_need() {
 	local tool
@@ -171,10 +180,12 @@ aml_build_mnemon() {
 
 # aml_provenance: where the build came from, as JSON: {"commit","dirty"} of
 # the git tree these scripts are in (the scripts' tree), null outside one.
+# An untracked file makes it dirty, as a changed one does: go build compiles
+# an untracked .go file. Ignored files do not.
 aml_provenance() {
 	local commit dirty
 	if commit=$(git -C "$AML_REPO" rev-parse HEAD 2>/dev/null); then
-		dirty=$([ -n "$(git -C "$AML_REPO" status --porcelain --untracked-files=no 2>/dev/null)" ] && echo true || echo false)
+		dirty=$([ -n "$(git -C "$AML_REPO" status --porcelain 2>/dev/null)" ] && echo true || echo false)
 		printf '{"commit":"%s","dirty":%s}\n' "$commit" "$dirty"
 	else
 		printf '{"commit":null,"dirty":null}\n'

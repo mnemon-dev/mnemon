@@ -193,22 +193,23 @@ participants choose their models, and DeepSeek and JEV retain no data.
 ## Capacity, timeouts and limits
 
 Fill these from the measurements described in the runbook ("Capacity declaration"). The
-values marked "local, fake providers" are not the host's: they come from
-`scripts/aml/load.sh --local` on a development machine (18 cores), with the fake provider
-answering every DeepSeek call in 2 s and every JEV call in 1.5 s, the dedicated limits
-(16 Adds, 16 Searches, 16 open stores, 4 workers) and 16 users, at rising rates of 60 s
-(Searches) or 30 s (Adds) each. The knee is the highest rate whose p95 stays within twice the
-lowest rate's p95 with no non-2xx answer. The host's values come from the same script on a
-scratch instance there (Task 12c).
+values marked "local, fake providers" are not the host's, and they are **round 0's, superseded**:
+the first load test's, by `scripts/aml/load.sh --local` on a development machine (18 cores),
+with the fake provider answering every DeepSeek call in 2 s and every JEV call in 1.5 s, the
+dedicated limits (16 Adds, 16 Searches, 16 open stores, 4 workers) and 16 users, at rising
+rates of 60 s (Searches) or 30 s (Adds) each, with no settling between steps. That method
+overstated the knees. The final run (`scripts/aml/final.sh`: Search steps of 300 s, the
+scheduler settled before every step, p50 and p95 within twice the lowest rate's) replaces them.
+The host's values come from the same load test on a scratch instance there.
 
 | Field | Value |
 |---|---|
 | Host | 12 vCPU, 48 GB, 387 GB, Ubuntu 24.04 amd64, dedicated to the evaluation instance |
-| Concurrent Add requests | `<TBD: measured>`, at most the instance's `--max-concurrent-adds` (16, provisional). Local, fake providers: 8 Adds a second of 20 messages is the knee, under 1 in flight; at 16 a second, after the lower steps, the users' backlogs reach the lag bound, Adds wait for consolidation (p95 21 s) and 8 of 480 are shed |
-| Concurrent Search requests | `<TBD: measured>`, at most the instance's `--max-concurrent-searches` (16, provisional). Local, fake providers: 1.5 Searches a second fill the 16 slots with no wait; 2 a second is the knee, queueing for slots (39 in flight or waiting at the peak); 3 a second shed 30 of 180 |
-| Add latency (20 messages), p50 / p95 | `<TBD>` / `<TBD>`. Local, fake providers, at 8 a second: 3 ms / 5 ms |
-| Search latency (`top_k` 100), p50 / p95 | `<TBD>` / `<TBD>`. Local, fake providers: 9.6 s / 11.1 s up to 1.5 a second; 15.4 s / 21.9 s at the knee, 2 a second |
-| Rate limit | `<TBD>` requests per minute. Local, fake providers: 120 Searches and 480 Adds a minute (the knees) |
+| Concurrent Add requests | `<TBD: measured>`, at most the instance's `--max-concurrent-adds` (16, provisional). Local, fake providers (round 0, superseded): 8 Adds a second of 20 messages is the knee, under 1 in flight; at 16 a second, after the lower steps, the users' backlogs reach the lag bound, Adds wait for consolidation (p95 21 s) and 8 of 480 are shed |
+| Concurrent Search requests | `<TBD: measured>`, at most the instance's `--max-concurrent-searches` (16, provisional). Local, fake providers (round 0, superseded): 1.5 Searches a second fill the 16 slots with no wait; 2 a second is the knee, queueing for slots (39 in flight or waiting at the peak); 3 a second shed 30 of 180 |
+| Add latency (20 messages), p50 / p95 | `<TBD>` / `<TBD>`. Local, fake providers (round 0, superseded), at 8 a second: 3 ms / 5 ms |
+| Search latency (`top_k` 100), p50 / p95 | `<TBD>` / `<TBD>`. Local, fake providers (round 0, superseded): 9.6 s / 11.1 s up to 1.5 a second; 15.4 s / 21.9 s at the knee, 2 a second |
+| Rate limit | `<TBD>` requests per minute. Local, fake providers (round 0, superseded): 120 Searches and 480 Adds a minute (the knees) |
 | Request timeout accepted | 31 minutes (the platform's I/O timeout is 30 minutes); a Search's memory read stops after 10 minutes (`--search-timeout`) and answers the raw ranking |
 | Stores kept open | 16 (`--max-open-stores`) |
 | Request body limit | 30 MiB |

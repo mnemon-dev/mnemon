@@ -708,7 +708,12 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 		{"Service", "MemoryMax", "1G"},
 		{"Service", "CPUQuota", "100%"},
 		{"Service", "Nice", "10"},
-		{"Service", "IOSchedulingClass", "idle"},
+		// Best-effort at its lowest priority, not idle (R80): the idle
+		// class can starve under sustained I/O, and an inspect read
+		// holding its SHARED lock on the rollback-journal memory-index.db
+		// would then hold up aml-serve's consolidation writes.
+		{"Service", "IOSchedulingClass", "best-effort"},
+		{"Service", "IOSchedulingPriority", "7"},
 		{"Install", "WantedBy", "multi-user.target"},
 	} {
 		if got := inspect.get(t, s.section, s.key); got != s.want {

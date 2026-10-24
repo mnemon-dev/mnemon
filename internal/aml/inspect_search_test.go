@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -682,7 +683,8 @@ func TestInspectDisconnectCancelsAFullSearch(t *testing.T) {
 // Every route, lexical and full searches included, over a data root the
 // service may not write: everything answers, and no file of the data root
 // or of the instance's budget changes, none is created, nothing
-// checkpoints.
+// checkpoints. The lookups of one record and of one memory item are made
+// for every record and every item of both users.
 func TestInspectNeverWrites(t *testing.T) {
 	f := newFakeInstance(t, nil)
 	lockDown(t, f.h.root)
@@ -691,15 +693,38 @@ func TestInspectNeverWrites(t *testing.T) {
 	ih := f.ih
 	ih.ok(t, "GET", "/v1/info", nil, nil)
 	ih.ok(t, "GET", "/v1/stores", nil, nil)
+	lookups := map[string]int{}
 	for _, user := range []string{"u1", "u2"} {
 		key := userKey(user)
 		ih.ok(t, "POST", "/v1/resolve", map[string]any{"user_id": user}, nil)
-		ih.ok(t, "GET", "/v1/stores/"+key+"/records", nil, nil)
+		for _, item := range rawItems(t, ih.ok(t, "GET", "/v1/stores/"+key+"/records", nil, nil), "records") {
+			var record struct{ ID string }
+			if err := json.Unmarshal(item, &record); err != nil || record.ID == "" {
+				t.Fatal(err, string(item))
+			}
+			ih.ok(t, "GET", "/v1/stores/"+key+"/records/"+url.PathEscape(record.ID), nil, nil)
+			lookups["records"]++
+		}
 		for _, section := range []string{"threads", "events", "facts", "directives"} {
-			ih.ok(t, "GET", "/v1/stores/"+key+"/memory?section="+section, nil, nil)
+			for _, item := range rawItems(t, ih.ok(t, "GET", "/v1/stores/"+key+"/memory?section="+section, nil, nil), "items") {
+				var head struct{ ID string }
+				if err := json.Unmarshal(item, &head); err != nil || head.ID == "" {
+					t.Fatal(err, string(item))
+				}
+				ih.ok(t, "GET", "/v1/stores/"+key+"/memory/"+section+"/"+url.PathEscape(head.ID), nil, nil)
+				lookups[section]++
+			}
 		}
 		ih.search(t, map[string]any{"key": key, "query": "Caroline support group"})
 		ih.search(t, map[string]any{"key": key, "query": "When did Caroline adopt the dog?", "mode": "full"})
+	}
+	// This data root's memory has threads and events; one handler looks up
+	// the items of every section.
+	if lookups["records"] == 0 || lookups["threads"] == 0 || lookups["events"] == 0 {
+		t.Fatalf("too few lookups to show anything: %v", lookups)
+	}
+	if !strings.Contains(ih.log.String(), "GET /v1/stores/{key}/records/{id} 200") || !strings.Contains(ih.log.String(), "GET /v1/stores/{key}/memory/{section}/{id} 200") {
+		t.Fatalf("the lookups did not answer through their routes:\n%s", ih.log.String())
 	}
 	after := fileStates(t, f.h.root)
 	for path := range after {

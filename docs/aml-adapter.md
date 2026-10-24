@@ -151,8 +151,9 @@ never carry a secret. One alert bot serves every instance on a host; the watcher
 | `--max-open-stores` (`AML_MAX_OPEN_STORES`) | 16 | 2 | `--max-open-stores` |
 | `--consolidation-workers` (`AML_WORKERS`) | 4 | 1 | `--consolidation-workers` |
 
-The dedicated numbers are provisional: the load test on the evaluation host (Task 12 of the
-serve-hardening plan) replaces them with measured values. The evaluation host has 48 GB, so
+The dedicated numbers are provisional: the load test on the evaluation host
+(`scripts/aml/load.sh`, see "Capacity declaration") replaces them with measured values. The
+evaluation host has 48 GB, so
 40G leaves room for Caddy, sshd and the watcher; the 8 GB beta host holds about five beta
 instances at the defaults. `GOMEMLIMIT` makes the Go runtime collect harder as the instance
 nears its `MemoryMax=`, rather than be killed there.
@@ -702,7 +703,7 @@ admin /metrics | grep '^mnemon_aml_'
 | `mnemon_aml_shed_total{route}` | requests shed with 503 (`add`, `search`) |
 | `mnemon_aml_search_degraded_total` | Searches answered by the raw ranking |
 | `mnemon_aml_search_partial_total{stage}` | stages of a read that fell back, once per Search |
-| `mnemon_aml_model_attempts_total{kind,class,outcome}` | model call attempts: class `interactive`, `flush` or `background`; outcome `ok`, `throttled` (HTTP 429, retried after its `Retry-After`; without one, or with one of 0, an invalid value or a past date, an `interactive` or `flush` call retries after at most 2, 4, 8 and 16 s, each wait 75–100% of that at random, 30 s in all at most per model call: a Search makes many calls, so under a long storm it can wait longer in all, up to its `--search-timeout`; no wait is planned past it), `invalid` (a reply that did not parse or validate, retried once), `rejected` (HTTP 401, 402 or 403: the key or the balance was refused; not retried), `retryable`, `failed`, `breaker-open`, `bulkhead-full` or `budget`. Every outcome but `ok` is a model failure the console shows |
+| `mnemon_aml_model_attempts_total{kind,class,outcome}` | model call attempts: class `interactive`, `flush` or `background`; outcome `ok`, `throttled` (HTTP 429, retried after its `Retry-After`; without one, or with one of 0, an invalid value or a past date, an `interactive` or `flush` call retries patiently: the k-th wait is a jittered floor of at most 2, 4, 8 and 16 s (75–100% of it at random), or the class's backoff when that is longer, as after earlier 5xx retries; 30 s in all at most per model call: a Search makes many calls, so under a long storm it can wait longer in all, up to its `--search-timeout` for its read and up to its own 10-minute flush window for its flush; no wait is planned past them), `invalid` (a reply that did not parse or validate, retried once), `rejected` (HTTP 401, 402 or 403: the key or the balance was refused; not retried), `retryable`, `failed`, `breaker-open`, `bulkhead-full` or `budget`. Every outcome but `ok` is a model failure the console shows |
 | `mnemon_aml_model_attempt_seconds{kind,class}` | time of the attempts that went to the provider |
 | `mnemon_aml_model_retries_total{kind}` | attempts after a call's first |
 | `mnemon_aml_consolidation_jobs_total{outcome}` | scheduler jobs: `ok`, `failed`, `paused`, `canceled` |
@@ -755,12 +756,14 @@ operator decides otherwise after checking the submission's rules.
   is never opened, the model cache is off, and the service has no metrics. Lexical searches,
   the default, call no model and cost nothing: they are the raw ranking aml-serve answers a
   degraded Search with, byte for byte.
-- It runs at a low priority within small limits: `Nice=10`, `IOSchedulingClass=idle`,
-  `MemoryMax=1G` (and `GOMEMLIMIT=819MiB`), `CPUQuota=100%`, two requests reading stores at
-  once (`--max-concurrent`). On a disk whose I/O scheduler honours the idle class (`bfq`, and
-  `mq-deadline` since Linux 5.14), a heavily loaded host could delay aml-serve's consolidation
-  writes to `memory-index.db` by up to their 10-second busy timeout while a slow inspect read
-  holds its read lock; NVMe's usual scheduler, `none`, ignores the class.
+- It runs at a low priority within small limits: `Nice=10`, `IOSchedulingClass=best-effort`
+  at `IOSchedulingPriority=7` (the lowest), `MemoryMax=1G` (and `GOMEMLIMIT=819MiB`),
+  `CPUQuota=100%`, two requests reading stores at once (`--max-concurrent`). Not the idle
+  class: under sustained I/O it can starve, and on a disk whose I/O scheduler honours it (`bfq`,
+  and `mq-deadline` since Linux 5.14) a starved inspect read would hold its read (SHARED) lock on
+  the rollback-journal `memory-index.db` and delay aml-serve's consolidation writes, by up to
+  their 10-second busy timeout. Best-effort 7 puts the reads behind aml-serve's without starving
+  them; NVMe's usual scheduler, `none`, ignores the classes.
 - Its log lines name the method, the route, the status, the time and the store by its
   8-digit prefix (`journalctl -u aml-inspect@<n>`), never a key, a user id, a query or any
   content; resolving a user id logs no store at all.
@@ -989,26 +992,38 @@ dedicated instance on the evaluation host, never on `eval`, before the submissio
 submit the placeholders. The declared concurrency must stay at or below the instance's
 `--max-concurrent-adds` and `--max-concurrent-searches`.
 
-To measure Search latency at concurrency `C` over `N` users that already hold data, on the
-host: set `n` (the scratch instance), `BASE` and the `aml` function as in "Health and smoke
-test", which keeps the key off the command lines, then:
+Measure with the load test, [`scripts/aml/load.sh`](../scripts/aml/README.md), run as root on
+the host against the scratch instance `n`. It reads the API key and the admin token from the
+instance's env file (its `AML_API_KEY=` and `MNEMON_ADMIN_TOKEN=` lines), never from a command
+line, and it settles the consolidation scheduler between steps through the admin listener. The
+host has no Go: copy `scripts/aml/` there, with a vegeta v12.13.0 binary that `VEGETA` names,
+built on the build machine (`GOOS=linux GOARCH=amd64 go install
+github.com/tsenart/vegeta/v12@v12.13.0`, with `GOBIN` unset, puts it in
+`$(go env GOPATH)/bin/linux_amd64/`). Every request reaches the real providers and spends the
+instance's budget, so start at low rates:
 
 ```sh
-export -f aml; export n BASE
-C=4; N=40
-seq 1 "$N" | xargs -P "$C" -I{} bash -c 'aml /search "{\"query\":\"What did the user say about their dog?\",\"user_id\":\"u{}\",\"top_k\":100}" \
-  -s -o /dev/null -w "%{http_code} %{time_total}\n"' > search.txt
-awk '{n[$1]++} END{for (c in n) print "status", c, n[c]}' search.txt
-sort -k2 -n search.txt | awk '{t[NR]=$2} END{print "p50", t[int(NR*0.5+0.5)], "p95", t[int(NR*0.95+0.5)]}'
+env=/etc/mnemon-aml/$n/env
+BASE=$(grep -E '^AML_PUBLIC_URL=' "/etc/mnemon-aml/$n/watch.env" | cut -d= -f2-)
+ADMIN=http://$(grep -E '^AML_ADMIN_LISTEN=' "$env" | cut -d= -f2-)
+VEGETA=/usr/local/bin/vegeta scripts/aml/load.sh --base-url "$BASE" --key-file "$env" \
+  --admin-url "$ADMIN" --admin-token-file "$env" --mode search --rates 0.25,0.5,1
+VEGETA=/usr/local/bin/vegeta scripts/aml/load.sh --base-url "$BASE" --key-file "$env" \
+  --admin-url "$ADMIN" --admin-token-file "$env" --mode add --rates 1,2,4
 ```
 
-Raise `C` until the p95 or the share of non-200 answers gets worse, and note the largest `C`
-that stays acceptable. Watch the process memory (`systemctl status aml-serve@$n`), the 503
-count, `mnemon_aml_shed_total` and `degraded search` lines in the journal. Do the same for Add
-with distinct `request_id` and `user_id` values. Adds return after persistence, but at the lag
-bound they wait for the workers, which call DeepSeek (up to four extractions at once per job)
-and JEV (linking): measure Adds that complete full batches, and note the concurrency at which
-the providers answer `model HTTP 429`.
+Each run adds users of its own (`load-<run>-u<k>`, named in its `report.json`): delete them, or
+the scratch instance, afterwards. The report gives, per step, the p50, p95 and p99, the non-2xx
+answers and the peak of requests in flight, and per route the knee: the highest rate whose p95
+and p50 stay within twice the lowest rate's, with no non-2xx answer. Watch the process memory
+(`systemctl status aml-serve@$n`), the 503 count, `mnemon_aml_shed_total` and `degraded search`
+lines in the journal while it runs. Adds return after persistence, but at the lag bound they
+wait for the workers, which call DeepSeek (up to four extractions at once per job) and JEV
+(linking): note the rate at which the providers answer `model HTTP 429`.
+
+The values marked "local, fake providers" come from the final verification run,
+`scripts/aml/final.sh` on a quiet development machine: the whole fault drill and both knees of
+one commit, built from its `git archive`, against the fake providers.
 
 ## Health and smoke test
 
@@ -1081,7 +1096,7 @@ scratch instance first if continuous replication is needed.
 | **404** `{"error":"not found"}` from a shared host | No instance has that `/i/<n>` prefix: check the base URL and `mnemon-instance list`. |
 | **413** | The body is over 30 MiB (the platform splits at 20 messages or 2,000 words, so this means a client bug). |
 | **502** or **504** from Caddy | The instance is down for longer than Caddy's 30 s of dialing (`systemctl status aml-serve@<n>`), a dedicated instance is suspended, or a proxy timeout is below the platform's 31 minutes: compare the timeouts with `deploy/aml/Caddyfile.dedicated` or the snippet. |
-| `degraded search …` in the log | The planner, JEV or a budget failed for that question, or the read ran past `--search-timeout`. The platform still got a 200 with the raw ranking. Read the error after the colon: `model HTTP 401` or `model HTTP 403` (a wrong, expired or revoked key) and `model HTTP 402` (an empty balance; DeepSeek says `Insufficient Balance`), which also page as `provider-rejected:<kind>` (below); `model HTTP 429` (the provider's rate limit outlasted the call's retries: up to its `Retry-After`, or without one (or with one of 0, an invalid value or a past date) at most 2, 4, 8 and 16 s, jittered down by up to a quarter, 30 s in all per model call; a Search makes many calls, so under a long storm it can wait longer in all, up to its `--search-timeout`, and no wait is planned past it); `the provider's retry budget is spent` (the provider's retries, patient ones included, used up their budget: 20% of a minute's calls, at least 5 a second); `model endpoint unreachable` (network or DNS; nothing was sent), `request failed` (network, after sending), `attempt timed out` (an attempt waited past its timeout: 45 s for the planner, 20 s for JEV, 180 s for a flush's extraction), `the reply stopped sending` (a reply sent nothing for 60 s after its headers came), `context deadline exceeded` (the timeout), `spending cap reached` (below). |
+| `degraded search …` in the log | The planner, JEV or a budget failed for that question, or the read ran past `--search-timeout`. The platform still got a 200 with the raw ranking. Read the error after the colon: `model HTTP 401` or `model HTTP 403` (a wrong, expired or revoked key) and `model HTTP 402` (an empty balance; DeepSeek says `Insufficient Balance`), which also page as `provider-rejected:<kind>` (below); `model HTTP 429` (the provider's rate limit outlasted the call's retries: up to its `Retry-After`, or without one (or with one of 0, an invalid value or a past date) a jittered floor of at most 2, 4, 8 and 16 s, down by up to a quarter, or the class's backoff when that is longer, as after earlier 5xx retries; 30 s in all per model call; a Search makes many calls, so under a long storm it can wait longer in all, up to its `--search-timeout` for the read and up to its own 10-minute flush window for the flush, and no wait is planned past them); `the provider's retry budget is spent` (the provider's retries, patient ones included, used up their budget: 20% of a minute's calls, at least 5 a second); `model endpoint unreachable` (network or DNS; nothing was sent), `request failed` (network, after sending), `attempt timed out` (an attempt waited past its timeout: 45 s for the planner, 20 s for JEV, 180 s for a flush's extraction), `the reply stopped sending` (a reply sent nothing for 60 s after its headers came), `context deadline exceeded` (the timeout), `spending cap reached` (below). |
 | `provider-rejected:<kind>` alert | The provider refuses the instance's requests: 401 or 403, a wrong, expired or revoked key; 402, an empty balance (DeepSeek: `Insufficient Balance`). They are not retried: Searches degrade or partially degrade, and consolidation backs off with its batches pending (no record is dropped). Check the account's balance in the provider's console and top it up: the next call goes through, with no restart. For a new key, put it into `DEEPSEEK_API_KEY=` or `TYPESAFE_API_KEY=` of `/etc/mnemon-aml/<n>/env` (and of `/etc/mnemon-aml/host.env`, which `new` copies from) with an editor, then `systemctl restart aml-serve@<n>`. `mnemon_aml_model_attempts_total{outcome="rejected"}` shows the call classes affected; the alert resolves once no new rejection has been seen for 10 minutes. |
 | `model spending cap reached, including unresolved reservations` | A budget is exhausted. Searches degrade to the raw ranking. A spent DeepSeek budget stops consolidation (a spent budget never drops records from the index). A spent JEV budget does not: layered consolidation goes on, but links without JEV. Raise `budgets` in `/etc/mnemon-aml/<n>/memory-config.json` and `systemctl restart aml-serve@<n>`; spent amounts are kept and the new cap applies at once. Check `spent` and `held` first (`mnemon-preflight <n>`): reservations held by calls in flight, or by requests still in flight when the service last exited, count against the cap. |
 | Empty or poor plans, many degraded searches with a DeepSeek planner | The planner has `thinking` on. Remove it (`deepseek-flash` without thinking). |

@@ -38,10 +38,13 @@
 # after it applied the first scenario's fault, while the workload and the
 # sampler run, so that a test can check the cleanup leaves no process.
 # AML_DRILL_SCENARIOS=FILE runs the table in FILE (the columns below) in
-# place of this one; AML_DRILL_RESIDUAL_LIMIT=N lowers the residual limit.
+# place of this one; AML_DRILL_RESIDUAL_LIMIT=N sets the residual limit.
 #
 # The scenario table: name|class|window|fault type|its specification|
-# searches|effect|degraded|partial|p95|breaker|retries|what it is.
+# searches|effect|degraded|partial|p95|breaker|retries|what it is; lines
+# that start with # are comments. The drill checks every row before it
+# starts anything, and refuses the run (2) when a column holds a value it
+# could not judge: a typo would otherwise drop a criterion without a word.
 #   - class: hard and expected scenarios fail the run on any criterion;
 #     measured ones fail it only on the validity criteria (below) and report
 #     the rest.
@@ -53,17 +56,35 @@
 #     (/admin/status rejectedByKind), fake:KIND:OUTCOME (what the fake
 #     provider counted; KIND all for both). none: no fault, and none of
 #     retries, failed, breaker-open, throttled, invalid or rejected may show.
-#   - degraded, partial: 0 (none may), >0 (some must), - (not judged).
+#   - degraded, partial: the bound on the degraded, and on the partially
+#     degraded, Searches of a run: 0 (none may), >0 (some must), K (at most
+#     K), - (not judged), or one of ruling R82's, fixed in advance from the
+#     retry policy:
+#       - P^A, for a fault random per attempt at rate P, which the policy
+#         gives A attempts (2 for an invalid reply, retried once; 4, the
+#         Interactive attempts, for a reset, a 5xx, a spike or a stall): at
+#         most max(1, ⌈N × min(1, 2·10·P^A)⌉) of the N Searches the run
+#         answered. A Search makes about 10 model calls, each of which fails
+#         when all its A attempts do (P^A); the 2 is a margin for chance.
+#       - window+S, for a fault over the window: at most the Searches that
+#         started in the window or in the S seconds after it, and so none of
+#         those that started before it. S is 45, the Interactive deadline:
+#         the longest an attempt of a Search's call waits (the planner's
+#         timeout; JEV's is 20 s).
 #   - p95: the most seconds the Search p95 may take, or -.
 #   - breaker: cycle (a breaker opens during the fault and every one has
-#     closed again within 180 s of its end), steady (none opens), or -.
+#     closed again within 180 s of its end), steady (none opens, with
+#     samples to show it), or -.
 #   - retries: 0:KIND (the calls of that kind are not retried), or -.
 # Every scenario also has: non2xx (no non-2xx answer but deliberate 503
 # sheds), drain (the scheduler has no work within 600 s of the fault's end),
-# residual (its largest backlog, then, below 10,000 characters), held (every
-# account's held amount back to 0 within 90 s after the drain) and withoutJEV
-# (no "without JEV" line, no link fallback). The validity criteria, which
-# fail any run: searches, effect, non2xx, held and withoutJEV.
+# residual (its largest backlog, then, below 10,500 characters: an idle user
+# may hold up to a batch, 10,000 characters, and the backlog's estimate also
+# counts the records' headers, which a batch does not; 5% covers them), held
+# (every account's held amount back to 0 within 90 s after the drain) and
+# withoutJEV (no "without JEV" line, no link fallback). The validity
+# criteria, which fail any run: searches, effect, non2xx, held and
+# withoutJEV.
 #
 # How the scenarios are sized, from internal/memoryagent/resilience.go and
 # the shipped configuration (no timeoutSeconds but the consolidator's 600):
@@ -72,11 +93,15 @@
 #     random part of 0.5, 1 and 2 s, or a Retry-After up to 10 s.
 #   - A Search's flush (Flush) makes 3 attempts of at most 180 s; background
 #     jobs (Background) 3 of the hard timeout; retries after up to 2 and 4 s,
-#     or a Retry-After up to 5 min.
+#     or a Retry-After up to 5 min. A flush that fails degrades no Search:
+#     the Search reads what is consolidated.
 #   - Every attempt fails once its reply has sent nothing for 60 s.
 #   - A 429 without Retry-After is retried patiently by Interactive and Flush
-#     calls, apart from their attempts: after at most 2, 4, 8 and 16 s, 30 s
-#     in all a call. A 401, 402 or 403 (rejected) is not retried.
+#     calls, apart from their attempts: the k-th after a jittered floor of
+#     at most 2, 4, 8 and 16 s (a longer class backoff, after earlier 5xx
+#     retries, wins), 30 s in all a call. A 401, 402 or 403 (rejected) is not
+#     retried.
+#   - An invalid reply is retried once, within the class's attempts.
 #   - A provider's breaker opens after 10 availability failures in a row (a
 #     429, an invalid reply and a rejection are none), refuses calls for
 #     20 s, and closes after 2 probes answer.
@@ -86,9 +111,11 @@
 # at most 60 s an attempt. The hard scenarios are sized under that: a 30 s
 # blackhole, 12 s 429 storms, a 20 s one without Retry-After, replies 50 s
 # late for 40 s, 30% of connections reset, malformed replies of both kinds
-# at 5% (one invalid reply is retried), and stalls of 5% (their Search p95
-# under the 180 s Flush attempt cap). The expected ones go past it:
-# connections refused for 120 s, and an empty balance (402) of either kind.
+# at 5%, and stalls of 5% (their Search p95 under the 180 s Flush attempt
+# cap). Those whose fault is random or holds over a window are bounded by
+# R82 (above), each bound derived in the table; the deterministic ones keep
+# exact bounds. The expected ones go past the policy: connections refused for
+# 120 s, and an empty balance (402) of either kind.
 set -euo pipefail
 umask 077
 export LC_ALL=C
@@ -96,10 +123,15 @@ export LC_ALL=C
 readonly PROG=aml-drill
 # shellcheck source=scripts/aml/lib.sh
 . "$(dirname "$0")/lib.sh"
+aml_trap_exit
 
 OUT= ONLY= REPEAT=1 BINARY= BUILT_FROM= SEARCH_RATE=0.25 ADD_RATE=0.5 USERS=4 SEED_ADDS=10 ERROR_STATUS=503 PORT_BASE=18700
 readonly PRE=10 POST=15 RECOVER_LIMIT=180 MESSAGES=10 DRAIN_LIMIT=600 HELD_LIMIT=90
-readonly RESIDUAL_LIMIT=${AML_DRILL_RESIDUAL_LIMIT:-10000}
+# The residual-backlog limit (ruling R78): a consolidation batch is 10,000
+# characters, so an idle user may hold up to that much once the scheduler
+# has no work; the backlog's estimate counts the records' headers too, which
+# a batch does not, and 5% covers them.
+readonly RESIDUAL_LIMIT=${AML_DRILL_RESIDUAL_LIMIT:-10500}
 # The minimum Search counts of the table are for this rate.
 readonly TABLE_RATE=0.25
 
@@ -108,6 +140,9 @@ usage() {
 	exit 2
 }
 while [ $# -gt 0 ]; do
+	# Every option takes a value: one without it is a usage error (2), never
+	# an unbound $2 under set -u, whose 1 would read as a failed criterion.
+	[ $# -ge 2 ] || usage
 	case $1 in
 	--out) OUT=$2 ;;
 	--only) ONLY=$2 ;;
@@ -122,7 +157,6 @@ while [ $# -gt 0 ]; do
 	--port-base) PORT_BASE=$2 ;;
 	*) usage ;;
 	esac
-	[ $# -ge 2 ] || usage
 	shift 2
 done
 case $ERROR_STATUS in 500 | 502 | 503 | 529) ;; *) aml_die "--error-status must be 500, 502, 503 or 529" ;; esac
@@ -151,46 +185,115 @@ fi
 # malformed as its kind can be, and so is a DeepSeek one (invalid-json only
 # where the caller parses JSON: the extraction).
 scenarios() {
-	if [ -n "${AML_DRILL_SCENARIOS:-}" ]; then
-		grep -v '^[[:space:]]*\(#\|$\)' "$AML_DRILL_SCENARIOS"
-		return
-	fi
-	cat <<EOF
+	{
+		if [ -n "${AML_DRILL_SCENARIOS:-}" ]; then
+			cat "$AML_DRILL_SCENARIOS"
+		else
+			cat <<EOF
+# The bounds on degraded and partial Searches of the rows whose fault is
+# random or holds over a window are ruling R82's (see the header), derived
+# here before any run: N is the Searches a run answers, about (25 + window) / 4
+# rounded up at 0.25 a second (10 s before the fault, 15 s after it: 14 for a
+# window of 30 s, 17 for 40, 18 for 45, 22 for 60), and c = 10 model calls a
+# Search. The other rows are deterministic and keep exact bounds.
 baseline|hard|60|none|-|12|none|0|0|-|steady|-|no fault: the workload alone
-outage-30s|hard|30|toxic|both timeout downstream 1 {"timeout":0}|8|retries|0|0|-|-|-|blackhole on both providers for 30 s: connections accepted, nothing answered
+# outage-30s, over a window of 30 s: the Searches started in it or in the 45 s
+# after it; the workload ends 15 s after it, so 11 of N 14 at 0.25 a second,
+# and none of the 3 started before it.
+outage-30s|hard|30|toxic|both timeout downstream 1 {"timeout":0}|8|retries|window+45|window+45|-|-|-|blackhole on both providers for 30 s: connections accepted, nothing answered
 429-retry-after|hard|12|fake|all={"errorRate":1,"errorStatus":429,"retryAfter":"5"}|5|throttled|0|0|-|steady|-|every call of both kinds 429 with Retry-After 5 for 12 s
 429-no-retry-after|hard|12|fake|all={"errorRate":1,"errorStatus":429}|5|throttled|0|0|-|steady|-|every call of both kinds 429 without Retry-After for 12 s (3 patient retries)
 429-no-retry-after-short|hard|20|fake|all={"errorRate":1,"errorStatus":429}|6|throttled|0|0|-|steady|-|every call of both kinds 429 without Retry-After for 20 s, under the 30 s a call (4 patient retries)
-slow-past-timeout|hard|40|toxic|both latency downstream 1 {"latency":50000}|9|retries|0|0|-|-|-|every reply of both kinds 50 s late (past both attempt timeouts) for 40 s
-resets|hard|30|toxic|both reset_peer downstream 0.3 {"timeout":0}|8|retries|0|0|-|-|-|30% of the connections to both providers reset for 30 s
+# slow-past-timeout, over a window of 40 s: likewise 14 of N 17, and none of
+# the 3 started before it.
+slow-past-timeout|hard|40|toxic|both latency downstream 1 {"latency":50000}|9|retries|window+45|window+45|-|-|-|every reply of both kinds 50 s late (past both attempt timeouts) for 40 s
+# resets: p 0.3 (a new connection reset; one kept alive is not), a 4 (a reset
+# is retried within the Interactive attempts): 2·10·0.3^4 = 0.162, N 14:
+# ⌈2.27⌉ = 3.
+resets|hard|30|toxic|both reset_peer downstream 0.3 {"timeout":0}|8|retries|0.3^4|0.3^4|-|-|-|30% of the connections to both providers reset for 30 s
 latency-2x|measured|60|fake|deepseek={"latency":"4s"} jev={"latency":"3s"}|12|fake:all:slow|-|-|-|-|-|latency doubled (DeepSeek 4 s, JEV 3 s), below the attempt timeouts
 latency-4x|measured|60|fake|deepseek={"latency":"8s"} jev={"latency":"6s"}|12|fake:all:slow|-|-|-|-|-|latency 4x (DeepSeek 8 s, JEV 6 s), below the attempt timeouts
-jev-spikes-5|measured|60|fake|jev={"spikeRate":0.05,"spikeLatency":"25s"}|12|fake:jev:spike|-|-|-|-|-|5% of JEV calls 25 s slower (past the 20 s attempt timeout)
-jev-spikes-20|measured|60|fake|jev={"spikeRate":0.2,"spikeLatency":"25s"}|12|fake:jev:spike|-|-|-|-|-|20% of JEV calls 25 s slower
-deepseek-spikes-5|measured|60|fake|deepseek={"spikeRate":0.05,"spikeLatency":"50s"}|12|fake:deepseek:spike|-|-|-|-|-|5% of DeepSeek calls 50 s slower (past the 45 s attempt timeout)
-deepseek-spikes-20|measured|60|fake|deepseek={"spikeRate":0.2,"spikeLatency":"50s"}|12|fake:deepseek:spike|-|-|-|-|-|20% of DeepSeek calls 50 s slower
-5xx-10|measured|60|fake|all={"errorRate":0.1,"errorStatus":$ERROR_STATUS}|12|retries|-|-|-|-|-|10% of the calls of both kinds answered $ERROR_STATUS
-5xx-30|measured|60|fake|all={"errorRate":0.3,"errorStatus":$ERROR_STATUS}|12|retries|-|-|-|-|-|30% of the calls of both kinds answered $ERROR_STATUS
-malformed-invalid-json-5|hard|45|fake|all={"malformedRate":0.05,"malformed":"invalid-json"}|10|invalid|0|-|-|steady|-|5% of the replies of both kinds prose where the caller parses JSON (JEV; DeepSeek extraction)
-malformed-invalid-json-20|measured|45|fake|all={"malformedRate":0.2,"malformed":"invalid-json"}|10|invalid|-|-|-|steady|-|20% of the replies of both kinds prose where the caller parses JSON
-malformed-empty-5|hard|45|fake|all={"malformedRate":0.05,"malformed":"empty"}|10|invalid|0|-|-|steady|-|5% of the replies of both kinds empty (DeepSeek: no choices or no content; JEV: answers {})
-malformed-empty-20|measured|45|fake|all={"malformedRate":0.2,"malformed":"empty"}|10|invalid|-|-|-|steady|-|20% of the replies of both kinds empty
-malformed-truncated-5|hard|45|fake|all={"malformedRate":0.05,"malformed":"truncated"}|10|invalid|0|-|-|steady|-|5% of the replies of both kinds cut short (DeepSeek: content cut at its limit; JEV: body cut mid-JSON)
-malformed-truncated-20|measured|45|fake|all={"malformedRate":0.2,"malformed":"truncated"}|10|invalid|-|-|-|steady|-|20% of the replies of both kinds cut short
-malformed-wrong-schema-5|hard|45|fake|all={"malformedRate":0.05,"malformed":"wrong-schema"}|10|invalid|0|-|-|steady|-|5% of the replies of both kinds valid JSON of the wrong schema
-malformed-wrong-schema-20|measured|45|fake|all={"malformedRate":0.2,"malformed":"wrong-schema"}|10|invalid|-|-|-|steady|-|20% of the replies of both kinds valid JSON of the wrong schema
-stalls-5|hard|60|fake|all={"stallRate":0.05}|12|retries|-|-|180|-|-|5% of the replies of both kinds send headers and half the body, then hang
+# The spikes: p 0.05 or 0.2, a 4 (an attempt past its timeout is retried):
+# 2·10·0.05^4 = 0.000125 and 2·10·0.2^4 = 0.032, N 22: max(1, ⌈0.003⌉) and
+# max(1, ⌈0.70⌉), 1 each.
+jev-spikes-5|measured|60|fake|jev={"spikeRate":0.05,"spikeLatency":"25s"}|12|fake:jev:spike|0.05^4|0.05^4|-|-|-|5% of JEV calls 25 s slower (past the 20 s attempt timeout)
+jev-spikes-20|measured|60|fake|jev={"spikeRate":0.2,"spikeLatency":"25s"}|12|fake:jev:spike|0.2^4|0.2^4|-|-|-|20% of JEV calls 25 s slower
+deepseek-spikes-5|measured|60|fake|deepseek={"spikeRate":0.05,"spikeLatency":"50s"}|12|fake:deepseek:spike|0.05^4|0.05^4|-|-|-|5% of DeepSeek calls 50 s slower (past the 45 s attempt timeout)
+deepseek-spikes-20|measured|60|fake|deepseek={"spikeRate":0.2,"spikeLatency":"50s"}|12|fake:deepseek:spike|0.2^4|0.2^4|-|-|-|20% of DeepSeek calls 50 s slower
+# 5xx: p 0.1 or 0.3, a 4 (a 5xx is retried): 2·10·0.1^4 = 0.002, N 22:
+# max(1, ⌈0.04⌉) = 1; 2·10·0.3^4 = 0.162, N 22: ⌈3.56⌉ = 4.
+5xx-10|measured|60|fake|all={"errorRate":0.1,"errorStatus":$ERROR_STATUS}|12|retries|0.1^4|0.1^4|-|-|-|10% of the calls of both kinds answered $ERROR_STATUS
+5xx-30|measured|60|fake|all={"errorRate":0.3,"errorStatus":$ERROR_STATUS}|12|retries|0.3^4|0.3^4|-|-|-|30% of the calls of both kinds answered $ERROR_STATUS
+# Malformed replies: p 0.05 or 0.2, a 2 (an invalid reply is retried once):
+# 2·10·0.05^2 = 0.05, N 18: ⌈0.9⌉ = 1; 2·10·0.2^2 = 0.8, N 18: ⌈14.4⌉ = 15.
+malformed-invalid-json-5|hard|45|fake|all={"malformedRate":0.05,"malformed":"invalid-json"}|10|invalid|0.05^2|0.05^2|-|steady|-|5% of the replies of both kinds prose where the caller parses JSON (JEV; DeepSeek extraction)
+malformed-invalid-json-20|measured|45|fake|all={"malformedRate":0.2,"malformed":"invalid-json"}|10|invalid|0.2^2|0.2^2|-|steady|-|20% of the replies of both kinds prose where the caller parses JSON
+malformed-empty-5|hard|45|fake|all={"malformedRate":0.05,"malformed":"empty"}|10|invalid|0.05^2|0.05^2|-|steady|-|5% of the replies of both kinds empty (DeepSeek: no choices or no content; JEV: answers {})
+malformed-empty-20|measured|45|fake|all={"malformedRate":0.2,"malformed":"empty"}|10|invalid|0.2^2|0.2^2|-|steady|-|20% of the replies of both kinds empty
+malformed-truncated-5|hard|45|fake|all={"malformedRate":0.05,"malformed":"truncated"}|10|invalid|0.05^2|0.05^2|-|steady|-|5% of the replies of both kinds cut short (DeepSeek: content cut at its limit; JEV: body cut mid-JSON)
+malformed-truncated-20|measured|45|fake|all={"malformedRate":0.2,"malformed":"truncated"}|10|invalid|0.2^2|0.2^2|-|steady|-|20% of the replies of both kinds cut short
+malformed-wrong-schema-5|hard|45|fake|all={"malformedRate":0.05,"malformed":"wrong-schema"}|10|invalid|0.05^2|0.05^2|-|steady|-|5% of the replies of both kinds valid JSON of the wrong schema
+malformed-wrong-schema-20|measured|45|fake|all={"malformedRate":0.2,"malformed":"wrong-schema"}|10|invalid|0.2^2|0.2^2|-|steady|-|20% of the replies of both kinds valid JSON of the wrong schema
+# stalls-5: p 0.05, a 4 (a stall is cut at its attempt timeout and retried):
+# 2·10·0.05^4 = 0.000125, N 22: 1.
+stalls-5|hard|60|fake|all={"stallRate":0.05}|12|retries|0.05^4|0.05^4|180|-|-|5% of the replies of both kinds send headers and half the body, then hang
+# outage-sustained holds over a window too, but outlasts the policy: some
+# Searches must degrade, and the breaker must cycle.
 402-balance-deepseek|expected|30|fake|deepseek={"errorRate":1,"errorStatus":402}|8|rejected:deepseek|>0|-|-|steady|0:deepseek|DeepSeek answers 402 Insufficient Balance for 30 s: the Searches then degrade
 402-balance-jev|expected|30|fake|jev={"errorRate":1,"errorStatus":402}|8|rejected:jev|>0|-|-|steady|0:jev|JEV answers 402 Insufficient Balance for 30 s: the Searches then degrade
 outage-sustained|expected|120|down|both|21|breaker-open|>0|-|-|cycle|-|connections refused on both providers for 120 s, longer than any retry
 EOF
+		fi
+	} | grep -v '^[[:space:]]*\(#\|$\)' || true
 }
 
+# refuse_row N NAME COLUMN VALUE WANT: refuses the run for row N of the table.
+refuse_row() {
+	aml_die "the scenario table ($TABLE), row $1 ($2): $3 \"$4\" is not $5"
+}
+
+# check_table ROWS: every row of the table has its 13 columns, a name of its
+# own, and in each column the drill judges by a value it can judge (see the
+# header); else the run is refused (2), naming the row and the column. A
+# typo such as =0 for 0 would otherwise leave its criterion unjudged.
+check_table() {
+	local row n=0 pipes names=, name class window type spec searches effect degraded partial p95 breaker retries what
+	local word='^[A-Za-z0-9._-]+$' whole='^[0-9]+$' seconds='^[1-9][0-9]*$' p95s='^(-|[0-9]+(\.[0-9]+)?)$' kept='^(-|0:(deepseek|jev))$'
+	local bound='^(-|0|>0|[0-9]+|(0\.[0-9]*[1-9][0-9]*|1|1\.0+)\^[1-9][0-9]*|window\+[0-9]+)$'
+	local effects='^(none|retries|ok|throttled|invalid|rejected|retryable|failed|breaker-open|bulkhead-full|budget|rejected:(deepseek|jev)|fake:(deepseek|jev|all):[A-Za-z0-9:_-]+)$'
+	local bounds='-, 0, >0, a whole number, P^A (P above 0 and at most 1, A at least 1) or window+S'
+	[ -n "$1" ] || aml_die "the scenario table ($TABLE) holds no scenario"
+	while IFS= read -r row; do
+		n=$((n + 1))
+		pipes=${row//[^|]/}
+		[ "${#pipes}" = 12 ] || aml_die "the scenario table ($TABLE), row $n: $((${#pipes} + 1)) columns, not 13"
+		IFS='|' read -r name class window type spec searches effect degraded partial p95 breaker retries what <<<"$row"
+		[[ $name =~ $word ]] || refuse_row "$n" "$name" "the name" "$name" "letters, digits, '.', '_' and '-'"
+		case $names in *",$name,"*) refuse_row "$n" "$name" "the name" "$name" "a name of its own: an earlier row has it" ;; esac
+		names=$names$name,
+		case $class in hard | expected | measured) ;; *) refuse_row "$n" "$name" class "$class" "hard, expected or measured" ;; esac
+		[[ $window =~ $seconds ]] || refuse_row "$n" "$name" window "$window" "whole seconds, at least 1"
+		case $type in toxic | down | fake | none) ;; *) refuse_row "$n" "$name" "the fault type" "$type" "toxic, down, fake or none" ;; esac
+		[ -n "$spec" ] || refuse_row "$n" "$name" "the specification" "$spec" "given (- for none)"
+		[[ $searches =~ $whole ]] || refuse_row "$n" "$name" searches "$searches" "a whole number"
+		[[ $effect =~ $effects ]] || refuse_row "$n" "$name" effect "$effect" "none, retries, an attempt outcome, rejected:KIND or fake:KIND:OUTCOME"
+		[[ $degraded =~ $bound ]] || refuse_row "$n" "$name" degraded "$degraded" "$bounds"
+		[[ $partial =~ $bound ]] || refuse_row "$n" "$name" partial "$partial" "$bounds"
+		[[ $p95 =~ $p95s ]] || refuse_row "$n" "$name" p95 "$p95" "- or seconds"
+		case $breaker in - | cycle | steady) ;; *) refuse_row "$n" "$name" breaker "$breaker" "-, cycle or steady" ;; esac
+		[[ $retries =~ $kept ]] || refuse_row "$n" "$name" retries "$retries" "- or 0:KIND"
+		[ -n "$what" ] || refuse_row "$n" "$name" "the description" "$what" "given"
+	done <<<"$1"
+}
+
+TABLE=${AML_DRILL_SCENARIOS:-built-in}
+TABLE_ROWS=$(scenarios)
+check_table "$TABLE_ROWS"
 # The scenarios this run selects, in the table's order.
-SELECTED=$(scenarios | while IFS='|' read -r name _; do
+SELECTED=$(while IFS='|' read -r name _; do
 	# The leading parenthesis keeps bash 3.2 from ending $( at the pattern's.
 	case ",$ONLY," in (",," | *",$name,"*) printf '%s\n' "$name" ;; esac
-done)
+done <<<"$TABLE_ROWS")
 [ -n "$SELECTED" ] || aml_die "no scenario matched --only $ONLY"
 if [ -n "$ONLY" ]; then
 	for name in $(tr ',' ' ' <<<"$ONLY"); do
@@ -199,10 +302,9 @@ if [ -n "$ONLY" ]; then
 fi
 # A run of some scenarios, or of a table of one's own, is a partial run.
 PARTIAL=$({ [ -n "$ONLY" ] || [ -n "${AML_DRILL_SCENARIOS:-}" ]; } && echo true || echo false)
-TABLE=${AML_DRILL_SCENARIOS:-built-in}
-NEED_TOXI=$(scenarios | awk -F'|' -v selected="$(tr '\n' ' ' <<<"$SELECTED")" '
+NEED_TOXI=$(awk -F'|' -v selected="$(tr '\n' ' ' <<<"$SELECTED")" '
 	BEGIN { n = split(selected, s, " "); for (i = 1; i <= n; i++) want[s[i]] = 1 }
-	want[$1] && ($4 == "toxic" || $4 == "down") { found = 1 } END { print found ? 1 : 0 }')
+	want[$1] && ($4 == "toxic" || $4 == "down") { found = 1 } END { print found ? 1 : 0 }' <<<"$TABLE_ROWS")
 
 [ -n "$OUT" ] || OUT=$AML_REPO/.testdata/aml/drill-$(date -u +%Y%m%dT%H%M%SZ)
 mkdir -p "$OUT/scenarios"
@@ -291,11 +393,13 @@ done
 SESSION=1 # the next session number of the drill's Adds
 
 # request ROUTE BODY RESULTS: one POST to the public listener with the API
-# key; appends "route code seconds shed" to RESULTS, shed 1 for a deliberate
-# 503 (Retry-After and "busy; retry").
+# key; appends "route code seconds shed start" to RESULTS, shed 1 for a
+# deliberate 503 (Retry-After and "busy; retry"), start the second it was
+# sent.
 request() {
-	local out code_time code seconds shed=0
+	local out code_time code seconds shed=0 start
 	[ -d "$WORK" ] || return 0
+	start=$(date +%s)
 	out=$(mktemp "$WORK/request.XXXXXX") || return 0
 	code_time=$(aml_bearer "$KEY_FILE" | curl --config - -sS -o "$out.body" -D "$out.head" -w '%{http_code} %{time_total}' \
 		-X POST -H 'Content-Type: application/json' --data-binary "@$2" --max-time 1800 "$BASE_URL/$1" 2>/dev/null) || true
@@ -303,7 +407,7 @@ request() {
 	if [ "$code" = 503 ] && grep -qi '^retry-after:' "$out.head" 2>/dev/null && grep -q 'busy; retry' "$out.body" 2>/dev/null; then
 		shed=1
 	fi
-	[ -d "$WORK" ] && printf '%s %s %s %s\n' "$1" "${code:-000}" "${seconds:-0}" "$shed" >>"$3" || true
+	[ -d "$WORK" ] && printf '%s %s %s %s %s\n' "$1" "${code:-000}" "${seconds:-0}" "$shed" "$start" >>"$3" || true
 	rm -f "$out" "$out.body" "$out.head"
 }
 
@@ -522,6 +626,7 @@ run() {
 		--argjson tidle "$t_idle" --argjson residual "$residual" --argjson heldSeconds "${held_seconds:-null}" \
 		--argjson drainLimit "$DRAIN_LIMIT" --argjson residualLimit "$RESIDUAL_LIMIT" --argjson recoverLimit "$RECOVER_LIMIT" \
 		--argjson without "$without" --argjson minSearches "$min_searches" --arg effect "$effect" \
+		--argjson searchStarts "$(awk '$1 == "search" { print $5 }' "$dir/results.txt" | jq -sc .)" \
 		--arg wantDegraded "$want_degraded" --arg wantPartial "$want_partial" --arg wantP95 "$want_p95" \
 		--arg wantBreaker "$want_breaker" --arg wantRetries "$want_retries" \
 		--argjson searchLatency "$(latency "$dir/results.txt" search)" --argjson addLatency "$(latency "$dir/results.txt" add)" \
@@ -529,90 +634,10 @@ run() {
 		--slurpfile sb "$dir/status-before.json" --slurpfile sa "$dir/status-after.json" \
 		--slurpfile mb "$dir/metrics-before.json" --slurpfile ma "$dir/metrics-after.json" \
 		--slurpfile fb "$dir/fake-before.json" --slurpfile fa "$dir/fake-after.json" \
-		--slurpfile samples "$dir/samples.jsonl" --slurpfile reasons "$dir/degraded-reasons.json" -f "$WORK/scenario.jq" >"$dir/scenario.json"
-	aml_say "  $(jq -r '"\(.verdict); searches \(.searches.answered) (at least \(.expect.searches)), degraded \(.searches.degraded), partial \(.searches.partial), effect \(.effect.signal) \(.effect.value), search p95 \(.latency.search.p95 // "-") s, trips \(.breakerTrips), drain \(.backlog.drainSeconds // "none") s, held \(.held.after | map_values(if fabs < 1e-9 then 0 else . end))"' "$dir/scenario.json")"
+		--slurpfile samples "$dir/samples.jsonl" --slurpfile reasons "$dir/degraded-reasons.json" -f "$AML_REPO/scripts/aml/scenario.jq" >"$dir/scenario.json"
+	aml_say "  $(jq -r 'def shown: if . == null then "" elif .atLeast != null then " (at least \(.atLeast))" else " (at most \(.atMost))" end;
+		"\(.verdict); searches \(.searches.answered) (at least \(.expect.searches)), degraded \(.searches.degraded)\(.bounds.degraded | shown), partial \(.searches.partial)\(.bounds.partial | shown), effect \(.effect.signal) \(.effect.value), search p95 \(.latency.search.p95 // "-") s, trips \(.breakerTrips), drain \(.backlog.drainSeconds // "none") s, held \(.held.after | map_values(if fabs < 1e-9 then 0 else . end))"' "$dir/scenario.json")"
 }
-
-# The summary of a scenario's run, with its criteria.
-cat >"$WORK/scenario.jq" <<'JQ'
-def outcomesList: ["ok", "throttled", "invalid", "rejected", "retryable", "failed", "breaker-open", "bulkhead-full", "budget"];
-# A series is picked by its name and its label pairs, in any order.
-def pick($m; $name; $labels): [$m | to_entries[] | select((.key | startswith($name + "{") or . == $name)
-	and (.key as $k | all($labels[]; . as $l | $k | contains($l)))) | .value] | add // 0;
-def delta($name; $labels): pick($ma[0]; $name; $labels) - pick($mb[0]; $name; $labels);
-def outcomes($kind; $class): reduce outcomesList[] as $o ({};
-	.[$o] = delta("mnemon_aml_model_attempts_total"; ["kind=\"\($kind)\"", "class=\"\($class)\"", "outcome=\"\($o)\""]));
-def held($s; $kind): ([$s.budgets[] | select(.kind == $kind) | .held] | add // 0);
-def states($kind): [$samples[] | {t: (.t - $tfault), state: .breakers[$kind]}]
-	| reduce .[] as $x ([]; if length == 0 or .[-1].state != $x.state then . + [$x] else . end);
-def fakeDelta: [$fa[0] | to_entries[] | .key as $k | {($k): ([.value | to_entries[] | {(.key): (.value - ($fb[0][$k][.key] // 0))}] | add // {} | with_entries(select(.value != 0)))}] | add // {};
-def verdictOf($ok): if $ok then "pass" else "fail" end;
-($sa[0]) as $a | ($sb[0]) as $b |
-{
-	name: $name, run: $run, class: $class, fault: $what, type: $type, spec: $spec, windowSeconds: $window,
-	searches: {answered: ($a.searches - $b.searches), degraded: ($a.degraded - $b.degraded), degradedReasons: $reasons[0], partial: ($a.partial - $b.partial),
-		partialStages: ([$ma[0] | to_entries[] | select(.key | startswith("mnemon_aml_search_partial_total")) |
-			{(.key | capture("stage=\"(?<s>[^\"]*)\"").s): (.value - ($mb[0][.key] // 0))}] | add // {} | with_entries(select(.value > 0)))},
-	adds: ($a.adds - $b.adds),
-	latency: {search: $searchLatency, add: $addLatency},
-	requests: {search: $searchCodes, add: $addCodes},
-	attempts: {deepseek: {interactive: outcomes("deepseek"; "interactive"), flush: outcomes("deepseek"; "flush"), background: outcomes("deepseek"; "background")},
-		jev: {interactive: outcomes("jev"; "interactive"), flush: outcomes("jev"; "flush"), background: outcomes("jev"; "background")}},
-	retries: {deepseek: delta("mnemon_aml_model_retries_total"; ["kind=\"deepseek\""]), jev: delta("mnemon_aml_model_retries_total"; ["kind=\"jev\""])},
-	rejected: {deepseek: (($a.rejectedByKind.deepseek // 0) - ($b.rejectedByKind.deepseek // 0)), jev: (($a.rejectedByKind.jev // 0) - ($b.rejectedByKind.jev // 0))},
-	breakerTrips: {deepseek: (($a.breakerTrips.deepseek // 0) - ($b.breakerTrips.deepseek // 0)), jev: (($a.breakerTrips.jev // 0) - ($b.breakerTrips.jev // 0))},
-	breakerTimeline: {deepseek: states("deepseek"), jev: states("jev")},
-	batches: (reduce ("folded", "deferred", "dropped") as $o ({}; .[$o] = delta("mnemon_aml_consolidation_batches_total"; ["outcome=\"\($o)\""]))),
-	linkFallbacks: ($a.linkFallbacks - $b.linkFallbacks),
-	jobs: (reduce ("ok", "failed", "paused", "canceled") as $o ({}; .[$o] = delta("mnemon_aml_consolidation_jobs_total"; ["outcome=\"\($o)\""]))),
-	shed: {add: delta("mnemon_aml_shed_total"; ["route=\"add\""]), search: delta("mnemon_aml_shed_total"; ["route=\"search\""])},
-	held: {after: {deepseek: held($a; "deepseek"), jev: held($a; "jev")}, seconds: $heldSeconds},
-	backlog: {max: ([$samples[].queue.maxBacklog] | max // 0), residual: $residual, drainSeconds: (if $tidle == null then null else $tidle - $tend end)},
-	recovery: {
-		openedDuringFault: ([$samples[] | select(.t >= $tfault and .t <= $tend + 2) | [.breakers[]] | any(. == "open")] | any),
-		opened: ([$samples[] | [.breakers[]] | any(. == "open")] | any),
-		breakersClosedSeconds: ([$samples[] | select(.t >= $tend and ([.breakers[]] | all(. == "closed"))) | .t - $tend] | first // null),
-		lastDegradedSeconds: ([range(1; $samples | length) as $i | select($samples[$i].degraded > $samples[$i - 1].degraded) | $samples[$i].t - $tend] | last // null)
-	},
-	fakeProvider: fakeDelta,
-	withoutJEVLines: $without
-}
-| .totals = (reduce ([.attempts[][]][]) as $c ({}; reduce ($c | to_entries[]) as $e (.; .[$e.key] += $e.value)))
-| .totals.retries = (.retries.deepseek + .retries.jev)
-| .effect = {signal: $effect, value: (
-	if $effect == "none" then .totals.retries + .totals.failed + .totals["breaker-open"] + .totals.throttled + .totals.invalid + .totals.rejected
-	elif $effect == "retries" then .totals.retries + .totals.failed + .totals["breaker-open"]
-	elif ($effect | startswith("rejected:")) then .rejected[$effect | ltrimstr("rejected:")]
-	elif ($effect | startswith("fake:")) then ($effect | split(":")) as $f
-		| (if $f[1] == "all" then [.fakeProvider[][$f[2]] // 0] | add // 0 else .fakeProvider[$f[1]][$f[2]] // 0 end)
-	else .totals[$effect] // 0 end)}
-| .expect = {searches: $minSearches, effect: (if $effect == "none" then "0" else ">0" end), degraded: $wantDegraded, partial: $wantPartial,
-	searchP95: $wantP95, breaker: $wantBreaker, retries: $wantRetries, drainSeconds: $drainLimit, residualBelow: $residualLimit}
-| def bound($want; $value): if $want == "-" then null elif $want == "0" then $value == 0 elif $want == ">0" then $value > 0 else null end;
-.criteria = ({
-	searches: (.searches.answered >= $minSearches),
-	effect: (if $effect == "none" then .effect.value == 0 else .effect.value > 0 end),
-	non2xx: (.requests.search.non2xx + .requests.add.non2xx == 0),
-	held: (.held.seconds != null),
-	withoutJEV: (.withoutJEVLines == 0 and .linkFallbacks == 0),
-	degraded: bound($wantDegraded; .searches.degraded),
-	partial: bound($wantPartial; .searches.partial),
-	searchP95: (if $wantP95 == "-" then null else (.latency.search.p95 // 0) <= ($wantP95 | tonumber) end),
-	breaker: (if $wantBreaker == "cycle" then .recovery.openedDuringFault and .recovery.breakersClosedSeconds != null
-		elif $wantBreaker == "steady" then (.breakerTrips.deepseek + .breakerTrips.jev == 0) and (.recovery.opened | not)
-		else null end),
-	retries: (if $wantRetries == "-" then null else ($wantRetries | split(":")[1]) as $k | .retries[$k] == 0 end),
-	drain: (.backlog.drainSeconds != null and .backlog.drainSeconds <= $drainLimit),
-	residual: (.backlog.residual != null and .backlog.residual < $residualLimit)
-} | with_entries(select(.value != null) | .value |= verdictOf(.)))
-| .validity = ["searches", "effect", "non2xx", "held", "withoutJEV"]
-| .failed = [.criteria | to_entries[] | select(.value == "fail") | .key]
-| .hardFailed = (if $class == "measured" then [.failed[] | select(IN(.; "searches", "effect", "non2xx", "held", "withoutJEV"))] else .failed end)
-| .verdict = (if (.hardFailed | length) > 0 then "fail: " + (.hardFailed | join(", "))
-	elif (.failed | length) > 0 then "measured: " + (.failed | join(", ")) + " did not hold"
-	elif $class == "measured" then "measured: all criteria held"
-	else "pass" end)
-JQ
 
 STARTED=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 if [ "$SEED_ADDS" -gt 0 ]; then
@@ -639,9 +664,7 @@ while [ "$nth" -le "$REPEAT" ]; do
 		grep -qx -- "$name" <<<"$SELECTED" || continue
 		run "$name" "$nth" "$class" "$window" "$type" "$spec" "$searches" "$effect" "$degraded" "$partial" "$p95" "$breaker" "$retries" "$what"
 		RAN="$RAN $name$([ "$REPEAT" -gt 1 ] && echo "-r$nth" || true)"
-	done <<EOF
-$(scenarios)
-EOF
+	done <<<"$TABLE_ROWS"
 	nth=$((nth + 1))
 done
 
@@ -657,6 +680,7 @@ jq -n --arg started "$STARTED" --arg finished "$(date -u +%Y-%m-%dT%H:%M:%SZ)" -
 	--arg go "$(go env GOVERSION 2>/dev/null || echo none)" --arg host "$(uname -sm)" --argjson cpus "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 0)" \
 	--argjson searchRate "$SEARCH_RATE" --argjson addRate "$ADD_RATE" --argjson users "$USERS" --argjson seedAdds "$SEED_ADDS" \
 	--argjson repeat "$REPEAT" --argjson partial "$PARTIAL" --arg only "$ONLY" --arg table "$TABLE" --argjson leaked "$leaked" \
+	--argjson residualLimit "$RESIDUAL_LIMIT" \
 	--slurpfile scenarios <(for tag in $RAN; do cat "$OUT/scenarios/$tag/scenario.json"; done) '
 {
 	kind: "aml-fault-drill", started: $started, finished: $finished,
@@ -671,11 +695,11 @@ jq -n --arg started "$STARTED" --arg finished "$(date -u +%Y-%m-%dT%H:%M:%SZ)" -
 	},
 	criteria: {
 		validity: "searches (at least the table minimum), effect (the fault signal above 0, or none with no fault), non2xx (no non-2xx but deliberate 503 sheds), held (every account back to 0 within 90 s), withoutJEV (no line, no link fallback): they fail any run",
-		outcome: "degraded and partial (0, >0 or -), searchP95 (at most the table bound), breaker (cycle or steady), retries (0 for a kind), drain (no scheduler work within 600 s of the fault end), residual (largest backlog then below 10,000 characters): they fail hard and expected scenarios"
+		outcome: "degraded and partial (0, >0, a number, P^A for a fault random per attempt or window+S for a fault over a window as ruling R82 derives them, or -; the bound of each run and its derivation are in its bounds), searchP95 (at most the table bound), breaker (cycle, closed again within 180 s of the fault end, or steady, with samples), retries (0 for a kind), drain (no scheduler work within 600 s of the fault end), residual (largest backlog then below \($residualLimit) characters: the batch threshold of 10000 plus 5% for the record headers the estimate counts): they fail hard and expected scenarios"
 	},
 	secretsInOutput: ($leaked == 1),
 	matrix: [$scenarios[] | {name, run, class, fault, window: .windowSeconds, searches: .searches.answered, minSearches: .expect.searches,
-		degraded: .searches.degraded, partial: .searches.partial, degradedReasons: .searches.degradedReasons,
+		degraded: .searches.degraded, partial: .searches.partial, bounds, degradedReasons: .searches.degradedReasons,
 		searchP50: .latency.search.p50, searchP95: .latency.search.p95, searchP99: .latency.search.p99,
 		addP50: .latency.add.p50, addP95: .latency.add.p95, addP99: .latency.add.p99,
 		attempts: .totals, throttled: .totals.throttled, invalid: .totals.invalid, rejected: (.rejected.deepseek + .rejected.jev), rejectedByKind: .rejected,
@@ -690,10 +714,14 @@ jq -n --arg started "$STARTED" --arg finished "$(date -u +%Y-%m-%dT%H:%M:%SZ)" -
 }
 | .pass = ((.failed | length) == 0 and ($leaked == 0))' >"$OUT/report.json"
 
+# The matrix: the degraded and partial Searches beside their bounds (≤ the
+# most, ≥ the least, - not judged); throttled, invalid and rejected (by
+# kind) in columns of their own, the other attempt outcomes in one.
 jq -r '
-	"| scenario | run | class | Searches (min) | degraded | partial | Search p50/p95/p99 s | Add p95 ms | ok/throttled/invalid/rejected/retryable/failed/breaker-open/bulkhead-full/budget | retries | trips ds/jev | closed s | drain s | residual | held ds/jev | non-2xx/shed | effect | verdict |",
-	"|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
-	(.matrix[] | "| \(.name) | \(.run) | \(.class) | \(.searches) (\(.minSearches)) | \(.degraded) | \(.partial) | \(.searchP50 // "-")/\(.searchP95 // "-")/\(.searchP99 // "-") | \(if .addP95 then (.addP95 * 1000 | round) else "-" end) | \(.attempts.ok)/\(.attempts.throttled)/\(.attempts.invalid)/\(.attempts.rejected)/\(.attempts.retryable)/\(.attempts.failed)/\(.attempts["breaker-open"])/\(.attempts["bulkhead-full"])/\(.attempts.budget) | \(.retries) | \(.breakerTrips.deepseek)/\(.breakerTrips.jev) | \(.breakersClosedSeconds // "-") | \(.drainSeconds // "none") | \(.residualBacklog // "-") | \(.heldAfter.deepseek | . * 10000 | round / 10000)/\(.heldAfter.jev | . * 10000 | round / 10000) | \(.non2xx)/\(.shed) | \(.effect.signal) \(.effect.value) | \(.verdict) |")' \
+	def bound: if . == null then "-" elif .atLeast != null then "≥\(.atLeast)" else "≤\(.atMost)" end;
+	"| scenario | run | class | Searches (min) | degraded (bound) | partial (bound) | Search p50/p95/p99 s | Add p95 ms | throttled | invalid | rejected ds/jev | ok/retryable/failed/breaker-open/bulkhead-full/budget | retries | trips ds/jev | closed s | drain s | residual | held ds/jev | non-2xx/shed | effect | verdict |",
+	"|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|",
+	(.matrix[] | "| \(.name) | \(.run) | \(.class) | \(.searches) (\(.minSearches)) | \(.degraded) (\(.bounds.degraded | bound)) | \(.partial) (\(.bounds.partial | bound)) | \(.searchP50 // "-")/\(.searchP95 // "-")/\(.searchP99 // "-") | \(if .addP95 then (.addP95 * 1000 | round) else "-" end) | \(.throttled) | \(.invalid) | \(.rejectedByKind.deepseek)/\(.rejectedByKind.jev) | \(.attempts.ok)/\(.attempts.retryable)/\(.attempts.failed)/\(.attempts["breaker-open"])/\(.attempts["bulkhead-full"])/\(.attempts.budget) | \(.retries) | \(.breakerTrips.deepseek)/\(.breakerTrips.jev) | \(.breakersClosedSeconds // "-") | \(.drainSeconds // "none") | \(.residualBacklog // "-") | \(.heldAfter.deepseek | . * 10000 | round / 10000)/\(.heldAfter.jev | . * 10000 | round / 10000) | \(.non2xx)/\(.shed) | \(.effect.signal) \(.effect.value) | \(.verdict) |")' \
 	"$OUT/report.json" >"$OUT/matrix.md"
 
 aml_say "report: $OUT/report.json"
