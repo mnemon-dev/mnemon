@@ -444,11 +444,13 @@ func settledLine(settled []memoryagent.HeldSettled) string {
 	if holds == 0 {
 		return ""
 	}
-	noun := "reservations"
+	// One hold reads in the singular: "1 budget reservation ... at its input
+	// estimate".
+	noun, pronoun, estimate := "reservations", "their", "estimates"
 	if holds == 1 {
-		noun = "reservation"
+		noun, pronoun, estimate = "reservation", "its", "estimate"
 	}
-	return fmt.Sprintf("settled %d budget %s a previous process left held, at their input estimates: %s", holds, noun, strings.Join(kinds, ", "))
+	return fmt.Sprintf("settled %d budget %s a previous process left held, at %s input %s: %s", holds, noun, pronoun, estimate, strings.Join(kinds, ", "))
 }
 
 // Run runs the server's background work until ctx ends or Close is called:

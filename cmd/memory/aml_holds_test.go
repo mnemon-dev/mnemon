@@ -241,7 +241,7 @@ func TestAMLInspectSettlesTheHoldsAPreviousRunLeft(t *testing.T) {
 		t.Fatal(err)
 	}
 	log := first.log.String()
-	settled := strings.Index(log, "settled 1 budget reservation a previous process left held, at their input estimates: deepseek 1 (held 0.2500, settled 0.0040)")
+	settled := strings.Index(log, "settled 1 budget reservation a previous process left held, at its input estimate: deepseek 1 (held 0.2500, settled 0.0040)")
 	if listening := strings.Index(log, "aml-inspect listening on"); settled < 0 || listening < settled {
 		t.Fatal(log)
 	}

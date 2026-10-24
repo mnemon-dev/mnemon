@@ -998,3 +998,30 @@ func TestHTTPServerAndStoreLogThroughTheLogger(t *testing.T) {
 		}
 	}
 }
+
+// The line that says what a start settled (R90) counts the reservations and
+// agrees with the count: "1 budget reservation ... at its input estimate",
+// "3 budget reservations ... at their input estimates"; nothing settled says
+// nothing (the re-review of the final fix's N3).
+func TestSettledLineAgreesWithItsCount(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		settled []memoryagent.HeldSettled
+		want    string
+	}{
+		{"nothing", nil, ""},
+		{"an empty settlement", []memoryagent.HeldSettled{}, ""},
+		{"one hold", []memoryagent.HeldSettled{{Kind: "deepseek", Holds: 1, Held: 0.25, Settled: 0.004}},
+			"settled 1 budget reservation a previous process left held, at its input estimate: deepseek 1 (held 0.2500, settled 0.0040)"},
+		{"two holds of one kind", []memoryagent.HeldSettled{{Kind: "deepseek", Holds: 2, Held: 0.5, Settled: 0.003}},
+			"settled 2 budget reservations a previous process left held, at their input estimates: deepseek 2 (held 0.5000, settled 0.0030)"},
+		{"one hold of each of two kinds", []memoryagent.HeldSettled{{Kind: "deepseek", Holds: 1, Held: 0.25, Settled: 0.004}, {Kind: "jev", Holds: 1, Held: 0.01, Settled: 0}},
+			"settled 2 budget reservations a previous process left held, at their input estimates: deepseek 1 (held 0.2500, settled 0.0040), jev 1 (held 0.0100, settled 0.0000)"},
+		{"holds of two kinds", []memoryagent.HeldSettled{{Kind: "deepseek", Holds: 2, Held: 0.5, Settled: 0.003}, {Kind: "jev", Holds: 1, Held: 0.01, Settled: 0}},
+			"settled 3 budget reservations a previous process left held, at their input estimates: deepseek 2 (held 0.5000, settled 0.0030), jev 1 (held 0.0100, settled 0.0000)"},
+	} {
+		if got := settledLine(c.settled); got != c.want {
+			t.Errorf("%s:\n got %q\nwant %q", c.name, got, c.want)
+		}
+	}
+}
