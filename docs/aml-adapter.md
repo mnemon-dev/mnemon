@@ -586,12 +586,14 @@ caps. The evaluation caps are fixed at 600/60: DeepSeek CNY 600 and JEV USD 60.
 - **Bounded lag.** An Add waits while its user's backlog is above the lag bound, one job's
   window: 160,000 characters with the shipped configuration (16 batches of 10,000), the
   `lagBound` of `/admin/status`. The scheduler knows a user's backlog from the user's first
-  job or first Add since the process started: that Add measures it once, after its write
-  (reading only), and later Adds add what they write; characters are UTF-16 units, as a job
-  counts them. It keeps its admission slot while it waits, so declare the AML
-  concurrency at or below `--max-concurrent-adds` and `--max-concurrent-searches`. An Add waits
-  at most until 25 minutes after it arrived; then it answers 200 all the same (its records are
-  stored and searchable), counted in `addOutran` and logged as `add outran consolidation`.
+  job or first Add since the process started: that Add measures it once, after its write and
+  before it lets go of its user's write lock (reading only), so the user's other Adds, which
+  write one at a time, wait for that one read and then add what they write (the Adds of other
+  users are not held); characters are UTF-16 units, as a job counts them. It keeps its
+  admission slot while it waits, so declare the AML concurrency at or below
+  `--max-concurrent-adds` and `--max-concurrent-searches`. An Add waits at most until 25
+  minutes after it arrived; then it answers 200 all the same (its records are stored and
+  searchable), counted in `addOutran` and logged as `add outran consolidation`.
 - **Search folds the rest.** Before it reads, a Search folds its user's tail, for at most 10
   minutes; a user with nothing pending pays only a state read. While it does, it holds its
   user: no background job of that user starts (a running one goes on). Its calls are of the
@@ -868,9 +870,9 @@ a request's lines. A request that never named a user (a bad body, an unknown pat
 
 | Line | Meaning |
 |---|---|
-| `aml-serve listening on 127.0.0.1:8100`, `aml-serve admin listening on 10.77.0.3:8101` | Startup: the listeners are bound. `READY=1` follows once the background work runs. |
+| `aml-serve listening on 127.0.0.1:8100`, `aml-serve admin listening on 10.77.0.3:8101` | Startup: the public listener is bound, and the admin listener too when its address can be (the next line is for when it cannot). `READY=1` follows once the public listener is bound and the background work runs; it does not wait for the admin listener. |
 | `aml-serve: --admin-listen: listen tcp 10.77.0.3:8101: bind: cannot assign requested address; serving without the admin listener and binding it again every 5s` | WARN, once: the admin address could not be bound (`wg0` is not up). The instance serves its public listener, and `aml-serve admin listening on …` follows when the retry, every 5 s and quiet, succeeds. |
-| `settled N budget reservations a previous process left held, at their input estimates: deepseek 2 (held 0.5000, settled 0.0030), jev 1 (held 0.0100, settled 0.0000)` | WARN, at start, in aml-serve (the instance's budget) and in aml-inspect (its debug budget): a crash, or a stop past its windows, left model requests' reservations held, and this start settled them by kind (the reservations, what they held and what they settled at, in each account's currency). Nothing held: no line. |
+| `settled N budget reservations a previous process left held, at their input estimates: deepseek 2 (held 0.5000, settled 0.0030), jev 1 (held 0.0100, settled 0.0000)` | WARN, at start, in aml-serve (the instance's budget) and in aml-inspect (its debug budget): a crash, or a stop past its windows, left model requests' reservations held, and this start settled them by kind (the reservations, what they held and what they settled at, in each account's currency). One reservation reads in the singular: `settled 1 budget reservation a previous process left held, at its input estimate: deepseek 1 (held 0.2500, settled 0.0030)`. Nothing held: no line. |
 | `aml-serve: settling what the budget file holds: <error>; it stays held until a start settles it` | ERROR, at start (aml-inspect: `settling what the debug budget holds: …`): the settlement failed; the reservations stay held, and the next start tries again. |
 | `POST /add 200 41ms` | One line per request, with `request_id`, and `user` once the request named one. |
 | `add shed: no free slot within 30s (limit 4)`, `search shed: …` | A request found no free slot for 30 s and got 503 with `Retry-After`. |
@@ -897,7 +899,7 @@ a request's lines. A request that never named a user (a bad body, an unknown pat
 | `aml-serve: the 30s grace has ended with <jobs>; cutting them: their saved batches stay, and they resume after a restart` | Consolidation jobs still ran at the end of the grace. |
 | `aml-serve: the 30s grace has ended with 3 requests still running; canceling them` | Requests still ran at the end of the grace (the count says how many); they answer 503. The command then exits 1: `canceled at the end of the 30s grace: 3 requests still running`. |
 | `aml-serve: requests still running 5s after they were canceled; closing their connections` | The canceled requests did not end. |
-| `aml-serve: deepseek: cut 2 model requests still in flight at the close's deadline: their reservations settled at their input estimates, or were released if they were not sent` | WARN, at the end of the shutdown, one clause per provider (`; jev: cut …`): model requests still running (abandoned attempts) were cut, and settled or released within 5 s. With a failed settlement it ends `; 1 reservation stays held, their settlement failed: the next start settles them`. |
+| `aml-serve: deepseek: cut 2 model requests still in flight at the close's deadline: their reservations settled at their input estimates, or were released if they were not sent` | WARN, at the end of the shutdown, one clause per provider (`; jev: cut …`): model requests still running (abandoned attempts) were cut, and settled or released within 5 s. The count is how many were cut, and one reads `cut 1 model request`. After a Search whose planner timed out it is 1 or 2: the Search's two planner calls cancel each other when one fails, so the other may already have settled before the shutdown. With a failed settlement a provider's clause reads `…at the close's deadline; 1 reservation stays held, their settlement failed: the next start settles them`. |
 | `aml-serve: closing the stores and models did not finish 5s after the end of the shutdown; exiting while model requests settle: their budget reservations stay held until the next start settles them` | ERROR: even the 5 s to settle the cut requests ran out. The process exits; the next start settles the holds (`settled N budget reservations …`). |
 
 A failed aml-serve or aml-watch run writes its error once, as one line, with no usage block:

@@ -177,8 +177,11 @@ A read-only overview of the user stores in the data root, for the console. Query
 - `after`: a cursor, exclusive: the `next` of the previous page. Exactly 32 lowercase hex digits.
 
 A `limit` or `after` that is malformed, an empty one included, is answered
-`400 {"error":"…"}`, and so is a query string whose percent-encoding is malformed (`after=%zz`):
-it is not read as the query without that pair.
+`400 {"error":"…"}`, and so is a query string that cannot be read: one whose percent-encoding is
+malformed (`after=%zz`), or whose pairs are separated by `;` (only `&` separates them). It is not
+read as the query without that pair, and the error says which:
+`the query string is malformed: its percent-encoding is invalid` or
+`the query string is malformed: pairs are separated by '&', not ';'`.
 
 ```json
 {
@@ -208,9 +211,11 @@ it is not read as the query without that pair.
 - `backlog` is the scheduler's estimate of the characters (UTF-16 units, as consolidation counts
   them) of the store's records not yet consolidated, the unit of `queue.maxBacklog` and
   `lagBound`. It is known from the user's first Add, or first consolidation job, since the process
-  started: that Add measures the backlog once, after its write, and counts what later Adds write.
-  It is `null` when the scheduler has no estimate: outside `--consolidate background`; before that
-  first Add or job; and for a store with nothing pending, which the scheduler stops tracking.
+  started: that Add measures the backlog once, after its write and before it lets go of the user's
+  write lock (reading only: the user's other Adds wait for that one read, other users' Adds do
+  not), and the estimate then counts what the Adds after it write. It is `null` when the
+  scheduler has no estimate: outside `--consolidate background`; before that first Add or job; and
+  for a store with nothing pending, which the scheduler stops tracking.
 - `next` is the last store of the page, as a cursor, to pass back as `after`. It is `null` on the
   last page. A cursor that names no store is where the order resumes, so a store removed
   between two pages does not end the walk.
