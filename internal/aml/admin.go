@@ -2,6 +2,8 @@ package aml
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"maps"
@@ -9,14 +11,18 @@ import (
 	"net/http/pprof"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
 )
 
 // The admin handler is the operator's side of the server: metrics, readiness,
-// a status the alert watcher reads and the profiler. It has no authentication,
-// so the command serves it on a loopback listener only (AdminHandler).
+// a status the alert watcher reads, the store overview the console reads and
+// the profiler. Without an admin token (ServerConfig.AdminToken) it has no
+// authentication, so the command serves it on a loopback listener only; with
+// one, every request must carry the token and the command may serve it on a
+// private address (AdminHandler).
 
 const (
 	// minFreeDisk is the free space the data root's disk must have to be
@@ -61,6 +67,7 @@ const (
 //	                 array, empty when none has been used and when the budget file cannot be read
 //	                 (/ready says so)
 //	openStores       user stores open now
+//	version          the product version of the build (ServerConfig.Version)
 type AdminStatus struct {
 	StartedAt       time.Time                   `json:"startedAt"`
 	Adds            int64                       `json:"adds"`
@@ -78,14 +85,17 @@ type AdminStatus struct {
 	BreakerTrips    map[string]int64            `json:"breakerTrips"`
 	Budgets         []memoryagent.BudgetAccount `json:"budgets"`
 	OpenStores      int                         `json:"openStores"`
+	Version         string                      `json:"version"`
 }
 
 // AdminHandler serves the operator's endpoints: GET /metrics (Prometheus),
-// GET /ready, GET /admin/status and /debug/pprof/. It has no authentication:
-// serve it on a loopback address, never on the public listener, whose
-// Handler serves none of these. Profiles taken over several seconds
-// (/debug/pprof/profile, /debug/pprof/trace) need a server write timeout
-// longer than they run.
+// GET /ready, GET /admin/status, GET /admin/v1/stores and /debug/pprof/. With
+// an admin token every request, an unknown path included, must carry it as
+// `Authorization: Bearer <token>` (requireAdminToken); without one the handler
+// has no authentication, and must be served on a loopback address only. Never
+// serve it on the public listener, whose Handler serves none of these.
+// Profiles taken over several seconds (/debug/pprof/profile,
+// /debug/pprof/trace) need a server write timeout longer than they run.
 func (s *Server) AdminHandler() http.Handler { return s.admin }
 
 func (s *Server) adminRoutes() http.Handler {
@@ -93,6 +103,7 @@ func (s *Server) adminRoutes() http.Handler {
 	mux.Handle("GET /metrics", s.metrics.handler(s.log))
 	mux.HandleFunc("GET /ready", s.serveReady)
 	mux.HandleFunc("GET /admin/status", s.serveStatus)
+	mux.HandleFunc("GET /admin/v1/stores", s.serveStores)
 	// The profiler's handlers are registered here by name rather than by
 	// importing net/http/pprof for its registration on the default mux, which
 	// nothing serves.
@@ -104,7 +115,42 @@ func (s *Server) adminRoutes() http.Handler {
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 	})
-	return mux
+	return s.requireAdminToken(mux)
+}
+
+// requireAdminToken answers 401 to every request of next that does not carry
+// the admin token as `Authorization: Bearer <token>` (the scheme in any
+// case); no other header or scheme stands in for it. A refusal is counted
+// (mnemon_aml_admin_auth_failures_total) and not logged: neither the token,
+// nor what was sent, nor anything made of them is ever logged or answered.
+// The SHA-256 digests of the presented and the configured token are compared
+// in constant time, as the data plane compares its key, so neither the token
+// nor its length leaks through timing. Without an admin token it is next
+// itself.
+func (s *Server) requireAdminToken(next http.Handler) http.Handler {
+	if s.adminKey == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.adminAuthorized(r) {
+			s.metrics.adminAuthFailures.Inc()
+			w.Header().Set("WWW-Authenticate", `Bearer realm="mnemon-admin"`)
+			writeError(w, http.StatusUnauthorized, "missing or invalid admin token")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// adminAuthorized reports whether r carries the admin token as a Bearer
+// token.
+func (s *Server) adminAuthorized(r *http.Request) bool {
+	scheme, token, found := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " ")
+	if !found || !strings.EqualFold(scheme, "Bearer") {
+		return false
+	}
+	digest := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return subtle.ConstantTimeCompare(digest[:], s.adminKey[:]) == 1
 }
 
 func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
@@ -141,6 +187,7 @@ func (s *Server) status(ctx context.Context) AdminStatus {
 		BreakerTrips:    s.models.BreakerTrips(),
 		Budgets:         accounts,
 		OpenStores:      s.users.open(),
+		Version:         s.config.Version,
 	}
 }
 

@@ -36,7 +36,7 @@ func TestAMLServeIsAMemoryAgentSubcommand(t *testing.T) {
 	for flag, value := range map[string]string{
 		"listen": "127.0.0.1:8090", "data-root": "", "memory-config": "", "auth-key-env": "AML_API_KEY", "consolidate-on-add": "false",
 		"max-open-stores": "64", "search-timeout": "10m0s", "consolidate": "off", "consolidation-workers": "4", "admin-listen": "",
-		"max-concurrent-adds": "0", "max-concurrent-searches": "0", "log-format": "text",
+		"admin-token-env": "", "max-concurrent-adds": "0", "max-concurrent-searches": "0", "log-format": "text",
 	} {
 		if f := command.Flags().Lookup(flag); f == nil || f.DefValue != value {
 			t.Fatal(flag, f)
@@ -105,19 +105,98 @@ func TestConsolidateFlagValues(t *testing.T) {
 	}
 }
 
-// The admin endpoints have no authentication: their listener must be a
-// loopback address, given as an IP address and a port.
-func TestAdminListenMustBeLoopback(t *testing.T) {
-	for _, addr := range []string{"", "127.0.0.1:8091", "127.0.0.1:0", "127.0.0.2:8091", "[::1]:8091"} {
-		if options, err := amlFlags(t, "--admin-listen", addr); err != nil || options.adminListen != addr {
+// The admin endpoints are served on a loopback address, where an admin token
+// is optional, or on a private one (10/8, 172.16/12, 192.168/16, fc00::/7),
+// where it is required. Every other address is refused, with a token or
+// without, as is a host name or an address with no port. A flag that names a
+// variable needs it to hold 32 characters at least.
+func TestAdminListenRules(t *testing.T) {
+	const variable = "AML_TEST_ADMIN_TOKEN"
+	token := strings.Repeat("t", 32)
+	wantError := func(t *testing.T, err error, parts ...string) {
+		t.Helper()
+		if err == nil {
+			t.Fatal("no error")
+		}
+		for _, part := range parts {
+			if !strings.Contains(err.Error(), part) {
+				t.Fatalf("%q lacks %q", err, part)
+			}
+		}
+	}
+
+	// Loopback addresses, and none at all, need no token. An IPv4 address
+	// spelled as an IPv6 one is the IPv4 address.
+	for _, addr := range []string{"", "127.0.0.1:8091", "127.0.0.1:0", "127.0.0.2:8091", "[::1]:8091", "[::ffff:127.0.0.1]:8091"} {
+		if options, err := amlFlags(t, "--admin-listen", addr); err != nil || options.adminListen != addr || options.adminToken != "" {
+			t.Fatal(addr, options.adminListen, err)
+		}
+		// A token is optional there, not forbidden.
+		t.Setenv(variable, token)
+		if options, err := amlFlags(t, "--admin-listen", addr, "--admin-token-env", variable); err != nil || options.adminToken != token {
+			t.Fatal(addr, err)
+		}
+	}
+
+	// Private addresses are refused without a token, and accepted with one.
+	for _, addr := range []string{"10.0.0.5:8091", "172.16.0.1:8091", "172.31.255.255:8091", "192.168.1.2:8091", "[fd00::1]:8091", "[::ffff:10.0.0.5]:8091"} {
+		_, err := amlFlags(t, "--admin-listen", addr)
+		wantError(t, err, "--admin-listen", "private", "--admin-token-env")
+		t.Setenv(variable, token)
+		if options, err := amlFlags(t, "--admin-listen", addr, "--admin-token-env", variable); err != nil || options.adminListen != addr || options.adminToken != token {
 			t.Fatal(addr, options.adminListen, err)
 		}
 	}
-	for _, addr := range []string{":8091", "0.0.0.0:8091", "[::]:8091", "192.168.1.10:8091", "10.0.0.1:0", "[fe80::1]:8091", "localhost:8091", "example.com:8091", "127.0.0.1", "127.0.0.1:"} {
+
+	// Everything else is refused, whatever the token: unspecified, link-local,
+	// shared (100.64/10), public and documentation addresses, the neighbours
+	// of the private ranges, host names, and what is not an address and a port.
+	for _, addr := range []string{
+		"0.0.0.0:8091", "[::]:8091", ":8091", "[::ffff:0.0.0.0]:8091",
+		"169.254.1.1:8091", "[fe80::1]:8091", "[fe80::1%eth0]:8091", "[fd00::1%eth0]:8091",
+		"100.64.0.1:8091", "203.0.113.5:8091", "[::ffff:203.0.113.5]:8091", "[2001:db8::1]:8091", "172.32.0.1:8091", "172.15.255.255:8091", "11.0.0.1:8091", "192.169.0.1:8091",
+		"localhost:8091", "example.com:8091", "10.0.0.5", "10.0.0.5:", "10.0.0.5:99999", "10.0.0.5:http", "[10.0.0.5]", "http://10.0.0.5:8091",
+	} {
 		_, err := amlFlags(t, "--admin-listen", addr)
-		if err == nil || !strings.Contains(err.Error(), "--admin-listen must be a loopback IP address and port") {
-			t.Fatal(addr, err)
+		wantError(t, err, "--admin-listen must be")
+		t.Setenv(variable, token)
+		_, err = amlFlags(t, "--admin-listen", addr, "--admin-token-env", variable)
+		wantError(t, err, "--admin-listen must be")
+	}
+
+	// The token: the variable the flag names must hold 32 characters at
+	// least, on any address; what the error says never repeats a value.
+	const missing = "AML_TEST_NO_SUCH_ADMIN_TOKEN"
+	for _, addr := range []string{"", "127.0.0.1:8091", "10.0.0.5:8091"} {
+		t.Setenv(variable, "")
+		_, err := amlFlags(t, "--admin-listen", addr, "--admin-token-env", variable)
+		wantError(t, err, "--admin-token-env", variable, "unset or empty")
+		os.Unsetenv(missing)
+		_, err = amlFlags(t, "--admin-listen", addr, "--admin-token-env", missing)
+		wantError(t, err, "--admin-token-env", missing, "unset or empty")
+		short := strings.Repeat("s", 31)
+		t.Setenv(variable, short)
+		_, err = amlFlags(t, "--admin-listen", addr, "--admin-token-env", variable)
+		wantError(t, err, "--admin-token-env", variable, "32 characters")
+		if strings.Contains(err.Error(), short) {
+			t.Fatal("the error shows the token:", err)
 		}
+	}
+	// Even with no admin listener, a flag that names a variable is checked: an
+	// operator who set it means to have a token.
+	t.Setenv(variable, "")
+	_, err := amlFlags(t, "--admin-token-env", variable)
+	wantError(t, err, "--admin-token-env", variable)
+
+	// The command refuses them before it takes the data root's lock.
+	dir := t.TempDir()
+	t.Setenv("AML_TEST_KEY", "k")
+	err = executeAMLServe("--data-root", dir, "--memory-config", filepath.Join(dir, "memory.json"), "--auth-key-env", "AML_TEST_KEY", "--admin-listen", "10.0.0.5:8091")
+	wantError(t, err, "--admin-listen", "private")
+	err = executeAMLServe("--data-root", dir, "--memory-config", filepath.Join(dir, "memory.json"), "--auth-key-env", "AML_TEST_KEY", "--admin-listen", "127.0.0.1:0", "--admin-token-env", missing)
+	wantError(t, err, "--admin-token-env", missing)
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 0 {
+		t.Fatal("a refused command touched the data root", entries, err)
 	}
 }
 
@@ -666,6 +745,80 @@ func TestAMLServeServesUntilStopped(t *testing.T) {
 	}
 	if strings.Contains(run.log.String(), "cancel") || endpoint.requests.Load() != 0 {
 		t.Fatal(endpoint.requests.Load(), run.log.String())
+	}
+}
+
+// getWith fetches url with token as its bearer token (none when empty) and
+// returns its status and body.
+func getWith(t *testing.T, url, token string) (int, string) {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
+	response, err := (&http.Client{Timeout: 10 * time.Second}).Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, _ := io.ReadAll(response.Body)
+	return response.StatusCode, string(body)
+}
+
+// With --admin-token-env the admin listener answers only the requests that
+// hold the token (the profiler and an unknown path included), tells which
+// build runs, and the token is nowhere in the command's log. The public
+// listener does not notice.
+func TestAMLServeAdminToken(t *testing.T) {
+	notified := recordNotifications(t)
+	endpoint := newModelEndpoint(t)
+	const token = "aml-serve-e2e-admin-token-0123456789"
+	t.Setenv("AML_TEST_ADMIN_TOKEN", token)
+	run := startAMLServe(t, amlTestConfig(t, endpoint.URL, nil), "--admin-listen", "127.0.0.1:0", "--admin-token-env", "AML_TEST_ADMIN_TOKEN")
+	waitFor(t, "READY=1", func() bool { return slices.Contains(notified.all(), "READY=1") })
+	public, admin := run.address(t, false), run.address(t, true)
+
+	for _, path := range []string{"/metrics", "/ready", "/admin/status", "/admin/v1/stores", "/debug/pprof/", "/no-such-route"} {
+		for _, sent := range []string{"", "wrong-" + token, token[:len(token)-1]} {
+			if code, body := getWith(t, admin+path, sent); code != http.StatusUnauthorized || !strings.Contains(body, "missing or invalid admin token") {
+				t.Errorf("%s with token %q: %d %s", path, sent, code, body)
+			}
+		}
+	}
+	for _, path := range []string{"/metrics", "/admin/status", "/admin/v1/stores", "/debug/pprof/"} {
+		if code, body := getWith(t, admin+path, token); code != http.StatusOK {
+			t.Errorf("%s with the token: %d %.80s", path, code, body)
+		}
+	}
+	// /ready says yes or no by the disk, but never 401.
+	if code, _ := getWith(t, admin+"/ready", token); code != http.StatusOK && code != http.StatusServiceUnavailable {
+		t.Errorf("/ready with the token: %d", code)
+	}
+	_, body := getWith(t, admin+"/admin/status", token)
+	var status aml.AdminStatus
+	if err := json.Unmarshal([]byte(body), &status); err != nil || status.Version != version {
+		t.Errorf("/admin/status says version %q, want %q: %v", status.Version, version, err)
+	}
+	_, body = getWith(t, admin+"/metrics", token)
+	if !strings.Contains(body, "mnemon_aml_admin_auth_failures_total 18\n") {
+		t.Error("the failures were not counted:", body)
+	}
+
+	// The data plane is as it was: no token on the public listener.
+	if code := get(t, public+"/health"); code != http.StatusOK {
+		t.Error("public /health", code)
+	}
+	if code, body := run.post(t, "/add", noteAdd("r1", "u1")); code != http.StatusOK {
+		t.Error("public /add", code, body)
+	}
+	if err := run.stop(t); err != nil {
+		t.Fatal(err, run.log.String())
+	}
+	if strings.Contains(run.log.String(), token) {
+		t.Error("the log shows the admin token:", run.log.String())
 	}
 }
 

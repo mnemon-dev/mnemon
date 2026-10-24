@@ -1,0 +1,220 @@
+# Admin API
+
+`mnemon memory-agent aml-serve --admin-listen ADDR` serves the operator's side of one engine
+instance on a listener of its own. The public listener (`--listen`, the Add/Search contract and
+`/health`) serves none of the routes below. The alert watcher (`aml-watch`), Prometheus and the
+memory cloud console read this listener; the deployment is in the
+[AML runbook](aml-adapter.md).
+
+The admin listener is plain HTTP. Its routes read: the one thing a request makes is `/ready`'s
+probe of the data root, a file it creates there and removes; none touches a user's records.
+
+## Where it listens, and who may read it
+
+`--admin-listen` is empty by default: there is no admin listener. When it is set it takes an IP
+address literal and a port, such as `127.0.0.1:8091`. A host name is not accepted: what it
+resolves to is not the command's to check.
+
+| Address | Admin token |
+| --- | --- |
+| Loopback: 127.0.0.0/8, `::1` | optional |
+| Private: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, `fc00::/7` (`netip.Addr.IsPrivate`) | required |
+| Anything else | refused, token or not |
+
+"Anything else" includes the unspecified addresses (`0.0.0.0`, `::`, or no host), link-local
+ones (169.254.0.0/16, `fe80::/10`), shared address space (100.64.0.0/10) and every public
+address. So is an address with a zone (`[fe80::1%eth0]:8091`) or without a port. An IPv4 address
+spelled as an IPv6 one (`[::ffff:10.0.0.5]:8091`) is judged as the IPv4 address. A refusal is a
+startup error that names the flag and the rule; the command has not locked the data root or
+opened anything by then.
+
+`--admin-token-env NAME` names the environment variable that holds the admin token. It is empty
+by default: no token. When it is set:
+
+- The variable must hold at least 32 characters. If it is unset, empty or shorter, startup fails
+  with an error that names `--admin-token-env` and the variable, never its value. This holds
+  whatever the address, and with no `--admin-listen` at all.
+- Every request to the admin listener must carry the token (below).
+
+Make a token from a source of randomness, for example `openssl rand -hex 32`, and keep it in the
+instance's environment file (root-owned, mode 0600) and nowhere else a flag, a URL or a log could
+show it. Bind a private address only on a network whose firewall lets just the hosts that read
+the listener reach it: the token is the second lock, not the first, and it crosses that network
+in clear text.
+
+## Authentication
+
+With an admin token set, **every** request to the admin listener must carry
+
+```
+Authorization: Bearer <token>
+```
+
+The scheme is read in any case (`Bearer`, `bearer`). Nothing else stands in for it: not an
+`X-Api-Key` header, not the `Token` scheme the public listener also accepts, and never a
+token in the URL's query. The rule covers all the routes below, the profiler and a path that no
+route serves, which is answered 401 before it can be answered 404. A request is checked before
+anything else is done for it.
+
+The token and the configured one are compared as SHA-256 digests with `crypto/subtle`'s
+constant-time comparison, so neither the token nor its length leaks through timing.
+
+A request without the token, or with a wrong one, is answered:
+
+```
+HTTP/1.1 401 Unauthorized
+WWW-Authenticate: Bearer realm="mnemon-admin"
+Content-Type: application/json
+
+{"error":"missing or invalid admin token"}
+```
+
+Each such answer is counted in `mnemon_aml_admin_auth_failures_total` (a counter with no labels)
+and **no line is logged**: the counter is the signal. The token, what a client sent in its
+place, and anything made from either never reach a log, an error, a metric or an answer.
+
+Without an admin token (a loopback listener only) the admin listener asks nothing of a request
+and works as it always did; `mnemon_aml_admin_auth_failures_total` stays 0.
+
+## Routes
+
+| Route | Answer |
+| --- | --- |
+| `GET /metrics` | the Prometheus text format |
+| `GET /ready` | readiness: 200, or 503 with the reasons |
+| `GET /admin/status` | the status the watcher reads, as JSON |
+| `GET /admin/v1/stores` | the store overview, as JSON |
+| `/debug/pprof/` and below | Go's profiler |
+| anything else | 404 `{"error":"not found"}` |
+
+The first four are for GET. Any other method on them is answered by the 404 route. The answers
+of `/ready`, `/admin/status` and (when it succeeds) `/admin/v1/stores` are `Cache-Control: no-store`.
+
+### `GET /metrics`
+
+The server's own registry, with the Go and process collectors, in Prometheus's text format.
+Every series is named `mnemon_aml_*` and has a `HELP` line. No user, request or path ever labels a
+series. Beside the series of the Add and Search paths, the models, the budgets and the
+consolidation queue, it carries these, which the memory cloud console reads:
+
+| Series | Meaning |
+| --- | --- |
+| `mnemon_aml_admin_auth_failures_total` | admin requests refused with 401 (no labels) |
+| `mnemon_aml_open_stores` | user stores the server holds open now |
+| `mnemon_aml_stores` | user stores in the data root, from the latest scan (at most 60 s old) |
+| `mnemon_aml_store_bytes` | bytes of the regular files of those stores, from the same scan |
+| `mnemon_aml_consolidation_lag_bound_characters` | the backlog, in characters, above which an Add waits for consolidation; 0 unless `--consolidate background`. `mnemon_aml_consolidation_max_backlog_characters` is measured against it |
+
+`mnemon_aml_stores` and `mnemon_aml_store_bytes` come from the scan `GET /admin/v1/stores`
+reads (below): a scrape makes a new scan only when the latest is older than 60 seconds, and
+shares it with a request that asks at the same time. A scan that fails leaves the two series out
+of that scrape rather than report 0, and the failure is logged once per streak of failures. The
+scrape waits for a scan for 5 seconds at most, so a data root whose scan takes longer is not
+measured here. They carry no store or user label.
+
+### `GET /ready`
+
+200 with `{"ready":true}`. Otherwise 503 with `{"ready":false,"reasons":["…"]}`, every reason
+given: the data root is not writable, its disk has less than 1 GiB free, a provider's circuit
+breaker is open, or a paid account has spent and held more than 95% of its cap.
+
+### `GET /admin/status`
+
+The server's counters and state, as JSON. The watcher reads it, so its field names are a contract:
+fields may be added, never renamed or repurposed. Counters count from `startedAt`. Users appear as
+counts only.
+
+| Field | Meaning |
+| --- | --- |
+| `startedAt` | when the server was made (RFC 3339); differs after every restart |
+| `adds`, `searches` | Adds and Searches answered 200 |
+| `degraded` | Searches answered by the raw ranking because the memory read failed |
+| `partial` | Searches answered by a read in which a stage fell back |
+| `dropped` | drops of records from the consolidation layer |
+| `linkFallbacks` | batches linked without JEV because JEV failed |
+| `addOutran` | Adds that waited out their window for consolidation and answered anyway |
+| `partialLast10m`, `searchesLast10m` | partial Searches, and Searches, in the last ten one-minute buckets |
+| `queue` | the consolidation scheduler: `queued`, `running`, `backingOff`, `held`, `oldestQueued` (nanoseconds) and `maxBacklog` (characters) |
+| `lagBound` | the backlog, in characters, above which an Add waits (0 unless `--consolidate background`) |
+| `breakers`, `breakerTrips` | by provider kind, the breaker's state, and how many times it has opened |
+| `budgets` | each paid account that has been used: `kind`, `cap`, `spent`, `held`; always an array |
+| `openStores` | user stores open now |
+| `version` | the product version string of the build (`dev` for a build made without one) |
+
+### `GET /admin/v1/stores`
+
+A read-only overview of the user stores in the data root, for the console. Query:
+
+- `limit`: 1 to 500; 100 when absent.
+- `after`: a cursor, exclusive: the `next` of the previous page. Exactly 32 lowercase hex digits.
+
+A `limit` or `after` that is malformed, an empty one included, is answered
+`400 {"error":"…"}`.
+
+```json
+{
+  "total": 12,
+  "bytes": 734003200,
+  "scannedAt": "2026-10-25T08:00:00Z",
+  "stores": [
+    {"store": "58e645e0", "bytes": 61440000, "modified": "2026-10-25T07:59:12Z",
+     "open": true, "backlog": 12345}
+  ],
+  "next": "58e645e06cad8b5e2d3b842ebef7c1c5"
+}
+```
+
+- `total`, `bytes` and `scannedAt` describe the whole data root: the number of stores, the sum of
+  their bytes, and when the scan ended (RFC 3339, UTC).
+- `stores` is a page, in the order of the stores' keys. Each is named by `store`, the first 8 hex
+  digits of its key, as the logs name a user. Two stores may share it. The key is the first 32 hex
+  digits of `sha256(user_id)`, and the store is the directory `<data-root>/users/<key>`. The user
+  id is not stored anywhere, so no id can be shown, and neither is any record's content.
+- `bytes` is the sum of the sizes of the regular files directly in the store's directory
+  (`records.db`, its `-wal` and `-shm` files, `memory-index.db` and the like). A subdirectory or a
+  link is not a file of the store. `modified` is the newest modification time among those files
+  (the directory's own when it holds none), in RFC 3339, UTC, to the second.
+- `open` says the server holds the store open now: a read of the registry of open stores, with
+  no I/O. A store that is not open costs nothing until a request needs it.
+- `backlog` is the scheduler's estimate of the characters of the store's records not yet
+  consolidated, the unit of `queue.maxBacklog` and `lagBound`. It is `null` when the scheduler has
+  no estimate: outside `--consolidate background`; before a consolidation job of the user has
+  ended and measured it since the process started; and for a store with nothing pending, which the
+  scheduler stops tracking.
+- `next` is the last store of the page, as a cursor, to pass back as `after`. It is `null` on the
+  last page. A cursor that names no store is where the order resumes, so a store removed
+  between two pages does not end the walk.
+
+The scan that makes `bytes` and `modified` lists the directories under `<data-root>/users/` whose
+names are user keys, reads each store's directory and nothing else, and honors the request's
+context between stores. It is kept for 60 seconds, the first request after that makes the next,
+and the requests that come meanwhile wait for it and share it, so a console that polls cannot
+make a storm of directory reads. `open` and `backlog` are read for each page when it is asked
+for, not kept. If the scan fails the answer is 500 `{"error":"the store scan failed"}` (503
+when it was interrupted), nothing is kept, and the server logs the failure once, naming a store by
+its 8-digit prefix, until a scan goes well again.
+
+### `/debug/pprof/`
+
+Go's `net/http/pprof`: the index and the named profiles under it (`heap`, `goroutine`, …),
+`/debug/pprof/cmdline`, `/debug/pprof/profile`, `/debug/pprof/symbol` and
+`/debug/pprof/trace`. A profile reads the process's memory and stacks, which is why this listener
+is not public. Its write timeout (5 minutes) outlasts a profile of up to 4 minutes.
+
+## `aml-watch`
+
+`mnemon memory-agent aml-watch` reads `/ready` and `/admin/status` on this listener, and the
+public `/health`, once per run (see the runbook for its rules).
+
+- **`--admin-token-env NAME`** names the variable that holds the admin token (the same token
+  as aml-serve's). The watcher reads it once, at the start, and the run is refused, naming the
+  variable, if it is unset or empty. It sends `Authorization: Bearer <token>` on every admin
+  read, and only there: the public `/health` probe carries no token, and an admin read is not
+  redirected, since the `Location` of an answer is not the operator's. Without the flag the watcher
+  sends none. The token is never printed, logged or put in an error, a message or the state; a
+  server that refuses it is an alert about readiness (`/ready answered 401`).
+- **`--instance NAME`** names the instance the watcher serves, so that instances on one host can
+  be told apart. The name is 2 to 31 characters: lowercase letters, digits and hyphens, starting
+  with a letter (`^[a-z][a-z0-9-]{1,30}$`); the run is refused otherwise. With it, the header of
+  every message reads `[mnemon-aml] ALERT <alert> on <host>/<name>`, and `RESOLVED` likewise,
+  where it reads `on <host>` without it.

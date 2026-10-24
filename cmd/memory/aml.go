@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -35,7 +36,8 @@ func newAMLServeCommand() *cobra.Command {
 	flags.String("consolidate", "off", "When to consolidate: off; on-add (during requests: full batches before an Add returns, the rest before the user's next Search); or background (in supervised workers, consolidation mode timelines or layered: an Add only writes, and a Search first folds the rest)")
 	flags.Bool("consolidate-on-add", false, "Older spelling of --consolidate on-add")
 	flags.Int("consolidation-workers", 4, "Users --consolidate background folds at once")
-	flags.String("admin-listen", "", "Loopback IP address and port of the admin listener (/metrics, /ready, /admin/status, /debug/pprof/), which has no authentication; empty for none")
+	flags.String("admin-listen", "", "IP address and port of the admin listener (/metrics, /ready, /admin/status, /admin/v1/stores, /debug/pprof/): a loopback address, or a private one (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) that needs --admin-token-env; empty for none")
+	flags.String("admin-token-env", "", "Environment variable holding the token (32 characters at least) that every admin request must send as an Authorization: Bearer header; required for a private --admin-listen; empty for no token")
 	flags.Int("max-concurrent-adds", 0, "Most Adds served at once, 0 for no limit; past it an Add waits up to 30s for a slot, then answers 503 with Retry-After")
 	flags.Int("max-concurrent-searches", 0, "Most Searches served at once, 0 for no limit; past it a Search waits up to 30s for a slot, then answers 503 with Retry-After")
 	flags.String("log-format", "text", "Log format: text or json")
@@ -44,15 +46,18 @@ func newAMLServeCommand() *cobra.Command {
 	return command
 }
 
-// amlServeOptions are aml-serve's checked flags.
+// amlServeOptions are aml-serve's checked flags. adminToken is what the
+// variable --admin-token-env names holds, "" without the flag.
 type amlServeOptions struct {
 	listen, adminListen, dataRoot, memoryConfig, keyEnv, logFormat string
+	adminToken                                                     string
 	consolidation                                                  aml.ConsolidationMode
 	workers, maxOpenStores, maxAdds, maxSearches                   int
 	searchTimeout                                                  time.Duration
 }
 
-// amlServeFlags reads and checks aml-serve's flags; it touches nothing.
+// amlServeFlags reads and checks aml-serve's flags, and the admin token's
+// variable; it touches nothing else.
 func amlServeFlags(cmd *cobra.Command) (amlServeOptions, error) {
 	flags := cmd.Flags()
 	var o amlServeOptions
@@ -91,12 +96,32 @@ func amlServeFlags(cmd *cobra.Command) (amlServeOptions, error) {
 	case o.logFormat != "text" && o.logFormat != "json":
 		return o, fmt.Errorf("--log-format must be text or json, not %q", o.logFormat)
 	}
-	if o.adminListen != "" && !loopbackAddress(o.adminListen) {
-		// Anyone who reaches the admin listener can profile the process and
-		// read its state.
-		return o, fmt.Errorf("--admin-listen must be a loopback IP address and port, such as 127.0.0.1:8091, as the admin endpoints have no authentication; not %q", o.adminListen)
+	tokenEnv, _ := flags.GetString("admin-token-env")
+	if o.adminToken, err = amlAdminToken(tokenEnv); err != nil {
+		return o, err
+	}
+	if err := checkAdminListen(o.adminListen, o.adminToken != ""); err != nil {
+		return o, err
 	}
 	return o, nil
+}
+
+// amlAdminToken is the admin token the environment variable name holds, ""
+// when name is empty (no token). A variable that is unset, empty or shorter
+// than aml.MinAdminTokenLength is an error that names the variable and says
+// nothing of what it holds.
+func amlAdminToken(name string) (string, error) {
+	if name == "" {
+		return "", nil
+	}
+	token := os.Getenv(name)
+	switch {
+	case token == "":
+		return "", fmt.Errorf("--admin-token-env names $%s, which is unset or empty: it must hold the admin token, %d characters at least", name, aml.MinAdminTokenLength)
+	case len(token) < aml.MinAdminTokenLength:
+		return "", fmt.Errorf("--admin-token-env names $%s, which holds fewer than %d characters: the admin token must hold %d at least", name, aml.MinAdminTokenLength, aml.MinAdminTokenLength)
+	}
+	return token, nil
 }
 
 // amlConsolidation is the consolidation mode --consolidate names, or its
@@ -124,19 +149,49 @@ func amlConsolidation(cmd *cobra.Command) (aml.ConsolidationMode, error) {
 	}
 }
 
-// loopbackAddress reports whether addr is a loopback IP address and a port,
-// such as 127.0.0.1:8091 or [::1]:8091. A host name is refused: what it
-// resolves to is not the command's to check.
-func loopbackAddress(addr string) bool {
+// checkAdminListen checks the address of the admin listener, "" for none.
+// Anyone who reaches that listener can profile the process and read its
+// state, so it is a loopback address, which only this machine reaches, or a
+// private one (netip's IsPrivate: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
+// and fc00::/7) when the admin token is set, which only a client that holds it
+// passes. Every other address is refused, the token or not: unspecified,
+// link-local, shared (100.64.0.0/10) and public ones.
+func checkAdminListen(addr string, tokenSet bool) error {
+	if addr == "" {
+		return nil
+	}
+	ip, ok := adminIP(addr)
+	if !ok {
+		return fmt.Errorf("--admin-listen must be an IP address and a port, such as 127.0.0.1:8091 or 10.0.0.5:8091; a host name is not accepted, as what it resolves to is not the command's to check; not %q", addr)
+	}
+	switch {
+	case ip.IsLoopback():
+		return nil
+	case ip.IsPrivate() && tokenSet:
+		return nil
+	case ip.IsPrivate():
+		return fmt.Errorf("--admin-listen %q is a private address, which needs --admin-token-env: without a token anyone who reaches the listener can profile the process and read its state", addr)
+	}
+	return fmt.Errorf("--admin-listen must be a loopback IP address, or a private one (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) with --admin-token-env, not an unspecified, link-local, shared or public one; not %q", addr)
+}
+
+// adminIP is the IP address of addr, which must be an address literal and a
+// port, such as 127.0.0.1:8091 or [fd00::1]:8091. A host name, a missing
+// port and a zone ([fe80::1%eth0]) are not accepted. An IPv4 address spelled
+// as an IPv6 one is the IPv4 address.
+func adminIP(addr string) (netip.Addr, bool) {
 	host, port, err := net.SplitHostPort(addr)
 	if err != nil {
-		return false
+		return netip.Addr{}, false
 	}
 	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
-		return false
+		return netip.Addr{}, false
 	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
+	ip, err := netip.ParseAddr(host)
+	if err != nil || ip.Zone() != "" {
+		return netip.Addr{}, false
+	}
+	return ip.Unmap(), true
 }
 
 // amlLogger is the logger of --log-format, to w.
@@ -147,12 +202,13 @@ func amlLogger(format string, w io.Writer) *slog.Logger {
 	return slog.New(slog.NewTextHandler(w, nil))
 }
 
-// runAMLServe checks the flags, the API key, the memory configuration and
-// systemd's watchdog setting, takes the data root's lock (before anything
-// opens a file in the data root or the budget file), builds the server, binds
-// the listeners and runs the process (aml_process.go) until SIGINT or
-// SIGTERM. Its error, the exit status 1, also reports a shutdown that had to
-// cut requests, consolidation jobs or model requests.
+// runAMLServe checks the flags (the admin token among them), the API key, the
+// memory configuration and systemd's watchdog setting, takes the data root's
+// lock (before anything opens a file in the data root or the budget file),
+// builds the server, binds the listeners and runs the process
+// (aml_process.go) until SIGINT or SIGTERM. Its error, the exit status 1, also
+// reports a shutdown that had to cut requests, consolidation jobs or model
+// requests.
 func runAMLServe(cmd *cobra.Command, _ []string) error {
 	if readOnly {
 		return errors.New("aml-serve writes user stores and cannot run with --readonly")
@@ -192,7 +248,7 @@ func runAMLServe(cmd *cobra.Command, _ []string) error {
 		Consolidation: options.consolidation, ConsolidationWorkers: options.workers,
 		MaxOpenStores: options.maxOpenStores, SearchTimeout: options.searchTimeout,
 		MaxConcurrentAdds: options.maxAdds, MaxConcurrentSearches: options.maxSearches,
-		Logger: log,
+		Logger: log, AdminToken: options.adminToken, Version: version,
 	})
 	if err != nil {
 		return err

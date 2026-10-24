@@ -76,6 +76,10 @@ type metrics struct {
 	attemptSeconds *prometheus.HistogramVec // kind, class
 	retries        *prometheus.CounterVec   // kind
 	jobs           *prometheus.CounterVec   // outcome
+	// adminAuthFailures counts the admin requests refused for lack of the
+	// admin token; it has no labels, as nothing a refused request sends may
+	// become one.
+	adminAuthFailures prometheus.Counter
 }
 
 const (
@@ -110,6 +114,7 @@ func newMetrics(now func() time.Time) *metrics {
 	m.attemptSeconds = factory.NewHistogramVec(histogramOpts("model_attempt_seconds", "Time the caller waited for an attempt that went to the provider."), []string{"kind", "class"})
 	m.retries = factory.NewCounterVec(counterOpts("model_retries_total", "Attempts after a call's first that went to the provider."), []string{"kind"})
 	m.jobs = factory.NewCounterVec(counterOpts("consolidation_jobs_total", "Consolidation jobs of the scheduler, by how they ended."), []string{"outcome"})
+	m.adminAuthFailures = factory.NewCounter(counterOpts("admin_auth_failures_total", "Admin requests refused with 401 because they lacked the admin token or carried a wrong one."))
 	// Series known in advance exist from the start, at 0.
 	for _, route := range routeNames {
 		m.inFlight.WithLabelValues(route)
@@ -304,6 +309,11 @@ var (
 	oldestDesc     = newDesc("consolidation_oldest_queued_seconds", "Age of the oldest work not yet consolidated: queued, running or backing off since a notification no successful job has covered.")
 	backlogDesc    = newDesc("consolidation_max_backlog_characters", "Largest backlog of any user, in the characters a job reads.")
 	storesDesc     = newDesc("open_stores", "User stores open now.")
+	// The next two come from the scan of the data root that GET /admin/v1/stores
+	// shares: at most 60 seconds old.
+	storeCountDesc = newDesc("stores", "User stores in the data root, from the latest scan of it (at most 60 seconds old).")
+	storeBytesDesc = newDesc("store_bytes", "Bytes of the regular files of the user stores in the data root, from the latest scan of it (at most 60 seconds old).")
+	lagBoundDesc   = newDesc("consolidation_lag_bound_characters", "Backlog, in characters, above which an Add waits for consolidation (always 0 unless consolidation is background).")
 	breakerDesc    = newDesc("breaker_open", "1 while a provider kind's circuit breaker refuses calls, else 0 (1 if any breaker of the kind does).", "kind")
 	spentDesc      = newDesc("budget_spent", "Spent from a paid account, in its currency.", "account")
 	heldDesc       = newDesc("budget_held", "Held by unresolved reservations of a paid account, in its currency.", "account")
@@ -318,7 +328,7 @@ const scrapeWait = 5 * time.Second
 type stateCollector struct{ s *Server }
 
 func (stateCollector) Describe(ch chan<- *prometheus.Desc) {
-	for _, desc := range []*prometheus.Desc{queuedDesc, runningDesc, backingOffDesc, oldestDesc, backlogDesc, storesDesc, breakerDesc, spentDesc, heldDesc, capDesc} {
+	for _, desc := range []*prometheus.Desc{queuedDesc, runningDesc, backingOffDesc, oldestDesc, backlogDesc, lagBoundDesc, storesDesc, storeCountDesc, storeBytesDesc, breakerDesc, spentDesc, heldDesc, capDesc} {
 		ch <- desc
 	}
 }
@@ -333,6 +343,7 @@ func (c stateCollector) Collect(ch chan<- prometheus.Metric) {
 	gauge(backingOffDesc, float64(queue.BackingOff))
 	gauge(oldestDesc, queue.OldestQueued.Seconds())
 	gauge(backlogDesc, float64(queue.MaxBacklog))
+	gauge(lagBoundDesc, float64(c.s.consolidationLagBound()))
 	gauge(storesDesc, float64(c.s.users.open()))
 	for kind, state := range c.s.breakerStates() {
 		open := 0.0
@@ -349,5 +360,14 @@ func (c stateCollector) Collect(ch chan<- prometheus.Metric) {
 		gauge(spentDesc, account.Spent, account.Kind)
 		gauge(heldDesc, account.Held, account.Kind)
 		gauge(capDesc, account.Cap, account.Kind)
+	}
+	// The stores' number and bytes are read from the cached scan of the data
+	// root (a scan older than 60 seconds is made again, within what is left of
+	// scrapeWait). A scan that fails leaves them out of this scrape, 0 would
+	// be a claim; the scanner has told of it. No user or store ever labels
+	// them.
+	if scan, err := c.s.stores.scan(ctx); err == nil {
+		gauge(storeCountDesc, float64(len(scan.stores)))
+		gauge(storeBytesDesc, float64(scan.bytes))
 	}
 }

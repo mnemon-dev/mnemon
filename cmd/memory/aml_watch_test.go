@@ -14,8 +14,10 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -72,6 +74,13 @@ type watchStack struct {
 	hookKeyword  string // a Feishu bot's keyword: a text without it is answered 200 with code 19024
 	posts        []watchPost
 	taken        int
+
+	// adminToken is the bearer token the admin listener demands, "" for none;
+	// adminRedirect, where it sends every request instead, when set. adminAuth
+	// and publicAuth are the Authorization header of every request the admin
+	// and the public listener received, in order.
+	adminToken, adminRedirect string
+	adminAuth, publicAuth     []string
 }
 
 type watchPost struct {
@@ -110,6 +119,7 @@ func newWatchStack(t *testing.T) *watchStack {
 	public.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		s.publicAuth = append(s.publicAuth, r.Header.Get("Authorization"))
 		if s.healthCode != 0 {
 			w.WriteHeader(s.healthCode)
 		}
@@ -137,7 +147,27 @@ func newWatchStack(t *testing.T) *watchStack {
 		}
 		io.WriteString(w, answer)
 	})
-	s.admin, s.public, s.hook = httptest.NewServer(admin), httptest.NewServer(public), httptest.NewServer(hook)
+	// The admin listener keeps the Authorization header of every request, and
+	// answers 401 to one without the token when it demands one, as aml-serve's
+	// does.
+	guarded := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		auth := r.Header.Get("Authorization")
+		s.mu.Lock()
+		s.adminAuth = append(s.adminAuth, auth)
+		token, redirect := s.adminToken, s.adminRedirect
+		s.mu.Unlock()
+		switch {
+		case token != "" && auth != "Bearer "+token:
+			w.Header().Set("WWW-Authenticate", `Bearer realm="mnemon-admin"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			io.WriteString(w, `{"error":"missing or invalid admin token"}`)
+		case redirect != "":
+			http.Redirect(w, r, redirect, http.StatusFound)
+		default:
+			admin.ServeHTTP(w, r)
+		}
+	})
+	s.admin, s.public, s.hook = httptest.NewServer(guarded), httptest.NewServer(public), httptest.NewServer(hook)
 	t.Cleanup(s.admin.Close)
 	t.Cleanup(s.public.Close)
 	t.Cleanup(s.hook.Close)
@@ -146,6 +176,14 @@ func newWatchStack(t *testing.T) *watchStack {
 
 // webhookURL is the webhook as an operator configures it: its path is secret.
 func (s *watchStack) webhookURL() string { return s.hook.URL + "/hook/" + watchToken }
+
+// authorizations are the Authorization headers the admin and the public
+// listener have received, in order ("" for a request without one).
+func (s *watchStack) authorizations() (admin, public []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.adminAuth), slices.Clone(s.publicAuth)
+}
 
 // set changes the status the fake server answers with.
 func (s *watchStack) set(edit func(*aml.AdminStatus)) {
@@ -1368,7 +1406,7 @@ func TestAMLWatchIsAMemoryAgentSubcommand(t *testing.T) {
 	if err != nil || command.Name() != "aml-watch" || command.Parent().Name() != "memory-agent" {
 		t.Fatal(command, err)
 	}
-	for flag, value := range map[string]string{"admin": "http://127.0.0.1:8091", "public-url": "", "state": ""} {
+	for flag, value := range map[string]string{"admin": "http://127.0.0.1:8091", "public-url": "", "state": "", "admin-token-env": "", "instance": ""} {
 		if f := command.Flags().Lookup(flag); f == nil || f.DefValue != value {
 			t.Fatal(flag, f)
 		}
@@ -1967,5 +2005,265 @@ func TestWatchWebhookSchemeRules(t *testing.T) {
 		if err != nil && (strings.Contains(err.Error(), watchToken) || !strings.Contains(err.Error(), "AML_ALERT_WEBHOOK must be an https URL")) {
 			t.Errorf("%q: %v", webhook, err)
 		}
+	}
+}
+
+// ---- the admin token ----
+
+// watchAdminToken is the bearer token of the admin listener the watcher reads.
+const watchAdminToken = "mnm_w4tch-adm1n-t0ken-0123456789abcdefghij"
+
+// neverShows fails for every text of texts that holds a secret.
+func neverShows(t *testing.T, texts map[string]string, secrets ...string) {
+	t.Helper()
+	for name, text := range texts {
+		for _, secret := range secrets {
+			if strings.Contains(text, secret) {
+				t.Errorf("%s shows %q:\n%s", name, secret, text)
+			}
+		}
+	}
+}
+
+// The watcher sends the admin token on every read of the admin listener, and
+// only there: not to the public listener, not along a redirect. The token is
+// in no message, log line, error or state, however the reads end.
+func TestWatchSendsAdminToken(t *testing.T) {
+	bearer := "Bearer " + watchAdminToken
+
+	t.Run("every admin read, and nothing else", func(t *testing.T) {
+		r := newWatchRig(t)
+		r.stack.configure(func(s *watchStack) { s.adminToken = watchAdminToken })
+		r.w.adminToken = watchAdminToken
+		if texts := r.step(0); len(texts) != 0 {
+			t.Fatal("the first run said", texts)
+		}
+		r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 1 })
+		if texts := r.step(time.Minute); len(texts) != 1 {
+			t.Fatal(texts)
+		}
+		// /ready and /admin/status, twice; /health is the public listener's.
+		admin, public := r.stack.authorizations()
+		if !slices.Equal(admin, []string{bearer, bearer, bearer, bearer}) || !slices.Equal(public, []string{"", ""}) {
+			t.Fatalf("admin reads %q, public reads %q", admin, public)
+		}
+		state, _ := os.ReadFile(r.state)
+		neverShows(t, map[string]string{"the log": r.logs.String(), "the state": string(state)}, watchAdminToken)
+	})
+
+	t.Run("no token configured, no header", func(t *testing.T) {
+		r := newWatchRig(t)
+		r.step(0)
+		if admin, _ := r.stack.authorizations(); !slices.Equal(admin, []string{"", ""}) {
+			t.Fatalf("%q", admin)
+		}
+	})
+
+	// A token the server refuses is an alert that says so by the status, and
+	// repeats nothing: not the token, not the header.
+	t.Run("a refused token", func(t *testing.T) {
+		r := newWatchRig(t)
+		r.stack.configure(func(s *watchStack) { s.adminToken = watchAdminToken })
+		r.w.adminToken = "not-" + watchAdminToken
+		message := onlyAlert(t, r.step(0), "ready")
+		if !strings.Contains(message, "/ready answered 401; /admin/status answered 401") {
+			t.Fatal(message)
+		}
+		state, _ := os.ReadFile(r.state)
+		neverShows(t, map[string]string{"the message": message, "the log": r.logs.String(), "the state": string(state)}, watchAdminToken, r.w.adminToken, "Bearer")
+	})
+
+	// A redirect is not followed with the token: its Location is not the
+	// operator's, and the public listener here is on the same host.
+	t.Run("a redirect", func(t *testing.T) {
+		r := newWatchRig(t)
+		r.stack.configure(func(s *watchStack) {
+			s.adminToken = watchAdminToken
+			s.adminRedirect = r.stack.public.URL + "/health"
+		})
+		r.w.adminToken = watchAdminToken
+		message := onlyAlert(t, r.step(0), "ready")
+		if !strings.Contains(message, "/ready answered 302; /admin/status answered 302") {
+			t.Fatal(message)
+		}
+		_, public := r.stack.authorizations()
+		for _, header := range public {
+			if header != "" {
+				t.Fatalf("the public listener was sent %q", header)
+			}
+		}
+		neverShows(t, map[string]string{"the message": message, "the log": r.logs.String()}, watchAdminToken)
+	})
+
+	// Through the command, which reads the token from its variable: however
+	// the admin listener fails, no output, error or state shows the token.
+	for name, fail := range map[string]func(*watchStack){
+		"the server refuses the token": func(s *watchStack) { s.configure(func(s *watchStack) { s.adminToken = "another-" + watchAdminToken }) },
+		"HTTP 500":                     func(s *watchStack) { s.configure(func(s *watchStack) { s.readyCode, s.statusCode = 500, 500 }) },
+		"not a status":                 func(s *watchStack) { s.configure(func(s *watchStack) { s.statusRaw = "<html>bad gateway</html>" }) },
+		"unreachable":                  func(s *watchStack) { s.admin.Close() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			stack := newWatchStack(t)
+			stack.configure(func(s *watchStack) { s.adminToken = watchAdminToken })
+			state := filepath.Join(t.TempDir(), "state", "watch-state.json")
+			t.Setenv("AML_ALERT_WEBHOOK", stack.webhookURL())
+			t.Setenv("AML_ALERT_KIND", "feishu")
+			t.Setenv("AML_TEST_ADMIN_TOKEN", watchAdminToken)
+			var out bytes.Buffer
+			run := func() error {
+				command := newAMLWatchCommand()
+				command.SetArgs([]string{"--admin", stack.admin.URL, "--public-url", stack.public.URL, "--state", state, "--admin-token-env", "AML_TEST_ADMIN_TOKEN"})
+				command.SetOut(&out)
+				command.SetErr(&out)
+				err := command.Execute()
+				if err != nil {
+					fmt.Fprintln(&out, err) // what the product root prints after an error
+				}
+				return err
+			}
+			// All is well with the token: nothing to say.
+			if err := run(); err != nil || len(stack.take(t)) != 0 {
+				t.Fatalf("%v\n%s", err, out.String())
+			}
+			fail(stack)
+			if err := run(); err != nil {
+				t.Fatalf("%v\n%s", err, out.String())
+			}
+			posted := stack.take(t)
+			if len(posted) != 1 || !strings.Contains(posted[0], " ready on ") {
+				t.Fatalf("%q\n%s", posted, out.String())
+			}
+			raw, _ := os.ReadFile(state)
+			neverShows(t, map[string]string{"the output": out.String(), "the message": posted[0], "the state": string(raw)}, watchAdminToken, "Bearer")
+		})
+	}
+}
+
+// The reads follow redirects as net/http does, ten at most, when they carry no
+// token: the policy that stops a read with the token is the only difference.
+func TestWatchFollowsAtMostTenRedirects(t *testing.T) {
+	var last atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hop := 0
+		if r.URL.Path != "/health" {
+			fmt.Sscanf(r.URL.Path, "/hop/%d", &hop)
+		}
+		if int64(hop) >= last.Load() {
+			return
+		}
+		http.Redirect(w, r, fmt.Sprintf("/hop/%d", hop+1), http.StatusFound)
+	}))
+	t.Cleanup(server.Close)
+	w := newWatcher(watchSettings{public: server.URL}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	for hops, want := range map[int64]string{0: "", 3: "", 100: "stopped after 10 redirects"} {
+		last.Store(hops)
+		got := w.probeHealth(context.Background())
+		if want == "" && got != "" || want != "" && !strings.Contains(got, want) {
+			t.Errorf("%d redirects: %q, want %q", hops, got, want)
+		}
+	}
+}
+
+// A flag that names a variable needs it: the run is refused, with the
+// variable's name and nothing written, when it is unset or empty.
+func TestWatchAdminTokenVariable(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "watch-state.json")
+	const variable = "AML_TEST_WATCH_ADMIN_TOKEN"
+	for name, set := range map[string]bool{"unset": false, "empty": true} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv(variable, "")
+			if !set {
+				os.Unsetenv(variable)
+			}
+			out, err := executeAMLWatch("--state", state, "--admin-token-env", variable)
+			if err == nil || !strings.Contains(err.Error(), "--admin-token-env") || !strings.Contains(err.Error(), variable) || !strings.Contains(err.Error(), "unset or empty") {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			if _, statErr := os.Stat(state); !os.IsNotExist(statErr) {
+				t.Errorf("a refused run wrote state: %v", statErr)
+			}
+		})
+	}
+	// Set, it is read once, as it is: no trimming, no length rule (the
+	// server's rule).
+	t.Setenv(variable, "short")
+	command := newAMLWatchCommand()
+	if err := command.ParseFlags([]string{"--state", state, "--admin-token-env", variable}); err != nil {
+		t.Fatal(err)
+	}
+	if settings, err := amlWatchSettings(command); err != nil || settings.adminToken != "short" {
+		t.Fatal(settings.adminToken, err)
+	}
+}
+
+// ---- the instance's name ----
+
+// With --instance every message header says the instance: on host/name, in a
+// new alert, a repeat, a resolution and the resolution of an alert that was
+// never delivered. Without it the header is the host alone.
+func TestWatchNamesTheInstance(t *testing.T) {
+	r := newWatchRig(t)
+	r.w.instance = "beta-1"
+	r.step(0)
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	if first := onlyAlert(t, r.step(time.Minute), "health"); !strings.HasPrefix(first, watchWantTag+"ALERT health on aml-test/beta-1\n") {
+		t.Fatal(first)
+	}
+	if repeat := onlyAlert(t, r.step(30*time.Minute), "health"); !strings.HasPrefix(repeat, watchWantTag+"ALERT health on aml-test/beta-1 (still firing after 30m0s)\n") {
+		t.Fatal(repeat)
+	}
+	r.stack.configure(func(s *watchStack) { s.healthCode = 0 })
+	if resolved := onlyAlert(t, r.step(time.Minute), "health"); !strings.HasPrefix(resolved, watchWantTag+"RESOLVED health on aml-test/beta-1 (after 31m0s)\n") {
+		t.Fatal(resolved)
+	}
+
+	// An alert that never went out and is resolved: the note that says so is
+	// after the name too.
+	r = newWatchRig(t)
+	r.w.instance = "beta-1"
+	r.step(0)
+	r.stack.configure(func(s *watchStack) { s.hookCode, s.healthCode = http.StatusInternalServerError, http.StatusBadGateway })
+	if texts, err := r.stepErr(time.Minute); err == nil || len(texts) != 1 || !strings.HasPrefix(texts[0], watchWantTag+"ALERT health on aml-test/beta-1\n") {
+		t.Fatalf("%q %v", texts, err)
+	}
+	r.stack.configure(func(s *watchStack) { s.hookCode, s.healthCode = 0, 0 })
+	if resolved := onlyAlert(t, r.step(time.Minute), "health"); !strings.HasPrefix(resolved, watchWantTag+"RESOLVED health on aml-test/beta-1 (after 1m0s, alert not delivered)\n") {
+		t.Fatal(resolved)
+	}
+
+	// Without the flag the bytes are the host's alone.
+	r = newWatchRig(t)
+	r.step(0)
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	if first := onlyAlert(t, r.step(time.Minute), "health"); !strings.HasPrefix(first, watchWantTag+"ALERT health on aml-test\n") {
+		t.Fatal(first)
+	}
+
+	// The name is 2 to 31 characters: lowercase letters, digits and hyphens,
+	// starting with a letter. The run is refused otherwise, naming the flag.
+	state := filepath.Join(t.TempDir(), "watch-state.json")
+	settings := func(name string) (watchSettings, error) {
+		command := newAMLWatchCommand()
+		if err := command.ParseFlags([]string{"--state", state, "--instance", name}); err != nil {
+			t.Fatal(err)
+		}
+		return amlWatchSettings(command)
+	}
+	for _, name := range []string{"", "ab", "a1", "beta-1", "evaluation", "a-b-c-1-2-3", strings.Repeat("a", 31)} {
+		if got, err := settings(name); err != nil || got.instance != name {
+			t.Errorf("%q: %q %v", name, got.instance, err)
+		}
+	}
+	for _, name := range []string{"a", "A1", "Beta-1", "1beta", "-beta", "beta_1", "beta 1", "beta.1", "beta/1", "bêta", "beta-1\n", strings.Repeat("a", 32)} {
+		if _, err := settings(name); err == nil || !strings.Contains(err.Error(), "--instance") {
+			t.Errorf("%q: %v", name, err)
+		}
+		if out, err := executeAMLWatch("--state", state, "--instance", name); err == nil || !strings.Contains(err.Error(), "--instance") {
+			t.Errorf("%q: %v\n%s", name, err, out)
+		}
+	}
+	if _, err := os.Stat(state); !os.IsNotExist(err) {
+		t.Errorf("a refused run wrote state: %v", err)
 	}
 }

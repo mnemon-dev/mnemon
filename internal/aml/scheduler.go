@@ -102,9 +102,13 @@ type schedUser struct {
 	holds, waiters int
 	// backlog is the characters pending: the last job's measure, plus what
 	// Adds wrote since; added is what they wrote while it ran, which the
-	// measure may miss; dirty says Adds wrote while it ran.
+	// measure may miss; dirty says Adds wrote while it ran. measured says a
+	// job has ended with a measure of the backlog since the scheduler first
+	// knew the user: before that backlog is only what Adds have told it, and
+	// 0 for a user it was told nothing of.
 	backlog, added int64
 	dirty          bool
+	measured       bool
 	// failures counts its failed jobs in a row; retryAt ends its backoff,
 	// and seq orders retries due at the same time.
 	failures int
@@ -368,6 +372,20 @@ func (s *scheduler) Status() SchedulerStatus {
 	return status
 }
 
+// Backlog is the characters the scheduler estimates the user has pending: the
+// measure of the user's last job plus what Adds have written since. It has no
+// estimate (known false) for a user whose job has not ended with a measure yet,
+// and for one it has dropped, which has nothing pending.
+func (s *scheduler) Backlog(key string) (chars int64, known bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := s.users[key]
+	if u == nil || !u.measured {
+		return 0, false
+	}
+	return u.backlog, true
+}
+
 // signal makes the workers look again, as after any change: a clock moved
 // by a test, say.
 func (s *scheduler) signal() {
@@ -464,7 +482,7 @@ func (s *scheduler) finish(ctx context.Context, u *schedUser, backlog int64, err
 	s.mu.Lock()
 	s.running--
 	if backlog >= 0 {
-		u.backlog = backlog + u.added
+		u.backlog, u.measured = backlog+u.added, true
 	}
 	u.added = 0
 	var line string

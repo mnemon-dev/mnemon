@@ -105,7 +105,17 @@ type ServerConfig struct {
 	// to standard error. The server adds the request_id attribute to the
 	// lines of a request.
 	Logger *slog.Logger
+	// AdminToken, when not empty, is the token every request to the admin
+	// handler must carry as `Authorization: Bearer <token>` (AdminHandler); it
+	// holds MinAdminTokenLength bytes at least. It never appears in a log, an
+	// error or a metric.
+	AdminToken string
+	// Version is the product version /admin/status reports.
+	Version string
 }
+
+// MinAdminTokenLength is the fewest bytes an admin token (ServerConfig) holds.
+const MinAdminTokenLength = 32
 
 // Server serves the AML contract. Every user's agent shares the models.
 type Server struct {
@@ -139,6 +149,11 @@ type Server struct {
 	// batches, the models' attempts.
 	metrics *metrics
 	started time.Time // when NewServer made the server
+	// adminKey is the digest of the admin token, nil without one: the admin
+	// handler then asks nothing of a request.
+	adminKey *[sha256.Size]byte
+	// stores scans the data root for the store overview and the store gauges.
+	stores *storeScanner
 	// freeDisk is the free bytes of the disk holding a directory, which
 	// readiness measures.
 	freeDisk func(dir string) (uint64, error)
@@ -186,6 +201,10 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if config.SearchTimeout < 0 {
 		return nil, errors.New("the search timeout must be positive")
 	}
+	if config.AdminToken != "" && len(config.AdminToken) < MinAdminTokenLength {
+		// The error does not repeat the token.
+		return nil, fmt.Errorf("the admin token must hold at least %d characters", MinAdminTokenLength)
+	}
 	mode, err := consolidationMode(config)
 	if err != nil {
 		return nil, err
@@ -207,6 +226,11 @@ func NewServer(config ServerConfig) (*Server, error) {
 		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
 	s.log = slog.New(contextHandler{s.log.Handler()})
+	if config.AdminToken != "" {
+		digest := sha256.Sum256([]byte(config.AdminToken))
+		s.adminKey = &digest
+	}
+	s.stores = newStoreScanner(config.DataRoot, time.Now, s.scanLog)
 	if config.Models != nil {
 		s.models, err = config.Models(config.MemoryConfig)
 	} else {
@@ -246,6 +270,12 @@ func (s *Server) logf(ctx context.Context, level slog.Level, format string, args
 // schedulerLog is the scheduler's logf. Its lines report faults (a full
 // queue, a failed or panicked job, a pause), so they are warnings.
 func (s *Server) schedulerLog(format string, args ...any) {
+	s.logf(context.Background(), slog.LevelWarn, format, args...)
+}
+
+// scanLog is the store scanner's logf. A scan that fails leaves the overview
+// and the store gauges out, which is a fault: a warning.
+func (s *Server) scanLog(format string, args ...any) {
 	s.logf(context.Background(), slog.LevelWarn, format, args...)
 }
 

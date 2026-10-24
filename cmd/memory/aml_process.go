@@ -92,10 +92,10 @@ func lockDataRoot(root string) (*flock.Flock, error) {
 }
 
 // amlAdminServer is the HTTP server of the admin listener (aml.Server's
-// AdminHandler, served on loopback only, as it has no authentication). Its
-// write timeout outlasts the profiles it serves: net/http/pprof refuses a
-// profile as long as the write timeout, and one of up to 4 minutes finishes
-// within it.
+// AdminHandler, served on loopback, or on a private address with an admin
+// token: checkAdminListen). Its write timeout outlasts the profiles it serves:
+// net/http/pprof refuses a profile as long as the write timeout, and one of up
+// to 4 minutes finishes within it.
 func amlAdminServer(handler http.Handler, log *slog.Logger) *http.Server {
 	return &http.Server{
 		Handler:           handler,

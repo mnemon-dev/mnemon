@@ -2,6 +2,8 @@ package aml
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -361,7 +364,7 @@ func TestAdminStatusFieldsAreStable(t *testing.T) {
 		slices.Sort(out)
 		return out
 	}
-	want := []string{"addOutran", "adds", "breakerTrips", "breakers", "budgets", "degraded", "dropped", "lagBound", "linkFallbacks", "openStores", "partial", "partialLast10m", "queue", "searches", "searchesLast10m", "startedAt"}
+	want := []string{"addOutran", "adds", "breakerTrips", "breakers", "budgets", "degraded", "dropped", "lagBound", "linkFallbacks", "openStores", "partial", "partialLast10m", "queue", "searches", "searchesLast10m", "startedAt", "version"}
 	if got := keys(fields); !slices.Equal(got, want) {
 		t.Fatalf("fields %v, want %v", got, want)
 	}
@@ -516,5 +519,177 @@ func TestAdminStatusBudgetsAreAnArrayWhenTheBudgetCannotBeRead(t *testing.T) {
 	}
 	if got := string(body()["budgets"]); got != "[]" {
 		t.Fatal("an unreadable budget file shows as", got)
+	}
+}
+
+// ---- the admin token ----
+
+// testAdminToken is the admin token of the servers that have one: longer than
+// the 32 characters a server asks for.
+const testAdminToken = "adm1n-t0ken-0123456789abcdef-ghijklmnop"
+
+// adminBearer is the Authorization header of a request that holds the token.
+var adminBearer = []string{"Authorization", "Bearer " + testAdminToken}
+
+// adminCallWith sends a request to the admin handler with headers, given as
+// name, value pairs.
+func (h *harness) adminCallWith(method, path string, headers ...string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(method, path, nil)
+	for i := 0; i+1 < len(headers); i += 2 {
+		request.Header.Set(headers[i], headers[i+1])
+	}
+	recorder := httptest.NewRecorder()
+	h.server.AdminHandler().ServeHTTP(recorder, request)
+	return recorder
+}
+
+// tokenHarness is a harness whose admin routes demand testAdminToken, with
+// room on its disk so that /ready can say yes.
+func tokenHarness(t *testing.T) *harness {
+	t.Helper()
+	h := newHarness(t, func(config *ServerConfig) { config.AdminToken = testAdminToken })
+	h.roomy()
+	return h
+}
+
+// authFailures is mnemon_aml_admin_auth_failures_total, scraped with the token.
+func (h *harness) authFailures(t *testing.T) float64 {
+	t.Helper()
+	response := h.adminCallWith("GET", "/metrics", adminBearer...)
+	if response.Code != http.StatusOK {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	for _, line := range strings.Split(response.Body.String(), "\n") {
+		if value, found := strings.CutPrefix(line, "mnemon_aml_admin_auth_failures_total "); found {
+			count, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				t.Fatal(line, err)
+			}
+			return count
+		}
+	}
+	t.Fatal("no mnemon_aml_admin_auth_failures_total series")
+	return 0
+}
+
+// With an admin token every admin route answers only the request that holds it
+// as a Bearer token (the scheme in any case). Any other gets 401 with the
+// fixed body, counted, and nothing the token or its digest is made of reaches
+// a log, a metric or an answer.
+func TestAdminRoutesRequireToken(t *testing.T) {
+	h := tokenHarness(t)
+	routes := []string{"/metrics", "/ready", "/admin/status", "/admin/v1/stores", "/debug/pprof/"}
+	almost := testAdminToken[:len(testAdminToken)-1] + "!" // the token but for its last character
+	refused := []struct {
+		name    string
+		headers []string
+	}{
+		{"no token", nil},
+		{"a wrong token", []string{"Authorization", "Bearer " + almost}},
+		{"the token cut short", []string{"Authorization", "Bearer " + testAdminToken[:len(testAdminToken)-1]}},
+		{"the token and more", []string{"Authorization", "Bearer " + testAdminToken + "x"}},
+		{"nothing after the scheme", []string{"Authorization", "Bearer "}},
+		{"the token without a scheme", []string{"Authorization", testAdminToken}},
+		{"the Token scheme", []string{"Authorization", "Token " + testAdminToken}},
+		{"X-Api-Key", []string{"X-Api-Key", testAdminToken}},
+		{"X-Api-Key beside a wrong token", []string{"Authorization", "Bearer " + almost, "X-Api-Key", testAdminToken}},
+	}
+	logged := h.log.String()
+	for _, route := range routes {
+		for _, tc := range refused {
+			response := h.adminCallWith("GET", route, tc.headers...)
+			if response.Code != http.StatusUnauthorized ||
+				response.Header().Get("WWW-Authenticate") != `Bearer realm="mnemon-admin"` ||
+				response.Header().Get("Content-Type") != "application/json" ||
+				strings.TrimSpace(response.Body.String()) != `{"error":"missing or invalid admin token"}` {
+				t.Errorf("%s with %s: %d %v %q", route, tc.name, response.Code, response.Header(), response.Body.String())
+			}
+		}
+	}
+	failures := float64(len(routes) * len(refused))
+	if got := h.authFailures(t); got != failures {
+		t.Fatalf("%v failures counted, %v made", got, failures)
+	}
+	for _, route := range routes {
+		for _, scheme := range []string{"Bearer", "bearer", "BEARER", "bEaReR"} {
+			if response := h.adminCallWith("GET", route, "Authorization", scheme+" "+testAdminToken); response.Code != http.StatusOK {
+				t.Errorf("%s with %s: %d %.80q", route, scheme, response.Code, response.Body.String())
+			}
+		}
+	}
+	// Requests that held the token are not failures.
+	if got := h.authFailures(t); got != failures {
+		t.Fatalf("%v failures counted after the accepted requests, %v made", got, failures)
+	}
+	// No line is logged for a failure: the counter is the signal. Neither the
+	// token, nor what was sent in its place, nor its digest is anywhere.
+	if h.log.String() != logged {
+		t.Errorf("failures were logged: %s", h.log.String())
+	}
+	digest := sha256.Sum256([]byte(testAdminToken))
+	metrics := h.adminCallWith("GET", "/metrics", adminBearer...).Body.String()
+	for name, text := range map[string]string{"the log": h.log.String(), "the metrics": metrics} {
+		for _, secret := range []string{testAdminToken, almost, hex.EncodeToString(digest[:]), hex.EncodeToString(digest[:8])} {
+			if strings.Contains(text, secret) {
+				t.Errorf("%s shows %q", name, secret)
+			}
+		}
+	}
+}
+
+// Without a token the admin listener is what it was: nothing is asked of a
+// request, a header it happens to carry is ignored, an unknown path is 404
+// (not 401), and no failure is ever counted.
+func TestAdminWithoutTokenUnchanged(t *testing.T) {
+	h := newHarness(t, nil)
+	h.roomy()
+	for _, route := range []string{"/metrics", "/ready", "/admin/status", "/admin/v1/stores", "/debug/pprof/"} {
+		for _, headers := range [][]string{nil, {"Authorization", "Bearer anything"}, {"X-Api-Key", "k"}} {
+			response := h.adminCallWith("GET", route, headers...)
+			if response.Code != http.StatusOK || response.Header().Get("WWW-Authenticate") != "" {
+				t.Errorf("%s with %v: %d %v", route, headers, response.Code, response.Header())
+			}
+		}
+	}
+	if response := h.adminCallWith("GET", "/no-such-route"); response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), `"not found"`) {
+		t.Errorf("an unknown path: %d %q", response.Code, response.Body.String())
+	}
+	// The routes are for reading: the fallback answers anything else.
+	if response := h.adminCallWith("POST", "/metrics"); response.Code != http.StatusNotFound {
+		t.Errorf("POST /metrics: %d", response.Code)
+	}
+	h.scrape(t).is(t, 0, "mnemon_aml_admin_auth_failures_total")
+}
+
+// A token shorter than 32 characters is no token: the server is not made, and
+// what it says does not repeat the token.
+func TestServerRefusesAShortAdminToken(t *testing.T) {
+	if MinAdminTokenLength != 32 {
+		t.Fatal("the shortest admin token is", MinAdminTokenLength)
+	}
+	short := strings.Repeat("s", MinAdminTokenLength-1)
+	server, err := NewServer(ServerConfig{
+		DataRoot: t.TempDir(), MemoryConfig: simpleConfig(), AuthKey: testKey, AdminToken: short,
+		Models: func(memoryagent.Config) (memoryagent.Models, error) {
+			return memoryagent.Models{Planner: &fakePlanner{}, Judge: &fakeJudge{}, Consolidator: &fakeConsolidator{}}, nil
+		},
+	})
+	if err == nil {
+		server.Close()
+		t.Fatal("a server was made with a 31-character admin token")
+	}
+	if strings.Contains(err.Error(), short) || !strings.Contains(err.Error(), "admin token") {
+		t.Fatal(err)
+	}
+}
+
+// /admin/status says which build runs: the version the server is made with.
+func TestAdminStatusHasVersion(t *testing.T) {
+	h := newHarness(t, func(config *ServerConfig) { config.Version = "x.y" })
+	if body := h.adminCall("GET", "/admin/status").Body.String(); !strings.Contains(body, `"version":"x.y"`) {
+		t.Fatal(body)
+	}
+	if got := h.adminStatus(t).Version; got != "x.y" {
+		t.Fatal(got)
 	}
 }

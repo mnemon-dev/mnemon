@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -33,16 +34,23 @@ import (
 // systemd timer runs every minute. One run
 //
 //  1. takes the exclusive lock <state>.lock (see below);
-//  2. reads the admin listener's /ready and /admin/status and the public
-//     listener's /health, each within 5 seconds;
+//  2. reads the admin listener's /ready and /admin/status (with the admin
+//     token as a bearer token, when --admin-token-env names one) and the
+//     public listener's /health, each within 5 seconds;
 //  3. applies the rules below to what it read and to the state the last run
 //     left (counters, when they last rose, when a condition began);
 //  4. posts one text message per alert that fires, per firing alert that is
 //     due again, and per alert that clears, to the webhook in AML_ALERT_WEBHOOK
 //     (AML_ALERT_KIND: feishu or wecom), each within 10 seconds, each starting
-//     with the tag [mnemon-aml] (watchTag); and
+//     with the tag [mnemon-aml] (watchTag), whose header says which host the
+//     watcher runs on, and which instance with --instance; and
 //  5. saves the state, atomically (a temporary file in the state's directory,
 //     renamed over it; mode 0600), whether or not a post failed.
+//
+// The admin token is a secret too. It is read once, from the variable
+// --admin-token-env names, and sent to the admin listener only: not to the
+// public one, and not along a redirect, whose Location is not the operator's.
+// It is never printed, logged, put in an error, a message or the state.
 //
 // The webhook's URL is a secret (its path is a bearer token): it is never
 // printed, logged or put in an error. A failed post says the HTTP status, the
@@ -155,9 +163,10 @@ func newAMLWatchCommand() *cobra.Command {
 public /health, apply the alert rules, and post a text message for each alert that fires, each
 firing alert that is due again (every 30 minutes) and each alert that clears, to the webhook named
 by the environment variable AML_ALERT_WEBHOOK, in the payload of AML_ALERT_KIND (feishu or wecom);
-every text starts with [mnemon-aml], the keyword to register on a Feishu bot. Run it every minute
-with a systemd timer. The webhook URL is a secret and is never printed. With no webhook the alerts
-are logged only. The state between runs is the file --state; one run at a time holds <state>.lock.`,
+every text starts with [mnemon-aml], the keyword to register on a Feishu bot, and says which host
+it is from (and which instance, with --instance). Run it every minute with a systemd timer. The
+webhook URL and the admin token are secrets and are never printed. With no webhook the alerts are
+logged only. The state between runs is the file --state; one run at a time holds <state>.lock.`,
 		Args: cobra.NoArgs,
 		RunE: runAMLWatch,
 	}
@@ -165,15 +174,23 @@ are logged only. The state between runs is the file --state; one run at a time h
 	flags.String("admin", "http://127.0.0.1:8091", "URL of aml-serve's admin listener (--admin-listen)")
 	flags.String("public-url", "", "URL of the public listener as clients reach it, such as https://memory.example.com, whose /health is checked; empty to skip that check (every run then logs a warning)")
 	flags.String("state", "", "Absolute path of the state file kept between runs, such as /var/lib/mnemon-aml/watch-state.json (required)")
+	flags.String("admin-token-env", "", "Environment variable holding the token aml-serve's admin listener requires (its --admin-token-env), sent as a bearer token on every admin read; empty for none")
+	flags.String("instance", "", "Name of the aml-serve instance this watcher watches, such as beta-1 (2 to 31 lowercase letters, digits and hyphens, starting with a letter): every message then says it is on host/name; empty for the host alone")
 	return command
 }
 
 // watchSettings are aml-watch's checked settings. webhook is empty to log the
-// alerts instead of posting them.
+// alerts instead of posting them. adminToken is the bearer token of the admin
+// reads, "" for none; instance names the instance in the messages, "" for the
+// host alone.
 type watchSettings struct {
 	admin, public, state string
 	webhook, kind        string
+	adminToken, instance string
 }
+
+// watchInstance is the shape of an instance's name (--instance).
+var watchInstance = regexp.MustCompile(`^[a-z][a-z0-9-]{1,30}$`)
 
 // amlWatchSettings reads and checks aml-watch's flags and environment; it
 // touches nothing. The webhook and its kind are checked when the watcher runs.
@@ -183,6 +200,8 @@ func amlWatchSettings(cmd *cobra.Command) (watchSettings, error) {
 	admin, _ := flags.GetString("admin")
 	public, _ := flags.GetString("public-url")
 	s.state, _ = flags.GetString("state")
+	s.instance, _ = flags.GetString("instance")
+	tokenEnv, _ := flags.GetString("admin-token-env")
 	var err error
 	if s.admin, err = watchBaseURL("--admin", admin); err != nil {
 		return s, err
@@ -197,6 +216,15 @@ func amlWatchSettings(cmd *cobra.Command) (watchSettings, error) {
 		return s, errors.New("--state is required: the file the watcher keeps between runs")
 	case !filepath.IsAbs(s.state):
 		return s, errors.New("--state must be an absolute path")
+	case s.instance != "" && !watchInstance.MatchString(s.instance):
+		return s, fmt.Errorf("--instance must be 2 to 31 characters: lowercase letters, digits and hyphens, starting with a letter; not %q", s.instance)
+	}
+	if tokenEnv != "" {
+		// Read once, as it is. aml-serve, which has a rule for the token's
+		// length, refuses the one that is too short; here it must be there.
+		if s.adminToken = os.Getenv(tokenEnv); s.adminToken == "" {
+			return s, fmt.Errorf("--admin-token-env names $%s, which is unset or empty: it must hold the admin token", tokenEnv)
+		}
 	}
 	s.webhook = strings.TrimSpace(os.Getenv("AML_ALERT_WEBHOOK"))
 	s.kind = strings.ToLower(strings.TrimSpace(os.Getenv("AML_ALERT_KIND")))
@@ -252,12 +280,34 @@ func newWatcher(settings watchSettings, log *slog.Logger) *watcher {
 	}
 	return &watcher{
 		watchSettings: settings, host: host, now: time.Now, log: log,
-		reads: &http.Client{Timeout: watchReadTimeout},
+		reads: &http.Client{Timeout: watchReadTimeout, CheckRedirect: watchReadRedirect},
 		hooks: &http.Client{
 			Timeout:       watchHookTimeout,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}
+}
+
+// watchReadRedirect is the redirect policy of the reads: net/http's own (ten
+// redirects at most), except that a request that carries the admin token goes
+// nowhere else, as the Location of an answer is not the operator's.
+func watchReadRedirect(req *http.Request, via []*http.Request) error {
+	if req.Header.Get("Authorization") != "" {
+		return http.ErrUseLastResponse
+	}
+	if len(via) >= 10 {
+		return errors.New("stopped after 10 redirects")
+	}
+	return nil
+}
+
+// origin is what the header of a message says it is on: the host, and with
+// --instance, host/name.
+func (w *watcher) origin() string {
+	if w.instance == "" {
+		return w.host
+	}
+	return w.host + "/" + w.instance
 }
 
 // run reads, evaluates, posts and saves, once. Its error says that a message
@@ -288,7 +338,7 @@ func (w *watcher) run(ctx context.Context) error {
 	}
 	next, values, frozen := evaluate(obs, prev, now)
 	var messages []watchMessage
-	next.Firing, messages = planAlerts(now, w.host, values, frozen, prev.Firing)
+	next.Firing, messages = planAlerts(now, w.origin(), values, frozen, prev.Firing)
 	outcomes, deliveryErr := w.deliver(ctx, messages)
 	settleAlerts(next.Firing, messages, outcomes, now)
 	return errors.Join(deliveryErr, saveWatchState(w.state, next))
@@ -380,13 +430,18 @@ func (w *watcher) observe(ctx context.Context) watchObservation {
 	return obs
 }
 
-// fetch GETs base+path and returns the status and the start of the body.
-func (w *watcher) fetch(ctx context.Context, base, path string) (int, []byte, error) {
+// fetch GETs base+path and returns the status and the start of the body. A
+// token, when not empty, is sent as the request's bearer token: the admin
+// reads pass the admin token, the public one none.
+func (w *watcher) fetch(ctx context.Context, base, path, token string) (int, []byte, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+path, nil)
 	if err != nil {
 		return 0, nil, err
 	}
 	request.Header.Set("Accept", "application/json")
+	if token != "" {
+		request.Header.Set("Authorization", "Bearer "+token)
+	}
 	response, err := w.reads.Do(request)
 	if err != nil {
 		return 0, nil, err
@@ -406,7 +461,7 @@ func watchRequestError(err error) string {
 }
 
 func (w *watcher) probeReady(ctx context.Context) string {
-	code, body, err := w.fetch(ctx, w.admin, "/ready")
+	code, body, err := w.fetch(ctx, w.admin, "/ready", w.adminToken)
 	switch {
 	case err != nil:
 		return "/ready did not answer: " + watchRequestError(err)
@@ -421,7 +476,7 @@ func (w *watcher) probeReady(ctx context.Context) string {
 }
 
 func (w *watcher) readStatus(ctx context.Context) (*aml.AdminStatus, string) {
-	code, body, err := w.fetch(ctx, w.admin, "/admin/status")
+	code, body, err := w.fetch(ctx, w.admin, "/admin/status", w.adminToken)
 	if err != nil {
 		return nil, "/admin/status did not answer: " + watchRequestError(err)
 	}
@@ -437,7 +492,7 @@ func (w *watcher) readStatus(ctx context.Context) (*aml.AdminStatus, string) {
 
 func (w *watcher) probeHealth(ctx context.Context) string {
 	target := strings.TrimRight(w.public, "/") + "/health"
-	code, _, err := w.fetch(ctx, w.public, "/health")
+	code, _, err := w.fetch(ctx, w.public, "/health", "")
 	switch {
 	case err != nil:
 		return fmt.Sprintf("GET %s did not answer: %s", target, watchRequestError(err))

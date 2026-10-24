@@ -195,6 +195,10 @@ func (g *registry) cached(key string) bool {
 	return g.entries[key] != nil
 }
 
+// isOpen reports whether the registry holds key's store open now, as open
+// counts the stores: a map read under the lock, no I/O.
+func (g *registry) isOpen(key string) bool { return g.cached(key) }
+
 // open is the number of cached entries.
 func (g *registry) open() int {
 	g.mu.Lock()
