@@ -2,8 +2,9 @@
 
 Draft text for the Agent Memory Challenge 2026 submission, **industrial track (commercial
 products), textual**. Everything in `<angle brackets>` is a placeholder to fill in or confirm
-before submitting; nothing here reports a measured result yet. Install and operate the system
-with [`docs/aml-adapter.md`](../../docs/aml-adapter.md).
+before submitting. The only measured numbers here are the capacity rows' local ones, marked as
+such; nothing reports a result of the evaluation host or of an evaluation yet. Install and
+operate the system with [`docs/aml-adapter.md`](../../docs/aml-adapter.md).
 
 ## Kit contents
 
@@ -102,9 +103,10 @@ may do (see step 6 below).
    reads each batch of records on its own and writes its events, facts and directives; then
    JEV links each batch to the memory so far, in batch order, by asking whether a new thread
    continues a stored one, whether a new fact is the same attribute of the same thing as a
-   stored fact, and whether its value contradicts the stored one. At read time JEV selects the
-   topics that matter for the question, and the layer adds blocks (topics, timelines, value
-   histories, directives) with the linked records before the evidence. The deployment
+   stored fact, and whether its value contradicts the stored one. At read time BM25 shortlists
+   the topics and values nearest to the question and JEV judges which of them matter, and the
+   layer adds blocks (topics, timelines, value histories, directives) with the linked records
+   before the evidence. The deployment
    consolidates in the background (`--consolidate background`): an Add returns once its
    records are persisted and searchable, and supervised workers fold every full batch (10,000
    characters) of the user's new records; an Add waits only while its user's backlog is above
@@ -192,24 +194,26 @@ participants choose their models, and DeepSeek and JEV retain no data.
 
 ## Capacity, timeouts and limits
 
-Fill these from the measurements described in the runbook ("Capacity declaration"). The
-values marked "local, fake providers" are not the host's, and they are **round 0's, superseded**:
-the first load test's, by `scripts/aml/load.sh --local` on a development machine (18 cores),
-with the fake provider answering every DeepSeek call in 2 s and every JEV call in 1.5 s, the
-dedicated limits (16 Adds, 16 Searches, 16 open stores, 4 workers) and 16 users, at rising
-rates of 60 s (Searches) or 30 s (Adds) each, with no settling between steps. That method
-overstated the knees. The final run (`scripts/aml/final.sh`: Search steps of 300 s, the
-scheduler settled before every step, p50 and p95 within twice the lowest rate's) replaces them.
-The host's values come from the same load test on a scratch instance there.
+These are declared from the load test the runbook describes ("Capacity declaration"). The values
+marked "local machine, fake providers, bc18487b, 2026-10-25" are not the host's. They are the
+final run's (`scripts/aml/final.sh`, one commit built from its `git archive`) on a development
+machine (18 cores), with the fake provider answering every DeepSeek call in 2 s and every JEV
+call in 1.5 s, the dedicated limits (16 Adds, 16 Searches, 16 open stores, 4 workers) and 16
+users. Search steps last 300 s and Add steps 60 s, the consolidation scheduler is settled before
+every step, and the knee of a route is the highest rate whose p50 and p95 stay within twice the
+lowest rate's, with no non-2xx answer. They replace the first load test's (60 s and 30 s steps,
+no settling between them), which overstated the knees. **The unit limits, 16 Adds and 16
+Searches, stay provisional until the load test on the evaluation host** (`scripts/aml/load.sh`,
+on a scratch instance there): its values then replace the local ones.
 
 | Field | Value |
 |---|---|
 | Host | 12 vCPU, 48 GB, 387 GB, Ubuntu 24.04 amd64, dedicated to the evaluation instance |
-| Concurrent Add requests | `<TBD: measured>`, at most the instance's `--max-concurrent-adds` (16, provisional). Local, fake providers (round 0, superseded): 8 Adds a second of 20 messages is the knee, under 1 in flight; at 16 a second, after the lower steps, the users' backlogs reach the lag bound, Adds wait for consolidation (p95 21 s) and 8 of 480 are shed |
-| Concurrent Search requests | `<TBD: measured>`, at most the instance's `--max-concurrent-searches` (16, provisional). Local, fake providers (round 0, superseded): 1.5 Searches a second fill the 16 slots with no wait; 2 a second is the knee, queueing for slots (39 in flight or waiting at the peak); 3 a second shed 30 of 180 |
-| Add latency (20 messages), p50 / p95 | `<TBD>` / `<TBD>`. Local, fake providers (round 0, superseded), at 8 a second: 3 ms / 5 ms |
-| Search latency (`top_k` 100), p50 / p95 | `<TBD>` / `<TBD>`. Local, fake providers (round 0, superseded): 9.6 s / 11.1 s up to 1.5 a second; 15.4 s / 21.9 s at the knee, 2 a second |
-| Rate limit | `<TBD>` requests per minute. Local, fake providers (round 0, superseded): 120 Searches and 480 Adds a minute (the knees) |
+| Concurrent Add requests | At most the instance's `--max-concurrent-adds`: 16, provisional. Local machine, fake providers, bc18487b, 2026-10-25: at the knee, 8 Adds a second of 20 messages, none was in flight when sampled; past it, at 16 a second, requests queued for slots (239 in flight or waiting at the peak) and 215 of 960 were shed with 503 |
+| Concurrent Search requests | At most the instance's `--max-concurrent-searches`: 16, provisional. Local machine, fake providers, bc18487b, 2026-10-25: the knee, 1.5 Searches a second, fills the 16 slots (16 in flight at the peak); past it, at 2 a second, requests queued for slots (76 in flight or waiting at the peak) and 58 of 600 were shed with 503 |
+| Add latency (20 messages), p50 / p95 | 4 ms / 5 ms at the knee, 8 a second. Local machine, fake providers, bc18487b, 2026-10-25 |
+| Search latency (`top_k` 100), p50 / p95 | 9.55 s / 11.06 s at the knee, 1.5 a second (the fake provider's 2 s and 1.5 s calls are most of it); 35.2 s / 39.9 s at 2 a second, past it. Local machine, fake providers, bc18487b, 2026-10-25 |
+| Rate limit | 90 Searches and 480 Adds a minute, 60 times the knees (1.5 and 8 a second). Local machine, fake providers, bc18487b, 2026-10-25; the host's come from its load test |
 | Request timeout accepted | 31 minutes (the platform's I/O timeout is 30 minutes); a Search's memory read stops after 10 minutes (`--search-timeout`) and answers the raw ranking |
 | Stores kept open | 16 (`--max-open-stores`) |
 | Request body limit | 30 MiB |
@@ -252,7 +256,14 @@ each number. None is reported in this draft.>`
 ## Open points to confirm before submitting
 
 - The capacity numbers and the rate limit above, from the load test on the evaluation host
-  (`scripts/aml/load.sh`, as the runbook's "Capacity declaration" describes).
-- The Windows CI job (`windows-memory`) has not yet run the new `cmd/memory` tests: they are
-  the first Windows tests to open AML stores and the budget file, and must pass before the
-  branch merges.
+  (`scripts/aml/load.sh`, as the runbook's "Capacity declaration" describes). The rows now hold
+  the final run's local values, marked as such, and the unit limits (16 Adds, 16 Searches) are
+  provisional until that test.
+- The release commit, `<release commit>` in the System table, and the `VERSION` of the release
+  binary. The capacity rows' commit, `bc18487b`, is the final run's, not the release's.
+- The Windows CI job (`windows-memory`). It failed by reading: on Windows the private-mode check
+  refused the budget file and the model cache for every file. The fix is in
+  (`8888d9dd`: the check applies only where POSIX modes mean something), and the job has not run
+  since; running it needs a push, which is the repository owner's call. It runs the new
+  `cmd/memory` tests, the first Windows tests to open AML stores and the budget file, and must
+  pass before the branch merges.

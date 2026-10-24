@@ -39,9 +39,11 @@ memory cloud ([runbook](docs/aml-adapter.md)). Its security model:
   port listens on a public address.
 - **Secrets.** API keys, admin tokens, provider keys and alert webhooks live in root-only
   (0600) environment files on the instance host; the console keeps the admin tokens in its own
-  0600 registry and only a fingerprint of each API key. Secrets never appear in a URL, a log
-  line, a metric label or an error, and the host scripts pass them to other programs only on
-  standard input, never as arguments.
+  0600 registry and only a fingerprint of each API key. An API key, an admin token or a provider
+  key never appears in a URL, a log line, a metric label or an error. An alert webhook is a URL
+  by design (a Telegram bot's token, or a Feishu or WeCom hook's key, is in its path or its
+  query), so it is never printed, logged or passed as an argument. The host scripts pass the
+  other secrets to programs only on standard input, never as arguments.
 - **Data handling.** Request bodies and user ids are never logged; a user appears only as the
   first 8 hex digits of its store's hash. An instance's data is removed with
   `mnemon-instance delete`, one user's with `mnemon-instance delete-user`.
