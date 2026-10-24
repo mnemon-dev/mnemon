@@ -123,15 +123,18 @@ func TestRejectedIsCountedAndNotRetried(t *testing.T) {
 	}
 }
 
-// patiently scales p's patient throttling down by 40, in the classes that
-// have it: the k-th throttled retry waits 50 ms × 2^(k−1) (50, 100, 200 and
-// 400 ms for 2, 4, 8 and 16 s), 750 ms in all at most (for 30 s). The class's
-// own backoff is a millisecond, so each wait is its floor.
-func patiently(p *Provider) {
+// patiently scales p's patient throttling down by 20, in the classes that
+// have it, and fixes its jitter draw at u. The k-th throttled retry then
+// waits 100 ms × 2^(k−1) × (0.75 + 0.25u), for 2 s × 2^(k−1) × U[0.75, 1.0],
+// and the throttled retries wait 1.5 s in all at most, for 30 s. The class's
+// own backoff is a millisecond, so each wait is its jittered floor: at u =
+// 0.5, 87.5, 175, 350 and 700 ms.
+func patiently(p *Provider, u float64) {
 	quickRetries(p)
+	p.random = func() float64 { return u }
 	for class := range p.policies {
 		if p.policies[class].throttledRetries > 0 {
-			p.policies[class].throttleFloor, p.policies[class].maxThrottleWait = 50*time.Millisecond, 750*time.Millisecond
+			p.policies[class].throttleFloor, p.policies[class].maxThrottleWait = 100*time.Millisecond, 1500*time.Millisecond
 		}
 	}
 }
@@ -167,16 +170,19 @@ func throttleStorm(t *testing.T, storm time.Duration) *endpoint {
 	})
 }
 
-// R67: an Interactive or a Flush call refused with 429 and no Retry-After
-// waits it out patiently. Its k-th throttled retry waits max(the class's
-// backoff, 2 s × 2^(k−1)): 2, 4, 8 and 16 s. It makes up to 5 of them, which
-// are not among the class's attempts, and waits 30 s in all at most, never
-// past the caller's deadline. A Retry-After is waited as before, within the
-// class's attempts, and Background calls keep their policy. The breaker never
-// counts a 429 (R59).
+// R67 and R71: an Interactive or a Flush call refused with 429 and no
+// Retry-After waits it out patiently. Its k-th throttled retry waits
+// max(the class's backoff, 2 s × 2^(k−1) × U[0.75, 1.0]): at most 2, 4, 8
+// and 16 s, jittered so that calls throttled together do not retry in step.
+// It makes up to 5 of them, which are not among the class's attempts, and
+// waits 30 s in all at most per call, never past the caller's deadline; a
+// caller that gives up during a wait ends it at once. A Retry-After of 0, an
+// invalid one or one already past names no wait. Any other Retry-After is
+// waited as before, within the class's attempts, and Background calls keep
+// their policy. The breaker never counts a 429 (R59).
 func TestPatientThrottleWithoutRetryAfter(t *testing.T) {
-	if throttledRetries != 5 || throttleFloor != 2*time.Second || maxThrottleWait != 30*time.Second {
-		t.Fatal(throttledRetries, throttleFloor, maxThrottleWait)
+	if throttledRetries != 5 || throttleFloor != 2*time.Second || maxThrottleWait != 30*time.Second || throttleJitter != 0.25 {
+		t.Fatal(throttledRetries, throttleFloor, maxThrottleWait, throttleJitter)
 	}
 	// The policies: a model's maxAttempts leaves the throttled retries alone.
 	p, err := NewProvider(ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1", MaxAttempts: 2}, nil)
@@ -197,62 +203,108 @@ func TestPatientThrottleWithoutRetryAfter(t *testing.T) {
 			t.Fatal(class, policy.maxAttempts, policy.throttledRetries, policy.throttleFloor, policy.maxThrottleWait)
 		}
 	}
+	const ms, s = time.Millisecond, time.Second
 	t.Run("the waits", func(t *testing.T) {
 		// With the real constants. In a storm from the call's first attempt
-		// the k-th throttled retry is the call's k-th retry: it waits 2, 4,
-		// 8, 16 (and 32) s whatever the jitter, in both classes, whose backoff
-		// (Interactive 0.5 s → 8 s, Flush 2 s → 60 s) is then at most that.
+		// the k-th throttled retry is the call's k-th retry. It waits
+		// 2 s × 2^(k−1) × (0.75 + 0.25 × the draw): three quarters of that at
+		// the lowest draw, seven eighths at the middle one, and less than all
+		// of it at any draw, so 2, 4, 8 and 16 s are upper bounds. That holds
+		// in both classes, whose backoff (Interactive 0.5 s → 8 s, Flush 2 s →
+		// 60 s) is then never longer.
 		for _, class := range []CallClass{Interactive, Flush} {
 			policy := p.policies[class]
-			for k, want := range []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second, 32 * time.Second} {
-				for _, random := range []float64{0, 0.5, 0.999} {
+			for random, waits := range map[float64][]time.Duration{
+				0:   {1500 * ms, 3 * s, 6 * s, 12 * s, 24 * s},
+				0.5: {1750 * ms, 3500 * ms, 7 * s, 14 * s, 28 * s},
+			} {
+				for k, want := range waits {
 					if got := policy.throttleDelay(k+1, k+1, random); got != want {
 						t.Error(class, "throttled retry", k+1, "random", random, got, "want", want)
 					}
 				}
 			}
+			total := time.Duration(0)
+			for k, bound := range []time.Duration{2 * s, 4 * s, 8 * s, 16 * s, 32 * s} {
+				got := policy.throttleDelay(k+1, k+1, 0.999)
+				if got >= bound || got < bound*999/1000 {
+					t.Error(class, "throttled retry", k+1, "at the highest draw", got, "bound", bound)
+				}
+				if k < 4 {
+					total += got
+				}
+			}
+			// The 30 s still fit four at any draw, and never five: the lowest
+			// five waits add up to 46.5 s.
+			if total > maxThrottleWait {
+				t.Error(class, "four waits", total)
+			}
 		}
-		// Only the class's backoff is jittered, and never below the floor: a
-		// Flush call whose first two attempts drew 503s, throttled at its
-		// third, waits a random part of its third backoff (8 s) when that is
-		// longer than the first floor, 2 s.
+		// The class's backoff, a full jitter, wins when it is longer: a Flush
+		// call whose first two attempts drew 503s, throttled at its third,
+		// waits the longer of a random part of its third backoff (8 s) and its
+		// first floor jittered (1.5 s to 2 s).
 		flush := p.policies[Flush]
-		for random, want := range map[float64]time.Duration{0: 2 * time.Second, 0.125: 2 * time.Second, 0.5: 4 * time.Second, 0.75: 6 * time.Second} {
+		for random, want := range map[float64]time.Duration{0: 1500 * ms, 0.125: 1562500 * time.Microsecond, 0.5: 4 * s, 0.75: 6 * s} {
 			if got := flush.throttleDelay(3, 1, random); got != want {
 				t.Error("random", random, got, "want", want)
 			}
 		}
+		// A provider's draws come from the shared source, unless a test fixes
+		// them.
+		draws := map[float64]bool{}
+		for range 50 {
+			if u := p.jitter(); u < 0 || u >= 1 {
+				t.Fatal(u)
+			} else {
+				draws[u] = true
+			}
+		}
+		if p.random != nil || len(draws) < 2 {
+			t.Error("the provider's draws are not random:", len(draws))
+		}
 	})
 
-	// Calls, with the waits scaled down by 40 (patiently): a storm of 12 s
-	// is one of 300 ms, the 30 s are 750 ms.
+	// Calls, with the waits scaled down by 20 and the draw fixed at 0.5
+	// (patiently): a storm of 12 s is one of 600 ms, the 30 s are 1.5 s, and
+	// the throttled retries wait 87.5, 175, 350 and 700 ms.
+	middle := []time.Duration{87500 * time.Microsecond, 175 * ms, 350 * ms, 700 * ms}
 	closed := func(t *testing.T, p *Provider) {
 		t.Helper()
 		if p.breaker.state() != BreakerClosed || p.breaker.cb.Metrics().Failures() != 0 || p.breaker.trips.Load() != 0 {
 			t.Fatal("the throttling moved the breaker:", p.breaker.state(), p.breaker.cb.Metrics().Failures(), p.breaker.trips.Load())
 		}
 	}
+	// nothingHeld checks that the call's refusals cost nothing and that no
+	// reservation is held; spent is what the replies cost.
+	nothingHeld := func(t *testing.T, budget *Budget, spent float64) {
+		t.Helper()
+		if held, got := accountHeld(t, budget, "deepseek"); !near(held, 0) || !near(got, spent) {
+			t.Fatal("held", held, "spent", got, "want", spent)
+		}
+	}
 	// waited checks the requests' gaps: each the wait of its throttled retry
-	// at least, never doubled.
+	// at least, and never doubled.
 	waited := func(t *testing.T, e *endpoint, waits ...time.Duration) {
 		t.Helper()
 		if e.requests() != len(waits)+1 {
 			t.Fatal(e.requests(), "requests, want", len(waits)+1)
 		}
 		for i, wait := range waits {
-			if gap := e.arrived(i + 1).Sub(e.arrived(i)); gap < wait || gap >= wait*3/2+50*time.Millisecond {
+			if gap := e.arrived(i + 1).Sub(e.arrived(i)); gap < wait || gap >= 2*wait+100*ms {
 				t.Fatal("throttled retry", i+1, "waited", gap, "want", wait)
 			}
 		}
 	}
-	const ms = time.Millisecond
 	for _, class := range []CallClass{Interactive, Flush} {
 		t.Run(class.String(), func(t *testing.T) {
 			ctx := WithCallClass(context.Background(), class)
-			call := func(t *testing.T, e *endpoint, ctx context.Context) (*Provider, *Budget, *attemptLog, error, time.Duration) {
+			// call makes one call to e on a provider of its own whose waits
+			// are scaled (patiently) and whose draw is u.
+			call := func(t *testing.T, e *endpoint, ctx context.Context, u float64) (*Provider, *Budget, *attemptLog, error, time.Duration) {
 				t.Helper()
 				p, budget := deepseekOn(t, e, ModelConfig{}, nil)
-				patiently(p)
+				patiently(p, u)
 				log := &attemptLog{}
 				Models{Planner: p}.Observe(log)
 				start := time.Now()
@@ -260,44 +312,56 @@ func TestPatientThrottleWithoutRetryAfter(t *testing.T) {
 				return p, budget, log, err, time.Since(start)
 			}
 
+			// In each storm the last request it refuses comes at least 300
+			// ms before its end, the requests after it later.
 			t.Run("a storm of 12 s passes after three throttled retries", func(t *testing.T) {
-				e := throttleStorm(t, 300*ms)
-				p, budget, log, err, _ := call(t, e, ctx)
+				e := throttleStorm(t, 600*ms) // refuses the requests at 0, 87.5 and 262.5 ms
+				p, budget, log, err, _ := call(t, e, ctx, 0.5)
 				if err != nil || log.outcomes() != "throttled throttled throttled ok" {
 					t.Fatal(err, log.outcomes())
 				}
-				waited(t, e, 50*ms, 100*ms, 200*ms)
+				waited(t, e, middle[:3]...)
 				closed(t, p)
-				if held, spent := accountHeld(t, budget, "deepseek"); !near(held, 0) || !near(spent, deepseekReplyCNY) {
-					t.Fatal("held", held, "spent", spent)
-				}
+				nothingHeld(t, budget, deepseekReplyCNY)
 			})
-			t.Run("four throttled retries, the 30 s, carry a call through a storm of 20 s", func(t *testing.T) {
-				e := throttleStorm(t, 500*ms)
-				p, _, log, err, _ := call(t, e, ctx)
+			t.Run("four throttled retries carry a call through a storm of 20 s", func(t *testing.T) {
+				e := throttleStorm(t, time.Second) // the fourth refusal at 612.5 ms
+				p, _, log, err, _ := call(t, e, ctx, 0.5)
 				if err != nil || log.outcomes() != "throttled throttled throttled throttled ok" {
 					t.Fatal(err, log.outcomes())
 				}
-				waited(t, e, 50*ms, 100*ms, 200*ms, 400*ms)
+				waited(t, e, middle...)
 				closed(t, p)
 			})
 			t.Run("a storm of 40 s fails the call at the 30 s", func(t *testing.T) {
-				e := throttleStorm(t, time.Second)
-				p, budget, log, err, elapsed := call(t, e, ctx)
-				// A fifth throttled retry would wait 800 ms, past the 750: the
+				e := throttleStorm(t, 2*s) // the fifth refusal at 1312.5 ms
+				p, budget, log, err, elapsed := call(t, e, ctx, 0.5)
+				// A fifth throttled retry would wait 1.4 s, past the 1.5 s: the
 				// call ends at its fourth, when the storm still lasts.
 				if err == nil || !errors.Is(err, ErrModelUnavailable) || !strings.Contains(err.Error(), "model HTTP 429") || !strings.Contains(err.Error(), "(after 5 attempts)") ||
-					strings.Contains(err.Error(), "gave up") || elapsed < 750*ms || elapsed >= 1500*ms {
+					strings.Contains(err.Error(), "gave up") || elapsed < 1312500*time.Microsecond || elapsed >= 2*s {
 					t.Fatal(err, elapsed)
 				}
 				if got := log.outcomes(); got != strings.TrimSpace(strings.Repeat("throttled ", 5)) {
 					t.Fatal(got)
 				}
-				waited(t, e, 50*ms, 100*ms, 200*ms, 400*ms)
+				waited(t, e, middle...)
 				closed(t, p)
-				if held, spent := accountHeld(t, budget, "deepseek"); !near(held, 0) || spent != 0 {
-					t.Fatal("held", held, "spent", spent)
+				nothingHeld(t, budget, 0)
+			})
+			t.Run("at the lowest draw the waits are three quarters, and the 30 s fit four", func(t *testing.T) {
+				e := throttleStorm(t, 2*s) // the fifth refusal at 1125 ms
+				p, budget, log, err, _ := call(t, e, ctx, 0)
+				if err == nil || !strings.Contains(err.Error(), "(after 5 attempts)") || log.outcomes() != strings.TrimSpace(strings.Repeat("throttled ", 5)) {
+					t.Fatal(err, log.outcomes())
 				}
+				waited(t, e, 75*ms, 150*ms, 300*ms, 600*ms)
+				// Not the highest draw's 800 ms.
+				if gap := e.arrived(4).Sub(e.arrived(3)); gap >= 750*ms {
+					t.Fatal("the fourth wait was not jittered:", gap)
+				}
+				closed(t, p)
+				nothingHeld(t, budget, 0)
 			})
 			t.Run("a 429 is none of the class's attempts", func(t *testing.T) {
 				attempts := map[CallClass]int{Interactive: interactiveAttempts, Flush: backgroundAttempts}[class] // 4, 3
@@ -315,7 +379,7 @@ func TestPatientThrottleWithoutRetryAfter(t *testing.T) {
 							io.WriteString(w, deepseekReply)
 						}
 					})
-					_, _, log, err, _ := call(t, e, ctx)
+					_, _, log, err, _ := call(t, e, ctx, 0.5)
 					want := "throttled throttled " + strings.Repeat("retryable ", failures) + "ok"
 					if failures == attempts {
 						want = strings.TrimSuffix(want, " ok")
@@ -326,35 +390,94 @@ func TestPatientThrottleWithoutRetryAfter(t *testing.T) {
 				}
 			})
 			t.Run("the caller's deadline", func(t *testing.T) {
-				// 300 ms: the retries after 50 and 100 ms are made, the one
-				// that would wait 200 ms more is not.
+				// 500 ms: the retries after 87.5 and 175 ms are made, the one
+				// that would wait 350 ms more, past it, is not.
 				e := throttleStorm(t, time.Hour)
-				short, cancel := context.WithTimeout(ctx, 300*ms)
+				short, cancel := context.WithTimeout(ctx, 500*ms)
 				defer cancel()
-				p, _, log, err, elapsed := call(t, e, short)
-				if err == nil || !strings.Contains(err.Error(), "model HTTP 429") || strings.Contains(err.Error(), "gave up") || elapsed >= 300*ms ||
+				p, budget, log, err, elapsed := call(t, e, short, 0.5)
+				if err == nil || !strings.Contains(err.Error(), "model HTTP 429") || strings.Contains(err.Error(), "gave up") || elapsed >= 500*ms ||
 					log.outcomes() != "throttled throttled throttled" {
 					t.Fatal(err, elapsed, log.outcomes())
 				}
-				waited(t, e, 50*ms, 100*ms)
+				waited(t, e, middle[:2]...)
 				closed(t, p)
+				nothingHeld(t, budget, 0)
+			})
+			t.Run("the caller gives up during a wait", func(t *testing.T) {
+				e := throttleStorm(t, time.Hour)
+				p, budget := deepseekOn(t, e, ModelConfig{}, nil)
+				patiently(p, 0.5)
+				log := &attemptLog{}
+				Models{Planner: p}.Observe(log)
+				cut, cancel := context.WithCancel(ctx)
+				defer cancel()
+				done := make(chan error, 1)
+				go func() {
+					_, _, err := p.Complete(cut, "s", "p")
+					done <- err
+				}()
+				// The second refusal has come: its retry waits 175 ms.
+				for deadline := time.Now().Add(5 * s); e.requests() < 2; time.Sleep(time.Millisecond) {
+					if time.Now().After(deadline) {
+						t.Fatal("no second request")
+					}
+				}
+				time.Sleep(10 * ms)
+				canceled := time.Now()
+				cancel()
+				var err error
+				select {
+				case err = <-done:
+				case <-time.After(5 * s):
+					t.Fatal("the call went on")
+				}
+				// It ends at once, with the caller's error, and sends nothing
+				// more.
+				if took := time.Since(canceled); took >= 80*ms || !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "the caller gave up") ||
+					e.requests() != 2 || log.outcomes() != "throttled throttled" {
+					t.Fatal(took, err, e.requests(), log.outcomes())
+				}
+				closed(t, p)
+				nothingHeld(t, budget, 0)
 			})
 			t.Run("five throttled retries at most", func(t *testing.T) {
 				e := throttleStorm(t, time.Hour)
 				p, _ := deepseekOn(t, e, ModelConfig{}, nil)
-				quickRetries(p)
-				p.policies[class].throttleFloor, p.policies[class].maxThrottleWait = 5*ms, time.Hour
+				patiently(p, 0.5)
+				p.policies[class].throttleFloor, p.policies[class].maxThrottleWait = 8*ms, time.Hour
 				log := &attemptLog{}
 				Models{Planner: p}.Observe(log)
 				if _, _, err := p.Complete(ctx, "s", "p"); err == nil || log.outcomes() != strings.TrimSpace(strings.Repeat("throttled ", 6)) {
 					t.Fatal(err, log.outcomes())
 				}
-				waited(t, e, 5*ms, 10*ms, 20*ms, 40*ms, 80*ms)
+				waited(t, e, 7*ms, 14*ms, 28*ms, 56*ms, 112*ms)
 				closed(t, p)
 			})
 		})
 	}
 
+	// A Retry-After of 0, an invalid one or one already past names no wait,
+	// so the 429 is retried patiently: here past a class of one attempt.
+	t.Run("a Retry-After that names no wait", func(t *testing.T) {
+		for _, header := range []string{"0", "soon", time.Now().Add(-time.Minute).UTC().Format(http.TimeFormat)} {
+			e := newEndpoint(t, func(n int, w http.ResponseWriter) {
+				if n == 1 {
+					w.Header().Set("Retry-After", header)
+					w.WriteHeader(http.StatusTooManyRequests)
+					return
+				}
+				io.WriteString(w, deepseekReply)
+			})
+			p, _ := deepseekOn(t, e, ModelConfig{MaxAttempts: 1}, nil)
+			patiently(p, 0.5)
+			log := &attemptLog{}
+			Models{Planner: p}.Observe(log)
+			if _, _, err := p.Complete(context.Background(), "s", "p"); err != nil || e.requests() != 2 || log.outcomes() != "throttled ok" {
+				t.Fatal(header, err, e.requests(), log.outcomes())
+			}
+		}
+	})
 	// With a Retry-After the 429 is waited as before, as one of the class's
 	// attempts: two with maxAttempts 2.
 	t.Run("Retry-After", func(t *testing.T) {
@@ -363,7 +486,7 @@ func TestPatientThrottleWithoutRetryAfter(t *testing.T) {
 			w.WriteHeader(http.StatusTooManyRequests)
 		})
 		p, _ := deepseekOn(t, e, ModelConfig{MaxAttempts: 2}, nil)
-		patiently(p)
+		patiently(p, 0.5)
 		if _, _, err := p.Complete(context.Background(), "s", "p"); err == nil || e.requests() != 2 {
 			t.Fatal(err, e.requests())
 		}
@@ -375,7 +498,7 @@ func TestPatientThrottleWithoutRetryAfter(t *testing.T) {
 	t.Run("Background", func(t *testing.T) {
 		e := throttleStorm(t, time.Hour)
 		p, _ := deepseekOn(t, e, ModelConfig{}, nil)
-		patiently(p)
+		patiently(p, 0.5)
 		log := &attemptLog{}
 		Models{Consolidator: p}.Observe(log)
 		if _, _, err := p.Complete(WithCallClass(context.Background(), Background), "s", "p"); err == nil || e.requests() != 3 || log.outcomes() != "throttled throttled throttled" {

@@ -1355,7 +1355,7 @@ func TestWatchProviderRejected(t *testing.T) {
 	r.step(0) // 12:00, the baseline
 	r.stack.set(func(s *aml.AdminStatus) { s.RejectedByKind["deepseek"] = 3 })
 	if message := onlyAlert(t, r.step(time.Minute), "provider-rejected:deepseek"); message != watchWantTag+"ALERT provider-rejected:deepseek on aml-test\n"+
-		"deepseek rejected 3 requests (401/402/403) since the last run — check the API key and the account balance (3 since the process started)\n"+
+		"deepseek rejected 3 requests (401/402/403) since the last run: check the API key and the account balance (3 since the process started)\n"+
 		"2026-10-24 12:01:00 UTC" {
 		t.Fatalf("%q", message)
 	}
@@ -1367,7 +1367,7 @@ func TestWatchProviderRejected(t *testing.T) {
 	// JEV's rejections are an alert of their own, said at once.
 	r.stack.set(func(s *aml.AdminStatus) { s.RejectedByKind["jev"] = 1 })
 	if message := onlyAlert(t, r.step(time.Minute), "provider-rejected:jev"); message != watchWantTag+"ALERT provider-rejected:jev on aml-test\n"+ // 12:03
-		"jev rejected 1 request (401/402/403) since the last run — check the API key and the account balance (1 since the process started)\n"+
+		"jev rejected 1 request (401/402/403) since the last run: check the API key and the account balance (1 since the process started)\n"+
 		"2026-10-24 12:03:00 UTC" {
 		t.Fatalf("%q", message)
 	}
@@ -1379,7 +1379,7 @@ func TestWatchProviderRejected(t *testing.T) {
 		}
 	}
 	if message := onlyAlert(t, r.step(time.Minute), "provider-rejected:deepseek"); message != watchWantTag+"RESOLVED provider-rejected:deepseek on aml-test (after 11m0s)\n"+
-		"was: deepseek rejected 5 requests (401/402/403) since the process started — check the API key and the account balance (last seen 9m0s ago)\n"+
+		"was: deepseek rejected 5 requests (401/402/403) since the process started: check the API key and the account balance (last seen 9m0s ago)\n"+
 		"2026-10-24 12:12:00 UTC" {
 		t.Fatalf("%q", message)
 	}

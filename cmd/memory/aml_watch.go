@@ -815,8 +815,8 @@ func (e *evaluation) rejected(st *aml.AdminStatus) {
 		base := e.base("rejected:"+kind, rejected)
 		e.next.Counters["rejected:"+kind] = rejected
 		e.event("provider-rejected:"+kind, rejected > base,
-			fmt.Sprintf("%s rejected %s (401/402/403) since the last run — %s (%d since the process started)", kind, requests.count(rejected-base), watchRejectedAdvice, rejected),
-			fmt.Sprintf("%s rejected %s (401/402/403) since the process started — %s", kind, requests.count(rejected), watchRejectedAdvice))
+			fmt.Sprintf("%s rejected %s (401/402/403) since the last run: %s (%d since the process started)", kind, requests.count(rejected-base), watchRejectedAdvice, rejected),
+			fmt.Sprintf("%s rejected %s (401/402/403) since the process started: %s", kind, requests.count(rejected), watchRejectedAdvice))
 	}
 }
 

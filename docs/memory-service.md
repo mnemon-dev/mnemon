@@ -529,16 +529,27 @@ encoded without HTML escaping. A request times out after the model's `timeoutSec
 a memory CLI/RPC request has a five-minute deadline. A call retries transport failures,
 timeouts and HTTP 408, 425, 429, 500, 502, 503, 504, 524 and 529 with jittered exponential
 backoff, waiting at least the endpoint's `Retry-After` and never into the caller's deadline,
-within a retry budget of 20% of the provider's calls over a minute (at least 5 a second); a
-circuit breaker per provider fails calls fast for 20 s after 5 failures in a row or 10 of
-the last 20, and each call class has its own limit on requests in flight. Reads make up to
-4 attempts of 45 s (20 s for JEV), consolidation jobs up to 3 of `timeoutSeconds` each,
-and background jobs leave the last 10% of a budget cap to reads. A read's attempt past its
-timeout is retried while its request runs on and settles; `attemptTimeoutSeconds` (at most
-`timeoutSeconds`) replaces the reads' attempt timeout, `maxAttempts` (1–10) every class's
-attempts. Every attempt reserves and settles budget on its own. For fault drills the jev
-and deepseek kinds take a `testEndpoint`, an `http` URL on a loopback host, in place of
-their official endpoint.
+within a retry budget of 20% of the provider's calls over a minute (at least 5 a second). A
+200 reply that does not parse or validate is retried once. A 401, 402 or 403 (a refused
+key or balance) is not retried. A 429 is throttling, not a failure: when it names no wait
+(no `Retry-After`, or one of 0, an invalid value or a past date), a read or a Search's
+flush retries it patiently, apart from its attempts, the k-th time after
+2 s × 2^(k−1) × U[0.75, 1.0], or its backoff when that is longer (at most 2, 4, 8 and 16 s
+in a storm; the jitter keeps calls throttled together from retrying in step), up to 5 times
+and 30 s of such waits per model call, which admit four. A Search makes many calls, so it
+can wait longer in all, up to its own deadline. A circuit breaker per provider fails calls
+fast for 20 s after 10 availability failures in a row (connection errors, attempt timeouts
+and 5xx); a 429, an invalid reply or a rejection is no failure and starts the count again.
+Each call class has its own limit on requests in flight. Reads make up to 4 attempts of
+45 s (20 s for JEV), a Search's flush up to 3 of at most 180 s, consolidation jobs up to 3
+of `timeoutSeconds` each, and background jobs leave the last 10% of a budget cap to reads.
+Any attempt whose reply, once its headers came, sends nothing for 60 s is cut and retried.
+A read's or a flush's attempt past its timeout is retried while its request runs on and
+settles; `attemptTimeoutSeconds` (at most `timeoutSeconds`) replaces the reads' attempt
+timeout, `maxAttempts` (1–10) every class's attempts, though a read's or a flush's 429 that
+names no wait is still retried patiently. Every attempt reserves and settles budget on its
+own. For fault drills the jev and deepseek kinds take a `testEndpoint`, an `http` URL on a
+loopback host, in place of their official endpoint.
 An invalid consolidation batch is never published. Credentials come from environment
 variables and never enter request arguments, configuration files, logs or the
 metering database.

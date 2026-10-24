@@ -72,6 +72,9 @@ type Provider struct {
 	// rejected counts the attempts the endpoint rejected (401, 402, 403:
 	// Models.Rejections); it only grows.
 	rejected atomic.Int64
+	// random, when set (by a test), replaces the shared source of the
+	// retries' jitter (jitter). It must be safe for concurrent use.
+	random func() float64
 	// flights counts the attempts in progress and their requests, abandoned
 	// ones included; mu guards closed, which Close sets to admit no more.
 	flights sync.WaitGroup

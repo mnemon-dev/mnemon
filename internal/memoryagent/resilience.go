@@ -56,8 +56,8 @@ import (
 // retried once, stalls are cut, and every reservation settles when its
 // request ends. After it, a refused credential or balance is counted as a
 // rejection, which the alert watcher pages on (R65), and a 429 without
-// Retry-After is waited out patiently by the calls a Search waits for
-// (R67).
+// Retry-After is waited out patiently, with jitter, by the calls a Search
+// waits for (R67, R71).
 
 // CallClass says whose model call it is, which picks the call's policies. A
 // context carries it (WithCallClass); one without is Interactive.
@@ -145,9 +145,12 @@ const (
 // of every class fails once its reply has sent no byte for 60 s. An
 // Interactive or Flush call refused with a 429 and no Retry-After retries it
 // patiently, apart from its attempts: the k-th time after max(the class's
-// backoff, 2 s × 2^(k−1)), so 2, 4, 8 and 16 s, 5 times and 30 s in all at
-// most. A model's attemptTimeoutSeconds replaces the Interactive attempt
-// timeout, its maxAttempts every class's attempts.
+// backoff, 2 s × 2^(k−1) × U[0.75, 1.0]), so at most 2, 4, 8 and 16 s, and
+// at most 5 times and 30 s of such waits per model call (the 30 s admit
+// four). A Search, which makes several calls, can wait longer in all, up to
+// its own deadline (--search-timeout). A model's attemptTimeoutSeconds
+// replaces the Interactive attempt timeout, its maxAttempts every class's
+// attempts.
 const (
 	interactiveAttempts          = 4
 	interactiveCompletionTimeout = 45 * time.Second
@@ -165,20 +168,29 @@ const (
 	flushAttemptTimeout = 180 * time.Second
 	// bodyIdleTimeout fails an attempt of any class whose reply, once its
 	// headers came, sent no byte for that long (ruling R62, from the same
-	// drill). DeepSeek's keep-alive blank lines are bytes.
+	// drill). DeepSeek documents keep-alive blank lines while a request
+	// waits under load: they are bytes, and set the timer again. In the
+	// 2026-10-24 measurement it sent nothing until its reply was complete,
+	// so this cannot replace the attempt timeouts (R66).
 	bodyIdleTimeout = 60 * time.Second
-	// Patient throttling (ruling R67) of Interactive and Flush calls: a 429
-	// that names no wait of its own is retried up to throttledRetries times,
-	// none of them among the class's attempts, the k-th after at least
-	// throttleFloor×2^(k−1), and at most maxThrottleWait of such waits a
-	// call. For this workload a degraded Search is worse than a slower one
-	// (the platform allows 30 minutes a request), and throttling passes. In
-	// the fault drill's re-run after R59, a 12 s storm of 429s without
-	// Retry-After still degraded 5 of 10 Searches: an Interactive call's
-	// backoff gives up after about 3.5 s.
+	// Patient throttling (rulings R67, R71) of Interactive and Flush calls:
+	// a 429 that names no wait of its own is retried up to throttledRetries
+	// times, none of them among the class's attempts, the k-th after
+	// throttleFloor×2^(k−1) less a random part of up to throttleJitter of it
+	// (or the class's backoff when that is longer), and with at most
+	// maxThrottleWait of such waits per model call. The
+	// cap is the call's: a Search, which makes several calls, can wait longer
+	// in all, up to its own deadline (--search-timeout). For this workload a
+	// degraded Search is worse than a slower one (the platform allows 30
+	// minutes a request), and throttling passes. In the fault drill's re-run
+	// after R59, a 12 s storm of 429s without Retry-After still degraded 5 of
+	// 10 Searches: an Interactive call's backoff gives up after about 3.5 s.
+	// The jitter keeps calls throttled together from retrying in step, which
+	// would send waves as large as the burst that was throttled.
 	throttledRetries = 5
 	throttleFloor    = 2 * time.Second
 	maxThrottleWait  = 30 * time.Second
+	throttleJitter   = 0.25
 	// backgroundShare is the part of an account's cap Background calls may
 	// fill: the rest is kept for Searches and their flushes.
 	backgroundShare = 0.9
@@ -202,9 +214,9 @@ type classPolicy struct {
 	backoff, maxBackoff, maxRetryAfter time.Duration
 	// throttledRetries bounds a call's patient retries of a 429 that names
 	// no wait (stop), which are not among its maxAttempts; 0, a Background
-	// call's, retries such a 429 as one of its attempts. The k-th waits at
-	// least throttleFloor×2^(k−1) (throttleDelay), and they wait
-	// maxThrottleWait in all at most.
+	// call's, retries such a 429 as one of its attempts. The k-th waits
+	// throttleFloor×2^(k−1), jittered (throttleDelay), and they wait
+	// maxThrottleWait in all at most, per call.
 	throttledRetries               int
 	throttleFloor, maxThrottleWait time.Duration
 	// calls is the class's bulkhead. A request holds a permit until it ends,
@@ -275,12 +287,13 @@ func (c classPolicy) retryDelay(retry int, retryAfter time.Duration, random floa
 
 // throttleDelay is the wait before the call's retry number retry when it is
 // the call's throttled retry number k (1 for the first), of a 429 that named
-// no wait (ruling R67): throttleFloor×2^(k−1), or the class's backoff for the
-// retry (retryDelay) when that is longer. Only the backoff is jittered;
-// random is in [0, 1).
+// no wait (rulings R67, R71): throttleFloor×2^(k−1) × U[0.75, 1.0], or the
+// class's backoff for the retry (retryDelay) when that is longer. random, in
+// [0, 1), jitters both: the floor from 75% of it, at 0, toward all of it.
 func (c classPolicy) throttleDelay(retry, k int, random float64) time.Duration {
 	floor := c.throttleFloor << min(max(k-1, 0), 16)
-	return max(c.retryDelay(retry, 0, random), floor)
+	jittered := time.Duration(float64(floor) * (1 - throttleJitter + throttleJitter*random))
+	return max(c.retryDelay(retry, 0, random), jittered)
 }
 
 // parseRetryAfter is the wait a Retry-After header asks for at now, in delta
@@ -570,8 +583,8 @@ func (r flightResult[T]) outcome() string {
 // (ErrModelUnavailable), the budget (ErrBudgetCap) or the request itself (no
 // category). An invalid reply, one parse or check refuses, is retried once
 // within the class's attempts (R61), and comes back with its error. A 429
-// that names no wait is retried patiently, apart from them (R67). When the
-// caller's context ended, the error wraps its error.
+// that names no wait is retried patiently, apart from them (R67, R71). When
+// the caller's context ended, the error wraps its error.
 func send[T meteredReply](ctx context.Context, p *Provider, body []byte, amount float64, parse func([]byte) (T, error), check func(T) error) (T, []byte, error) {
 	c := &modelCall[T]{ctx: ctx, p: p, policy: &p.policies[callClass(ctx)], body: body, hash: reference("request", string(body)).Hash, amount: amount, parse: parse, check: check}
 	// stop ends a call at its class's attempts, its throttled retries being
@@ -643,14 +656,17 @@ func (c *modelCall[T]) report(outcome string, attempt int, took time.Duration, s
 }
 
 // stop decides, after an attempt a retry may pass, whether the call stops
-// there, and sets the wait before the retry. A 429 that names no wait (no
-// Retry-After, or one that is invalid or past), in a class with throttled
-// retries, is retried patiently (R67): after throttleDelay, while the call
-// has a throttled retry left and their waits stay within maxThrottleWait.
-// Such a retry is none of the class's attempts; any other is one, and a call
-// that has made them all stops. So does a call whose wait would end at or
-// past the caller's deadline, and one the provider's retry budget has no
-// retry left for (shown to the observer as a "budget" attempt).
+// there, and sets the wait before the retry. A 429 that names no wait, in a
+// class with throttled retries, is retried patiently (R67, R71): after
+// throttleDelay, while the call has a throttled retry left and their waits
+// stay within maxThrottleWait. A 429 names no wait when it has no
+// Retry-After, or one of 0, an invalid value or a past date: parseRetryAfter
+// gives 0 for each, no wait to honour. Such a retry is none of the
+// class's attempts; any other is one, and a call that has made them all
+// stops. So does a call whose wait would end at or past the caller's
+// deadline, and one the provider's retry budget has no retry left for (shown
+// to the observer as a "budget" attempt). The retry budget is drawn on by
+// patient retries too.
 func (c *modelCall[T]) stop() bool {
 	var retryAfter time.Duration
 	var status *statusError
@@ -663,14 +679,14 @@ func (c *modelCall[T]) stop() bool {
 		if c.throttled >= c.policy.throttledRetries {
 			return true
 		}
-		c.delay = c.policy.throttleDelay(c.attempts, c.throttled+1, rand.Float64())
+		c.delay = c.policy.throttleDelay(c.attempts, c.throttled+1, c.p.jitter())
 		if c.throttleWait+c.delay > c.policy.maxThrottleWait {
 			return true
 		}
 	case c.attempts-c.throttled >= c.policy.maxAttempts:
 		return true
 	default:
-		c.delay = c.policy.retryDelay(c.attempts, retryAfter, rand.Float64())
+		c.delay = c.policy.retryDelay(c.attempts, retryAfter, c.p.jitter())
 	}
 	now := time.Now()
 	if deadline, ok := c.ctx.Deadline(); ok && !now.Add(c.delay).Before(deadline) {
@@ -1144,6 +1160,16 @@ func (p *Provider) Close() error {
 	p.flights.Wait()
 	p.client.CloseIdleConnections()
 	return nil
+}
+
+// jitter is a draw in [0, 1) for a retry's wait: the shared source of
+// math/rand/v2, safe for concurrent use, unless a test fixed the provider's
+// (random).
+func (p *Provider) jitter() float64 {
+	if p.random != nil {
+		return p.random()
+	}
+	return rand.Float64()
 }
 
 // observerRef publishes a provider's observer.

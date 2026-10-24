@@ -132,8 +132,8 @@ func TestThrottleNeverOpensTheBreaker(t *testing.T) {
 				io.WriteString(w, deepseekReply)
 			})
 			p, budget := deepseekOn(t, e, ModelConfig{}, nil)
-			// Without Retry-After a call waits 2, 4 and 8 s for its three
-			// retries (R67): here a twentieth of that.
+			// Without Retry-After a call waits at most 2, 4 and 8 s for its
+			// three retries (R67, R71): here a twentieth of that.
 			p.policies[Interactive].throttleFloor = 100 * time.Millisecond
 			// A minute of steady traffic leaves the provider's retry budget
 			// room for the storm's twelve retries.
