@@ -434,8 +434,9 @@ again and exits 1: the instance stays fully suspended (its route answers 403, it
 off). `resume` of an instance that is not suspended never stops it. Nor does it stop one that
 is back (ready, and on a shared host its route restored): if recording the status or enabling the
 watcher's timer then fails (or it is interrupted), the instance serves, `resume` exits 1 and says
-which steps are left, and running `mnemon-instance resume <n>` again finishes them. The watcher's next run reports the
-restart (`restart`, resolved 10 minutes later).
+what may be left (its status, or its watcher's timer), and running `mnemon-instance resume <n>`
+again finishes them. The watcher's next run reports the restart (`restart`, resolved 10 minutes
+later).
 
 ### `rotate-key`
 

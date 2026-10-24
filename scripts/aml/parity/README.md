@@ -122,11 +122,13 @@ configuration) before it removes anything, so a run that cannot start leaves the
 it was. (`run old --force` records the baseline again, and is the one command that replaces
 `ROOT/old`.)
 
-**What it caught and what it proved.** For the final fixes of the serving hardening, `replay` on
-the build of that commit gave `PASS`: 152 of 152 Searches of `locomo-0` and 20 of 20 of
-`beam128k-1` identical, 28 of 28 and 37 of 37 Adds, and the retried Add of each (239 requests in
-all), both users' consolidated state identical, 0 paid calls, 1,727 replies and 1,727 budget
-attempts before and after.
+**What it proved.** For the final fixes of the serving hardening, `replay` on the build of that
+commit gave `PASS`: 152 of 152 Searches of `locomo-0` and 20 of 20 of `beam128k-1` identical, 28
+of 28 and 37 of 37 Adds, and the retried Add of each (239 requests in all), both users'
+consolidated state identical, 0 paid calls, 1,727 replies and 1,727 budget attempts before and
+after. That result was made with the script as it was before it was committed here. The committed
+`replay` stage has so far run end to end only with `--dry`, and its other parts through tests that
+import the script, so read the first live replay with it as the first live run of this code.
 
 ## When the replay fails, or the product changes
 
