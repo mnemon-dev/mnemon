@@ -33,8 +33,8 @@ import (
 // (wg0 not up yet) is logged once, and the admin server binds it again every
 // amlAdminRetry in the background, while the public listener serves.
 //
-// Shutdown, on SIGINT or SIGTERM or when a component fails: systemd is told
-// STOPPING=1 and the watchdog stops; the public listener closes and the
+// Shutdown, on SIGINT or SIGTERM or when a component fails: the watchdog
+// stops, then systemd is told STOPPING=1; the public listener closes and the
 // consolidation scheduler drains (no job starts, no Add waits for it). The
 // requests in flight and the running jobs have amlShutdownGrace to finish.
 // Then the requests still running are canceled (they answer 503, which the
@@ -76,9 +76,17 @@ var (
 	// amlAdminRetry is how often an admin listener that could not bind is
 	// bound again. Tests shorten it.
 	amlAdminRetry = 5 * time.Second
+	// amlWatchdogTicker makes the watchdog's ticker, of period d: its ticks
+	// and its stop. Tests tick it themselves.
+	amlWatchdogTicker = func(d time.Duration) (<-chan time.Time, func()) {
+		ticker := time.NewTicker(d)
+		return ticker.C, ticker.Stop
+	}
 	// sdNotify tells systemd the service's state (sd_notify): nothing without
-	// NOTIFY_SOCKET, which stays set for the notifications to come. Tests
-	// record the states instead.
+	// NOTIFY_SOCKET, which stays set for the notifications to come. It sends
+	// one datagram and returns: the components call it on their goroutines
+	// (the watchdog in its loop) and it must not block them. Tests record the
+	// states instead.
 	sdNotify = func(state string) error {
 		_, err := daemon.SdNotify(false, state)
 		return err
@@ -130,8 +138,10 @@ type amlProcess struct {
 	admin                         *http.Server
 	adminAddr                     string
 	publicListener, adminListener net.Listener
-	// watchdog is systemd's watchdog interval, 0 without one.
-	watchdog time.Duration
+	// watchdog is systemd's watchdog interval, 0 without one; watchdogDone
+	// closes once the watchdog has returned (nil while it has not started).
+	watchdog     time.Duration
+	watchdogDone chan struct{}
 }
 
 // newAMLProcess binds the process's listeners for server. A public listener
@@ -159,7 +169,8 @@ func (p *amlProcess) logf(level slog.Level, format string, args ...any) {
 	p.log.Log(context.Background(), level, fmt.Sprintf(format, args...))
 }
 
-// notify tells systemd state; a failure is logged.
+// notify tells systemd state (sdNotify, which does not block); a failure is
+// logged.
 func (p *amlProcess) notify(state string) {
 	if err := sdNotify(state); err != nil {
 		p.logf(slog.LevelWarn, "aml-serve: telling systemd %s failed: %v", state, err)
@@ -224,7 +235,10 @@ func (p *amlProcess) start(sup *supervisor, work, watch, admin context.Context) 
 		err = sup.start("public server", serveHTTP(p.public, p.publicListener))
 	}
 	if err == nil && p.watchdog > 0 {
+		done := make(chan struct{})
+		p.watchdogDone = done
 		err = sup.start("watchdog", func(ready func()) error {
+			defer close(done)
 			ready()
 			live := func(ctx context.Context) error { return amlLive(ctx, p.server, p.watchdog) }
 			amlWatchdog(watch, p.watchdog, live, p.notify, p.log)
@@ -278,8 +292,14 @@ func (p *amlProcess) bindAdmin(ctx context.Context) func(ready func()) error {
 func (p *amlProcess) shutdown(sup *supervisor, stopWork, stopWatch, stopAdmin context.CancelFunc) error {
 	graceEnd := time.Now().Add(amlShutdownGrace)
 	end := graceEnd.Add(amlCancelGrace)
-	p.notify(daemon.SdNotifyStopping)
+	// The watchdog stops first, and has stopped, before systemd is told
+	// STOPPING=1, so that no ping follows it (the final review's parked
+	// T9-a). Its probe ends with it; that is quick (it calls no model).
 	stopWatch()
+	if p.watchdogDone != nil {
+		<-p.watchdogDone
+	}
+	p.notify(daemon.SdNotifyStopping)
 	p.server.Drain()
 	grace, endGrace := context.WithDeadline(context.Background(), graceEnd)
 	defer endGrace()
@@ -298,7 +318,9 @@ func (p *amlProcess) shutdown(sup *supervisor, stopWork, stopWatch, stopAdmin co
 	// the heartbeat.
 	stopWork()
 	if requestsLeft {
-		p.logf(slog.LevelWarn, "aml-serve: the %s grace has ended with requests still running; canceling them", amlShutdownGrace)
+		// How many it cancels (the final review's parked T9-e).
+		running := requestCount(p.server.RequestsInFlight())
+		p.logf(slog.LevelWarn, "aml-serve: the %s grace has ended with %s still running; canceling them", amlShutdownGrace, running)
 		p.server.CancelRequests()
 		final, endFinal := context.WithDeadline(context.Background(), end)
 		if p.public.Shutdown(final) != nil {
@@ -306,7 +328,7 @@ func (p *amlProcess) shutdown(sup *supervisor, stopWork, stopWatch, stopAdmin co
 			p.public.Close()
 		}
 		endFinal()
-		cut = append(cut, fmt.Errorf("canceled at the end of the %s grace: requests still running", amlShutdownGrace))
+		cut = append(cut, fmt.Errorf("canceled at the end of the %s grace: %s still running", amlShutdownGrace, running))
 	}
 	if p.admin != nil {
 		stopAdmin()
@@ -329,6 +351,14 @@ func (p *amlProcess) shutdown(sup *supervisor, stopWork, stopWatch, stopAdmin co
 		cut = append(cut, closeErr)
 	}
 	return errors.Join(cut...)
+}
+
+// requestCount is n requests, in words: "1 request", "3 requests".
+func requestCount(n int64) string {
+	if n == 1 {
+		return "1 request"
+	}
+	return fmt.Sprintf("%d requests", n)
 }
 
 // closeBy runs closer and reports whether it returned by the deadline. Past
@@ -372,6 +402,7 @@ func newSupervisor() *supervisor {
 // start runs the component named name, which calls ready once it serves,
 // and returns once it is ready, or with its failure once it has returned
 // without being ready. A component that returns before it is ready fails.
+// ready never blocks, and a second call does nothing.
 func (s *supervisor) start(name string, run func(ready func()) error) error {
 	ready, exited := make(chan struct{}), make(chan error, 1)
 	var once sync.Once
@@ -445,13 +476,13 @@ func (s *supervisor) wait(deadline time.Time) []string {
 // probe skips its ping and is logged: systemd restarts a service whose pings
 // stop for an interval.
 func amlWatchdog(ctx context.Context, interval time.Duration, live func(context.Context) error, notify func(state string), log *slog.Logger) {
-	ticker := time.NewTicker(interval / 2)
-	defer ticker.Stop()
+	ticks, stop := amlWatchdogTicker(interval / 2)
+	defer stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-ticks:
 		}
 		probe, cancel := context.WithTimeout(ctx, interval/4)
 		err := live(probe)

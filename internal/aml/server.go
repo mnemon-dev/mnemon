@@ -160,12 +160,14 @@ type Server struct {
 	freeDisk func(dir string) (uint64, error)
 	// The windows of an Add's consolidation, a Search's flush and its read.
 	addWindow, flushWindow, searchTimeout time.Duration
-	// heartbeatEvery spaces the ticks of Run's heartbeat; beat holds the
-	// last one's time (nil before the first).
-	heartbeatEvery time.Duration
-	beat           atomic.Pointer[time.Time]
-	handler, admin http.Handler
-	once           sync.Once
+	// heartbeatEvery spaces the ticks of Run's heartbeat, which
+	// heartbeatTicker makes (its ticks and its stop; tests tick it
+	// themselves); beat holds the last one's time (nil before the first).
+	heartbeatEvery  time.Duration
+	heartbeatTicker func(time.Duration) (<-chan time.Time, func())
+	beat            atomic.Pointer[time.Time]
+	handler, admin  http.Handler
+	once            sync.Once
 	// runMu guards Run's lifecycle: stopRun ends the running Run, which
 	// closes runDone once its goroutines have exited; closed refuses Run
 	// after Close.
@@ -221,7 +223,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	s := &Server{config: config, key: sha256.Sum256([]byte(config.AuthKey)), log: config.Logger,
 		timelines: consolidation.Timelines(), mode: mode,
 		addGate: newGate(config.MaxConcurrentAdds), searchGate: newGate(config.MaxConcurrentSearches), admitWait: admissionWait,
-		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout, heartbeatEvery: heartbeatEvery,
+		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout, heartbeatEvery: heartbeatEvery, heartbeatTicker: newTicker,
 		metrics: newMetrics(time.Now), started: time.Now().UTC(), freeDisk: freeDiskBytes}
 	if s.log == nil {
 		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
@@ -506,16 +508,22 @@ func (s *Server) Run(ctx context.Context, ready func()) error {
 
 // heartbeat ticks every heartbeatEvery until ctx ends.
 func (s *Server) heartbeat(ctx context.Context) {
-	ticker := time.NewTicker(s.heartbeatEvery)
-	defer ticker.Stop()
+	ticks, stop := s.heartbeatTicker(s.heartbeatEvery)
+	defer stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-ticks:
 			s.tick()
 		}
 	}
+}
+
+// newTicker is a ticker of period d: its ticks and its stop.
+func newTicker(d time.Duration) (<-chan time.Time, func()) {
+	ticker := time.NewTicker(d)
+	return ticker.C, ticker.Stop
 }
 
 // tick is one beat of the heartbeat: once the scheduler and the store
@@ -701,6 +709,10 @@ func (s *Server) HTTPServer(addr string) *http.Server {
 // the handlers answer 503, which the platform retries. It does not touch the
 // background scheduler (Run's context ends that), and may be called again.
 func (s *Server) CancelRequests() { s.cancelRequests() }
+
+// RequestsInFlight counts the requests of the public handler being served
+// now, those waiting for a slot included: what a shutdown still waits for.
+func (s *Server) RequestsInFlight() int64 { return s.metrics.active.Load() }
 
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()

@@ -1048,16 +1048,26 @@ func (r *amlServeRun) address(t *testing.T, admin bool) string {
 	return "http://" + addr
 }
 
-// post sends body to the public listener with the API key.
+// post sends body to the public listener with the API key. It waits for the
+// listening line, which fails the test when it never comes: call it on the
+// test's goroutine only, and postTo on any other (the final review's parked
+// T9-g).
 func (r *amlServeRun) post(t *testing.T, path string, body any) (int, string) {
 	t.Helper()
+	return postTo(r.address(t, false), path, body)
+}
+
+// postTo sends body to base+path with the API key. It fails no test, so any
+// goroutine may call it: a request that cannot be made or sent answers 0,
+// with its error as the body.
+func postTo(base, path string, body any) (int, string) {
 	raw, err := json.Marshal(body)
 	if err != nil {
-		t.Fatal(err)
+		return 0, err.Error()
 	}
-	request, err := http.NewRequest(http.MethodPost, r.address(t, false)+path, bytes.NewReader(raw))
+	request, err := http.NewRequest(http.MethodPost, base+path, bytes.NewReader(raw))
 	if err != nil {
-		t.Fatal(err)
+		return 0, err.Error()
 	}
 	request.Header.Set("Authorization", "Bearer "+testAMLKey)
 	response, err := (&http.Client{Timeout: 30 * time.Second}).Do(request)
@@ -1276,15 +1286,17 @@ func TestShutdownExitsNonZeroWhenRequestsCancelled(t *testing.T) {
 		body string
 	}
 	searched := make(chan answer, 1)
+	public := run.address(t, false) // on the test's goroutine: it may fail the test
 	go func() {
-		code, body := run.post(t, "/search", searchRequest("u1"))
+		code, body := postTo(public, "/search", searchRequest("u1"))
 		searched <- answer{code, body}
 	}()
 	// The Search waits on its planner.
 	waitFor(t, "the planner's request", func() bool { return endpoint.requests.Load() > 0 })
 	start := time.Now()
 	err := run.stop(t)
-	if err == nil || !strings.Contains(err.Error(), "canceled at the end of the 200ms grace: requests still running") {
+	// It says how many it canceled (the final review's parked T9-e).
+	if err == nil || !strings.Contains(err.Error(), "canceled at the end of the 200ms grace: 1 request still running") {
 		t.Fatal(err, run.log.String())
 	}
 	if elapsed := time.Since(start); elapsed < 200*time.Millisecond || elapsed > 5*time.Second {
@@ -1293,7 +1305,7 @@ func TestShutdownExitsNonZeroWhenRequestsCancelled(t *testing.T) {
 	if got := <-searched; got.code != http.StatusServiceUnavailable || !strings.Contains(got.body, "request canceled") {
 		t.Fatal(got)
 	}
-	if !strings.Contains(run.log.String(), "the 200ms grace has ended with requests still running; canceling them") {
+	if !strings.Contains(run.log.String(), "the 200ms grace has ended with 1 request still running; canceling them") {
 		t.Fatal(run.log.String())
 	}
 	if got := notified.all(); !slices.Equal(got, []string{"READY=1", "STOPPING=1"}) {
@@ -1359,8 +1371,9 @@ func TestShutdownAnswersAddsWaitingAtTheBound(t *testing.T) {
 		at   time.Time
 	}
 	added := make(chan answer, 1)
+	public := run.address(t, false) // on the test's goroutine: it may fail the test
 	go func() {
-		code, _ := run.post(t, "/add", noteAdd("r1", "u1"))
+		code, _ := postTo(public, "/add", noteAdd("r1", "u1"))
 		added <- answer{code, time.Now()}
 	}()
 	waitFor(t, "the consolidator's request", func() bool { return endpoint.requests.Load() > 0 })
@@ -1485,10 +1498,30 @@ func TestShutdownCutsAbandonedModelRequests(t *testing.T) {
 	}
 }
 
-// The watchdog pings every half interval while the liveness probe answers,
-// skips its pings (and logs why) while it fails, and stops with its context.
+// manualWatchdogTicker makes the watchdog's ticker one the test ticks
+// itself, until the test ends: ticks are taken from the returned channel, a
+// send returning once the watchdog has taken the tick; period is what the
+// watchdog asked for, and stopped closes when it stops its ticker.
+func manualWatchdogTicker(t *testing.T) (ticks chan time.Time, period *atomic.Int64, stopped chan struct{}) {
+	t.Helper()
+	ticks, period, stopped = make(chan time.Time), &atomic.Int64{}, make(chan struct{})
+	previous := amlWatchdogTicker
+	amlWatchdogTicker = func(d time.Duration) (<-chan time.Time, func()) {
+		period.Store(int64(d))
+		return ticks, sync.OnceFunc(func() { close(stopped) })
+	}
+	t.Cleanup(func() { amlWatchdogTicker = previous })
+	return ticks, period, stopped
+}
+
+// The watchdog pings at each tick of its ticker, every half interval, while
+// the liveness probe answers within a quarter interval; it skips the ping,
+// and logs why, while the probe fails; and it stops its ticker and returns
+// with its context. The test ticks the ticker itself (the final review's
+// parked T9-b): no wall-clock cadence to miss under load.
 func TestWatchdogPingsOnlyWhileAlive(t *testing.T) {
 	const interval = 40 * time.Millisecond
+	ticks, period, stopped := manualWatchdogTicker(t)
 	var alive atomic.Bool
 	alive.Store(true)
 	pings := make(chan string, 100)
@@ -1503,49 +1536,92 @@ func TestWatchdogPingsOnlyWhileAlive(t *testing.T) {
 		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	done := make(chan struct{})
 	go func() {
 		amlWatchdog(ctx, interval, probe, func(state string) { pings <- state }, slog.New(slog.NewTextHandler(log, nil)))
 		close(done)
 	}()
-	select {
-	case state := <-pings:
-		if state != "WATCHDOG=1" {
-			t.Fatal(state)
+	ping := func(what string) {
+		t.Helper()
+		select {
+		case state := <-pings:
+			if state != "WATCHDOG=1" {
+				t.Fatal(what, state)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal(what, "no ping")
 		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("no ping")
 	}
-	// Every half interval: about twenty pings in ten intervals, where one
-	// per interval would give ten.
-	time.Sleep(10 * interval)
-	if n := len(pings); n < 14 {
-		t.Fatal("pings in ten intervals:", n)
+	ticks <- time.Now()
+	ping("the first tick:")
+	if got := time.Duration(period.Load()); got != interval/2 {
+		t.Fatal("the watchdog ticks every", got, "want", interval/2)
 	}
+	// While the probe fails: no ping. A tick is taken only once the one
+	// before was handled, so after two ticks the first is done.
 	alive.Store(false)
-	time.Sleep(interval) // a probe under way may still ping
-	for len(pings) > 0 {
-		<-pings
-	}
-	select {
-	case <-pings:
-		t.Fatal("a ping while the probe fails")
-	case <-time.After(3 * interval):
-	}
-	if !strings.Contains(log.String(), "aml-serve watchdog: no ping: stuck") {
-		t.Fatal(log.String())
+	ticks <- time.Now()
+	ticks <- time.Now()
+	if len(pings) != 0 || !strings.Contains(log.String(), "aml-serve watchdog: no ping: stuck") {
+		t.Fatal("pings while the probe fails:", len(pings), log.String())
 	}
 	alive.Store(true)
-	select {
-	case <-pings:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the pings did not resume")
-	}
+	ticks <- time.Now()
+	ping("once the probe passes again:")
 	cancel()
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
 		t.Fatal("the watchdog did not stop")
+	}
+	select {
+	case <-stopped:
+	default:
+		t.Fatal("the watchdog's ticker was not stopped")
+	}
+}
+
+// Parked T9-a (final review): the watchdog stops, and has stopped, before
+// systemd is told STOPPING=1, so no ping can follow it: when STOPPING=1 is
+// sent, the watchdog takes no tick any more.
+func TestWatchdogStopsBeforeStopping(t *testing.T) {
+	ticks, _, _ := manualWatchdogTicker(t)
+	t.Setenv("WATCHDOG_USEC", "2000000")
+	var mu sync.Mutex
+	states := []string{}
+	tickedAtStopping := false
+	previous := sdNotify
+	sdNotify = func(state string) error {
+		mu.Lock()
+		states = append(states, state)
+		mu.Unlock()
+		if state == "STOPPING=1" {
+			select {
+			case ticks <- time.Now(): // the watchdog still runs: its ping follows
+				tickedAtStopping = true
+				time.Sleep(200 * time.Millisecond)
+			case <-time.After(200 * time.Millisecond):
+			}
+		}
+		return nil
+	}
+	t.Cleanup(func() { sdNotify = previous })
+	notified := func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(states)
+	}
+	endpoint := newModelEndpoint(t)
+	run := startAMLServe(t, amlTestConfig(t, endpoint.URL, nil))
+	waitFor(t, "READY=1", func() bool { return slices.Contains(notified(), "READY=1") })
+	ticks <- time.Now()
+	waitFor(t, "a ping", func() bool { return slices.Contains(notified(), "WATCHDOG=1") })
+	if err := run.stop(t); err != nil {
+		t.Fatal(err, run.log.String())
+	}
+	if got := notified(); tickedAtStopping || !slices.Equal(got, []string{"READY=1", "WATCHDOG=1", "STOPPING=1"}) {
+		t.Fatal("the watchdog ran when STOPPING=1 was sent:", tickedAtStopping, got)
 	}
 }
 
@@ -1663,5 +1739,72 @@ func TestAMLServeNotifiesSystemd(t *testing.T) {
 	case state := <-states:
 		t.Fatal("told after STOPPING=1:", state)
 	case <-time.After(300 * time.Millisecond):
+	}
+}
+
+// Parked T9-c (final review): a component that fails after READY=1 (here the
+// public server, its listener closed under it) shuts the process down, which
+// tells systemd STOPPING=1 and fails the command (exit status 1), naming the
+// component.
+func TestAMLServeFailsWhenAComponentFailsAfterReady(t *testing.T) {
+	notified := recordNotifications(t)
+	endpoint := newModelEndpoint(t)
+	config, err := readMemoryConfig(amlTestConfig(t, endpoint.URL, nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := &syncLog{}
+	logger := slog.New(slog.NewTextHandler(log, nil))
+	server, err := aml.NewServer(aml.ServerConfig{DataRoot: t.TempDir(), MemoryConfig: config, AuthKey: "k", Logger: logger})
+	if err != nil {
+		t.Fatal(err)
+	}
+	process, err := newAMLProcess(server, amlServeOptions{listen: "127.0.0.1:0"}, logger, 0)
+	if err != nil {
+		server.Close()
+		t.Fatal(err)
+	}
+	served := make(chan error, 1)
+	go func() { served <- process.serve(context.Background(), func() {}) }()
+	waitFor(t, "READY=1", func() bool { return slices.Contains(notified.all(), "READY=1") })
+	process.publicListener.Close()
+	select {
+	case err = <-served:
+	case <-time.After(30 * time.Second):
+		t.Fatal("the process did not stop")
+	}
+	if err == nil || !strings.Contains(err.Error(), "public server: ") {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log.String(), "aml-serve: public server: ") || !strings.Contains(log.String(), "; shutting down") {
+		t.Fatal(log.String())
+	}
+	if got := notified.all(); !slices.Equal(got, []string{"READY=1", "STOPPING=1"}) {
+		t.Fatal(got)
+	}
+}
+
+// Parked T9-c (final review): in background mode, a stop with nothing in
+// flight drains the scheduler, closes everything and exits 0.
+func TestAMLServeBackgroundModeStopsCleanly(t *testing.T) {
+	notified := recordNotifications(t)
+	endpoint := newModelEndpoint(t)
+	config := amlTestConfig(t, endpoint.URL, func(config *memoryagent.Config) {
+		config.Consolidation = &memoryagent.ConsolidationConfig{Mode: "timelines", BatchCharacters: 50000}
+		config.Consolidator = &memoryagent.ModelConfig{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "AML_TEST_DEEPSEEK", TestEndpoint: endpoint.URL}
+	})
+	run := startAMLServe(t, config, "--consolidate", "background")
+	waitFor(t, "READY=1", func() bool { return slices.Contains(notified.all(), "READY=1") })
+	if code, body := run.post(t, "/add", noteAdd("r1", "u1")); code != http.StatusOK {
+		t.Fatal(code, body)
+	}
+	if err := run.stop(t); err != nil {
+		t.Fatal(err, run.log.String())
+	}
+	if got := notified.all(); !slices.Equal(got, []string{"READY=1", "STOPPING=1"}) {
+		t.Fatal(got)
+	}
+	if !lockFree(t, run.root) || endpoint.requests.Load() != 0 {
+		t.Fatal("the lock, or a model call:", lockFree(t, run.root), endpoint.requests.Load())
 	}
 }

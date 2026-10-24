@@ -63,7 +63,10 @@ type metrics struct {
 	// waiting out their window for consolidation.
 	adds, searches, degraded, partial atomic.Int64
 	batches                           [batchOutcomes]atomic.Int64
-	linkFallbacks, addOutran          atomic.Int64
+	// active counts the requests being served now, of every route
+	// (RequestsInFlight), as the in_flight gauge does by route.
+	active                   atomic.Int64
+	linkFallbacks, addOutran atomic.Int64
 	// recent counts the Searches of the last ten minutes.
 	recent searchWindow
 
@@ -145,10 +148,12 @@ func (m *metrics) instrument(route string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		inFlight.Inc()
+		m.active.Add(1)
 		recorder := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		returned := false
 		defer func() {
 			inFlight.Dec()
+			m.active.Add(-1)
 			code := recorder.status
 			if !returned {
 				code = http.StatusInternalServerError

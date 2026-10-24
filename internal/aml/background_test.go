@@ -928,36 +928,39 @@ func TestHeartbeatTicksWhileRunRuns(t *testing.T) {
 		config.MemoryConfig.Consolidation = &settings
 		config.Consolidation = ConsolidationBackground
 	})
-	h.server.heartbeatEvery = 5 * time.Millisecond
+	// The test ticks the heartbeat itself (the final review's parked T9-b):
+	// a send returns once the heartbeat took the tick.
+	ticks := make(chan time.Time)
+	h.server.heartbeatTicker = func(time.Duration) (<-chan time.Time, func()) { return ticks, func() {} }
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- h.server.Run(ctx, nil) }()
 	eventually(t, func() bool { return !h.server.Heartbeat().IsZero() })
-	beats := func() bool {
-		beat := h.server.Heartbeat()
-		time.Sleep(30 * time.Millisecond)
-		return h.server.Heartbeat().After(beat)
-	}
-	if !beats() {
-		t.Fatal("the heartbeat does not tick")
-	}
-	// A tick waits for each lock: while one is held, the heartbeat stops.
+	before := h.server.Heartbeat()
+	ticks <- time.Now()
+	eventually(t, func() bool { return h.server.Heartbeat().After(before) })
+	// A tick waits for each lock: while one is held, the heartbeat stays
+	// where it was, and it moves on once the lock is free.
 	for name, lock := range map[string]sync.Locker{"scheduler": &h.server.sched.mu, "registry": &h.server.users.mu} {
 		lock.Lock()
-		time.Sleep(20 * time.Millisecond) // a tick past the lock lands
-		stuck := beats()
+		before := h.server.Heartbeat()
+		ticks <- time.Now()
+		time.Sleep(20 * time.Millisecond) // time for a tick that took no lock to show
+		stuck := h.server.Heartbeat().Equal(before)
 		lock.Unlock()
-		if stuck {
+		if !stuck {
 			t.Fatal("the heartbeat ticked while the", name, "was locked")
 		}
-		eventually(t, beats)
+		eventually(t, func() bool { return h.server.Heartbeat().After(before) })
 	}
 	cancel()
 	if err := received(t, done); err != nil {
 		t.Fatal(err)
 	}
-	if beats() {
-		t.Fatal("the heartbeat ticks after Run returned")
+	select {
+	case ticks <- time.Now():
+		t.Fatal("the heartbeat took a tick after Run returned")
+	case <-time.After(50 * time.Millisecond):
 	}
 }
 
