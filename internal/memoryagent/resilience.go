@@ -124,7 +124,9 @@ var (
 	// reservation would fill the last 10% of its account's cap, which is kept
 	// for Searches and their flushes.
 	ErrBackgroundReserve = fmt.Errorf("%w: kept for searches", ErrBudgetCap)
-	// errProviderClosed is the error of an attempt after Provider.Close.
+	// errProviderClosed is the error of an attempt after the provider's
+	// close began, and the cause of what its deadline cut
+	// (Provider.CloseWithin).
 	errProviderClosed = fmt.Errorf("%w: provider closed", ErrModelUnavailable)
 )
 
@@ -781,25 +783,47 @@ func (c *modelCall[T]) admit(ctx context.Context) (*flight[T], error) {
 		return nil, errProviderClosed
 	}
 	f := &flight[T]{request: request, parse: c.parse, idle: policy.bodyIdle, estimate: p.inputEstimate(len(c.body), c.amount), done: make(chan flightResult[T], 1)}
-	if err := policy.calls.AcquirePermitWithMaxWait(ctx, policy.attemptTimeout); err != nil {
-		if errors.Is(err, bulkhead.ErrFull) {
-			err = ErrBulkheadFull
-		}
+	if err := p.acquire(ctx, policy); err != nil {
 		return nil, f.abort(p, err)
 	}
 	f.permit = policy.calls
-	if f.id, err = p.budget.reserveWithin(ctx, p.config.Kind, c.hash, c.amount, policy.share); err != nil {
+	if f.id, err = p.budget.reserveWithin(ctx, p.config.Kind, c.hash, c.amount, policy.share, f.estimate); err != nil {
 		return nil, f.abort(p, err)
 	}
 	if !p.breaker.permit() {
 		return nil, f.abort(p, ErrBreakerOpen)
 	}
 	// The request flies on the attempt's context without its cancellation:
-	// wait cuts it when the caller gives up, not when the attempt times out.
+	// wait cuts it when the caller gives up, not when the attempt times out,
+	// and the provider's close at its deadline (CloseWithin).
 	flying, cut := context.WithCancelCause(request.Context())
 	f.trace, f.cut = &connTrace{traced: tracesConnections(p.client.Transport)}, cut
+	f.untrack = p.track(cut)
 	f.request = request.WithContext(httptrace.WithClientTrace(flying, f.trace.hooks()))
 	return f, nil
+}
+
+// acquire takes a permit of the class's bulkhead for an attempt, waiting for
+// one up to the attempt timeout (ErrBulkheadFull past it). The provider's
+// close cuts the wait at its deadline (errProviderClosed), so that an attempt
+// admitted before the close cannot hold it up for that long (the final
+// review's parked T4-M4).
+func (p *Provider) acquire(ctx context.Context, policy *classPolicy) error {
+	wait, endWait := context.WithCancelCause(ctx)
+	untrack := p.track(endWait)
+	err := policy.calls.AcquirePermitWithMaxWait(wait, policy.attemptTimeout)
+	untrack()
+	cause := context.Cause(wait)
+	endWait(nil)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, bulkhead.ErrFull):
+		return ErrBulkheadFull
+	case errors.Is(cause, errProviderClosed):
+		return errProviderClosed
+	}
+	return err
 }
 
 // wait waits for the flight's result on the attempt's context ctx. Past the
@@ -838,12 +862,13 @@ func (c *modelCall[T]) wait(ctx context.Context, f *flight[T]) flightResult[T] {
 // flight is an attempt's HTTP request, run by a goroutine of its own (run)
 // so that an attempt past its timeout can stop waiting without stopping it.
 // The goroutine is the provider's: its flights count it from the attempt's
-// admission, and Provider.Close waits for it. Until the request ends it owns
-// what the attempt was admitted with, the bulkhead permit and the budget
-// reservation, which it settles or releases before it ends (R63). The
-// client's hard timeout, the body-idle timeout and the budget file's busy
-// timeout bound its work, and the caller giving up cuts it (cut). It writes
-// its result once to done, never closed.
+// admission, and the provider's close waits for it (CloseWithin). Until the
+// request ends it owns what the attempt was admitted with, the bulkhead
+// permit and the budget reservation, which it settles or releases before it
+// ends (R63). The client's hard timeout, the body-idle timeout and the budget
+// file's busy timeout bound its work, and the caller giving up cuts it (cut),
+// as does the close at its deadline. It writes its result once to done, never
+// closed.
 type flight[T meteredReply] struct {
 	request *http.Request
 	trace   *connTrace
@@ -859,8 +884,10 @@ type flight[T meteredReply] struct {
 	// resolved: the reservation was settled or released. Only the attempt's
 	// admission (abort) and then the flight's goroutine touch it.
 	resolved bool
-	// cut cuts the request, the caller's error its cause (or errBodyIdle).
-	cut context.CancelCauseFunc
+	// cut cuts the request, the caller's error its cause (or errBodyIdle, or
+	// errProviderClosed). untrack ends the provider's hold of it (track).
+	cut     context.CancelCauseFunc
+	untrack func()
 	// done hands the result to the attempt; its room for one lets the
 	// goroutine end with nobody waiting for it.
 	done chan flightResult[T]
@@ -882,14 +909,22 @@ func (f *flight[T]) abort(p *Provider, cause error) error {
 // run is the flight's goroutine: it ends the request (exchange), returns the
 // permit and hands over the result. A panic fails the attempt; a reservation
 // it left unresolved is settled at the request's input estimate, as for a
-// request that may have been processed.
+// request that may have been processed. A request the provider's close cut
+// is counted, with whether its reservation stays held (CloseWithin).
 func (f *flight[T]) run(p *Provider) {
 	defer p.flights.Done()
+	defer f.untrack()
 	var res flightResult[T]
 	if err := recovered(func() error { res = f.exchange(p); return nil }); err != nil {
 		res = flightResult[T]{err: fmt.Errorf("model request failed: %w", err)}
 		if !f.resolved && recovered(func() error { res.err = f.settleEstimate(p, res.err); return nil }) != nil {
 			res.err = fmt.Errorf("%w; any reservation remains held", res.err)
+		}
+	}
+	if errors.Is(res.err, errProviderClosed) {
+		p.cutByClose.Add(1)
+		if f.id != "" && !f.resolved {
+			p.heldByClose.Add(1)
 		}
 	}
 	f.cut(nil)
@@ -1165,16 +1200,110 @@ func (p *Provider) begin() bool {
 	return true
 }
 
-// Close waits for the provider's requests in flight, abandoned ones included
-// (each ends by its hard timeout), then closes its idle connections. Calls
-// after Close fail without a request.
-func (p *Provider) Close() error {
+// cutter is a cut the provider holds (track).
+type cutter struct{ cut context.CancelCauseFunc }
+
+// track holds cut, an attempt's bulkhead wait's or a request's, for the
+// close to call at its deadline (cutAll) until the returned untrack; once
+// that deadline has passed, it calls cut at once. Neither holds p.mu while
+// it calls a cut.
+func (p *Provider) track(cut context.CancelCauseFunc) (untrack func()) {
+	c := &cutter{cut: cut}
+	p.mu.Lock()
+	cutting := p.cutting
+	if !cutting {
+		if p.cuts == nil {
+			p.cuts = map[*cutter]struct{}{}
+		}
+		p.cuts[c] = struct{}{}
+	}
+	p.mu.Unlock()
+	if cutting {
+		cut(errProviderClosed)
+		return func() {}
+	}
+	return func() {
+		p.mu.Lock()
+		delete(p.cuts, c)
+		p.mu.Unlock()
+	}
+}
+
+// cutAll cuts, cause errProviderClosed, every attempt waiting for a bulkhead
+// permit and every request in flight, and from now on each one admitted.
+func (p *Provider) cutAll() {
+	p.mu.Lock()
+	p.cutting = true
+	cuts := make([]context.CancelCauseFunc, 0, len(p.cuts))
+	for c := range p.cuts {
+		cuts = append(cuts, c.cut)
+	}
+	p.cuts = nil
+	p.mu.Unlock()
+	for _, cut := range cuts {
+		cut(errProviderClosed)
+	}
+}
+
+// Close closes the provider with no deadline (CloseWithin): it waits for its
+// requests in flight, abandoned ones included, each until it ends or its hard
+// timeout.
+func (p *Provider) Close() error { return p.CloseWithin(context.Background()) }
+
+// CloseWithin closes the provider by the deadline of ctx (ruling R90): calls
+// from now on fail without a request (errProviderClosed), and it waits for
+// the provider's requests in flight, abandoned ones included, until ctx ends.
+// Then it cuts those still running, and the attempts still waiting for a
+// bulkhead permit, cause errProviderClosed: a cut request settles its
+// reservation at its input estimate when it was sent, and releases it when
+// it was not (R63). It waits for them to end, which the budget file's busy
+// timeout bounds, and closes the idle connections. It returns nil when it
+// cut nothing, else an error that counts the requests it cut and the
+// reservations of theirs that stay held because their settlement failed.
+func (p *Provider) CloseWithin(ctx context.Context) error {
+	p.refuse()
+	return p.drain(ctx)
+}
+
+// refuse admits no attempt from now on.
+func (p *Provider) refuse() {
 	p.mu.Lock()
 	p.closed = true
 	p.mu.Unlock()
-	p.flights.Wait()
+}
+
+// drain is CloseWithin for a provider that refuses attempts: it waits for
+// the flights until ctx ends, cuts what still runs then, and waits for that.
+// Its goroutine is waited for on either path.
+func (p *Provider) drain(ctx context.Context) error {
+	ended := make(chan struct{})
+	go func() {
+		p.flights.Wait()
+		close(ended)
+	}()
+	select {
+	case <-ended:
+	case <-ctx.Done():
+		p.cutAll()
+		<-ended
+	}
 	p.client.CloseIdleConnections()
-	return nil
+	cut, held := p.cutByClose.Load(), p.heldByClose.Load()
+	switch {
+	case cut == 0:
+		return nil
+	case held == 0:
+		return fmt.Errorf("%s: cut %d model %s still in flight at the close's deadline: their reservations settled at their input estimates, or were released if they were not sent", p.config.Kind, cut, plural(cut, "request", "requests"))
+	}
+	return fmt.Errorf("%s: cut %d model %s still in flight at the close's deadline; %d %s held, their settlement failed: the next start settles them", p.config.Kind, cut, plural(cut, "request", "requests"), held, plural(held, "reservation stays", "reservations stay"))
+}
+
+// plural is one when n is 1, else many.
+func plural(n int64, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // jitter is a draw in [0, 1) for a retry's wait: the shared source of

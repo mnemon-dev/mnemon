@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
@@ -17,11 +18,14 @@ import (
 
 // Budget is a durable prepare/call/settle boundary, shared across processes.
 // Every attempt of a call reserves on its own (the provider retries through
-// it, resilience.go). Attempts that provably cost nothing (never sent, or
-// refused by the endpoint) release their reservation; the others settle it
-// when their request ends, at the reply's metering or, when none came back,
-// at the request's input estimate. Only a request still in flight holds one.
-// It stores metering and request hashes, never prompts or credentials.
+// it, resilience.go), recording the input estimate its request settles at
+// if no metering comes back. Attempts that provably cost nothing (never
+// sent, or refused by the endpoint) release their reservation; the others
+// settle it when their request ends, at the reply's metering or, when none
+// came back, at the request's input estimate. Only a request still in flight
+// holds one, or one whose process ended before it did, which SettleHolds
+// settles at the estimate it recorded. It stores metering and request
+// hashes, never prompts or credentials.
 type Budget struct {
 	db   *sql.DB
 	caps map[string]float64
@@ -112,11 +116,49 @@ func OpenBudgetWithCaps(path string, caps map[string]float64) (*Budget, error) {
 	db.SetMaxOpenConns(1)
 	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS accounts(kind TEXT PRIMARY KEY,cap REAL NOT NULL,spent REAL NOT NULL DEFAULT 0,held REAL NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY,kind TEXT NOT NULL,request_hash TEXT NOT NULL,reserved REAL NOT NULL,actual REAL,input_tokens INTEGER,output_tokens INTEGER);`)
+	if err == nil {
+		err = addEstimateColumns(db)
+	}
 	if err != nil {
 		db.Close()
 		return nil, err
 	}
 	return &Budget{db: db, caps: resolved}, nil
+}
+
+// addEstimateColumns gives the attempts of a budget file made before they
+// recorded their input estimates the columns that hold one (estimate, its
+// cost, and estimate_tokens); an attempt reserved without one holds NULL
+// there. Processes that open the file at once may both add a column: the
+// one that loses finds it added.
+func addEstimateColumns(db *sql.DB) error {
+	rows, err := db.Query(`SELECT name FROM pragma_table_info('attempts')`)
+	if err != nil {
+		return err
+	}
+	columns := map[string]bool{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			rows.Close()
+			return err
+		}
+		columns[name] = true
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, column := range []string{"estimate REAL", "estimate_tokens INTEGER"} {
+		name, _, _ := strings.Cut(column, " ")
+		if columns[name] {
+			continue
+		}
+		if _, err := db.Exec(`ALTER TABLE attempts ADD COLUMN ` + column); err != nil && !strings.Contains(err.Error(), "duplicate column name") {
+			return err
+		}
+	}
+	return nil
 }
 
 func (b *Budget) Close() error { return b.db.Close() }
@@ -128,13 +170,16 @@ func (b *Budget) reserve(ctx context.Context, kind, hash string) (string, error)
 // reserveAmount holds amount for one call, at least the kind's flat
 // reservation, and returns the attempt's id; "" for a local model.
 func (b *Budget) reserveAmount(ctx context.Context, kind, hash string, amount float64) (string, error) {
-	return b.reserveWithin(ctx, kind, hash, amount, 1)
+	return b.reserveWithin(ctx, kind, hash, amount, 1, Usage{})
 }
 
 // reserveWithin is reserveAmount for a call that may fill only share of its
 // account's cap: a reservation the cap admits but the share does not fails
-// with ErrBackgroundReserve.
-func (b *Budget) reserveWithin(ctx context.Context, kind, hash string, amount, share float64) (string, error) {
+// with ErrBackgroundReserve. The attempt records estimate, what its request
+// settles at when no metering the budget accepts comes back
+// (Provider.inputEstimate), for SettleHolds; one with no input tokens is
+// none, and the attempt records no estimate.
+func (b *Budget) reserveWithin(ctx context.Context, kind, hash string, amount, share float64, estimate Usage) (string, error) {
 	if kind == "local" {
 		return "", nil
 	}
@@ -170,8 +215,12 @@ func (b *Budget) reserveWithin(ctx context.Context, kind, hash string, amount, s
 	if err != nil || n != 1 {
 		return "", b.refusal(ctx, tx, kind, reservation, share)
 	}
+	var estimateCost, estimateTokens any // NULL: no estimate
+	if estimate.InputTokens >= 1 {
+		estimateCost, estimateTokens = min(estimate.USD+estimate.CNY, reservation), estimate.InputTokens
+	}
 	id := uuid.NewString()
-	if _, err = tx.ExecContext(ctx, `INSERT INTO attempts(id,kind,request_hash,reserved) VALUES(?,?,?,?)`, id, kind, hash, reservation); err != nil {
+	if _, err = tx.ExecContext(ctx, `INSERT INTO attempts(id,kind,request_hash,reserved,estimate,estimate_tokens) VALUES(?,?,?,?,?,?)`, id, kind, hash, reservation, estimateCost, estimateTokens); err != nil {
 		return "", err
 	}
 	return id, tx.Commit()
@@ -249,6 +298,88 @@ func (b *Budget) release(ctx context.Context, id string) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+// HeldSettled is what Budget.SettleHolds settled of one paid account: how
+// many reservations were held, what they held, and what they settled at.
+type HeldSettled struct {
+	Kind          string
+	Holds         int
+	Held, Settled float64
+}
+
+// SettleHolds settles every reservation the budget file still holds: each at
+// the input estimate its attempt recorded (at most its reservation), or at
+// its reservation when it recorded none, as an attempt reserved before
+// estimates were recorded did; and it sets each account's held to what its
+// attempts still hold, nothing. They are the holds of requests that a
+// process which has ended left in flight (ruling R90): a request that may
+// have been processed, never known to have cost nothing, so a settlement,
+// not a release. It returns what it settled, by kind in kind order; nothing
+// when nothing was held.
+//
+// It cannot tell the holds of a process that has ended from those of one
+// that runs: call it only as the file's one writer, before reserving, as
+// aml-serve does under its data root's lock for the instance's own budget
+// file. It runs in one transaction.
+func (b *Budget) SettleHolds(ctx context.Context) ([]HeldSettled, error) {
+	tx, err := b.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT id,kind,reserved,estimate,estimate_tokens FROM attempts WHERE actual IS NULL ORDER BY kind,rowid`)
+	if err != nil {
+		return nil, err
+	}
+	type hold struct {
+		id, kind string
+		reserved float64
+		estimate sql.NullFloat64
+		tokens   sql.NullInt64
+	}
+	holds := []hold{}
+	for rows.Next() {
+		var h hold
+		if err := rows.Scan(&h.id, &h.kind, &h.reserved, &h.estimate, &h.tokens); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		holds = append(holds, h)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	settled := []HeldSettled{}
+	for _, h := range holds {
+		cost, tokens := h.reserved, int64(1)
+		if h.estimate.Valid {
+			cost = min(max(h.estimate.Float64, 0), h.reserved)
+		}
+		if h.tokens.Valid {
+			tokens = max(h.tokens.Int64, 1)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE attempts SET actual=?,input_tokens=?,output_tokens=0 WHERE id=? AND actual IS NULL`, cost, tokens, h.id); err != nil {
+			return nil, err
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE accounts SET spent=spent+? WHERE kind=?`, cost, h.kind); err != nil {
+			return nil, err
+		}
+		if n := len(settled); n == 0 || settled[n-1].Kind != h.kind {
+			settled = append(settled, HeldSettled{Kind: h.kind})
+		}
+		account := &settled[len(settled)-1]
+		account.Holds++
+		account.Held += h.reserved
+		account.Settled += cost
+	}
+	// What the attempts still hold, nothing: no rounding of the held sum is
+	// left behind.
+	if _, err := tx.ExecContext(ctx, `UPDATE accounts SET held=(SELECT COALESCE(SUM(reserved),0) FROM attempts WHERE attempts.kind=accounts.kind AND actual IS NULL)`); err != nil {
+		return nil, err
+	}
+	return settled, tx.Commit()
 }
 
 // BudgetAccount is one paid account of a budget file: the cap this process

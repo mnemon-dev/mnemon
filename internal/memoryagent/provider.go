@@ -77,10 +77,18 @@ type Provider struct {
 	// retries' jitter (jitter). It must be safe for concurrent use.
 	random func() float64
 	// flights counts the attempts in progress and their requests, abandoned
-	// ones included; mu guards closed, which Close sets to admit no more.
+	// ones included. mu guards closed, which the close sets to admit no more;
+	// cuts, the cuts of the attempts waiting for a bulkhead permit and of the
+	// requests in flight (track); and cutting, which the close sets at its
+	// deadline, when it calls them (CloseWithin).
 	flights sync.WaitGroup
 	mu      sync.Mutex
 	closed  bool
+	cutting bool
+	cuts    map[*cutter]struct{}
+	// cutByClose counts the requests the close cut, and heldByClose those of
+	// them whose reservation stays held because its settlement failed.
+	cutByClose, heldByClose atomic.Int64
 }
 
 // openAIPrices lists USD per 1M input and output tokens.

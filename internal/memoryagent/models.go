@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -86,15 +87,32 @@ func (m Models) Observe(o ModelObserver) {
 	}
 }
 
-// Close closes every provider among the models once (Provider.Close): after
-// their requests in flight end, abandoned ones included. Close them before
+// Close closes every provider among the models once, with no deadline
+// (CloseWithin): after their requests in flight end, abandoned ones
+// included. Close them before the budget and the model cache they share.
+func (m Models) Close() error { return m.CloseWithin(context.Background()) }
+
+// CloseWithin closes every provider among the models once, by the deadline
+// of ctx (Provider.CloseWithin): all of them refuse calls from the start,
+// then each waits for its requests in flight until the deadline and cuts
+// what still runs at it. It returns what the providers cut, in one line
+// (their errors joined by "; "), nil when nothing was cut. Close them before
 // the budget and the model cache they share.
-func (m Models) Close() error {
-	var errs []error
-	for _, p := range m.providers() {
-		errs = append(errs, p.Close())
+func (m Models) CloseWithin(ctx context.Context) error {
+	providers := m.providers()
+	for _, p := range providers {
+		p.refuse()
 	}
-	return errors.Join(errs...)
+	var cut []string
+	for _, p := range providers {
+		if err := p.drain(ctx); err != nil {
+			cut = append(cut, err.Error())
+		}
+	}
+	if len(cut) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(cut, "; "))
 }
 
 // providers are the distinct providers among the models' roles.
