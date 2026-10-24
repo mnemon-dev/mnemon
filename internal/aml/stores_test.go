@@ -301,6 +301,32 @@ func TestStoresSharingAPrefix(t *testing.T) {
 	}
 }
 
+// A query string the overview cannot read is a 400 that says why: a bad
+// percent-escape and a ';' between pairs are different faults, and the second
+// is not a percent-encoding error (the re-review of the final fix's N7).
+func TestStoresOverviewSaysWhyAQueryStringIsMalformed(t *testing.T) {
+	h := newHarness(t, nil)
+	for _, c := range []struct{ query, mentions, not string }{
+		{"after=%zz", "percent-encoding", "';'"},
+		{"limit=%G1", "percent-encoding", "';'"},
+		{"limit=1&after=%", "percent-encoding", "';'"},
+		{"limit=1;after=" + strings.Repeat("0", 32), "';'", "percent-encoding"},
+		{"limit=2;limit=3", "';'", "percent-encoding"},
+		{"after=abc;", "';'", "percent-encoding"},
+		{";", "';'", "percent-encoding"},
+	} {
+		response := h.adminCall("GET", "/admin/v1/stores?"+c.query)
+		var body struct{ Error string }
+		if response.Code != http.StatusBadRequest || json.Unmarshal(response.Body.Bytes(), &body) != nil || !strings.HasPrefix(body.Error, "the query string is malformed: ") {
+			t.Errorf("%q: %d %q", c.query, response.Code, response.Body.String())
+			continue
+		}
+		if !strings.Contains(body.Error, c.mentions) || strings.Contains(body.Error, c.not) {
+			t.Errorf("%q: %q does not name the cause (%s), not %s", c.query, body.Error, c.mentions, c.not)
+		}
+	}
+}
+
 // A data root with no store yet has an overview, and it is empty.
 func TestStoresOverviewOfAnEmptyDataRoot(t *testing.T) {
 	for name, prepare := range map[string]func(root string){

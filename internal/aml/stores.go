@@ -293,12 +293,13 @@ type storeEntry struct {
 
 // serveStores answers GET /admin/v1/stores?limit=<1..500, default 100>&after=<cursor>
 // from the latest scan of the data root. A malformed limit or cursor is a 400,
-// and so is a query whose percent-encoding is malformed: it is not read as the
-// query without that pair (the final review's parked T14-b).
+// and so is a query that cannot be read, a malformed percent-encoding or a
+// ';' between pairs: it is not read as the query without that pair (the final
+// review's parked T14-b), and the 400 says which it is.
 func (s *Server) serveStores(w http.ResponseWriter, r *http.Request) {
 	query, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "the query string is malformed: its percent-encoding is invalid")
+		writeError(w, http.StatusBadRequest, "the query string is malformed: "+queryFault(r.URL.RawQuery, err))
 		return
 	}
 	limit, after, err := storesQuery(query, defaultStoresPage)
@@ -318,6 +319,21 @@ func (s *Server) serveStores(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	writeJSON(w, http.StatusOK, s.pageOf(scan, limit, after))
+}
+
+// queryFault says what is wrong with a query string that url.ParseQuery
+// refused with err: a percent-escape that is no escape, a ';' between pairs
+// (only '&' separates them), or, should the library ever refuse for another
+// reason, the library's words.
+func queryFault(rawQuery string, err error) string {
+	var escape url.EscapeError
+	switch {
+	case errors.As(err, &escape):
+		return "its percent-encoding is invalid"
+	case strings.Contains(rawQuery, ";"):
+		return "pairs are separated by '&', not ';'"
+	}
+	return err.Error()
 }
 
 // fieldError is the error of a malformed field of a request: its message is
