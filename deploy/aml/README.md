@@ -28,13 +28,16 @@ dedicated instance `eval`.
 
 | Field | Value |
 |---|---|
-| System name | `<system name>` (Mnemon AML memory agent) |
-| Version | `<version>` (the `VERSION` given to `make build-linux-amd64`), commit `<git commit>` |
+| System name | Mnemon |
+| Version | v0.2.x: a v0.2.x release follows this work (the `VERSION` given to `make build-linux-amd64`), commit `<release commit>` |
 | Track | Industrial (commercial products), textual |
-| Team / organization | `<team>` / `<organization>` |
+| Team / organization | Mnemon Team / Mnemon |
 | Contact | `<name, email>` |
-| Endpoint | `https://<domain>`, the instance `eval` on its own host (`POST /add`, `POST /search`, `GET /health`) |
+| Endpoint | `https://aml.mnemon.dev`, the instance `eval` on its own host, the dedicated 12 vCPU / 48 GB / 387 GB evaluation host (`POST /add`, `POST /search`, `GET /health`) |
 | Implementation | Go, one static binary: `mnemon memory-agent aml-serve` |
+| Paper | *Raw Records, Fast Judgments, Slow Thoughts*: Guangren Wang, <https://arxiv.org/abs/2609.36059> (arXiv, 2026) |
+| Reference implementation | <https://github.com/Grivn/mnemon-memory-agent> (MIT; the paper author's own repository) |
+| Project repository | <https://github.com/mnemon-dev/mnemon> (Apache-2.0) |
 
 ## Summary
 
@@ -48,11 +51,11 @@ evidence only and never an answer.
 
 ## Method
 
-The method is the one of the paper *Raw Records, Fast Judgments, Slow Thoughts*
-(`<authors, venue, year>`), whose reference implementation is
-<https://github.com/Grivn/mnemon-memory-agent>. This system is a Go port of that
-implementation's final read path and consolidation, wrapped in the AML HTTP contract, with the
-changes listed below.
+The method is the one of the paper *Raw Records, Fast Judgments, Slow Thoughts* (Guangren
+Wang, <https://arxiv.org/abs/2609.36059>, arXiv, 2026), whose reference implementation is
+<https://github.com/Grivn/mnemon-memory-agent> (MIT; the paper author's own repository). This
+system is a Go port of that implementation's final read path and consolidation, wrapped in the
+AML HTTP contract, with the changes listed below.
 
 ### Write path: raw packed records, no model
 
@@ -131,8 +134,10 @@ During a Search, the question, the planner's searches and candidate record texts
 DeepSeek and JEV APIs; during consolidation (in the background workers, or before a user's
 next Search), the conversation text goes to the DeepSeek API, and the events and facts it
 extracts from the conversation (topic titles, dated event texts, fact keys and values) go to
-the JEV API. Raw records stay on the submission host. `<confirm that the track rules allow
-external model APIs, and add their data-retention terms if the rules require them>`.
+the JEV API. Raw records stay on the submission host.
+
+Confirmed with the organizers: the consolidation blocks are allowed, the industrial track lets
+participants choose their models, and DeepSeek and JEV retain no data.
 
 ## Changes from the reference implementation
 
@@ -189,7 +194,7 @@ Fill these from the measurements described in the runbook ("Capacity declaration
 
 | Field | Value |
 |---|---|
-| Host | 12 vCPU, 48 GB, 387 GB, Ubuntu 24.04 amd64, dedicated to the evaluation instance (`<confirm>`) |
+| Host | 12 vCPU, 48 GB, 387 GB, Ubuntu 24.04 amd64, dedicated to the evaluation instance |
 | Concurrent Add requests | `<TBD: measured>`, at most the instance's `--max-concurrent-adds` (16, provisional) |
 | Concurrent Search requests | `<TBD: measured>`, at most the instance's `--max-concurrent-searches` (16, provisional) |
 | Add latency (20 messages), p50 / p95 | `<TBD>` / `<TBD>` |
@@ -198,7 +203,7 @@ Fill these from the measurements described in the runbook ("Capacity declaration
 | Request timeout accepted | 31 minutes (the platform's I/O timeout is 30 minutes); a Search's memory read stops after 10 minutes (`--search-timeout`) and answers the raw ranking |
 | Stores kept open | 16 (`--max-open-stores`) |
 | Request body limit | 30 MiB |
-| Retries | Add retries with the same `request_id` are idempotent; 503 marks a retryable failure, with `Retry-After: 5` when no slot frees within 30 s; a restart cuts no request: requests in flight have 30 s to finish, and the proxy holds new ones for up to 30 s |
+| Retries | Add retries with the same `request_id` are idempotent; 503 marks a retryable failure, with `Retry-After: 5` when no slot frees within 30 s. A restart gives the requests in flight 30 s to finish; those still running then are cancelled with 503, and the platform retries them. The proxy holds new requests for up to 30 s while the instance restarts |
 | Model spending caps | JEV USD 60 (reads and consolidation links), DeepSeek CNY 600 (planning and extraction); `budgets` in the configuration |
 
 ## Deployment
@@ -208,10 +213,12 @@ Fill these from the measurements described in the runbook ("Capacity declaration
   other instances on another host and share nothing with it.
 - The data plane listens on loopback behind Caddy (TLS). The admin listener (metrics,
   readiness, status, store overview, profiler) binds the host's private WireGuard address,
-  requires a bearer token on every request, and is reachable only from the ops host; the
-  firewall denies everything else but ssh, HTTP and HTTPS.
+  requires a bearer token on every request, and is reachable only from the ops host. The
+  firewall denies everything else but ssh, HTTP and HTTPS, WireGuard's 51820/udp from the ops
+  host, and the admin ports from the hub on `wg0`.
 - systemd supervises the process (readiness, watchdog, restart), and a watcher posts alerts to
-  the operators' Feishu or WeCom group every minute, independently of the console.
+  the operators' Telegram chat (or a Feishu or WeCom group) every minute, independently of the
+  console.
 - Retrieval is BM25 only; no embedding model runs on the host.
 
 ## Data handling
@@ -224,7 +231,8 @@ Fill these from the measurements described in the runbook ("Capacity declaration
   text; it is deleted together with the data root.
 - After the job the data root and the budget file are deleted within 30 days, with the
   procedure in the runbook ("Data deletion": `mnemon-instance delete eval`; one user with
-  `mnemon-instance delete-user eval`). Planned deletion date: `<date>`.
+  `mnemon-instance delete-user eval`, the user id typed at its prompt). Planned deletion date:
+  2026-12-04.
 
 ## Evaluation evidence
 
@@ -233,16 +241,8 @@ each number. None is reported in this draft.>`
 
 ## Open points to confirm before submitting
 
-- The paper's authors, venue and year, and the licence terms of the reference repository for a
-  derived port.
-- Whether the track rules treat the consolidation blocks (model-written topic, timeline and value
-  summaries built from the stored records as conversations are added and before the next Search,
-  never from the question) as
-  retrieved evidence. Search can be run without them by running the instance's `aml-serve`
-  with `--consolidate off` (an `ExecStart=` drop-in), at the cost of the layer.
-- That external model APIs are allowed in the industrial track, and the retention terms of
-  DeepSeek and JEV for the data sent to them.
-- The capacity numbers and the rate limit above.
+- The capacity numbers and the rate limit above, from the load test on the evaluation host
+  (Task 12).
 - The Windows CI job (`windows-memory`) has not yet run the new `cmd/memory` tests: they are
   the first Windows tests to open AML stores and the budget file, and must pass before the
   branch merges.

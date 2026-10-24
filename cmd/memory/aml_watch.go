@@ -41,9 +41,9 @@ import (
 //     left (counters, when they last rose, when a condition began);
 //  4. posts one text message per alert that fires, per firing alert that is
 //     due again, and per alert that clears, to the webhook in AML_ALERT_WEBHOOK
-//     (AML_ALERT_KIND: feishu or wecom), each within 10 seconds, each starting
-//     with the tag [mnemon-aml] (watchTag), whose header says which host the
-//     watcher runs on, and which instance with --instance; and
+//     (AML_ALERT_KIND: telegram, feishu or wecom), each within 10 seconds, each
+//     starting with the tag [mnemon-aml] (watchTag), whose header says which
+//     host the watcher runs on, and which instance with --instance; and
 //  5. saves the state, atomically (a temporary file in the state's directory,
 //     renamed over it; mode 0600), whether or not a post failed.
 //
@@ -52,10 +52,14 @@ import (
 // public one, and not along a redirect, whose Location is not the operator's.
 // It is never printed, logged, put in an error, a message or the state.
 //
-// The webhook's URL is a secret (its path is a bearer token): it is never
-// printed, logged or put in an error. A failed post says the HTTP status, the
-// code the webhook answered with, or that the webhook could not be reached
-// (net/http's own error names the URL, so it is not used). A message that
+// The webhook's URL is a secret (its path is a bearer token: a Feishu or WeCom
+// hook's key, a Telegram bot's token): it is never printed, logged or put in
+// an error. A failed post says the HTTP status, the code the webhook answered
+// with, or that the webhook could not be reached (net/http's own error names
+// the URL, so it is not used). A Telegram bot's URL is its sendMessage with the
+// chat in the query (telegramTarget): the post goes to the URL without the
+// query, the chat in its body, and only 2xx with "ok":true is a delivery
+// (telegramRejection). A message that
 // went out is recorded as sent, and not sent again as a new alert (unless the
 // state cannot be saved: then the run exits non-zero and the next run says it
 // again); one that did not go out stays unsent in the state, the next run
@@ -131,7 +135,8 @@ const (
 	watchPartialSearches = 20
 
 	// watchMessageBytes bounds a message: under 1,000 characters, and under
-	// WeCom's 2,048 bytes whatever the characters.
+	// WeCom's 2,048 bytes and Telegram's 4,096 characters whatever the
+	// characters.
 	watchMessageBytes = 999
 
 	// watchTag starts every message, of every kind. A Feishu bot protected by
@@ -158,12 +163,13 @@ const (
 func newAMLWatchCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "aml-watch",
-		Short: "Check a running aml-serve once and post its alerts to a Feishu or WeCom webhook",
+		Short: "Check a running aml-serve once and post its alerts to a Telegram, Feishu or WeCom bot",
 		Long: `Check a running aml-serve once: read its admin listener's /ready and /admin/status and its
 public /health, apply the alert rules, and post a text message for each alert that fires, each
 firing alert that is due again (every 30 minutes) and each alert that clears, to the webhook named
-by the environment variable AML_ALERT_WEBHOOK, in the payload of AML_ALERT_KIND (feishu or wecom);
-every text starts with [mnemon-aml], the keyword to register on a Feishu bot, and says which host
+by the environment variable AML_ALERT_WEBHOOK, in the payload of AML_ALERT_KIND (telegram, feishu or
+wecom); for telegram the webhook is https://api.telegram.org/bot<token>/sendMessage?chat_id=<chat id>.
+Every text starts with [mnemon-aml], the keyword to register on a Feishu bot, and says which host
 it is from (and which instance, with --instance). Run it every minute with a systemd timer. The
 webhook URL and the admin token are secrets and are never printed. With no webhook the alerts are
 logged only. The state between runs is the file --state; one run at a time holds <state>.lock.`,
@@ -382,15 +388,41 @@ func (w *watcher) checkDelivery() error {
 	if w.webhook == "" {
 		return nil
 	}
-	if w.kind != "feishu" && w.kind != "wecom" {
-		return errors.New("AML_ALERT_KIND must be feishu or wecom")
+	if w.kind != "feishu" && w.kind != "wecom" && w.kind != "telegram" {
+		return errors.New("AML_ALERT_KIND must be feishu or wecom or telegram")
 	}
-	// The error never repeats the value: its path is a secret.
+	// The errors never repeat the value: its path is a secret.
 	u, err := url.Parse(w.webhook)
 	if err != nil || u.Host == "" || !(u.Scheme == "https" || u.Scheme == "http" && watchLoopbackHost(u.Hostname())) {
 		return errors.New("AML_ALERT_WEBHOOK must be an https URL (http only to localhost or a loopback address)")
 	}
-	return nil
+	if w.kind == "telegram" {
+		_, _, err = telegramTarget(u)
+	}
+	return err
+}
+
+// watchTelegramChat is the shape of a Telegram chat id: a chat's number (a
+// group's or a channel's is negative), or a public channel's @username.
+var watchTelegramChat = regexp.MustCompile(`^(-?[0-9]{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$`)
+
+// telegramTarget is where a Telegram bot's messages go, from the webhook u,
+// which must be the bot's sendMessage with the chat in the query and nothing
+// else there: https://api.telegram.org/bot<token>/sendMessage?chat_id=<chat id>,
+// on any host (a self-hosted Bot API server answers the same path). target is
+// u without its query, and chat the chat_id as given, which the body carries.
+// The errors say the rule, never the value: the path holds the bot's token.
+func telegramTarget(u *url.URL) (target, chat string, err error) {
+	if !strings.HasSuffix(u.Path, "/sendMessage") {
+		return "", "", errors.New("AML_ALERT_WEBHOOK for telegram must be the bot's sendMessage URL: https://api.telegram.org/bot<token>/sendMessage?chat_id=<chat id>")
+	}
+	query, err := url.ParseQuery(u.RawQuery)
+	if chats := query["chat_id"]; err != nil || len(query) != 1 || len(chats) != 1 || !watchTelegramChat.MatchString(chats[0]) {
+		return "", "", errors.New("AML_ALERT_WEBHOOK for telegram must end in ?chat_id=<chat id>, its only parameter: a chat's number (negative for a group or a channel) or a channel's @username")
+	}
+	bare := *u
+	bare.RawQuery, bare.ForceQuery, bare.Fragment, bare.RawFragment = "", false, "", ""
+	return bare.String(), query.Get("chat_id"), nil
 }
 
 // watchLoopbackHost reports whether host is this machine: localhost, in any
@@ -1027,15 +1059,27 @@ type webhookFailure struct {
 
 func (f *webhookFailure) Error() string { return f.reason }
 
-// post sends text to the webhook as the payload of its kind.
+// post sends text to the webhook as the payload of its kind: to a Feishu or
+// WeCom webhook as it is, to a Telegram bot's sendMessage without the query,
+// whose chat goes in the payload.
 func (w *watcher) post(ctx context.Context, text string) error {
-	body, err := watchPayload(w.kind, text)
+	target, chat := w.webhook, ""
+	if w.kind == "telegram" {
+		u, err := url.Parse(w.webhook)
+		if err == nil {
+			target, chat, err = telegramTarget(u)
+		}
+		if err != nil {
+			return &webhookFailure{reason: "the webhook request could not be made"}
+		}
+	}
+	body, err := watchPayload(w.kind, chat, text)
 	if err != nil {
 		return &webhookFailure{reason: "the message could not be encoded"}
 	}
 	// The errors of net/http name the URL, which is the secret: none of them
 	// is passed on.
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, w.webhook, bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return &webhookFailure{reason: "the webhook request could not be made"}
 	}
@@ -1046,6 +1090,12 @@ func (w *watcher) post(ctx context.Context, text string) error {
 	}
 	defer response.Body.Close()
 	answer, _ := io.ReadAll(io.LimitReader(response.Body, watchAnswerLimit))
+	if w.kind == "telegram" {
+		if reason, rejected := telegramRejection(response.StatusCode, answer); rejected {
+			return &webhookFailure{reason: reason}
+		}
+		return nil
+	}
 	if response.StatusCode < 200 || response.StatusCode > 299 {
 		return &webhookFailure{reason: fmt.Sprintf("the webhook answered HTTP %d", response.StatusCode)}
 	}
@@ -1088,8 +1138,34 @@ func watchRejection(answer []byte) (int, bool) {
 	return 0, false
 }
 
-// The payloads of the two kinds of webhook: Feishu's custom bot and WeCom's
-// group robot, both a plain text message.
+// telegramRejection is why a Telegram bot did not take a message, from the
+// HTTP status of its answer and the answer: it took it only when the status is
+// 2xx and the answer says "ok":true. The reason says the status and, when
+// there is one, Telegram's numeric error_code; never its description, which
+// can repeat what it was sent. A 429 is a rejection like any other: the next
+// run sends the message again, and its retry_after is not waited for.
+func telegramRejection(status int, answer []byte) (string, bool) {
+	var body struct {
+		OK        bool `json:"ok"`
+		ErrorCode *int `json:"error_code"`
+	}
+	parsed := json.Unmarshal(answer, &body) == nil
+	success := status >= 200 && status <= 299
+	switch {
+	case success && parsed && body.OK:
+		return "", false
+	case parsed && body.ErrorCode != nil:
+		return fmt.Sprintf("the webhook answered HTTP %d with error_code %d", status, *body.ErrorCode), true
+	case success:
+		return fmt.Sprintf(`the webhook answered HTTP %d without "ok":true`, status), true
+	}
+	return fmt.Sprintf("the webhook answered HTTP %d", status), true
+}
+
+// The payloads of the three kinds of webhook: Feishu's custom bot and WeCom's
+// group robot, both a plain text message, and a Telegram bot's sendMessage,
+// plain text too: without a parse_mode nothing in the text is read as markup,
+// and the links it holds get no preview.
 type feishuPayload struct {
 	MsgType string `json:"msg_type"`
 	Content struct {
@@ -1104,8 +1180,15 @@ type wecomPayload struct {
 	} `json:"text"`
 }
 
-// watchPayload is the JSON body that posts text to a webhook of kind.
-func watchPayload(kind, text string) ([]byte, error) {
+type telegramPayload struct {
+	ChatID                string `json:"chat_id"`
+	Text                  string `json:"text"`
+	DisableWebPagePreview bool   `json:"disable_web_page_preview"`
+}
+
+// watchPayload is the JSON body that posts text to a webhook of kind; chat is
+// a Telegram bot's chat (telegramTarget), as it was given.
+func watchPayload(kind, chat, text string) ([]byte, error) {
 	var payload any
 	switch kind {
 	case "feishu":
@@ -1116,6 +1199,8 @@ func watchPayload(kind, text string) ([]byte, error) {
 		p := wecomPayload{MsgType: "text"}
 		p.Text.Content = text
 		payload = p
+	case "telegram":
+		payload = telegramPayload{ChatID: chat, Text: text, DisableWebPagePreview: true}
 	default:
 		return nil, fmt.Errorf("unknown kind %q", kind)
 	}

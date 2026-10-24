@@ -1,7 +1,7 @@
 # systemd template for one run of the alert watcher of instance %i: it reads
 # aml-serve@%i's /ready and /admin/status and the public /health, and posts
-# what fires or clears to the host's Feishu or WeCom bot. aml-watch@.timer
-# runs it every minute. Install once per host as
+# what fires or clears to the host's Telegram, Feishu or WeCom bot.
+# aml-watch@.timer runs it every minute. Install once per host as
 # /etc/systemd/system/aml-watch@.service; see docs/aml-adapter.md ("Alerts").
 #
 # It has no [Install] section (its timer starts it) and does not require

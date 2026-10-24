@@ -42,7 +42,8 @@ DETERMINISTIC_PKGS := \
 	./web \
 	./test/mnemond/architecture \
 	./test/mnemond/observer \
-	./test/mnemond/domainops/trace
+	./test/mnemond/domainops/trace \
+	./test/deploy/...
 
 TESTDATA_PKGS := \
 	./testdata/mnemond/domainops/cmd/domain-load \

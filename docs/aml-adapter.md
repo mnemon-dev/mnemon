@@ -94,10 +94,13 @@ console, Prometheus (ops host) ──WireGuard──▶ aml-serve@<n>, admin <ov
 
 An instance has a name: `^[a-z][a-z0-9-]{1,30}$`, for example `eval` or `beta-alice`. The
 name is the account's identifier everywhere: in paths, units, the console and this runbook.
+The names `data`, `env`, `host`, `host-env`, `users`, `watch`, `instances`, `aml`, `mnemon`,
+`caddy` and `test-instance` are reserved: they collide with the kit's paths or read as common
+words, and every subcommand refuses them.
 
 | Resource | Path / value |
 | --- | --- |
-| Engine env (root:root 0600) | `/etc/mnemon-aml/<n>/env`: the record (`AML_LAYOUT`, `AML_SLOT`, `AML_STATUS`), `AML_LISTEN`, `AML_ADMIN_LISTEN`, the flag values `AML_MAX_ADDS`, `AML_MAX_SEARCHES`, `AML_MAX_OPEN_STORES`, `AML_WORKERS`, and the secrets `AML_API_KEY`, `MNEMON_ADMIN_TOKEN` and the provider keys the configuration names |
+| Engine env (root:root 0600) | `/etc/mnemon-aml/<n>/env`: the record (`AML_LAYOUT`, `AML_SLOT`, `AML_STATUS`), `AML_LISTEN`, `AML_ADMIN_LISTEN`, the flag values `AML_MAX_ADDS`, `AML_MAX_SEARCHES`, `AML_MAX_OPEN_STORES`, `AML_WORKERS`, `GOMEMLIMIT` (80% of `MemoryMax=`), and the secrets `AML_API_KEY`, `MNEMON_ADMIN_TOKEN` and the provider keys the configuration names |
 | Engine config (root:mnemon 0640) | `/etc/mnemon-aml/<n>/memory-config.json`: the shipped BM25-only configuration with this instance's caps and budget file |
 | Watcher env (root:root 0600) | `/etc/mnemon-aml/<n>/watch.env`: `AML_ALERT_WEBHOOK`, `AML_ALERT_KIND`, `AML_PUBLIC_URL`, `AML_ADMIN_LISTEN` (the engine's value), `MNEMON_ADMIN_TOKEN`; never a provider key or the API key |
 | State (mnemon 0700) | `/var/lib/mnemon-aml/<n>/` (`StateDirectory=mnemon-aml/%i`): `data/`, the data root, and `model-budget.db`, the budget file |
@@ -139,6 +142,7 @@ never carry a secret. One alert bot serves every instance on a host; the watcher
 | DeepSeek cap (CNY) | 600 | 30 | `--deepseek-cap` |
 | JEV cap (USD) | 60 | 3 | `--jev-cap` |
 | `MemoryMax=` | `40G` | `1G` | `--memory-max` |
+| `GOMEMLIMIT` (engine env) | `32768MiB` | `819MiB` | follows `--memory-max`: 80% of it, rounded down to a whole MiB |
 | `CPUQuota=` | none | `100%` | `--cpu-quota` |
 | `--max-concurrent-adds` (`AML_MAX_ADDS`) | 16 | 4 | `--max-concurrent-adds` |
 | `--max-concurrent-searches` (`AML_MAX_SEARCHES`) | 16 | 4 | `--max-concurrent-searches` |
@@ -148,20 +152,20 @@ never carry a secret. One alert bot serves every instance on a host; the watcher
 The dedicated numbers are provisional: the load test on the evaluation host (Task 12 of the
 serve-hardening plan) replaces them with measured values. The evaluation host has 48 GB, so
 40G leaves room for Caddy, sshd and the watcher; the 8 GB beta host holds about five beta
-instances at the defaults.
+instances at the defaults. `GOMEMLIMIT` makes the Go runtime collect harder as the instance
+nears its `MemoryMax=`, rather than be killed there.
 
 ## Hosts
 
 | Role | Machine | Overlay address | Runs |
 | --- | --- | --- | --- |
 | ops | Ubuntu 24.04, 6 vCPU / 12 GB | `10.77.0.1`, the hub | the console, Prometheus (the console's kit, in `mnemon-fe`) |
-| eval | Ubuntu 24.04, 12 vCPU / 48 GB / 387 GB | `10.77.0.2` | `aml-serve@eval`, dedicated |
-| beta | Ubuntu 26.04, 4 vCPU / 8 GB / 145 GB | `10.77.0.3` | the beta instances, shared |
+| eval | Ubuntu 24.04, 12 vCPU / 48 GB / 387 GB | `10.77.0.2` | one instance, `aml-serve@eval`, dedicated |
+| beta | Ubuntu 26.04, 4 vCPU / 8 GB / 145 GB | `10.77.0.3` | about five beta instances at the shared defaults |
 
 The hosts' public addresses are in the memory cloud design. The hosts share no private
-network: the WireGuard overlay below is it. The hardening plan sized the evaluation for at
-least 8 vCPU, 32 GB and 200 GB (16 open stores of up to about 744 MB each); the eval host is
-larger.
+network: the WireGuard overlay below is it. A dedicated host needs at least 8 vCPU, 32 GB and
+200 GB (16 open stores of up to about 744 MB each); the eval host is larger.
 
 Bring-up drills come before go-live, as the only place where the templates, the drop-ins,
 `handle_path`, WireGuard and the firewall meet a real systemd and Caddy:
@@ -284,13 +288,16 @@ nftables, and live services depend on it.
    DEEPSEEK_API_KEY=<DeepSeek key>
    TYPESAFE_API_KEY=<JEV key>
    #OPENAI_API_KEY=<only with an openai model>
-   AML_ALERT_WEBHOOK=<the Feishu or WeCom bot's webhook URL, https>
-   AML_ALERT_KIND=feishu
+   AML_ALERT_WEBHOOK=https://api.telegram.org/bot<token>/sendMessage?chat_id=<chat id>
+   AML_ALERT_KIND=telegram
    ```
 
-   `mnemon-instance new` refuses to run if the file is missing, is not root's with mode 0600,
-   or lacks a name the shipped configuration or the watcher needs; the refusal names the
-   variable, never its value. The configuration's `keyEnv` fields name the provider keys.
+   Telegram is the recommended alert bot ("Alerts" has its setup); a Feishu or WeCom bot's
+   webhook URL with `AML_ALERT_KIND=feishu` or `wecom` works too. `mnemon-instance new`
+   refuses to run if the file is missing, is not root's with mode 0600, or lacks a name the
+   shipped configuration or the watcher needs, and refuses a telegram webhook that is not the
+   bot's `sendMessage` URL with its `chat_id`; the refusal names the variable, never its value.
+   The configuration's `keyEnv` fields name the provider keys.
 
 4. **Install Caddy** from its official apt repository, then the Caddyfile of the host's
    layout, with the host's domain:
@@ -334,13 +341,15 @@ mnemon-instance new beta-alice --layout shared --public-url https://beta.<domain
    lowest free slot;
 3. makes the API key and the admin token: `mnm_` and 32 random bytes from `/dev/urandom` in
    base64url without padding (47 characters);
-4. writes the engine env, the watcher env, the configuration (the shipped one with
-   `budgets` and `budgetFile` set for the instance), the state directories, the limits
-   drop-in and, on a shared host, the snippet, each to a temporary file renamed into place.
-   If anything fails before it is done, it removes what it wrote;
+4. writes the engine env (with `GOMEMLIMIT`, 80% of `MemoryMax=` rounded down to a whole
+   MiB), the watcher env, the configuration (the shipped one with `budgets` and `budgetFile`
+   set for the instance), the state directories, the limits drop-in and, on a shared host,
+   the snippet, each to a temporary file renamed into place. If anything fails before it is
+   done, it removes what it wrote;
 5. runs `systemctl daemon-reload`, `systemctl enable --now aml-serve@<n>.service`, waits up to
-   120 s for `/ready`, enables `aml-watch@<n>.timer`, reloads Caddy (shared), and runs
-   `mnemon-preflight <n>`;
+   120 s for `/ready`, enables `aml-watch@<n>.timer`, reloads Caddy (shared; if Caddy refuses
+   the new route, the snippet is removed again, so that the host's Caddyfile stays valid), and
+   runs `mnemon-preflight <n>`;
 6. prints, once, the base URL, the API key, the admin URL `http://<admin-ip>:<port>`, the admin
    token, and the registration JSON for the console:
 
@@ -404,13 +413,18 @@ mnemon-instance resume beta-alice
 `403 {"error":"account suspended"}`, checks it with `caddy validate` and reloads Caddy; then,
 on either layout, it stops and disables `aml-watch@<n>.timer`, stops `aml-watch@<n>.service`,
 stops and disables `aml-serve@<n>.service`, and records `AML_STATUS=suspended`. Disabled units
-stay down through a reboot. A dedicated host's route stays and answers 502 while the instance
-is suspended. `suspend` may be run again; it does the same again.
+stay down through a reboot. If Caddy refuses the new snippet, the old one is put back (or the
+new one removed, when there was none, so that the host's Caddyfile stays valid) and `suspend`
+exits 1, having stopped nothing. A dedicated host's route stays and answers 502 while the
+instance is suspended. `suspend` may be run again; it does the same again.
 
-`resume` reverses it: it enables and starts `aml-serve@<n>`, waits for `/ready`, restores the
-route (shared), enables the watcher's timer and records `AML_STATUS=active`. If the instance
-is not ready within 120 s, the route stays as it was and `resume` exits 1. The watcher's next
-run reports the restart (`restart`, resolved 10 minutes later).
+`resume` reverses it, in an order that never leaves it half-done: it enables and starts
+`aml-serve@<n>` and waits up to 120 s for `/ready`; only then does it restore the route
+(shared), record `AML_STATUS=active` and enable the watcher's timer. If the instance is not
+ready within 120 s, or Caddy refuses the route, `resume` stops and disables `aml-serve@<n>`
+again and exits 1: the instance stays fully suspended (its route answers 403, its watcher is
+off). `resume` of an instance that is not suspended never stops it. The watcher's next run
+reports the restart (`restart`, resolved 10 minutes later).
 
 ### `rotate-key`
 
@@ -427,7 +441,7 @@ platform retries. A client still sending the old key gets 401. A suspended insta
 without a restart; it applies when the instance resumes.
 
 **Rotating the admin token** is a manual step: write a new token, for example
-`printf 'mnm_%s\n' "$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')"` into
+`printf 'mnm_%s\n' "$(head -c 32 /dev/urandom | base64 | tr -- '+/' '-_' | tr -d '=\n')"` into
 `MNEMON_ADMIN_TOKEN` of both `/etc/mnemon-aml/<n>/env` and `/etc/mnemon-aml/<n>/watch.env`
 with an editor, `systemctl restart aml-serve@<n>`, then set the token in the console
 (`PATCH /api/instances/<id>`, or its edit form).
@@ -439,8 +453,9 @@ its own env file; `host.env` is only where `new` copies them from.
 
 **Changing caps or limits** of an existing instance: `budgets` in
 `/etc/mnemon-aml/<n>/memory-config.json` (restart; the spent amounts are kept), `MemoryMax=` or
-`CPUQuota=` in `aml-serve@<n>.service.d/limits.conf` (`systemctl daemon-reload`, then restart),
-or the flag values in the engine env (restart).
+`CPUQuota=` in `aml-serve@<n>.service.d/limits.conf` (`systemctl daemon-reload`, then restart;
+with a new `MemoryMax=`, set `GOMEMLIMIT` in the engine env to 80% of it, in whole MiB, as `new`
+does: `2G` gives `1638MiB`), or the flag values in the engine env (restart).
 
 ### `delete`
 
@@ -459,15 +474,19 @@ removes its users' data for good ("Data deletion", below).
 ### `delete-user`
 
 ```sh
-printf '%s\n' '<user id>' | mnemon-instance delete-user beta-alice
+mnemon-instance delete-user beta-alice
+User id:                                     # type the user id here, then Enter
 ```
 
-The per-user data deletion as one command. It reads one line from standard input (one
-trailing newline is not part of the id; anything else is), never from its arguments, and
-computes the store: `users/` and the first 32 hex digits of the SHA-256 of the exact id (a
-numeric id is the digits as written). It refuses if there is no such store. Then it stops
-`aml-serve@<n>`, removes the store's directory, starts the instance and waits for `/ready`.
-It logs and prints only the store's first 8 hex digits. A suspended instance stays stopped.
+The per-user data deletion as one command. Type the user id at its prompt, never in a command:
+an argument, a `printf … |` or a here-string would keep it in the shell's history. It reads
+the one line (one trailing newline is not part of the id; anything else is), never its
+arguments, and computes the store: `users/` and the first 32 hex digits of the SHA-256 of the
+exact id (a numeric id is the digits as written). It refuses if there is no such store, or if
+the SHA-256 tool gives no digest. Then it stops `aml-serve@<n>`, removes the store's
+directory, starts the instance and waits for `/ready`. It logs and prints only the store's
+first 8 hex digits. A suspended instance stays stopped. (The smoke test pipes in `smoke-user`,
+the runbook's own test id, not a person's.)
 
 ## Preflight
 
@@ -490,9 +509,10 @@ reads the env files with `grep` (never sourcing them), and checks:
 - `env` and `watch.env`: owned by root, mode 0600;
 - `env` holds `AML_API_KEY`, the provider keys the instance's configuration names,
   `MNEMON_ADMIN_TOKEN`, `AML_LISTEN`, `AML_ADMIN_LISTEN`, `AML_MAX_ADDS`, `AML_MAX_SEARCHES`,
-  `AML_MAX_OPEN_STORES` and `AML_WORKERS`; `watch.env` holds `AML_ALERT_WEBHOOK` (https),
-  `AML_ALERT_KIND` (`feishu` or `wecom`), `AML_PUBLIC_URL` (https), and the engine's
-  `AML_ADMIN_LISTEN` and `MNEMON_ADMIN_TOKEN`;
+  `AML_MAX_OPEN_STORES` and `AML_WORKERS`; `watch.env` holds `AML_ALERT_WEBHOOK` (https; for
+  telegram, the bot's `sendMessage` URL with its `chat_id`), `AML_ALERT_KIND` (`telegram`,
+  `feishu` or `wecom`), `AML_PUBLIC_URL` (https), and the engine's `AML_ADMIN_LISTEN` and
+  `MNEMON_ADMIN_TOKEN`;
 - `$AML_PUBLIC_URL/health` answers 200 through Caddy;
 - `/ready` on the admin listener answers 200 with the token;
 - `/admin/status` shows a `lagBound` above 0 (background consolidation), and every budget's
@@ -502,7 +522,9 @@ reads the env files with `grep` (never sourcing them), and checks:
 - `systemd-analyze verify` passes on the templates, and `caddy validate` on the Caddyfile, when
   the tools are installed;
 - `wg0` is up and carries the address of `AML_ADMIN_LISTEN`;
-- ufw is active, denies incoming by default, and has the rules of "Firewall".
+- ufw is active, denies incoming by default, and has the rules of "Firewall", and no rule lets
+  anyone reach 51820/udp or an admin port (8091 to 8600/tcp), over IPv4 or IPv6, on any
+  interface, by one port, a range or a list: each such rule is a `FAIL` line that names it.
 
 Every check runs; each failure prints one line that starts with `FAIL`, and the exit status is
 1 if any failed. It never prints a secret: the admin token reaches curl only as a config on its
@@ -804,11 +826,45 @@ watcher keeps alerting when the ops host is down.
 - **A quiet journal.** A failed run writes its error once, as one line; an empty `--public-url`
   logs one WARN line per run.
 
-**Feishu.** Create a custom bot in the alert group and register the custom keyword
+**The alert bot.** One bot serves every instance on a host (`AML_ALERT_WEBHOOK` and
+`AML_ALERT_KIND` in `host.env`). Telegram is the recommended kind: it needs no keyword and no
+signature. `AML_ALERT_WEBHOOK` must be https (http only to a loopback address), and its URL is a
+secret, as it holds the bot's token or the hook's key: it is never printed or logged.
+
+**Telegram** (`AML_ALERT_KIND=telegram`):
+
+1. In Telegram, message @BotFather: `/newbot`, a name, then a username that ends in `bot`. It
+   answers with the bot's token, `<digits>:<letters>`. Whoever holds the token can post as the
+   bot: keep it like a password.
+2. Open a chat with the bot and press **Start**, or send it a message. For a group, add the bot
+   to the group and post `/start@<bot username>` there (in a group, a bot sees only commands
+   and mentions).
+3. Read the chat id from `getUpdates`, on a host, without putting the token on a command line:
+
+   ```sh
+   read -rs TOKEN                                # paste the token, then Enter; it is not echoed
+   printf 'url = "https://api.telegram.org/bot%s/getUpdates"\n' "$TOKEN" | curl -sS --config - |
+     jq '[.result[] | (.message // .channel_post // .my_chat_member).chat | {id, type, title}] | unique'
+   unset TOKEN
+   ```
+
+   A private chat's id is a positive number and a group's a negative one (a supergroup's
+   starts with `-100`); a public channel may also be named `@<channel username>`. `getUpdates`
+   lists the last 24 hours only.
+4. Build `https://api.telegram.org/bot<token>/sendMessage?chat_id=<chat id>` and write it into
+   `host.env` with an editor, with `AML_ALERT_KIND=telegram`.
+
+The watcher posts each message to that URL without its query, with the chat in the body, as
+plain text (no `parse_mode`, no link preview); `chat_id` must be the URL's only parameter. Any
+https host that serves the Bot API will do, a self-hosted Bot API server too. A message is
+delivered when Telegram answers 2xx with `"ok":true`; any other answer, a 429 included, is a
+failed delivery, logged with the HTTP status and Telegram's `error_code` (never its
+description), and the next run sends the message again.
+
+**Feishu** (`feishu`). Create a custom bot in the alert group and register the custom keyword
 `mnemon-aml` (every message contains it), or an IP allowlist of the instance hosts. Signature
-verification is not supported: a bot that requires it rejects every message. **WeCom** needs
-nothing extra. `AML_ALERT_WEBHOOK` must be https (http only to a loopback address), and the
-webhook's URL is a secret: it is never printed or logged.
+verification is not supported: a bot that requires it rejects every message. **WeCom**
+(`wecom`) needs nothing extra.
 
 **Alert drill, per instance**, before go-live: run the watcher once by hand with the instance's
 `watch.env` loaded, a scratch state and `--admin` pointed at a closed port; the `ready` alert
@@ -937,8 +993,8 @@ scratch instance first if continuous replication is needed.
 | `model credential is unavailable` or a startup error naming a credential environment variable | A `keyEnv` variable is empty or absent in `/etc/mnemon-aml/<n>/env`. |
 | `aml-serve@<n>` restarts in a loop | `journalctl -u aml-serve@<n> -n 50`: an unreadable config (`memory-config.json` must be readable by group `mnemon`), `aml-serve requires a nonempty API key in $AML_API_KEY`, `another aml-serve holds …/.aml-serve.lock`, a port in use, or `--admin-listen: listen tcp 10.77.0.3:8101: bind: cannot assign requested address`: `wg0` is down (`systemctl start wg-quick@wg0`; the instance binds once it is up). |
 | The console shows an instance unreachable | From the ops host: `ping 10.77.0.3` (the overlay), then the ufw rule for `wg0` and port 8091:8600 on the instance host, then `mnemon-preflight <n>`. A 401 from the admin listener means the console holds another token than the instance. |
-| Alerts do not arrive | `journalctl -u aml-watch@<n>`: `not delivered` with the webhook's answer, or `AML_ALERT_WEBHOOK is empty`. A Feishu bot with a keyword needs `mnemon-aml`; one with signature verification rejects every message. Run the alert drill. |
-| Memory grows | Lower `AML_MAX_OPEN_STORES` in the engine env and restart; `MemoryMax=` in the drop-in caps the instance (systemd kills it above, and it restarts in 5 s). |
+| Alerts do not arrive | `journalctl -u aml-watch@<n>`: `not delivered` with the webhook's answer, or `AML_ALERT_WEBHOOK is empty`. Telegram answers `HTTP <status> with error_code <code>`: 400 is mostly a wrong `chat_id`, or a chat where the bot was never started; 401 a wrong token; 403 a bot that was blocked or removed from the group; 429 its rate limit (the next run sends the message again). A Feishu bot with a keyword needs `mnemon-aml`; one with signature verification rejects every message. Run the alert drill. |
+| Memory grows | Lower `AML_MAX_OPEN_STORES` in the engine env and restart; `MemoryMax=` in the drop-in caps the instance (systemd kills it above, and it restarts in 5 s), and `GOMEMLIMIT`, 80% of it, makes the Go runtime collect harder before that. |
 
 ## Data deletion
 
@@ -953,10 +1009,11 @@ mnemon-instance delete <n>        # type the name: every user's records and inde
 find /var/lib/mnemon-aml/<n> /etc/mnemon-aml/<n> 2>/dev/null   # prints nothing
 ```
 
-One user's data (for example the smoke user), with the instance running:
+One user's data, with the instance running: type the user id at the script's prompt, never in a
+command, so that it stays out of the shell's history ("`delete-user`", above):
 
 ```sh
-printf '%s\n' '<user id>' | mnemon-instance delete-user <n>
+mnemon-instance delete-user <n>   # User id: <type it, then Enter>
 ```
 
 The journal holds no request bodies and no user ids (only eight-digit hash prefixes), so it

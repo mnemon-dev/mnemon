@@ -27,6 +27,10 @@ import (
 // random bytes in base64url without padding.
 var secretShape = regexp.MustCompile(`^mnm_[A-Za-z0-9_-]{43}$`)
 
+// reservedNames are the instance names the script refuses: they collide with
+// the kit's paths or read as common words.
+var reservedNames = []string{"data", "env", "host", "host-env", "users", "watch", "instances", "aml", "mnemon", "caddy", "test-instance"}
+
 // host is a temporary host: the --root tree after the one-time install steps
 // the script needs (host.env, the shipped configuration, the host's
 // Caddyfile), and tripwires in place of the tools --no-systemd must never run.
@@ -274,7 +278,7 @@ func (h *host) instance(name string) (env, watch map[string]string) {
 			h.t.Errorf("%s: env holds %s", name, other)
 		}
 	}
-	if watch["AML_ALERT_WEBHOOK"] != h.secrets["AML_ALERT_WEBHOOK"] || watch["AML_ALERT_KIND"] != "feishu" {
+	if watch["AML_ALERT_WEBHOOK"] != h.secrets["AML_ALERT_WEBHOOK"] || watch["AML_ALERT_KIND"] != h.env("/etc/mnemon-aml/host.env")["AML_ALERT_KIND"] {
 		h.t.Errorf("%s: watch.env does not carry the host's alert bot", name)
 	}
 	if watch["MNEMON_ADMIN_TOKEN"] != env["MNEMON_ADMIN_TOKEN"] || watch["AML_ADMIN_LISTEN"] != env["AML_ADMIN_LISTEN"] {
@@ -461,6 +465,8 @@ func TestInstanceScriptNew(t *testing.T) {
 			"AML_LAYOUT": "dedicated", "AML_SLOT": "0", "AML_STATUS": "active",
 			"AML_LISTEN": "127.0.0.1:8090", "AML_ADMIN_LISTEN": "10.77.0.2:8091",
 			"AML_MAX_ADDS": "16", "AML_MAX_SEARCHES": "16", "AML_MAX_OPEN_STORES": "16", "AML_WORKERS": "4",
+			// 80% of MemoryMax=40G, in whole MiB.
+			"GOMEMLIMIT": "32768MiB",
 		} {
 			if env[name] != want {
 				t.Errorf("env %s=%s, want %s", name, env[name], want)
@@ -502,6 +508,8 @@ func TestInstanceScriptNew(t *testing.T) {
 			"AML_LAYOUT": "shared", "AML_SLOT": "0", "AML_STATUS": "active",
 			"AML_LISTEN": "127.0.0.1:8100", "AML_ADMIN_LISTEN": "10.77.0.3:8101",
 			"AML_MAX_ADDS": "4", "AML_MAX_SEARCHES": "4", "AML_MAX_OPEN_STORES": "2", "AML_WORKERS": "1",
+			// 80% of MemoryMax=1G is 819.2 MiB.
+			"GOMEMLIMIT": "819MiB",
 		} {
 			if alice[name] != want {
 				t.Errorf("beta-alice env %s=%s, want %s", name, alice[name], want)
@@ -541,6 +549,8 @@ func TestInstanceScriptNew(t *testing.T) {
 		for name, want := range map[string]string{
 			"AML_SLOT": "1", "AML_LISTEN": "127.0.0.1:8110", "AML_ADMIN_LISTEN": "10.77.0.3:8111",
 			"AML_MAX_ADDS": "8", "AML_MAX_SEARCHES": "6", "AML_MAX_OPEN_STORES": "3", "AML_WORKERS": "2",
+			// --memory-max 2G: 1638.4 MiB.
+			"GOMEMLIMIT": "1638MiB",
 		} {
 			if bob[name] != want {
 				t.Errorf("beta-bob env %s=%s, want %s", name, bob[name], want)
@@ -578,6 +588,13 @@ func TestInstanceScriptNew(t *testing.T) {
 			h.refused("", shared(name)...)
 		}
 		h.ok("", shared("b"+strings.Repeat("x", 30))...)
+		// Names that collide with the kit's paths or read as common words are
+		// reserved.
+		for _, name := range reservedNames {
+			if stderr := h.refused("", shared(name)...); !strings.Contains(stderr, "reserved") {
+				t.Errorf("new %s was not refused as a reserved name: %s", name, stderr)
+			}
+		}
 		for _, extra := range [][]string{
 			{"--layout", "cluster"},
 			{"--public-url", "http://beta.example.com/i/beta-x"},
@@ -596,6 +613,11 @@ func TestInstanceScriptNew(t *testing.T) {
 			{"--jev-cap", "-1"},
 			{"--jev-cap", "lots"},
 			{"--memory-max", "1g"},
+			// Under 1 MiB of GOMEMLIMIT, and a size whose arithmetic would
+			// overflow.
+			{"--memory-max", "1M"},
+			{"--memory-max", "1279K"},
+			{"--memory-max", "12345678901G"},
 			{"--cpu-quota", "100"},
 			{"--max-open-stores", "0"},
 			{"--consolidation-workers", "0"},
@@ -680,6 +702,31 @@ func TestInstanceScriptNew(t *testing.T) {
 		// A relative --root, an unknown command and a missing name.
 		for _, args := range [][]string{{"bogus"}, {"suspend"}, {"suspend", "nobody"}, {"rotate-key", "nobody"}, {"list", "extra"}} {
 			h.refused("", args...)
+		}
+		// Every subcommand checks the name before it builds a path from it.
+		for _, command := range []string{"suspend", "resume", "rotate-key", "delete", "delete-user"} {
+			for _, name := range []string{"../beta-bxxx", "bxxx/..", "/etc", "b" + strings.Repeat("x", 30) + "/../.."} {
+				if stderr := h.refused(name+"\n", command, name); !strings.Contains(stderr, "instance names are") {
+					t.Errorf("%s %s: %s", command, name, stderr)
+				}
+			}
+		}
+		// A reserved name is refused by every subcommand: what an older layout
+		// left at such a path (/etc/mnemon-aml/env, /var/lib/mnemon-aml/data)
+		// is never taken for an instance.
+		writeFile(t, h.path("/etc/mnemon-aml/env"), "AML_LAYOUT=dedicated\nAML_SLOT=0\n", 0o600)
+		writeFile(t, h.path("/var/lib/mnemon-aml/data/users/0123/records.db"), "an older layout's data", 0o600)
+		for _, name := range []string{"env", "data"} {
+			for _, command := range []string{"suspend", "resume", "rotate-key", "delete", "delete-user"} {
+				if stderr := h.refused(name+"\n", command, name); !strings.Contains(stderr, "reserved") {
+					t.Errorf("%s %s was not refused as a reserved name: %s", command, name, stderr)
+				}
+			}
+		}
+		for _, leftover := range []string{"/etc/mnemon-aml/env", "/var/lib/mnemon-aml/data"} {
+			if err := os.RemoveAll(h.path(leftover)); err != nil {
+				t.Fatal(err)
+			}
 		}
 		r := h.run("", "--root", "relative/root", "list")
 		if r.ok {
@@ -895,9 +942,20 @@ func TestInstanceScriptSlots(t *testing.T) {
 // No secret is ever an argument of a program the script runs (R40): with
 // every tool it calls replaced by a spy that records its arguments, a whole
 // lifecycle leaves no secret in the record. Builtins, printf among them, run
-// no program.
+// no program. So with either kind of alert bot: a Telegram webhook, whose URL
+// carries the bot's token, is checked in the shell only.
 func TestInstanceScriptKeepsSecretsOutOfArguments(t *testing.T) {
+	for _, kind := range []string{"feishu", "telegram"} {
+		t.Run(kind, func(t *testing.T) { keepsSecretsOutOfArguments(t, kind) })
+	}
+}
+
+func keepsSecretsOutOfArguments(t *testing.T, kind string) {
 	h := newHost(t, "Caddyfile.shared")
+	if kind == "telegram" {
+		h.secrets["AML_ALERT_WEBHOOK"] = "https://api.telegram.org/bot7012345678:AA" + randomHex(t) + "/sendMessage?chat_id=-1001234567890"
+		h.writeHostEnv(map[string]string{"AML_ALERT_KIND": "telegram"})
+	}
 	record := filepath.Join(h.bin, "arguments")
 	spied := 0
 	for _, tool := range []string{"grep", "tail", "cut", "head", "tr", "base64", "mktemp", "mkdir", "chmod", "chown", "mv", "rm",
@@ -943,4 +1001,486 @@ func TestInstanceScriptKeepsSecretsOutOfArguments(t *testing.T) {
 		}
 	}
 	h.checkNoSecrets()
+}
+
+// GOMEMLIMIT, in the engine env, is 80% of the instance's MemoryMax= rounded
+// down to a whole MiB (systemd reads K, M, G and T in powers of 1024), from
+// the layout's default or from --memory-max.
+func TestInstanceScriptGoMemLimit(t *testing.T) {
+	h := newHost(t, "Caddyfile.shared")
+	for i, tc := range []struct{ memoryMax, want string }{
+		{"", "819MiB"}, // the shared default, 1G
+		{"40G", "32768MiB"},
+		{"1536M", "1228MiB"},
+		{"2097152K", "1638MiB"},
+		{"1T", "838860MiB"},
+		{"2M", "1MiB"},
+		{"1280K", "1MiB"},
+	} {
+		name := fmt.Sprintf("beta-%d", i)
+		args := []string{"new", name, "--layout", "shared", "--public-url", "https://beta.example.com/i/" + name, "--admin-ip", "10.77.0.3", "--host-name", "beta-1"}
+		if tc.memoryMax != "" {
+			args = append(args, "--memory-max", tc.memoryMax)
+		}
+		h.ok("", args...)
+		env, _ := h.instance(name)
+		if env["GOMEMLIMIT"] != tc.want {
+			t.Errorf("--memory-max %q: GOMEMLIMIT=%s, want %s", tc.memoryMax, env["GOMEMLIMIT"], tc.want)
+		}
+		limits := "[Service]\nMemoryMax=" + tc.memoryMax + "\nCPUQuota=100%"
+		if tc.memoryMax == "" {
+			limits = "[Service]\nMemoryMax=1G\nCPUQuota=100%"
+		}
+		h.checkLimits(name, limits)
+	}
+	h.checkNoSecrets()
+}
+
+// delete-user removes a store only by a key of 32 hex digits: a SHA-256 tool
+// that prints nothing, or anything else, never makes it remove the users
+// directory, or any directory but the user's store.
+func TestInstanceScriptDeleteUserChecksTheKey(t *testing.T) {
+	h := newHost(t, "Caddyfile.shared")
+	h.ok("", "new", "beta-alice", "--layout", "shared", "--public-url", "https://beta.example.com/i/beta-alice", "--admin-ip", "10.77.0.3", "--host-name", "beta-1")
+	h.instance("beta-alice")
+	h.users = append(h.users, "smoke-user")
+	for _, user := range []string{"smoke-user", "kept-user"} {
+		writeFile(t, h.path("/var/lib/mnemon-aml/beta-alice/data/users/"+storeKey(user)+"/records.db"), "records", 0o600)
+	}
+	key := storeKey("smoke-user")
+	digest := filepath.Join(t.TempDir(), "digest")
+	for _, tool := range []string{"sha256sum", "shasum"} {
+		writeFile(t, filepath.Join(h.bin, tool), "#!/bin/sh\ncat >/dev/null\ncat '"+digest+"'\n", 0o755)
+	}
+	for name, output := range map[string]string{
+		"nothing":       "",
+		"an empty line": "\n",
+		"spaces":        "    \n",
+		"upper case":    strings.ToUpper(key) + "  -\n",
+		"too short":     key[:31] + "  -\n",
+		"not hex":       "zz" + key[2:] + "  -\n",
+	} {
+		writeFile(t, digest, output, 0o644)
+		if stderr := h.refused("smoke-user\n", "delete-user", "beta-alice"); !strings.Contains(stderr, "nothing was deleted") {
+			t.Errorf("a SHA-256 tool that prints %s: %s", name, stderr)
+		}
+	}
+	// With the real tools it removes the store, and only it.
+	for _, tool := range []string{"sha256sum", "shasum"} {
+		if err := os.Remove(filepath.Join(h.bin, tool)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h.ok("smoke-user\n", "delete-user", "beta-alice")
+	if h.exists("/var/lib/mnemon-aml/beta-alice/data/users/"+key) || !h.exists("/var/lib/mnemon-aml/beta-alice/data/users/"+storeKey("kept-user")+"/records.db") {
+		t.Error("delete-user removed the wrong store")
+	}
+	h.checkNoSecrets()
+}
+
+// A journal that cannot be written never costs the one-time output: new and
+// rotate-key say so, and print the keys all the same.
+func TestInstanceScriptJournalFailureKeepsTheKeys(t *testing.T) {
+	h := newHost(t, "Caddyfile.shared")
+	// The journal's file is a directory, so no line can be appended to it.
+	journal := h.path("/var/log/mnemon-instance.log")
+	if err := os.MkdirAll(journal, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := h.run("", "new", "beta-alice", "--layout", "shared", "--public-url", "https://beta.example.com/i/beta-alice", "--admin-ip", "10.77.0.3", "--host-name", "beta-1")
+	if !r.ok || !strings.Contains(r.stderr, "could not write the journal line") {
+		t.Fatalf("new with a journal that fails:\n%s%s", r.stdout, r.stderr)
+	}
+	env, _ := h.instance("beta-alice")
+	checkOutput(t, r.stdout, "https://beta.example.com/i/beta-alice", "http://10.77.0.3:8101", env["AML_API_KEY"],
+		registration("beta-alice", "shared", "beta-1", "10.77.0.3", "https://beta.example.com/i/beta-alice", "http://10.77.0.3:8101", env["MNEMON_ADMIN_TOKEN"], env["AML_API_KEY"]))
+	r = h.run("", "rotate-key", "beta-alice")
+	rotated := h.env("/etc/mnemon-aml/beta-alice/env")["AML_API_KEY"]
+	h.secrets["beta-alice rotated API key"] = rotated
+	if !r.ok || !strings.Contains(r.stderr, "could not write the journal line") || strings.Count(r.stdout, rotated) != 1 {
+		t.Fatalf("rotate-key with a journal that fails:\n%s%s", r.stdout, r.stderr)
+	}
+	if err := os.Remove(journal); err != nil {
+		t.Fatal(err)
+	}
+	h.checkNoSecrets()
+}
+
+// strictTr is a tr that parses its options as strictly as a modern parser
+// may (the Rust coreutils' on Ubuntu 26.04, say): an operand that starts with
+// "-" is an unknown option unless "--" came before it.
+func strictTr(real string) string {
+	return `#!/bin/sh
+for arg in "$@"; do
+	case $arg in
+	--) break ;;
+	-c | -C | -d | -s | -cd | -ds | -cs) ;;
+	-*)
+		printf 'tr: unexpected argument %s\n' "$arg" >&2
+		exit 1
+		;;
+	esac
+done
+exec '` + real + `' "$@"
+`
+}
+
+// The script's tr operands that start with "-" (the base64url alphabet's)
+// come after "--", so that a strict option parser takes them as operands.
+func TestInstanceScriptTrOperandsComeAfterDoubleDash(t *testing.T) {
+	h := newHost(t, "Caddyfile.shared")
+	real, err := exec.LookPath("tr")
+	if err != nil {
+		t.Skip("tr is missing")
+	}
+	writeFile(t, filepath.Join(h.bin, "tr"), strictTr(real), 0o755)
+	h.ok("", "new", "beta-alice", "--layout", "shared", "--public-url", "https://beta.example.com/i/beta-alice", "--admin-ip", "10.77.0.3", "--host-name", "beta-1")
+	h.instance("beta-alice")
+	h.ok("", "rotate-key", "beta-alice")
+	if key := h.env("/etc/mnemon-aml/beta-alice/env")["AML_API_KEY"]; !secretShape.MatchString(key) {
+		t.Errorf("rotate-key wrote the key %q", key)
+	} else {
+		h.secrets["beta-alice rotated API key"] = key
+	}
+	h.checkNoSecrets()
+}
+
+// Telegram is an alert kind: new copies the bot's sendMessage URL, chat
+// included, and the kind into watch.env. A telegram URL that is not a bot's
+// sendMessage with its chat (?chat_id=, its only parameter) is refused, the
+// refusal naming the variable, never the value.
+func TestInstanceScriptTelegramAlerts(t *testing.T) {
+	h := newHost(t, "Caddyfile.shared")
+	token := "7012345678:AA" + randomHex(t)
+	h.secrets["telegram bot token"] = token
+	bot := "https://api.telegram.org/bot" + token
+	shared := func(name string) []string {
+		return []string{"new", name, "--layout", "shared", "--public-url", "https://beta.example.com/i/" + name, "--admin-ip", "10.77.0.3", "--host-name", "beta-1"}
+	}
+	for i, webhook := range []string{
+		bot + "/sendMessage?chat_id=123456789",
+		bot + "/sendMessage?chat_id=-1001234567890",
+		bot + "/sendMessage?chat_id=@mnemon_alerts",
+		bot + "/sendMessage?chat_id=%40mnemon_alerts",
+		"https://bots.example.com/bot" + token + "/sendMessage?chat_id=42",
+	} {
+		h.secrets["AML_ALERT_WEBHOOK"] = webhook
+		h.writeHostEnv(map[string]string{"AML_ALERT_KIND": "telegram"})
+		name := fmt.Sprintf("beta-%d", i)
+		h.ok("", shared(name)...)
+		if _, watch := h.instance(name); watch["AML_ALERT_KIND"] != "telegram" || watch["AML_ALERT_WEBHOOK"] != webhook {
+			t.Errorf("%s: watch.env carries %s and another webhook", name, watch["AML_ALERT_KIND"])
+		}
+	}
+	for _, webhook := range []string{
+		bot + "/sendMessage",
+		bot + "/sendMessage?",
+		bot + "/sendMessage?chat_id=",
+		bot + "/sendMessage?chat_id=abc",
+		bot + "/sendMessage?chat_id=@abcd",
+		bot + "/sendMessage?chat_id=42&parse_mode=HTML",
+		bot + "/sendMessage?chat_id=42&chat_id=43",
+		bot + "/getUpdates?chat_id=42",
+		bot + "/sendMessage/?chat_id=42",
+		bot + "?chat_id=42",
+		"http://api.telegram.org/bot" + token + "/sendMessage?chat_id=42",
+		// What the watcher's URL parser refuses, the shell refuses too.
+		"https://api.telegram.org/bot" + token + "%zz/sendMessage?chat_id=42",
+		"https://api telegram.org/bot" + token + "/sendMessage?chat_id=42",
+		"https://api.telegram.org/bot" + token + "/sendMessage?chat_id=42#x",
+	} {
+		h.writeHostEnv(map[string]string{"AML_ALERT_KIND": "telegram", "AML_ALERT_WEBHOOK": webhook})
+		if stderr := h.refused("", shared("beta-x")...); !strings.Contains(stderr, "AML_ALERT_WEBHOOK") {
+			t.Errorf("the refusal of a telegram webhook does not name AML_ALERT_WEBHOOK: %s", stderr)
+		}
+	}
+	// A kind the watcher does not know is refused, telegram's spelling too.
+	for _, kind := range []string{"Telegram", "telegram-bot"} {
+		h.writeHostEnv(map[string]string{"AML_ALERT_KIND": kind, "AML_ALERT_WEBHOOK": bot + "/sendMessage?chat_id=42"})
+		if stderr := h.refused("", shared("beta-x")...); !strings.Contains(stderr, "AML_ALERT_KIND") {
+			t.Errorf("kind %s: %s", kind, stderr)
+		}
+	}
+	h.checkNoSecrets()
+}
+
+// ---- the systemd side, sourced ----
+
+// The tests above run the script with --no-systemd, which skips what it does
+// with systemd, Caddy and the admin listener. These source the script instead
+// (main runs only when it is run), set ROOT to the host's tree and SYSTEMD=1,
+// and call its functions with the programs of that side stubbed as shell
+// functions: systemctl, logger and caddy record their arguments in calls,
+// curl answers /ready, and sleep moves bash's clock (SECONDS) on instead of
+// waiting. The tripwires stay on PATH: a program a stub misses fails the test.
+
+// systemdStubs are the stubs: CADDY_STATUS is caddy validate's exit status,
+// READY_AFTER the try at which /ready answers 200 (none when 0), and
+// SLEEP_STEP the seconds one try and its sleep take. Each systemctl call
+// records the instance's AML_STATUS at the time.
+const systemdStubs = `
+systemctl() { printf 'systemctl %s (status %s)\n' "$*" "$(env_get "$ROOT$ETC/$INSTANCE/env" AML_STATUS)" >>"$CALLS"; }
+logger() { printf 'logger %s\n' "$*" >>"$CALLS"; }
+caddy() { printf 'caddy %s\n' "$*" >>"$CALLS"; return "${CADDY_STATUS:-0}"; }
+curl() {
+	cat >/dev/null
+	printf 'curl %s\n' "$*" >>"$CALLS"
+	local tries
+	tries=$(grep -c '^curl ' "$CALLS")
+	if [ "${READY_AFTER:-1}" -gt 0 ] && [ "$tries" -ge "${READY_AFTER:-1}" ]; then printf 200; else printf 000; fi
+}
+sleep() { SECONDS=$((SECONDS + ${SLEEP_STEP:-1})); }
+`
+
+// sourced runs code in bash after sourcing instance.sh with the stubs, for
+// instance; it returns the run and the calls the stubs recorded.
+func (h *host) sourced(instance, code string) (run, []string) {
+	h.t.Helper()
+	calls := filepath.Join(h.t.TempDir(), "calls")
+	writeFile(h.t, calls, "", 0o600)
+	script := "source '" + filepath.Join(h.repo, "deploy", "aml", "instance.sh") + "'\n" +
+		"ROOT='" + h.root + "' SYSTEMD=1 CALLS='" + calls + "' INSTANCE='" + instance + "'\n" + systemdStubs + code
+	command := exec.Command("bash", "-c", script)
+	command.Stdin = strings.NewReader("")
+	command.Env = []string{"PATH=" + h.bin + string(os.PathListSeparator) + os.Getenv("PATH"), "HOME=" + h.root, "LC_ALL=C"}
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &stdout, &stderr
+	err := command.Run()
+	if _, ok := err.(*exec.ExitError); err != nil && !ok {
+		h.t.Fatal(err)
+	}
+	if trips, _ := os.ReadFile(h.tripwire); len(trips) > 0 {
+		h.t.Fatalf("a stub was missed; the sourced script ran:\n%s", trips)
+	}
+	raw, readErr := os.ReadFile(calls)
+	if readErr != nil {
+		h.t.Fatal(readErr)
+	}
+	// No secret is an argument of the programs the stubs stand for.
+	for label, secret := range h.secrets {
+		if strings.Contains(string(raw), secret) {
+			h.t.Errorf("a program's arguments held the %s", label)
+		}
+	}
+	r := run{args: []string{"sourced", instance}, stdout: stdout.String(), stderr: stderr.String(), ok: err == nil}
+	h.runs = append(h.runs, r)
+	return r, strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
+}
+
+// systemctlCalls are the systemctl calls of calls, without the status.
+func systemctlCalls(calls []string) []string {
+	var out []string
+	for _, call := range calls {
+		if rest, ok := strings.CutPrefix(call, "systemctl "); ok {
+			out = append(out, rest[:strings.LastIndex(rest, " (status ")])
+		}
+	}
+	return out
+}
+
+// newSharedAlice is a shared host with the instance beta-alice, made with
+// --no-systemd; it returns the host and beta-alice's active snippet.
+func newSharedAlice(t *testing.T) (*host, string) {
+	t.Helper()
+	h := newHost(t, "Caddyfile.shared")
+	h.ok("", "new", "beta-alice", "--layout", "shared", "--public-url", "https://beta.example.com/i/beta-alice", "--admin-ip", "10.77.0.3", "--host-name", "beta-1")
+	h.instance("beta-alice")
+	return h, h.read("/etc/caddy/mnemon-instances/beta-alice.caddy")
+}
+
+// The wait for /ready has a deadline of READY_WAIT (120) seconds, however long
+// each try takes: an admin address that does not answer makes curl wait its
+// 5 s each time, which a count of 120 tries made 12 minutes.
+func TestInstanceScriptWaitReadyHasASecondsDeadline(t *testing.T) {
+	h, _ := newSharedAlice(t)
+	r, calls := h.sourced("beta-alice", `
+SLEEP_STEP=6 READY_AFTER=0
+start=$SECONDS
+if wait_ready beta-alice; then echo ready; else echo "not ready after $((SECONDS - start)) s"; fi
+`)
+	tries := 0
+	for _, call := range calls {
+		if strings.HasPrefix(call, "curl ") {
+			tries++
+		}
+	}
+	var waited int
+	if _, err := fmt.Sscanf(strings.TrimSpace(r.stdout), "not ready after %d s", &waited); err != nil || waited < 120 || waited > 126 || tries > 22 {
+		t.Errorf("wait_ready gave up after %q, %d tries; want within 120 s plus one try", r.stdout, tries)
+	}
+	if !strings.Contains(r.stderr, "beta-alice: /ready did not answer 200 within 120s") {
+		t.Errorf("wait_ready said: %s", r.stderr)
+	}
+	// An instance that becomes ready ends the wait at once.
+	r, calls = h.sourced("beta-alice", `READY_AFTER=3; wait_ready beta-alice && echo ready`)
+	if strings.TrimSpace(r.stdout) != "ready" || len(calls) != 3 {
+		t.Errorf("%q %q", r.stdout, calls)
+	}
+}
+
+// A route Caddy refuses is put back as it was: the old snippet, or none when
+// there was none, so that the host's Caddyfile stays valid. Here through
+// suspend, which then stops nothing.
+func TestInstanceScriptRefusedRouteLeavesNoSnippet(t *testing.T) {
+	h, active := newSharedAlice(t)
+	const snippet = "/etc/caddy/mnemon-instances/beta-alice.caddy"
+	r, calls := h.sourced("beta-alice", `CADDY_STATUS=1; cmd_suspend beta-alice`)
+	if r.ok || !strings.Contains(r.stderr, "Caddy did not take the suspended route of beta-alice") || h.read(snippet) != active {
+		t.Fatalf("a refused route with a snippet before: %s\n%s", r.stderr, h.read(snippet))
+	}
+	if got := systemctlCalls(calls); len(got) != 0 {
+		t.Errorf("suspend went on after Caddy refused its route: %q", got)
+	}
+	if got := h.env("/etc/mnemon-aml/beta-alice/env")["AML_STATUS"]; got != "active" {
+		t.Errorf("AML_STATUS=%s", got)
+	}
+
+	// With no snippet before, the refused one is removed.
+	if err := os.Remove(h.path(snippet)); err != nil {
+		t.Fatal(err)
+	}
+	r, calls = h.sourced("beta-alice", `CADDY_STATUS=1; cmd_suspend beta-alice`)
+	if r.ok || !strings.Contains(r.stderr, "Caddy did not take the suspended route of beta-alice") || h.exists(snippet) {
+		t.Fatalf("a refused route without a snippet before: %s (snippet left: %v)", r.stderr, h.exists(snippet))
+	}
+	if got := systemctlCalls(calls); len(got) != 0 {
+		t.Errorf("suspend went on after Caddy refused its route: %q", got)
+	}
+	h.checkNoSecrets()
+}
+
+// resume starts the instance and waits for /ready first; only then does it
+// restore the route, record AML_STATUS=active and enable the watcher's timer.
+// A resume that fails on the way stops and disables aml-serve again, and the
+// instance stays fully suspended.
+func TestInstanceScriptResume(t *testing.T) {
+	h, active := newSharedAlice(t)
+	const snippet = "/etc/caddy/mnemon-instances/beta-alice.caddy"
+	h.ok("", "suspend", "beta-alice")
+	suspended := h.read(snippet)
+	stillSuspended := func(when string) {
+		t.Helper()
+		if h.read(snippet) != suspended || h.env("/etc/mnemon-aml/beta-alice/env")["AML_STATUS"] != "suspended" {
+			t.Errorf("%s: the route or the status is not suspended any more:\n%s", when, h.read(snippet))
+		}
+	}
+	stopped := []string{"enable --now aml-serve@beta-alice.service", "disable --now aml-serve@beta-alice.service"}
+
+	// Not ready within 120 s: the unit is stopped again.
+	r, calls := h.sourced("beta-alice", `READY_AFTER=0 SLEEP_STEP=6; cmd_resume beta-alice`)
+	if r.ok || !strings.Contains(r.stderr, "stays suspended") {
+		t.Errorf("a resume that never got ready: %s", r.stderr)
+	}
+	if got := systemctlCalls(calls); !slices.Equal(got, stopped) {
+		t.Errorf("systemctl %q, want %q", got, stopped)
+	}
+	for _, call := range calls {
+		if strings.HasPrefix(call, "caddy ") {
+			t.Error("resume touched the route of an instance that is not ready:", call)
+		}
+	}
+	stillSuspended("not ready")
+
+	// Ready, but Caddy refuses the route: the unit is stopped again, and the
+	// suspended route stays.
+	r, calls = h.sourced("beta-alice", `CADDY_STATUS=1; cmd_resume beta-alice`)
+	if r.ok || !strings.Contains(r.stderr, "Caddy did not take the active route of beta-alice") || !strings.Contains(r.stderr, "stays suspended") {
+		t.Errorf("a resume whose route was refused: %s", r.stderr)
+	}
+	if got := systemctlCalls(calls); !slices.Equal(got, stopped) {
+		t.Errorf("systemctl %q, want %q", got, stopped)
+	}
+	stillSuspended("route refused")
+
+	// Ready and routed: the status is active before the timer starts.
+	r, calls = h.sourced("beta-alice", `cmd_resume beta-alice`)
+	if !r.ok || strings.TrimSpace(r.stdout) != "beta-alice is running again." {
+		t.Fatalf("resume: %s%s", r.stdout, r.stderr)
+	}
+	want := []string{
+		"systemctl enable --now aml-serve@beta-alice.service (status suspended)",
+		"curl --disable --config - --silent --output /dev/null --max-time 5 --write-out %{http_code} http://10.77.0.3:8101/ready",
+		"caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile",
+		"systemctl reload caddy (status suspended)",
+		"systemctl enable --now aml-watch@beta-alice.timer (status active)",
+		"logger -t mnemon-instance -- resume beta-alice",
+	}
+	if !slices.Equal(calls, want) {
+		t.Errorf("resume ran\n%s\nwant\n%s", strings.Join(calls, "\n"), strings.Join(want, "\n"))
+	}
+	if h.read(snippet) != active || h.env("/etc/mnemon-aml/beta-alice/env")["AML_STATUS"] != "active" {
+		t.Error("resume did not restore the route and the status")
+	}
+
+	// An instance that is active is never stopped by a resume that fails: a
+	// /ready that answers 503 (a breaker open, say) is not a reason to take a
+	// serving instance down.
+	r, calls = h.sourced("beta-alice", `READY_AFTER=0 SLEEP_STEP=6; cmd_resume beta-alice`)
+	if r.ok || strings.Contains(r.stderr, "stays suspended") {
+		t.Errorf("a resume of an active instance that is not ready: %s", r.stderr)
+	}
+	if got := systemctlCalls(calls); !slices.Equal(got, stopped[:1]) {
+		t.Errorf("systemctl %q, want %q", got, stopped[:1])
+	}
+	if h.read(snippet) != active || h.env("/etc/mnemon-aml/beta-alice/env")["AML_STATUS"] != "active" {
+		t.Error("a failed resume of an active instance changed its route or status")
+	}
+	h.checkNoSecrets()
+}
+
+// new on a shared host whose Caddy refuses the new instance's route removes
+// the snippet it wrote (there was none before), so that the host's Caddyfile
+// stays valid; it prints the keys all the same, and says what went wrong.
+func TestInstanceScriptNewWithARefusedRoute(t *testing.T) {
+	h := newHost(t, "Caddyfile.shared")
+	// What the one-time host install puts in place, which new checks for.
+	writeFile(t, h.path("/usr/local/bin/mnemon"), "#!/bin/sh\nexit 97\n", 0o755)
+	for _, unit := range []string{"aml-serve@.service", "aml-watch@.service", "aml-watch@.timer"} {
+		writeFile(t, h.path("/etc/systemd/system/"+unit), "[Unit]\n", 0o644)
+	}
+	r, calls := h.sourced("beta-alice", `CADDY_STATUS=1
+id() { if [ "$*" = mnemon ]; then return 0; fi; command id "$@"; }
+cmd_new beta-alice --layout shared --public-url https://beta.example.com/i/beta-alice --admin-ip 10.77.0.3 --host-name beta-1
+`)
+	if r.ok || !strings.Contains(r.stderr, "Caddy did not take the route of beta-alice; its snippet is removed") || h.exists("/etc/caddy/mnemon-instances/beta-alice.caddy") {
+		t.Fatalf("new with a refused route:\n%s%s", r.stdout, r.stderr)
+	}
+	want := []string{"daemon-reload", "enable --now aml-serve@beta-alice.service", "enable --now aml-watch@beta-alice.timer"}
+	if got := systemctlCalls(calls); !slices.Equal(got, want) {
+		t.Errorf("systemctl %q, want %q", got, want)
+	}
+	// The instance stays, and its keys are printed once, on standard output
+	// only; nothing else secret is printed.
+	env, _ := h.instance("beta-alice")
+	for _, secret := range []string{env["AML_API_KEY"], env["MNEMON_ADMIN_TOKEN"]} {
+		if !strings.Contains(r.stdout, secret) || strings.Contains(r.stderr, secret) {
+			t.Errorf("the one-time output is not on standard output alone:\n%s%s", r.stdout, r.stderr)
+		}
+	}
+	for _, label := range []string{"DEEPSEEK_API_KEY", "TYPESAFE_API_KEY", "AML_ALERT_WEBHOOK"} {
+		if strings.Contains(r.stdout+r.stderr, h.secrets[label]) {
+			t.Errorf("new printed the %s", label)
+		}
+	}
+}
+
+// Both scripts check a Telegram webhook by the same rule, which is never
+// looser than the watcher's: new refuses what preflight would fail, and the
+// other way round.
+func TestScriptsShareTheTelegramRule(t *testing.T) {
+	rule := func(script string) string {
+		raw, err := os.ReadFile(filepath.Join("..", "..", "deploy", "aml", script))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, body, found := strings.Cut(string(raw), "\ntelegram_url() {\n")
+		body, _, closed := strings.Cut(body, "\n}\n")
+		if !found || !closed || !strings.Contains(body, "sendMessage") {
+			t.Fatalf("%s has no telegram_url function", script)
+		}
+		return body
+	}
+	if instance, preflight := rule("instance.sh"), rule("preflight.sh"); instance != preflight {
+		t.Errorf("the scripts' telegram_url differ:\ninstance.sh:\n%s\npreflight.sh:\n%s", instance, preflight)
+	}
 }

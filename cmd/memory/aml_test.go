@@ -471,12 +471,22 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A dedicated instance's environment file, as mnemon-instance new writes
-	// it: the addresses and the flag values.
+	// A dedicated instance's two environment files, as mnemon-instance new
+	// writes them, each with only its own names: env, the engine's (the record,
+	// the addresses, the flag values, the Go memory limit and the secrets), and
+	// watch.env, the watcher's five. A template that reads a variable its file
+	// does not set fails here.
 	const instance = "eval"
 	env := map[string]string{
-		"AML_LISTEN": "127.0.0.1:8090", "AML_ADMIN_LISTEN": "10.0.0.5:8091", "AML_PUBLIC_URL": "https://eval.example.com",
+		"AML_LAYOUT": "dedicated", "AML_SLOT": "0", "AML_STATUS": "active",
+		"AML_LISTEN": "127.0.0.1:8090", "AML_ADMIN_LISTEN": "10.0.0.5:8091",
 		"AML_MAX_ADDS": "16", "AML_MAX_SEARCHES": "16", "AML_MAX_OPEN_STORES": "16", "AML_WORKERS": "4",
+		"GOMEMLIMIT": "32768MiB", "AML_API_KEY": "mnm_api-key", "MNEMON_ADMIN_TOKEN": "mnm_admin-token",
+		"DEEPSEEK_API_KEY": "sk-deepseek", "TYPESAFE_API_KEY": "ts-jev",
+	}
+	watchEnv := map[string]string{
+		"AML_ALERT_WEBHOOK": "https://api.telegram.org/bot123:token/sendMessage?chat_id=42", "AML_ALERT_KIND": "telegram",
+		"AML_PUBLIC_URL": "https://eval.example.com", "AML_ADMIN_LISTEN": env["AML_ADMIN_LISTEN"], "MNEMON_ADMIN_TOKEN": env["MNEMON_ADMIN_TOKEN"],
 	}
 
 	serve := readUnit(t, "aml-serve@.service")
@@ -559,7 +569,7 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 	}
 
 	watch := readUnit(t, "aml-watch@.service")
-	args = execArgs(t, watch.get(t, "Service", "ExecStart"), instance, env)
+	args = execArgs(t, watch.get(t, "Service", "ExecStart"), instance, watchEnv)
 	if len(args) < 3 || !slices.Equal(args[:3], []string{"/usr/local/bin/mnemon", "memory-agent", "aml-watch"}) {
 		t.Fatal("aml-watch@.service runs", args)
 	}
@@ -571,9 +581,9 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 		t.Fatal("aml-watch@.service passes arguments that are not flags:", rest)
 	}
 	for flag, want := range map[string]string{
-		"admin":           "http://" + env["AML_ADMIN_LISTEN"],
+		"admin":           "http://" + watchEnv["AML_ADMIN_LISTEN"],
 		"admin-token-env": "MNEMON_ADMIN_TOKEN",
-		"public-url":      env["AML_PUBLIC_URL"],
+		"public-url":      watchEnv["AML_PUBLIC_URL"],
 		"instance":        instance,
 		"state":           "/var/lib/mnemon-aml-watch/eval/state.json",
 	} {
@@ -585,7 +595,7 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 	if !path.IsAbs(state) || path.Clean(state) != state || !strings.HasPrefix(state, "/var/lib/mnemon-aml-watch/") {
 		t.Errorf("--state %q is not an absolute path under /var/lib/mnemon-aml-watch/", state)
 	}
-	for flag, value := range map[string]string{"--admin": "http://" + env["AML_ADMIN_LISTEN"], "--public-url": env["AML_PUBLIC_URL"]} {
+	for flag, value := range map[string]string{"--admin": "http://" + watchEnv["AML_ADMIN_LISTEN"], "--public-url": watchEnv["AML_PUBLIC_URL"]} {
 		if _, err := watchBaseURL(flag, value); err != nil {
 			t.Error(err)
 		}

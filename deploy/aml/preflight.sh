@@ -14,7 +14,8 @@
 #   - systemd-analyze verify on the unit templates, and caddy validate, when
 #     the tools are here;
 #   - wg0 up with the AML_ADMIN_LISTEN address, and ufw active with the rules
-#     of the runbook's "Firewall".
+#     of the runbook's "Firewall" and none that lets anyone reach 51820/udp or
+#     an admin port.
 #
 # Every check runs. Each failure prints one line that starts with FAIL, and
 # the exit status is 1 when any failed. The env files are read with grep and
@@ -121,6 +122,15 @@ env_get() {
 	printf '%s' "$line"
 }
 
+# telegram_url URL: URL is a Telegram bot's sendMessage with its chat, as the
+# watcher requires: https://<host>/bot<token>/sendMessage?chat_id=<chat id>,
+# chat_id its only parameter, a chat's number (negative for a group or a
+# channel) or a channel's @username. The value never leaves the shell.
+telegram_url() {
+	local re='^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/([^?#%[:space:]]*/)?sendMessage\?chat_id=(-?[0-9]{1,20}|(@|%40)[A-Za-z][A-Za-z0-9_]{4,31})$'
+	[[ $1 =~ $re ]]
+}
+
 # owner_mode FILE: its owner's uid and its permission bits (GNU or BSD stat).
 owner_mode() {
 	stat -c '%u %a' "$1" 2>/dev/null || stat -f '%u %Lp' "$1"
@@ -187,11 +197,16 @@ check_watch_env() {
 		has "$watch" "$var" || fail "$ETC/$NAME/watch.env lacks $var"
 	done
 	case $(env_get "$watch" AML_ALERT_KIND) in
-	feishu | wecom | "") ;;
-	*) fail "$ETC/$NAME/watch.env: AML_ALERT_KIND is \"$(env_get "$watch" AML_ALERT_KIND)\", not feishu or wecom" ;;
+	telegram | feishu | wecom | "") ;;
+	*) fail "$ETC/$NAME/watch.env: AML_ALERT_KIND is \"$(env_get "$watch" AML_ALERT_KIND)\", not telegram, feishu or wecom" ;;
 	esac
 	case $(env_get "$watch" AML_ALERT_WEBHOOK) in
-	https://?* | "") ;;
+	"") ;;
+	https://?*)
+		if [ "$(env_get "$watch" AML_ALERT_KIND)" = telegram ] && ! telegram_url "$(env_get "$watch" AML_ALERT_WEBHOOK)"; then
+			fail "$ETC/$NAME/watch.env: AML_ALERT_WEBHOOK is not a Telegram bot's sendMessage URL with its chat: https://api.telegram.org/bot<token>/sendMessage?chat_id=<chat id>"
+		fi
+		;;
 	*) fail "$ETC/$NAME/watch.env: AML_ALERT_WEBHOOK is not an https URL" ;;
 	esac
 	case $(env_get "$watch" AML_PUBLIC_URL) in
@@ -311,6 +326,44 @@ check_wg0() {
 		fail "wg0 does not carry $ip, the address of AML_ADMIN_LISTEN"
 }
 
+# open_to_anywhere RULE: RULE, a line of `ufw status verbose` with its spaces
+# squeezed, lets anyone reach 51820/udp or an admin port (8091 to 8600, tcp):
+# an ALLOW or LIMIT IN rule from Anywhere, over IPv4 or IPv6 ("(v6)"), on any
+# interface ("on wg0"), to any address, whose ports (one, a range, a list, or
+# all of them: "Anywhere") hold one of those. A trailing "# comment" is
+# allowed. Rules for application profiles name no port, and pass.
+open_to_anywhere() {
+	local re='^(.+) (ALLOW|LIMIT) IN Anywhere( \(v6\))?( #.*)?$'
+	local ports_re='^[0-9]{1,5}(:[0-9]{1,5})?(,[0-9]{1,5}(:[0-9]{1,5})?)*$'
+	local rule=$1 to ports proto= item lo hi
+	while [[ $rule == *' ' ]]; do
+		rule=${rule% }
+	done
+	[[ $rule =~ $re ]] || return 1
+	to=${BASH_REMATCH[1]}
+	to=${to% on *}
+	to=${to% (v6)}
+	to=${to##* }
+	[ "$to" != Anywhere ] || return 0
+	case $to in
+	*/tcp) proto=tcp ports=${to%/tcp} ;;
+	*/udp) proto=udp ports=${to%/udp} ;;
+	*) ports=$to ;;
+	esac
+	[[ $ports =~ $ports_re ]] || return 1
+	local IFS=,
+	for item in $ports; do
+		lo=${item%%:*} hi=${item##*:}
+		if [ "$proto" != udp ] && [ "$lo" -le 8600 ] && [ "$hi" -ge 8091 ]; then
+			return 0
+		fi
+		if [ "$proto" != tcp ] && [ "$lo" -le 51820 ] && [ "$hi" -ge 51820 ]; then
+			return 0
+		fi
+	done
+	return 1
+}
+
 check_ufw() {
 	checking
 	local status rule
@@ -332,8 +385,13 @@ check_ufw() {
 		fail "ufw does not allow 51820/udp from the ops host: ufw allow from <ops address> to any port 51820 proto udp"
 	printf '%s\n' "$status" | grep -Eq "^8091:8600/tcp on wg0 ALLOW IN ${HUB//./\\.}( |\$)" ||
 		fail "ufw does not let the hub reach the admin ports: ufw allow in on wg0 from $HUB proto tcp to any port 8091:8600"
-	! printf '%s\n' "$status" | grep -Eq '^(51820/udp|8091:8600/tcp) ALLOW IN Anywhere' ||
-		fail "ufw allows 51820/udp or the admin ports from anywhere: delete that rule"
+	while IFS= read -r rule; do
+		if open_to_anywhere "$rule"; then
+			fail "ufw allows 51820/udp or an admin port from anywhere: \"$rule\"; delete that rule (ufw status numbered, then ufw delete <number>)"
+		fi
+	done <<EOF
+$status
+EOF
 }
 
 main() {

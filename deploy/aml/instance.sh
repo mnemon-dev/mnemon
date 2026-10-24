@@ -28,7 +28,9 @@
 # For tests, --root DIR reads and writes every file under DIR (the files still
 # name the host's paths), and --no-systemd runs neither systemctl, logger,
 # curl, caddy nor mnemon-preflight, and writes the journal lines to
-# DIR/var/log/mnemon-instance.log.
+# DIR/var/log/mnemon-instance.log. A test may also source this file (main runs
+# only when the file is run) to call its functions with stand-ins for those
+# programs.
 set -euo pipefail
 umask 077
 export LC_ALL=C
@@ -52,13 +54,17 @@ readonly JOURNAL=/var/log/mnemon-instance.log
 readonly SLOTS=50
 # Seconds new, resume, rotate-key and delete-user wait for /ready.
 readonly READY_WAIT=120
+# Instance names that collide with a path of the kit or read as a common word.
+readonly RESERVED_NAMES=" data env host host-env users watch instances aml mnemon caddy test-instance "
 
 ROOT=
 SYSTEMD=1
 # Cleanup on exit: temporary files not yet renamed into place, what an
-# unfinished new has created, and the lock.
+# unfinished new has created, the instance an unfinished resume has started,
+# and the lock.
 TEMPS=
 CREATED=
+RESUMING=
 LOCKED=
 
 # Defaults by layout, which new's flags override. The dedicated numbers are
@@ -96,13 +102,16 @@ The engine instances of this host, one per account. Run as root.
         --consolidation-workers N   dedicated 4, shared 1
   suspend <n>       Shared: answer 403 {"error":"account suspended"}. Then stop
                     and disable aml-serve@<n> and its watcher.
-  resume <n>        Start them again, wait for /ready, and restore the route.
+  resume <n>        Start aml-serve@<n> and wait for /ready; then restore the
+                    route and start the watcher. If it is not ready, stop it
+                    again: the instance stays suspended.
   rotate-key <n>    Write a new API key, restart, wait for /ready, and print
                     the new key and its fingerprint once.
   delete <n>        Ask for the name, then stop the instance and remove all its
                     files and data, printing each path removed.
-  delete-user <n>   Read one user id from standard input and remove that
-                    user's store, stopping and starting the instance around it.
+  delete-user <n>   Ask for one user id (type it at the prompt; never put it
+                    in a command) and remove that user's store, stopping and
+                    starting the instance around it.
   list              Name, layout, slot, addresses, status and public URL of
                     every instance. No secrets.
 
@@ -133,6 +142,14 @@ on_exit() {
 			rm -rf -- "$path"
 		done
 		say "new stopped before it finished; it removed what it had written"
+		[ "$status" -ne 0 ] || status=1
+	fi
+	if [ -n "$RESUMING" ]; then
+		if sctl disable --now "aml-serve@$RESUMING.service"; then
+			say "resume $RESUMING did not finish: aml-serve@$RESUMING is stopped and disabled again, and $RESUMING stays suspended"
+		else
+			say "resume $RESUMING did not finish, and aml-serve@$RESUMING could not be stopped: systemctl disable --now aml-serve@$RESUMING"
+		fi
 		[ "$status" -ne 0 ] || status=1
 	fi
 	if [ -n "$LOCKED" ]; then
@@ -189,10 +206,11 @@ sha256_hex() {
 # fingerprint KEY: the first 12 hex digits of the SHA-256 of KEY.
 fingerprint() { printf '%s' "$1" | sha256_hex | cut -c 1-12; }
 
-# new_secret: mnm_ and 32 random bytes in base64url without padding.
+# new_secret: mnm_ and 32 random bytes in base64url without padding. The
+# operand "-_" comes after "--", or a strict tr would take it for options.
 new_secret() {
 	local raw
-	raw=$(head -c 32 /dev/urandom | base64 | tr '+/' '-_' | tr -d '=\n')
+	raw=$(head -c 32 /dev/urandom | base64 | tr -- '+/' '-_' | tr -d '=\n')
 	[ "${#raw}" -eq 43 ] || die "could not read 32 random bytes from /dev/urandom"
 	printf 'mnm_%s' "$raw"
 }
@@ -315,12 +333,14 @@ admin_status() {
 }
 
 # wait_ready NAME: waits for the instance's /ready to answer 200, for
-# READY_WAIT seconds at most.
+# READY_WAIT seconds at most however long each try takes (curl gives up on an
+# address that does not answer after 5 s).
 wait_ready() {
 	[ "$SYSTEMD" = 1 ] || return 0
-	local i
-	for ((i = 0; i < READY_WAIT; i++)); do
-		[ "$(admin_status "$1" /ready)" = 200 ] && return 0
+	local deadline=$((SECONDS + READY_WAIT))
+	while :; do
+		[ "$(admin_status "$1" /ready)" != 200 ] || return 0
+		[ "$SECONDS" -lt "$deadline" ] || break
 		sleep 1
 	done
 	say "$1: /ready did not answer 200 within ${READY_WAIT}s; see journalctl -u aml-serve@$1 and mnemon-preflight $1"
@@ -340,8 +360,14 @@ valid_name() {
 	[[ $1 =~ $re ]]
 }
 
+# check_name NAME: NAME is a valid instance name and not a reserved one. Every
+# subcommand calls it, through require_instance or directly, before it builds
+# a path from the name.
 check_name() {
 	valid_name "$1" || usage_error "instance names are 2 to 31 lowercase letters, digits and hyphens, starting with a letter: not \"$1\""
+	case $RESERVED_NAMES in
+	*" $1 "*) usage_error "the instance name \"$1\" is reserved: it collides with a path of the kit or reads as a common word; choose another" ;;
+	esac
 }
 
 # instance_paths NAME: the host paths an instance owns.
@@ -362,6 +388,19 @@ private_ipv4() {
 	local a=${BASH_REMATCH[1]} b=${BASH_REMATCH[2]} c=${BASH_REMATCH[3]} d=${BASH_REMATCH[4]}
 	((a <= 255 && b <= 255 && c <= 255 && d <= 255)) || return 1
 	((a == 10 || (a == 172 && b >= 16 && b <= 31) || (a == 192 && b == 168)))
+}
+
+# gomemlimit_mib SIZE: GOMEMLIMIT, in MiB, for a MemoryMax= of SIZE (a number
+# of at most 10 digits and K, M, G or T, in powers of 1024 as systemd reads
+# them): 80% of it, rounded down to a whole MiB. 40G gives 32768, 1G 819.
+gomemlimit_mib() {
+	local n=${1%?}
+	case $1 in
+	*K) printf '%s' $((n * 8 / 10240)) ;;
+	*M) printf '%s' $((n * 8 / 10)) ;;
+	*G) printf '%s' $((n * 1024 * 8 / 10)) ;;
+	*T) printf '%s' $((n * 1048576 * 8 / 10)) ;;
+	esac
 }
 
 # config_keys FILE: the environment variables FILE's models read their keys
@@ -388,13 +427,25 @@ EOF
 		[ -n "$(env_get "$file" "$var")" ] || die "$HOST_ENV lacks $var, which the watcher needs"
 	done
 	case $(env_get "$file" AML_ALERT_KIND) in
-	feishu | wecom) ;;
-	*) die "$HOST_ENV: AML_ALERT_KIND must be feishu or wecom" ;;
+	telegram | feishu | wecom) ;;
+	*) die "$HOST_ENV: AML_ALERT_KIND must be telegram, feishu or wecom" ;;
 	esac
 	case $(env_get "$file" AML_ALERT_WEBHOOK) in
 	https://?*) ;;
 	*) die "$HOST_ENV: AML_ALERT_WEBHOOK must be an https URL" ;;
 	esac
+	if [ "$(env_get "$file" AML_ALERT_KIND)" = telegram ] && ! telegram_url "$(env_get "$file" AML_ALERT_WEBHOOK)"; then
+		die "$HOST_ENV: AML_ALERT_WEBHOOK must be the Telegram bot's sendMessage URL with its chat: https://api.telegram.org/bot<token>/sendMessage?chat_id=<chat id>"
+	fi
+}
+
+# telegram_url URL: URL is a Telegram bot's sendMessage with its chat, as the
+# watcher requires: https://<host>/bot<token>/sendMessage?chat_id=<chat id>,
+# chat_id its only parameter, a chat's number (negative for a group or a
+# channel) or a channel's @username. The value never leaves the shell.
+telegram_url() {
+	local re='^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/([^?#%[:space:]]*/)?sendMessage\?chat_id=(-?[0-9]{1,20}|(@|%40)[A-Za-z][A-Za-z0-9_]{4,31})$'
+	[[ $1 =~ $re ]]
 }
 
 # host_line NAME: host.env's NAME line as it is written, for an instance file.
@@ -457,22 +508,26 @@ write_snippet() {
 }
 
 # set_route NAME active|suspended: the route on a shared host, checked by
-# Caddy and reloaded; the old route comes back if Caddy refuses the new one.
+# Caddy and reloaded. If Caddy refuses it, the route is put back as it was:
+# the old snippet, or none when there was none, so that the host's Caddyfile
+# stays valid.
 set_route() {
-	local env="$ROOT$ETC/$1/env" old=
+	local env="$ROOT$ETC/$1/env" snippet="$ROOT$SNIPPETS/$1.caddy" old= had=0
 	[ "$(env_get "$env" AML_LAYOUT)" = shared ] || return 0
-	if [ -f "$ROOT$SNIPPETS/$1.caddy" ]; then
-		old=$(cat -- "$ROOT$SNIPPETS/$1.caddy")
+	if [ -f "$snippet" ]; then
+		old=$(cat -- "$snippet")
+		had=1
 	fi
 	write_snippet "$1" "$2"
-	if ! reload_caddy; then
-		if [ -n "$old" ]; then
-			make_temp "$ROOT$SNIPPETS"
-			printf '%s\n' "$old" >"$TMP"
-			commit "$TMP" "$ROOT$SNIPPETS/$1.caddy" 0644 root:root
-		fi
-		die "Caddy did not take the $2 route of $1; its route is as it was"
+	reload_caddy && return 0
+	if [ "$had" = 1 ]; then
+		make_temp "$ROOT$SNIPPETS"
+		printf '%s\n' "$old" >"$TMP"
+		commit "$TMP" "$snippet" 0644 root:root
+		die "Caddy did not take the $2 route of $1; its snippet is as it was"
 	fi
+	rm -f -- "$snippet"
+	die "Caddy did not take the $2 route of $1, which had no snippet; the new one is removed, so it still has none"
 }
 
 cmd_new() {
@@ -526,8 +581,11 @@ cmd_new() {
 	[[ $SEARCHES =~ $count ]] || usage_error "new: --max-concurrent-searches must be a whole number (0 for no limit)"
 	[[ $STORES =~ $positive ]] || usage_error "new: --max-open-stores must be a whole number of at least 1"
 	[[ $WORKERS =~ $positive ]] || usage_error "new: --consolidation-workers must be a whole number of at least 1"
-	local size='^[1-9][0-9]*[KMGT]$' percent='^[1-9][0-9]*%$'
+	local size='^[1-9][0-9]{0,9}[KMGT]$' percent='^[1-9][0-9]*%$' gomemlimit
 	[[ $MEMORY_MAX =~ $size ]] || usage_error "new: --memory-max must be a size such as 1G or 1536M"
+	# The Go runtime collects harder near this soft limit, below the hard one.
+	gomemlimit=$(gomemlimit_mib "$MEMORY_MAX")
+	[ "$gomemlimit" -ge 1 ] || usage_error "new: --memory-max $MEMORY_MAX is too small: GOMEMLIMIT, 80% of it, would be under 1 MiB"
 	[ -z "$CPU_QUOTA" ] || [[ $CPU_QUOTA =~ $percent ]] || usage_error "new: --cpu-quota must be a percentage such as 100%"
 	for value in "$DEEPSEEK_CAP" "$JEV_CAP"; do
 		[[ $value =~ $cap ]] && ! [[ $value =~ $zero ]] || usage_error "new: --deepseek-cap and --jev-cap must be positive numbers, such as 30 or 2.5"
@@ -635,6 +693,8 @@ EOF
 		printf 'AML_LISTEN=%s\nAML_ADMIN_LISTEN=%s\n' "$listen" "$admin_listen"
 		printf '# The flag values of aml-serve@.service.\n'
 		printf 'AML_MAX_ADDS=%s\nAML_MAX_SEARCHES=%s\nAML_MAX_OPEN_STORES=%s\nAML_WORKERS=%s\n' "$ADDS" "$SEARCHES" "$STORES" "$WORKERS"
+		printf '# The soft memory limit of the Go runtime: 80%% of MemoryMax=%s (limits.conf).\n' "$MEMORY_MAX"
+		printf 'GOMEMLIMIT=%sMiB\n' "$gomemlimit"
 		printf '# Secrets: the data-plane API key, the admin token, the provider keys.\n'
 		printf 'AML_API_KEY=%s\nMNEMON_ADMIN_TOKEN=%s\n' "$api_key" "$admin_token"
 		for var in $keys; do
@@ -680,7 +740,10 @@ EOF
 		CREATED="$CREATED $ROOT$SNIPPETS/$name.caddy"
 	fi
 	CREATED=
-	journal "new $name: $layout, slot $slot, data $listen, admin $admin_listen, API key fingerprint $(fingerprint "$api_key")"
+	# The keys are printed below whatever happens from here on: a journal line
+	# that cannot be written is said, not fatal.
+	journal "new $name: $layout, slot $slot, data $listen, admin $admin_listen, API key fingerprint $(fingerprint "$api_key")" ||
+		say "could not write the journal line"
 
 	# Start it. A failure from here on leaves the instance in place: it is
 	# reported, and the keys are printed all the same.
@@ -689,8 +752,12 @@ EOF
 		say "starting aml-serve@$name and its watcher"
 		if sctl daemon-reload && sctl enable --now "aml-serve@$name.service" && wait_ready "$name"; then
 			sctl enable --now "aml-watch@$name.timer" || started=0
-			if [ "$layout" = shared ]; then
-				reload_caddy || started=0
+			# A route Caddy refuses leaves no snippet behind (there was none
+			# before), so that the host's Caddyfile stays valid.
+			if [ "$layout" = shared ] && ! reload_caddy; then
+				rm -f -- "$ROOT$SNIPPETS/$name.caddy"
+				say "Caddy did not take the route of $name; its snippet is removed, so that the host's Caddyfile stays valid"
+				started=0
 			fi
 		else
 			started=0
@@ -716,14 +783,14 @@ EOF
 		"$name" "$layout" "$host_name" "$admin_ip" "$public_url" "$admin_url" "$admin_token" "$(fingerprint "$api_key")"
 	printf 'The API key and the admin token are shown only now. Hand the base URL and\n'
 	printf 'the API key to the account holder over a private channel.\n'
-	[ "$started" = 1 ] || die "instance $name is written but did not start: see journalctl -u aml-serve@$name, then mnemon-preflight $name; $PROG delete $name removes it"
+	[ "$started" = 1 ] || die "instance $name is written but did not start fully (see above): see journalctl -u aml-serve@$name, then mnemon-preflight $name; $PROG delete $name removes it"
 	[ "$checked" = 1 ] || die "instance $name runs, but its preflight did not pass"
 }
 
 cmd_suspend() {
 	[ $# -eq 1 ] || usage_error "suspend: give the instance name"
+	require_instance "$1"
 	local name=$1 env="$ROOT$ETC/$1/env"
-	require_instance "$name"
 	host_checks
 	lock
 	set_route "$name" suspended
@@ -739,30 +806,39 @@ cmd_suspend() {
 	printf '.\n'
 }
 
+# cmd_resume NAME: starts aml-serve@NAME and waits for /ready; only then does
+# it restore the route, record AML_STATUS=active and enable the watcher's
+# timer. For a suspended instance, until the route is back, any failure (or a
+# signal) makes on_exit stop and disable aml-serve@NAME again: the instance
+# stays fully suspended. An active one is left running whatever happens.
 cmd_resume() {
 	[ $# -eq 1 ] || usage_error "resume: give the instance name"
+	require_instance "$1"
 	local name=$1 env="$ROOT$ETC/$1/env"
-	require_instance "$name"
 	host_checks
 	lock
+	[ "$(env_get "$env" AML_STATUS)" != suspended ] || RESUMING=$name
 	sctl enable --now "aml-serve@$name.service"
-	wait_ready "$name" || die "resume $name: the instance is not ready, so its route stays as it was"
+	wait_ready "$name" || die "resume $name: the instance did not become ready"
 	set_route "$name" active
-	sctl enable --now "aml-watch@$name.timer"
+	RESUMING=
 	env_set "$env" AML_STATUS active
+	sctl enable --now "aml-watch@$name.timer"
 	journal "resume $name"
 	printf '%s is running again.\n' "$name"
 }
 
 cmd_rotate_key() {
 	[ $# -eq 1 ] || usage_error "rotate-key: give the instance name"
+	require_instance "$1"
 	local name=$1 env="$ROOT$ETC/$1/env" key ready=1
-	require_instance "$name"
 	host_checks
 	lock
 	key=$(new_secret)
 	env_set "$env" AML_API_KEY "$key"
-	journal "rotate-key $name: new API key, fingerprint $(fingerprint "$key")"
+	# The new key is printed below whatever happens from here on.
+	journal "rotate-key $name: new API key, fingerprint $(fingerprint "$key")" ||
+		say "could not write the journal line"
 	if [ "$(env_get "$env" AML_STATUS)" = suspended ]; then
 		say "$name is suspended: the new key applies when it resumes"
 	elif ! sctl restart "aml-serve@$name.service" || ! wait_ready "$name"; then
@@ -818,15 +894,18 @@ EOF
 }
 
 cmd_delete_user() {
-	[ $# -eq 1 ] || usage_error "delete-user: give the instance name; the user id comes on standard input"
+	[ $# -eq 1 ] || usage_error "delete-user: give the instance name; type the user id at its prompt"
+	require_instance "$1"
 	local name=$1 env="$ROOT$ETC/$1/env" user= key store active=1 ready=1
-	require_instance "$name"
 	host_checks
 	[ ! -t 0 ] || printf 'User id: ' >&2
 	IFS= read -r user || true
-	[ -n "$user" ] || die "delete-user $name: no user id on standard input: printf '%s\\n' '<user id>' | $PROG delete-user $name"
+	[ -n "$user" ] || die "delete-user $name: no user id: run $PROG delete-user $name and type the id at its prompt, never in a command"
 	key=$(printf '%s' "$user" | sha256_hex | cut -c 1-32)
 	user=
+	# The key names the directory removed below: it must be the 32 hex
+	# digits of a store, whatever the SHA-256 tool printed.
+	[[ $key =~ ^[0-9a-f]{32}$ ]] || die "delete-user $name: the SHA-256 tool gave no digest, so the user's store is unknown; nothing was deleted"
 	store="$ROOT$STATE/$name/data/users/$key"
 	[ -d "$store" ] || die "delete-user $name: there is no store for that user (store ${key:0:8}); nothing was deleted"
 	lock
@@ -907,4 +986,8 @@ main() {
 	esac
 }
 
-main "$@"
+# Run as a program (read from a file or, without BASH_SOURCE, from standard
+# input). A test sources the file instead, to call its functions.
+if [ "${BASH_SOURCE[0]-$0}" = "$0" ]; then
+	main "$@"
+fi

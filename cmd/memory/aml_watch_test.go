@@ -214,17 +214,58 @@ func (s *watchStack) take(t *testing.T) []string {
 	defer s.mu.Unlock()
 	texts := []string{}
 	for _, post := range s.posts[s.taken:] {
-		var body struct {
-			Content struct{ Text string }
-			Text    struct{ Content string }
-		}
-		if err := json.Unmarshal(post.body, &body); err != nil {
-			t.Fatal(err, string(post.body))
-		}
-		texts = append(texts, body.Content.Text+body.Text.Content)
+		texts = append(texts, postedText(t, post.body))
 	}
 	s.taken = len(s.posts)
 	return texts
+}
+
+// postedText is the text a payload carries: Feishu's content.text, WeCom's
+// text.content or Telegram's text.
+func postedText(t *testing.T, body []byte) string {
+	t.Helper()
+	var payload struct {
+		Content struct{ Text string }
+		Text    json.RawMessage
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatal(err, string(body))
+	}
+	if len(payload.Text) == 0 {
+		return payload.Content.Text
+	}
+	var telegram string
+	if json.Unmarshal(payload.Text, &telegram) == nil {
+		return telegram
+	}
+	var wecom struct{ Content string }
+	if err := json.Unmarshal(payload.Text, &wecom); err != nil {
+		t.Fatal(err, string(body))
+	}
+	return wecom.Content
+}
+
+// watchChat is the chat of the test's Telegram bot: a group's, so negative.
+const watchChat = "-1001234567890"
+
+// telegramTook is how Telegram answers a message it took.
+const telegramTook = `{"ok":true,"result":{"message_id":7,"chat":{"id":-1001234567890,"type":"supergroup"},"date":1761307200}}`
+
+// telegramURL is a Telegram bot's sendMessage on the fake webhook, as an
+// operator configures it: the bot's token in the path (watchToken stands for
+// it), the chat in the query.
+func (s *watchStack) telegramURL(chat string) string {
+	return s.hook.URL + "/bot" + watchToken + "/sendMessage?chat_id=" + chat
+}
+
+// newTelegramRig is a watch rig whose webhook is a Telegram bot, which takes
+// every message until a test says otherwise.
+func newTelegramRig(t *testing.T) *watchRig {
+	t.Helper()
+	r := newWatchRig(t)
+	r.w.webhook, r.w.kind = r.stack.telegramURL(watchChat), "telegram"
+	r.stack.configure(func(s *watchStack) { s.hookBody = telegramTook })
+	return r
 }
 
 // watchClock is the watcher's clock.
@@ -528,9 +569,11 @@ func TestWatchDetectsRestart(t *testing.T) {
 // The webhook is a secret: no output of the watcher shows it, whichever way
 // the post fails, on any of its paths: the run that finds the lock held, the
 // run that warns the public probe is off, the alert that cannot be delivered
-// and the resolution that is owed for it.
+// and the resolution that is owed for it. So for a Feishu hook, whose path is
+// its key, and for a Telegram bot, whose token is in the path (the chat in the
+// query is not shown either).
 func TestWatchNeverPrintsWebhook(t *testing.T) {
-	for name, fail := range map[string]func(*watchStack){
+	failures := map[string]func(*watchStack){
 		"HTTP 500": func(s *watchStack) { s.configure(func(s *watchStack) { s.hookCode = http.StatusInternalServerError }) },
 		"HTTP 400 with the path in its body": func(s *watchStack) {
 			s.configure(func(s *watchStack) { s.hookCode, s.hookBody = http.StatusBadRequest, "bad webhook /hook/"+watchToken })
@@ -559,95 +602,151 @@ func TestWatchNeverPrintsWebhook(t *testing.T) {
 				s.hookHandler = func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }
 			})
 		},
+	}
+	// Telegram's own refusals, which describe themselves, here with the path.
+	telegramFailures := map[string]func(*watchStack){
+		"Telegram error_code with the path in its description": func(s *watchStack) {
+			s.configure(func(s *watchStack) {
+				s.hookCode, s.hookBody = http.StatusUnauthorized, `{"ok":false,"error_code":401,"description":"Unauthorized: /bot`+watchToken+`/sendMessage"}`
+			})
+		},
+		"Telegram ok false in a 200": func(s *watchStack) {
+			s.configure(func(s *watchStack) {
+				s.hookBody = `{"ok":false,"error_code":400,"description":"Bad Request: chat ` + watchChat + ` not found"}`
+			})
+		},
+		"Telegram rate limit": func(s *watchStack) {
+			s.configure(func(s *watchStack) {
+				s.hookCode, s.hookBody = http.StatusTooManyRequests, `{"ok":false,"error_code":429,"description":"Too Many Requests: retry after 5","parameters":{"retry_after":5}}`
+			})
+		},
+	}
+	for _, kind := range []struct {
+		name string
+		// url is the webhook as an operator configures it, path where its posts
+		// go, and took the answer of a webhook that took a message.
+		url  func(*watchStack) string
+		path string
+		took string
+	}{
+		{"feishu", (*watchStack).webhookURL, "POST /hook/" + watchToken, ""},
+		{"telegram", func(s *watchStack) string { return s.telegramURL(watchChat) }, "POST /bot" + watchToken + "/sendMessage", telegramTook},
 	} {
-		t.Run(name, func(t *testing.T) {
-			stack := newWatchStack(t)
-			state := filepath.Join(t.TempDir(), "state", "watch-state.json")
-			t.Setenv("AML_ALERT_WEBHOOK", stack.webhookURL())
-			t.Setenv("AML_ALERT_KIND", "feishu")
-			var out bytes.Buffer
-			run := func(extra ...string) error {
-				command := newAMLWatchCommand()
-				command.SetArgs(append([]string{"--admin", stack.admin.URL, "--state", state}, extra...))
-				command.SetOut(&out)
-				command.SetErr(&out)
-				err := command.Execute()
-				if err != nil {
-					fmt.Fprintln(&out, err) // what the product root prints after an error
-				}
-				return err
+		cases := map[string]func(*watchStack){}
+		for name, fail := range failures {
+			cases[name] = fail
+		}
+		if kind.name == "telegram" {
+			for name, fail := range telegramFailures {
+				cases[name] = fail
 			}
-			public := []string{"--public-url", stack.public.URL}
-			// A baseline run with no public URL: it warns that the probe is off.
-			if err := run(); err != nil || !strings.Contains(out.String(), "the public health probe is off because --public-url is empty") {
-				t.Fatalf("%v\n%s", err, out.String())
-			}
-			// A run that finds another one holding the lock does nothing.
-			held := flock.New(state + ".lock")
-			if locked, err := held.TryLock(); !locked || err != nil {
-				t.Fatal(locked, err)
-			}
-			err := run(public...)
-			if unlockErr := held.Unlock(); unlockErr != nil || err != nil || !strings.Contains(out.String(), "another aml-watch run holds the lock") {
-				t.Fatalf("%v %v\n%s", err, unlockErr, out.String())
-			}
-			// One more degraded Search and work that has waited too long: two
-			// alerts to say, to a webhook that fails. (backlog-age sorts before
-			// degraded-search, so that a webhook that cannot be reached, which
-			// ends the run at its first failure, is tried with it first.)
-			stack.set(func(s *aml.AdminStatus) { s.Degraded = 1; s.Queue.OldestQueued = 20 * time.Minute })
-			fail(stack)
-			err = run(public...)
-			if err == nil || !strings.Contains(err.Error(), "not delivered") {
-				t.Fatal("a failed post did not fail the run:", err)
-			}
-			// The work is done: the alert that never went out is resolved, and
-			// its resolution fails the same way.
-			stack.set(func(s *aml.AdminStatus) { s.Queue.OldestQueued = 0 })
-			err = run(public...)
-			if err == nil || !strings.Contains(err.Error(), "not delivered") || !strings.Contains(out.String(), "alert=backlog-age event=resolved") {
-				t.Fatalf("%v\n%s", err, out.String())
-			}
-			everything := out.String()
-			for _, secret := range []string{watchToken, stack.webhookURL(), stack.hook.Listener.Addr().String(), "/hook/", "/elsewhere"} {
-				if strings.Contains(everything, secret) {
-					t.Errorf("the output shows %q:\n%s", secret, everything)
-				}
-			}
-			// The state was saved all the same, the messages owed, and
-			// without the secret.
-			raw, readErr := os.ReadFile(state)
-			if readErr != nil || !strings.Contains(string(raw), `"degraded-search"`) || !strings.Contains(string(raw), `"backlog-age"`) || strings.Contains(string(raw), watchToken) {
-				t.Errorf("state: %v\n%s", readErr, raw)
-			}
-			// A redirect is a failure, not an address to post to.
-			stack.mu.Lock()
-			defer stack.mu.Unlock()
-			for _, post := range stack.posts {
-				if post.path != "POST /hook/"+watchToken {
-					t.Error("a post went to", post.path)
-				}
-			}
-		})
+		}
+		for name, fail := range cases {
+			t.Run(kind.name+"/"+name, func(t *testing.T) {
+				neverPrintsWebhook(t, kind.name, kind.url, kind.path, kind.took, fail)
+			})
+		}
 	}
 
 	// Nor does it show when the post succeeds.
-	stack := newWatchStack(t)
-	var out bytes.Buffer
-	command := newAMLWatchCommand()
-	command.SetArgs([]string{"--admin", stack.admin.URL, "--state", filepath.Join(t.TempDir(), "watch-state.json")})
-	command.SetOut(&out)
-	command.SetErr(&out)
-	t.Setenv("AML_ALERT_WEBHOOK", stack.webhookURL())
-	t.Setenv("AML_ALERT_KIND", "wecom")
-	stack.configure(func(s *watchStack) {
-		s.readyCode, s.readyReasons = http.StatusServiceUnavailable, []string{"breaker open: jev"}
-	})
-	if err := command.Execute(); err != nil {
-		t.Fatal(err)
+	for _, kind := range []struct{ name, took string }{{"wecom", ""}, {"telegram", telegramTook}} {
+		t.Run(kind.name+" delivered", func(t *testing.T) {
+			stack := newWatchStack(t)
+			var out bytes.Buffer
+			command := newAMLWatchCommand()
+			command.SetArgs([]string{"--admin", stack.admin.URL, "--state", filepath.Join(t.TempDir(), "watch-state.json")})
+			command.SetOut(&out)
+			command.SetErr(&out)
+			webhook := stack.webhookURL()
+			if kind.name == "telegram" {
+				webhook = stack.telegramURL(watchChat)
+			}
+			t.Setenv("AML_ALERT_WEBHOOK", webhook)
+			t.Setenv("AML_ALERT_KIND", kind.name)
+			stack.configure(func(s *watchStack) {
+				s.hookBody = kind.took
+				s.readyCode, s.readyReasons = http.StatusServiceUnavailable, []string{"breaker open: jev"}
+			})
+			if err := command.Execute(); err != nil {
+				t.Fatal(err)
+			}
+			if got := stack.take(t); len(got) != 1 {
+				t.Fatalf("%q\n%s", got, out.String())
+			}
+			neverShows(t, map[string]string{"the output": out.String()}, watchToken, stack.hook.Listener.Addr().String(), watchChat)
+		})
 	}
-	if got := stack.take(t); len(got) != 1 || strings.Contains(out.String(), watchToken) || strings.Contains(out.String(), stack.hook.Listener.Addr().String()) {
-		t.Fatalf("%q\n%s", got, out.String())
+}
+
+// neverPrintsWebhook runs the watcher of TestWatchNeverPrintsWebhook through
+// its command, with a webhook of kind at url(stack) that fails as fail makes
+// it, and checks that no output shows the webhook.
+func neverPrintsWebhook(t *testing.T, kind string, url func(*watchStack) string, path, took string, fail func(*watchStack)) {
+	t.Helper()
+	stack := newWatchStack(t)
+	stack.configure(func(s *watchStack) { s.hookBody = took })
+	state := filepath.Join(t.TempDir(), "state", "watch-state.json")
+	t.Setenv("AML_ALERT_WEBHOOK", url(stack))
+	t.Setenv("AML_ALERT_KIND", kind)
+	var out bytes.Buffer
+	run := func(extra ...string) error {
+		command := newAMLWatchCommand()
+		command.SetArgs(append([]string{"--admin", stack.admin.URL, "--state", state}, extra...))
+		command.SetOut(&out)
+		command.SetErr(&out)
+		err := command.Execute()
+		if err != nil {
+			fmt.Fprintln(&out, err) // what the product root prints after an error
+		}
+		return err
+	}
+	public := []string{"--public-url", stack.public.URL}
+	// A baseline run with no public URL: it warns that the probe is off.
+	if err := run(); err != nil || !strings.Contains(out.String(), "the public health probe is off because --public-url is empty") {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	// A run that finds another one holding the lock does nothing.
+	held := flock.New(state + ".lock")
+	if locked, err := held.TryLock(); !locked || err != nil {
+		t.Fatal(locked, err)
+	}
+	err := run(public...)
+	if unlockErr := held.Unlock(); unlockErr != nil || err != nil || !strings.Contains(out.String(), "another aml-watch run holds the lock") {
+		t.Fatalf("%v %v\n%s", err, unlockErr, out.String())
+	}
+	// One more degraded Search and work that has waited too long: two
+	// alerts to say, to a webhook that fails. (backlog-age sorts before
+	// degraded-search, so that a webhook that cannot be reached, which
+	// ends the run at its first failure, is tried with it first.)
+	stack.set(func(s *aml.AdminStatus) { s.Degraded = 1; s.Queue.OldestQueued = 20 * time.Minute })
+	fail(stack)
+	err = run(public...)
+	if err == nil || !strings.Contains(err.Error(), "not delivered") {
+		t.Fatal("a failed post did not fail the run:", err)
+	}
+	// The work is done: the alert that never went out is resolved, and
+	// its resolution fails the same way.
+	stack.set(func(s *aml.AdminStatus) { s.Queue.OldestQueued = 0 })
+	err = run(public...)
+	if err == nil || !strings.Contains(err.Error(), "not delivered") || !strings.Contains(out.String(), "alert=backlog-age event=resolved") {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	neverShows(t, map[string]string{"the output": out.String()},
+		watchToken, url(stack), stack.hook.Listener.Addr().String(), "/hook/", "/bot", "/elsewhere", watchChat)
+	// The state was saved all the same, the messages owed, and
+	// without the secret.
+	raw, readErr := os.ReadFile(state)
+	if readErr != nil || !strings.Contains(string(raw), `"degraded-search"`) || !strings.Contains(string(raw), `"backlog-age"`) || strings.Contains(string(raw), watchToken) {
+		t.Errorf("state: %v\n%s", readErr, raw)
+	}
+	// A redirect is a failure, not an address to post to; a Telegram bot is
+	// posted to without the query.
+	stack.mu.Lock()
+	defer stack.mu.Unlock()
+	for _, post := range stack.posts {
+		if post.path != path {
+			t.Error("a post went to", post.path)
+		}
 	}
 }
 
@@ -678,6 +777,206 @@ func TestWatchBusinessErrorsFailTheDelivery(t *testing.T) {
 		if tc.want != "" && strings.Contains(err.Error(), "Key Words") {
 			t.Error("the webhook's own words are echoed:", err)
 		}
+	}
+}
+
+// A Telegram bot takes a message at its sendMessage URL without the query:
+// the chat that the query's chat_id names goes in the body, as a JSON string
+// exactly as given, with the watcher's text in plain text (no parse_mode) and
+// no link preview.
+func TestWatchTelegramPayload(t *testing.T) {
+	for _, chat := range []string{watchChat, "123456789", "@mnemon_alerts"} {
+		t.Run(chat, func(t *testing.T) {
+			r := newTelegramRig(t)
+			r.w.webhook = r.stack.telegramURL(chat)
+			r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+			texts := r.step(0)
+			wantText := fmt.Sprintf(watchWantTag+"ALERT health on aml-test\nGET %s/health answered 502\n2026-10-24 12:00:00 UTC", r.stack.public.URL)
+			if len(texts) != 1 || texts[0] != wantText {
+				t.Fatalf("got %q, want %q", texts, wantText)
+			}
+			r.stack.mu.Lock()
+			post := r.stack.posts[0]
+			r.stack.mu.Unlock()
+			// The body is exactly sendMessage's: its key order, no other key.
+			quoted, _ := json.Marshal(wantText)
+			if want := `{"chat_id":"` + chat + `","text":` + string(quoted) + `,"disable_web_page_preview":true}`; string(post.body) != want {
+				t.Fatalf("body %s\nwant %s", post.body, want)
+			}
+			if post.path != "POST /bot"+watchToken+"/sendMessage" || !strings.HasPrefix(post.contentType, "application/json") {
+				t.Fatal(post.path, post.contentType)
+			}
+			if got := r.firing(); len(got) != 1 || !got["health"] {
+				t.Fatal("the message Telegram took is not recorded as sent:", got)
+			}
+		})
+	}
+
+	// The text is carried as it is: not HTML-escaped, and with no parse_mode
+	// nothing in it is read as markup.
+	r := newTelegramRig(t)
+	r.stack.configure(func(s *watchStack) {
+		s.readyCode, s.readyReasons = http.StatusServiceUnavailable, []string{"free disk <1 GiB & *falling* _fast_"}
+	})
+	r.step(0)
+	r.stack.mu.Lock()
+	raw := string(r.stack.posts[0].body)
+	r.stack.mu.Unlock()
+	if !strings.Contains(raw, `free disk <1 GiB & *falling* _fast_`) || strings.Contains(raw, "parse_mode") {
+		t.Fatal(raw)
+	}
+
+	// The longest message is the watcher's text, under 1,000 bytes: well
+	// within Telegram's 4,096 characters.
+	r = newTelegramRig(t)
+	reasons := []string{}
+	for i := range 80 {
+		reasons = append(reasons, fmt.Sprintf("data root is not writable: open /var/lib/mnemon-aml/users/%08d: permission denied — é", i))
+	}
+	r.stack.configure(func(s *watchStack) { s.readyCode, s.readyReasons = http.StatusServiceUnavailable, reasons })
+	r.w.host = strings.Repeat("h", 200)
+	if texts := r.step(0); len(texts) != 1 || len(texts[0]) >= 1000 || !strings.HasPrefix(texts[0], watchWantTag+"ALERT ready on ") {
+		t.Fatalf("%q", texts)
+	}
+}
+
+// Telegram took a message only when it answers 2xx with "ok":true. Any other
+// answer, 429 included, is a failed delivery: the failure says the HTTP status
+// and Telegram's numeric error_code, never its description, the run does not
+// wait for a retry_after, and the next run sends the message again.
+func TestWatchTelegramRejection(t *testing.T) {
+	for _, tc := range []struct {
+		code       int
+		body, want string
+	}{
+		{http.StatusOK, `{"ok":false,"error_code":400}`, "the webhook answered HTTP 200 with error_code 400"},
+		{http.StatusBadRequest, `{"ok":false,"error_code":400,"description":"Bad Request: chat not found"}`, "the webhook answered HTTP 400 with error_code 400"},
+		{http.StatusTooManyRequests, `{"ok":false,"error_code":429,"parameters":{"retry_after":5}}`, "the webhook answered HTTP 429 with error_code 429"},
+		// A retry_after longer than the run's bound: a run that waited for it
+		// would show.
+		{http.StatusTooManyRequests, `{"ok":false,"error_code":429,"description":"Too Many Requests: retry after 30","parameters":{"retry_after":30}}`, "the webhook answered HTTP 429 with error_code 429"},
+		// Answers that are not Telegram's say their status alone.
+		{http.StatusOK, `{"ok":false}`, `the webhook answered HTTP 200 without "ok":true`},
+		{http.StatusOK, `{"StatusCode":0,"StatusMessage":"success","code":0,"msg":"success"}`, `the webhook answered HTTP 200 without "ok":true`},
+		{http.StatusOK, `ok`, `the webhook answered HTTP 200 without "ok":true`},
+		{http.StatusOK, `{"ok":"true"}`, `the webhook answered HTTP 200 without "ok":true`},
+		{http.StatusBadGateway, `<html>Bad Gateway</html>`, "the webhook answered HTTP 502"},
+		{http.StatusInternalServerError, `{"ok":true}`, "the webhook answered HTTP 500"},
+	} {
+		t.Run(fmt.Sprintf("%d %s", tc.code, tc.body), func(t *testing.T) {
+			r := newTelegramRig(t)
+			r.stack.configure(func(s *watchStack) { s.hookCode, s.hookBody, s.healthCode = tc.code, tc.body, http.StatusBadGateway })
+			start := time.Now()
+			texts, err := r.stepErr(0)
+			if len(texts) != 1 || err == nil || !strings.Contains(err.Error(), "("+tc.want+")") {
+				t.Fatalf("%q %v, want the reason %q", texts, err, tc.want)
+			}
+			if took := time.Since(start); took > 10*time.Second {
+				t.Fatalf("the run took %s: it waited for Telegram", took)
+			}
+			// Nothing of the answer but its numbers reaches the output.
+			neverShows(t, map[string]string{"the error": err.Error(), "the log": r.logs.String()},
+				"description", "Bad Request", "chat not found", "Too Many", "retry", "parameters", "Bad Gateway", watchToken, watchChat)
+			// The message is owed, and the next run sends it.
+			if got := r.firing(); len(got) != 1 || got["health"] {
+				t.Fatal("the message is not kept as unsent:", got)
+			}
+			r.stack.configure(func(s *watchStack) { s.hookCode, s.hookBody = 0, telegramTook })
+			onlyAlert(t, r.step(time.Minute), "health")
+			if got := r.firing(); !got["health"] {
+				t.Fatal("the message Telegram took is not recorded as sent:", got)
+			}
+		})
+	}
+
+	// Any 2xx with "ok":true is a delivery.
+	for _, tc := range []struct {
+		code int
+		body string
+	}{{http.StatusOK, telegramTook}, {http.StatusCreated, `{"ok":true}`}} {
+		r := newTelegramRig(t)
+		r.stack.configure(func(s *watchStack) { s.hookCode, s.hookBody, s.healthCode = tc.code, tc.body, http.StatusBadGateway })
+		if texts, err := r.stepErr(0); err != nil || len(texts) != 1 {
+			t.Errorf("%d %s: %q %v", tc.code, tc.body, texts, err)
+		}
+	}
+}
+
+// A Telegram webhook names its chat in the query: chat_id, its only
+// parameter, a chat's number (a group's is negative) or a channel's
+// @username. A missing or malformed one is refused at start, as is a URL that
+// is not a bot's sendMessage; the error names AML_ALERT_WEBHOOK and the rule,
+// never the value, which holds the bot's token. Any https host will do (a
+// self-hosted Bot API server), or http to this machine.
+func TestWatchTelegramNeedsChatID(t *testing.T) {
+	bot := "https://api.telegram.org/bot" + watchToken
+	for webhook, ok := range map[string]bool{
+		bot + "/sendMessage?chat_id=123456789":                                  true,
+		bot + "/sendMessage?chat_id=" + watchChat:                               true,
+		bot + "/sendMessage?chat_id=@mnemon_alerts":                             true,
+		bot + "/sendMessage?chat_id=%40mnemon_alerts":                           true,
+		bot + "/sendMessage?chat_id=" + strings.Repeat("9", 20):                 true,
+		bot + "/sendMessage?chat_id=@" + "a" + strings.Repeat("b", 31):          true,
+		"https://bots.example.com/bot" + watchToken + "/sendMessage?chat_id=42": true,
+		"http://127.0.0.1:8081/bot" + watchToken + "/sendMessage?chat_id=42":    true,
+		"http://localhost:8081/bot" + watchToken + "/sendMessage?chat_id=42":    true,
+		bot + "/sendMessage":                                                       false,
+		bot + "/sendMessage?":                                                      false,
+		bot + "/sendMessage?chat_id=":                                              false,
+		bot + "/sendMessage?chat_id=abc":                                           false,
+		bot + "/sendMessage?chat_id=12.5":                                          false,
+		bot + "/sendMessage?chat_id=%2B42":                                         false,
+		bot + "/sendMessage?chat_id=--42":                                          false,
+		bot + "/sendMessage?chat_id=" + strings.Repeat("9", 21):                    false,
+		bot + "/sendMessage?chat_id=@abcd":                                         false,
+		bot + "/sendMessage?chat_id=@1channel":                                     false,
+		bot + "/sendMessage?chat_id=@" + "a" + strings.Repeat("b", 32):             false,
+		bot + "/sendMessage?chat_id=42%0A":                                         false,
+		bot + "/sendMessage?chat_id=42&chat_id=43":                                 false,
+		bot + "/sendMessage?chat_id=42&parse_mode=HTML":                            false,
+		bot + "/sendMessage?chat_id=42;x=1":                                        false,
+		bot + "/sendMessage?chat=42":                                               false,
+		bot + "/getUpdates?chat_id=42":                                             false,
+		bot + "/sendMessage/?chat_id=42":                                           false,
+		bot + "/sendmessage?chat_id=42":                                            false,
+		bot + "?chat_id=42":                                                        false,
+		"http://api.telegram.org/bot" + watchToken + "/sendMessage?chat_id=42":     false,
+		"https:///bot" + watchToken + "/sendMessage?chat_id=42":                    false,
+		"api.telegram.org/bot" + watchToken + "/sendMessage?chat_id=42":            false,
+		"https://api.telegram.org/bot" + watchToken + "/sendMessage?chat_id=4%zz2": false,
+		"https://api.telegram.org/bot" + watchToken + "%zz/sendMessage?chat_id=42": false,
+	} {
+		w := &watcher{watchSettings: watchSettings{webhook: webhook, kind: "telegram"}}
+		err := w.checkDelivery()
+		if (err == nil) != ok {
+			t.Errorf("%q: %v, want accepted %v", webhook, err, ok)
+		}
+		if err != nil && (strings.Contains(err.Error(), watchToken) || !strings.Contains(err.Error(), "AML_ALERT_WEBHOOK")) {
+			t.Errorf("%q: %v", webhook, err)
+		}
+	}
+
+	// Through the command, the run is refused before it reads or writes
+	// anything, and nothing of the value is echoed.
+	state := filepath.Join(t.TempDir(), "watch-state.json")
+	for name, webhook := range map[string]string{
+		"no chat_id":      bot + "/sendMessage",
+		"chat_id abc":     bot + "/sendMessage?chat_id=abc",
+		"empty chat_id":   bot + "/sendMessage?chat_id=",
+		"not sendMessage": bot + "/getUpdates?chat_id=42",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("AML_ALERT_WEBHOOK", webhook)
+			t.Setenv("AML_ALERT_KIND", "telegram")
+			out, err := executeAMLWatch("--state", state)
+			if err == nil || !strings.Contains(err.Error(), "AML_ALERT_WEBHOOK") || !strings.Contains(err.Error(), "chat_id") {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			neverShows(t, map[string]string{"the error": err.Error(), "the output": out}, watchToken, "abc", "42", "getUpdates")
+			if _, statErr := os.Stat(state); !os.IsNotExist(statErr) {
+				t.Errorf("a refused run wrote state: %v", statErr)
+			}
+		})
 	}
 }
 
