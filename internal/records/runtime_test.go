@@ -4,10 +4,12 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 )
@@ -146,4 +148,77 @@ func TestStartRuntimeTwiceIsRefused(t *testing.T) {
 		t.Fatal("the runtime did not start again after stop", err)
 	}
 	stop()
+}
+
+// failLexicalBuild makes the runtime's lexical builds fail: the reader pool is
+// closed under the worker. The put wakes it.
+func failLexicalBuild(t *testing.T, s *Store) {
+	t.Helper()
+	ctx := context.Background()
+	stop, err := s.StartRuntime(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
+	s.readers.Close()
+	if _, err := s.Put(ctx, PutRequest{Upsert: []Upsert{sample("a", "dog")}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A runtime in a service reports what it cannot return (a failed lexical
+// build) to the logger its store was given, not to standard error.
+func TestRuntimeReportsThroughStoreLogger(t *testing.T) {
+	s := testStore(t)
+	lines := make(chan string, 8)
+	s.SetLogger(func(format string, args ...any) { lines <- fmt.Sprintf(format, args...) })
+	failLexicalBuild(t, s)
+	select {
+	case line := <-lines:
+		if !strings.HasPrefix(line, "records query preparation: ") || strings.HasSuffix(line, "\n") {
+			t.Fatalf("%q", line)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the failed build was not reported")
+	}
+}
+
+// Without a logger (native mnemon) the report stays on standard error.
+func TestRuntimeReportsToStderrWithoutLogger(t *testing.T) {
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer read.Close()
+	stderr := os.Stderr
+	os.Stderr = write
+	s := testStore(t)
+	s.SetLogger(func(string, ...any) { t.Error("the cleared logger was called") })
+	s.SetLogger(nil)
+	stop, err := s.StartRuntime(context.Background())
+	if err != nil {
+		os.Stderr = stderr
+		t.Fatal(err)
+	}
+	s.readers.Close()
+	_, err = s.Put(context.Background(), PutRequest{Upsert: []Upsert{sample("a", "dog")}})
+	line := make(chan string, 1)
+	go func() {
+		text, _ := bufio.NewReader(read).ReadString('\n')
+		line <- text
+	}()
+	var got string
+	select {
+	case got = <-line:
+	case <-time.After(5 * time.Second):
+	}
+	stop() // the worker has exited: nothing reads os.Stderr after this
+	os.Stderr = stderr
+	write.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(got, "records query preparation: ") || !strings.HasSuffix(got, "\n") {
+		t.Fatalf("%q", got)
+	}
 }

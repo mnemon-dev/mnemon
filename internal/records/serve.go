@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -83,6 +85,28 @@ func (s *Store) StartRuntime(ctx context.Context) (stop func(), err error) {
 			s.running.Store(false)
 		})
 	}, nil
+}
+
+// SetLogger sends what the store's query runtime reports and cannot return
+// (a failed lexical build) to logf instead of standard error; nil restores
+// standard error. logf runs on the runtime's worker goroutine and must not
+// block; its format has no trailing newline.
+func (s *Store) SetLogger(logf func(format string, args ...any)) {
+	if logf == nil {
+		s.logf.Store(nil)
+		return
+	}
+	s.logf.Store(&logf)
+}
+
+// report tells the store's logger, or standard error, about a failure of the
+// runtime.
+func (s *Store) report(format string, args ...any) {
+	if logf := s.logf.Load(); logf != nil {
+		(*logf)(format, args...)
+		return
+	}
+	fmt.Fprintf(os.Stderr, format+"\n", args...)
 }
 
 func (s *Store) Dispatch(ctx context.Context, raw []byte) (any, error) {

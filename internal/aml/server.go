@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -92,9 +92,9 @@ type ServerConfig struct {
 	// Models builds the models from MemoryConfig; nil builds its configured
 	// providers. Tests inject scripted models here.
 	Models func(memoryagent.Config) (memoryagent.Models, error)
-	// Logger receives operational lines, never request bodies; nil logs to
-	// standard error.
-	Logger *log.Logger
+	// Logger receives operational lines, never request bodies; nil logs text
+	// to standard error.
+	Logger *slog.Logger
 }
 
 // Server serves the AML contract. Every user's agent shares the models.
@@ -115,7 +115,7 @@ type Server struct {
 	sched    *scheduler
 	lagBound int64
 	users    *registry
-	log      *log.Logger
+	log      *slog.Logger
 	// Served requests, and Searches answered by the raw ranking (degraded)
 	// or by a read with a stage that fell back (partial).
 	adds, searches, degraded, partial atomic.Int64
@@ -169,7 +169,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 		timelines: consolidation.Timelines(), mode: mode,
 		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout}
 	if s.log == nil {
-		s.log = log.New(os.Stderr, "aml: ", log.LstdFlags|log.LUTC)
+		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
 	if config.Models != nil {
 		s.models, err = config.Models(config.MemoryConfig)
@@ -185,10 +185,33 @@ func NewServer(config ServerConfig) (*Server, error) {
 	}
 	s.users = newRegistry(config.DataRoot, config.MaxOpenStores, s.openUser)
 	if mode == ConsolidationBackground {
-		s.sched = newScheduler(config.ConsolidationWorkers, maxConsolidationUsers, s.consolidateUser, s.log.Printf, time.Now)
+		s.sched = newScheduler(config.ConsolidationWorkers, maxConsolidationUsers, s.consolidateUser, s.schedulerLog, time.Now)
 	}
 	s.handler = s.routes()
 	return s, nil
+}
+
+// logf logs one line at level. The lines keep the wording they had before the
+// server logged through slog, which the runbook's table of lines quotes; ctx
+// is the context of the work the line is about.
+func (s *Server) logf(ctx context.Context, level slog.Level, format string, args ...any) {
+	if s.log.Enabled(ctx, level) {
+		s.log.Log(ctx, level, fmt.Sprintf(format, args...))
+	}
+}
+
+// schedulerLog is the scheduler's logf. Its lines report faults (a full
+// queue, a failed or panicked job, a pause), so they are warnings.
+func (s *Server) schedulerLog(format string, args ...any) {
+	s.logf(context.Background(), slog.LevelWarn, format, args...)
+}
+
+// storeLog is the logger of the store of the user with key: what the store's
+// query runtime reports is a warning that names the user.
+func (s *Server) storeLog(key string) func(format string, args ...any) {
+	return func(format string, args ...any) {
+		s.logf(context.Background(), slog.LevelWarn, format+" (user %s)", append(args[:len(args):len(args)], short(key))...)
+	}
 }
 
 // consolidationMode is the configuration's consolidation mode, checked with
@@ -252,6 +275,7 @@ func (s *Server) openUser(dir string) (*records.Store, *memoryagent.Agent, func(
 	if err != nil {
 		return nil, nil, nil, err
 	}
+	store.SetLogger(s.storeLog(filepath.Base(dir)))
 	stop, err := store.StartRuntime(context.Background())
 	if err != nil {
 		store.Close()
@@ -330,7 +354,7 @@ func (s *Server) Run(ctx context.Context) error {
 func (s *Server) queueUsers() {
 	entries, err := os.ReadDir(filepath.Join(s.config.DataRoot, "users"))
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		s.log.Printf("consolidation could not list the users: %v", err)
+		s.logf(context.Background(), slog.LevelError, "consolidation could not list the users: %v", err)
 	}
 	for _, entry := range entries {
 		if entry.IsDir() && isUserKey(entry.Name()) {
@@ -349,7 +373,7 @@ func (s *Server) queueUsers() {
 func (s *Server) consolidateUser(ctx context.Context, key string) (int64, error) {
 	user, err := s.users.acquireKey(ctx, key, false)
 	if err != nil {
-		s.log.Printf("consolidation failed (user %s): %v", short(key), err)
+		s.logf(ctx, slog.LevelWarn, "consolidation failed (user %s): %v", short(key), err)
 		return -1, err
 	}
 	if user == nil {
@@ -359,7 +383,7 @@ func (s *Server) consolidateUser(ctx context.Context, key string) (int64, error)
 	outcome := s.consolidate(ctx, user, true, "consolidation", func() bool { return s.sched.held(key) })
 	if outcome.folded > 0 {
 		if err := user.agent.WarmLayer(ctx, records.Scope{}); err != nil {
-			s.log.Printf("layer embedding failed (user %s): %v", short(key), err)
+			s.logf(ctx, slog.LevelWarn, "layer embedding failed (user %s): %v", short(key), err)
 		}
 	}
 	if outcome.unfinished && outcome.err == nil {
@@ -368,7 +392,7 @@ func (s *Server) consolidateUser(ctx context.Context, key string) (int64, error)
 	backlog, err := user.agent.Backlog(ctx, records.Scope{})
 	if err != nil {
 		if outcome.err == nil {
-			s.log.Printf("consolidation backlog unreadable (user %s): %v", short(key), err)
+			s.logf(ctx, slog.LevelWarn, "consolidation backlog unreadable (user %s): %v", short(key), err)
 			return -1, err
 		}
 		return -1, outcome.err
@@ -426,7 +450,7 @@ func (s *Server) LogStatus(ctx context.Context, every time.Duration) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.log.Print(s.statusLine(ctx))
+			s.logf(ctx, slog.LevelInfo, "%s", s.statusLine(ctx))
 		}
 	}
 }
@@ -445,7 +469,7 @@ func (s *Server) HTTPServer(addr string) *http.Server {
 		ReadTimeout:       5 * time.Minute,
 		WriteTimeout:      31 * time.Minute,
 		IdleTimeout:       2 * time.Minute,
-		ErrorLog:          s.log,
+		ErrorLog:          slog.NewLogLogger(s.log.Handler(), slog.LevelError),
 	}
 }
 
@@ -510,7 +534,7 @@ func (s *Server) recovered(operation string, next http.HandlerFunc) http.Handler
 			if value == http.ErrAbortHandler {
 				panic(value)
 			}
-			s.log.Printf("%s panicked: %v\n%s", operation, value, debug.Stack())
+			s.logf(r.Context(), slog.LevelError, "%s panicked: %v\n%s", operation, value, debug.Stack())
 			if !writer.wrote {
 				writeError(writer, http.StatusInternalServerError, operation+" failed")
 			}
@@ -530,6 +554,7 @@ func (s *Server) recovered(operation string, next http.HandlerFunc) http.Handler
 // other text, is a 400.
 func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	deadline := time.Now().Add(s.addWindow)
+	ctx := r.Context()
 	var req AddRequest
 	if !s.decode(w, r, &req) {
 		return
@@ -540,22 +565,21 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	}
 	parts, skipped, err := req.parts()
 	if err != nil {
-		s.fail(w, "pack", "", err)
+		s.fail(ctx, w, "pack", "", err)
 		return
 	}
 	done := AddResponse{Success: true, RequestID: req.RequestID, UserID: req.UserID, SessionID: req.SessionID}
 	if skipped > 0 {
-		s.log.Printf("add skipped %d of %d messages without text", skipped, len(req.Messages))
+		s.logf(ctx, slog.LevelInfo, "add skipped %d of %d messages without text", skipped, len(req.Messages))
 	}
 	if len(parts) == 0 {
 		s.adds.Add(1)
 		writeJSON(w, http.StatusOK, done)
 		return
 	}
-	ctx := r.Context()
 	user, err := s.users.acquire(ctx, req.UserID, true)
 	if err != nil {
-		s.fail(w, "open store", "", err)
+		s.fail(ctx, w, "open store", "", err)
 		return
 	}
 	release := sync.OnceFunc(func() { s.users.release(user) })
@@ -591,14 +615,14 @@ func (s *Server) writeParts(ctx context.Context, w http.ResponseWriter, user *us
 			return 0, false
 		}
 		if err != nil {
-			s.fail(w, "write", user.key, err)
+			s.fail(ctx, w, "write", user.key, err)
 			return 0, false
 		}
 		chunks = append(chunks, part.chunks...)
 	}
 	if embedding := s.config.MemoryConfig.Embedding; embedding != nil {
 		if err := embedChunks(ctx, user.store, *embedding, chunks); err != nil {
-			s.log.Printf("embedding failed (user %s): %v", user.key[:8], err)
+			s.logf(ctx, slog.LevelError, "embedding failed (user %s): %v", user.key[:8], err)
 			writeError(w, http.StatusServiceUnavailable, "embedding is unavailable; retry the same request")
 			return 0, false
 		}
@@ -621,7 +645,7 @@ func (s *Server) awaitConsolidation(ctx context.Context, key string, deadline ti
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	if err := s.sched.WaitBacklog(ctx, key, s.lagBound); errors.Is(err, context.DeadlineExceeded) {
-		s.log.Printf("add outran consolidation (user %s)", short(key))
+		s.logf(ctx, slog.LevelWarn, "add outran consolidation (user %s)", short(key))
 	}
 }
 
@@ -698,18 +722,18 @@ func embedChunks(ctx context.Context, store *records.Store, config records.Embed
 // are logged: the records are searchable already.
 func (s *Server) consolidateAdd(ctx context.Context, user *userEntry, deadline time.Time) {
 	if user.waiting.Load() > 0 {
-		s.log.Printf("consolidation left to a queued Add (user %s)", user.key[:8])
+		s.logf(ctx, slog.LevelInfo, "consolidation left to a queued Add (user %s)", user.key[:8])
 		return
 	}
 	if !time.Now().Before(deadline) {
-		s.log.Printf("consolidation skipped: the Add's window has passed (user %s)", user.key[:8])
+		s.logf(ctx, slog.LevelWarn, "consolidation skipped: the Add's window has passed (user %s)", user.key[:8])
 		return
 	}
 	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	s.consolidate(ctx, user, s.timelines, "consolidation", nil)
 	if err := user.agent.WarmLayer(ctx, records.Scope{}); err != nil {
-		s.log.Printf("layer embedding failed (user %s): %v", user.key[:8], err)
+		s.logf(ctx, slog.LevelWarn, "layer embedding failed (user %s): %v", user.key[:8], err)
 	}
 }
 
@@ -740,7 +764,7 @@ func (s *Server) flush(ctx context.Context, user *userEntry) {
 		return
 	}
 	if err := user.agent.WarmLayer(ctx, records.Scope{}); err != nil {
-		s.log.Printf("layer embedding failed (user %s): %v", user.key[:8], err)
+		s.logf(ctx, slog.LevelWarn, "layer embedding failed (user %s): %v", user.key[:8], err)
 	}
 }
 
@@ -777,13 +801,13 @@ func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, la
 		outcome.folded += result.Folded
 		pending = pending || result.EdgesPending
 		for _, drop := range result.Drops {
-			s.log.Printf("consolidation dropped %d records (user %s): %s", drop.Records, user.key[:8], drop.Reason)
+			s.logf(ctx, slog.LevelWarn, "consolidation dropped %d records (user %s): %s", drop.Records, user.key[:8], drop.Reason)
 		}
 		if result.LinkFallbacks > 0 {
-			s.log.Printf("consolidation linked %d batches without JEV (user %s): JEV failed or its budget is spent, so only keys of the same name were joined", result.LinkFallbacks, user.key[:8])
+			s.logf(ctx, slog.LevelWarn, "consolidation linked %d batches without JEV (user %s): JEV failed or its budget is spent, so only keys of the same name were joined", result.LinkFallbacks, user.key[:8])
 		}
 		if err != nil {
-			s.log.Printf("%s failed (user %s): %v", label, user.key[:8], err)
+			s.logf(ctx, slog.LevelWarn, "%s failed (user %s): %v", label, user.key[:8], err)
 			outcome.err, outcome.unfinished = err, true
 			break
 		}
@@ -791,7 +815,7 @@ func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, la
 			break
 		}
 		if call == maxConsolidateCalls {
-			s.log.Printf("%s stopped with %d records pending (user %s)", label, result.Remaining, user.key[:8])
+			s.logf(ctx, slog.LevelWarn, "%s stopped with %d records pending (user %s)", label, result.Remaining, user.key[:8])
 			outcome.unfinished = true
 		}
 	}
@@ -805,18 +829,18 @@ func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, la
 // logged under label, and the next rebuild catches up.
 func (s *Server) rebuildEdges(ctx context.Context, user *userEntry, label string) {
 	if ctx.Err() != nil {
-		s.log.Printf("%s left native edges pending (user %s): %v", label, user.key[:8], ctx.Err())
+		s.logf(ctx, slog.LevelWarn, "%s left native edges pending (user %s): %v", label, user.key[:8], ctx.Err())
 		return
 	}
 	result, err := s.consolidateOnce(ctx, user, memoryagent.ConsolidateRequest{RebuildEdges: true})
 	if err != nil {
-		s.log.Printf("%s native edges failed (user %s): %v", label, user.key[:8], err)
+		s.logf(ctx, slog.LevelWarn, "%s native edges failed (user %s): %v", label, user.key[:8], err)
 	}
 	if result.EdgeFallbacks > 0 {
-		s.log.Printf("%s native edges left %d pairs undecided (user %s)", label, result.EdgeFallbacks, user.key[:8])
+		s.logf(ctx, slog.LevelWarn, "%s native edges left %d pairs undecided (user %s)", label, result.EdgeFallbacks, user.key[:8])
 	}
 	if result.EdgeGivenUp > 0 {
-		s.log.Printf("%s native edges gave up %d pairs whose calls failed 3 times (user %s)", label, result.EdgeGivenUp, user.key[:8])
+		s.logf(ctx, slog.LevelWarn, "%s native edges gave up %d pairs whose calls failed 3 times (user %s)", label, result.EdgeGivenUp, user.key[:8])
 	}
 }
 
@@ -825,7 +849,7 @@ func (s *Server) rebuildEdges(ctx context.Context, user *userEntry, label string
 func (s *Server) consolidateOnce(ctx context.Context, user *userEntry, req memoryagent.ConsolidateRequest) (result memoryagent.ConsolidateResult, err error) {
 	defer func() {
 		if value := recover(); value != nil {
-			s.log.Printf("consolidation panicked (user %s): %v\n%s", user.key[:8], value, debug.Stack())
+			s.logf(ctx, slog.LevelError, "consolidation panicked (user %s): %v\n%s", user.key[:8], value, debug.Stack())
 			result, err = memoryagent.ConsolidateResult{}, fmt.Errorf("panic: %v", value)
 		}
 	}()
@@ -857,7 +881,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user, err := s.users.acquire(ctx, req.UserID, false)
 	if err != nil {
-		s.fail(w, "open store", "", err)
+		s.fail(ctx, w, "open store", "", err)
 		return
 	}
 	if user == nil {
@@ -878,7 +902,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		if stages := view.Stats.Degraded; len(stages) > 0 {
 			n := s.partial.Add(1)
-			s.log.Printf("partially degraded search %d (user %s): %s", n, user.key[:8], strings.Join(stages, ", "))
+			s.logf(ctx, slog.LevelWarn, "partially degraded search %d (user %s): %s", n, user.key[:8], strings.Join(stages, ", "))
 		}
 		s.answer(w, searchItems(view, topK))
 		return
@@ -888,10 +912,10 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n := s.degraded.Add(1)
-	s.log.Printf("degraded search %d (user %s): %v", n, user.key[:8], err)
+	s.logf(ctx, slog.LevelWarn, "degraded search %d (user %s): %v", n, user.key[:8], err)
 	items, err := s.rawSearch(ctx, user, req.Query, topK)
 	if err != nil {
-		s.fail(w, "degraded search", user.key, err)
+		s.fail(ctx, w, "degraded search", user.key, err)
 		return
 	}
 	s.answer(w, items)
@@ -916,7 +940,7 @@ func (s *Server) read(ctx context.Context, user *userEntry, req memoryagent.Read
 	defer cancel()
 	defer func() {
 		if value := recover(); value != nil {
-			s.log.Printf("memory read panicked (user %s): %v\n%s", user.key[:8], value, debug.Stack())
+			s.logf(ctx, slog.LevelError, "memory read panicked (user %s): %v\n%s", user.key[:8], value, debug.Stack())
 			view, err = memoryagent.View{}, fmt.Errorf("panic: %v", value)
 		}
 	}()
@@ -946,7 +970,7 @@ func (s *Server) rawSearch(ctx context.Context, user *userEntry, query string, t
 	config := s.config.MemoryConfig
 	ids, err := rawQuery(ctx, user.store, snapshot.Revision, query, config.Embedding, config.Index)
 	if err != nil && config.Embedding != nil {
-		s.log.Printf("hybrid search failed, searching words (user %s): %v", user.key[:8], err)
+		s.logf(ctx, slog.LevelWarn, "hybrid search failed, searching words (user %s): %v", user.key[:8], err)
 		ids, err = rawQuery(ctx, user.store, snapshot.Revision, query, nil, config.Index)
 	}
 	if err != nil {
@@ -969,7 +993,7 @@ func (s *Server) rawSearch(ctx context.Context, user *userEntry, query string, t
 func (s *Server) ordered(ctx context.Context, user *userEntry, revision string, evidence []memoryagent.Evidence) []memoryagent.Evidence {
 	ordered, err := user.agent.OrderRecords(ctx, revision, evidence)
 	if err != nil {
-		s.log.Printf("degraded search kept rank order (user %s): %v", user.key[:8], err)
+		s.logf(ctx, slog.LevelWarn, "degraded search kept rank order (user %s): %v", user.key[:8], err)
 		return evidence
 	}
 	return ordered
@@ -1003,11 +1027,11 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request, into any) bool {
 
 // fail logs an internal error and answers 503 when retrying can help (a busy
 // or changed store, shutdown), else 500.
-func (s *Server) fail(w http.ResponseWriter, operation, user string, err error) {
+func (s *Server) fail(ctx context.Context, w http.ResponseWriter, operation, user string, err error) {
 	if len(user) > 8 {
 		user = user[:8]
 	}
-	s.log.Printf("%s failed (user %s): %v", operation, user, err)
+	s.logf(ctx, slog.LevelError, "%s failed (user %s): %v", operation, user, err)
 	if retryable(err) {
 		writeError(w, http.StatusServiceUnavailable, operation+" is temporarily unavailable; retry")
 		return
@@ -1032,7 +1056,7 @@ func (s *Server) logged(next http.Handler) http.Handler {
 		start := time.Now()
 		recorder := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(recorder, r)
-		s.log.Printf("%s %s %d %dms", r.Method, r.URL.Path, recorder.status, time.Since(start).Milliseconds())
+		s.logf(r.Context(), slog.LevelInfo, "%s %s %d %dms", r.Method, r.URL.Path, recorder.status, time.Since(start).Milliseconds())
 	})
 }
 

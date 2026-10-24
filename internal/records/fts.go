@@ -3,8 +3,6 @@ package records
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"strings"
 	"time"
 )
@@ -22,7 +20,7 @@ func (s *Store) runLexicalWorker(ctx context.Context) {
 			}
 			stop()
 			if err != nil && ctx.Err() == nil {
-				fmt.Fprintf(os.Stderr, "records query preparation: %v\n", err)
+				s.report("records query preparation: %v", err)
 			}
 		}
 	}

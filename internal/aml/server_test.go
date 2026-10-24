@@ -8,7 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -168,7 +168,7 @@ func newHarness(t *testing.T, edit func(*ServerConfig)) *harness {
 		Models: func(memoryagent.Config) (memoryagent.Models, error) {
 			return memoryagent.Models{Planner: h.planner, Judge: h.judge, Consolidator: h.consolidator}, nil
 		},
-		Logger: log.New(h.log, "", 0),
+		Logger: slog.New(slog.NewTextHandler(h.log, nil)),
 	}
 	if edit != nil {
 		edit(&config)
@@ -970,5 +970,23 @@ func TestNewServerValidates(t *testing.T) {
 	hs := server.HTTPServer("127.0.0.1:0")
 	if hs.ReadHeaderTimeout != 10*time.Second || hs.ReadTimeout != 5*time.Minute || hs.WriteTimeout != 31*time.Minute || hs.IdleTimeout != 2*time.Minute || hs.Handler == nil {
 		t.Fatal(hs)
+	}
+}
+
+// The HTTP server's own errors, and what a user's store reports, go through
+// the server's logger, not standard error.
+func TestHTTPServerAndStoreLogThroughTheLogger(t *testing.T) {
+	h := newHarness(t, nil)
+	h.server.HTTPServer("127.0.0.1:0").ErrorLog.Printf("http: TLS handshake error from 192.0.2.1:1: EOF\n")
+	prefix := userKey("u1")[:8]
+	h.server.storeLog(userKey("u1"))("records query preparation: %v", errors.New("disk gone"))
+	logged := h.log.String()
+	for _, want := range []string{
+		`level=ERROR msg="http: TLS handshake error from 192.0.2.1:1: EOF"`,
+		`level=WARN msg="records query preparation: disk gone (user ` + prefix + `)"`,
+	} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("missing %s in\n%s", want, logged)
+		}
 	}
 }

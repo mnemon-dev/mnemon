@@ -96,6 +96,9 @@ type Store struct {
 	fts      bool
 	// running is set while a query runtime (StartRuntime) runs.
 	running atomic.Bool
+	// logf is where the runtime reports what it cannot return (SetLogger);
+	// nil reports to standard error.
+	logf atomic.Pointer[func(format string, args ...any)]
 	// sessionCache keeps the sessions Adjacent reads (neighbors.go);
 	// sessionBuilds counts how many it built.
 	sessionCache  sessionCache
