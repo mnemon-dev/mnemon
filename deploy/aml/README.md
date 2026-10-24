@@ -261,8 +261,8 @@ each number. None is reported in this draft.>`
   provisional until that test.
 - The release commit, `<release commit>` in the System table, and the `VERSION` of the release
   binary. The capacity rows' commit, `bc18487b`, is the final run's, not the release's.
-- The Windows CI job (`windows-memory`). It failed by reading: on Windows the private-mode check
-  refused the budget file and the model cache for every file. The fix is in
+- The Windows CI job (`windows-memory`). As it stood it could not pass: on Windows the
+  private-mode check refused the budget file and the model cache for every file. The fix is in
   (`8888d9dd`: the check applies only where POSIX modes mean something), and the job has not run
   since; running it needs a push, which is the repository owner's call. It runs the new
   `cmd/memory` tests, the first Windows tests to open AML stores and the budget file, and must
