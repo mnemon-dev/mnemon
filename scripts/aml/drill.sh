@@ -197,7 +197,9 @@ if [ -n "$ONLY" ]; then
 		grep -qx -- "$name" <<<"$SELECTED" || aml_die "--only names $name, which is no scenario"
 	done
 fi
-PARTIAL=$([ -n "$ONLY" ] && echo true || echo false)
+# A run of some scenarios, or of a table of one's own, is a partial run.
+PARTIAL=$({ [ -n "$ONLY" ] || [ -n "${AML_DRILL_SCENARIOS:-}" ]; } && echo true || echo false)
+TABLE=${AML_DRILL_SCENARIOS:-built-in}
 NEED_TOXI=$(scenarios | awk -F'|' -v selected="$(tr '\n' ' ' <<<"$SELECTED")" '
 	BEGIN { n = split(selected, s, " "); for (i = 1; i <= n; i++) want[s[i]] = 1 }
 	want[$1] && ($4 == "toxic" || $4 == "down") { found = 1 } END { print found ? 1 : 0 }')
@@ -654,11 +656,11 @@ done
 jq -n --arg started "$STARTED" --arg finished "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --argjson build "$BUILD" --argjson scripts "$SCRIPTS" \
 	--arg go "$(go env GOVERSION 2>/dev/null || echo none)" --arg host "$(uname -sm)" --argjson cpus "$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 0)" \
 	--argjson searchRate "$SEARCH_RATE" --argjson addRate "$ADD_RATE" --argjson users "$USERS" --argjson seedAdds "$SEED_ADDS" \
-	--argjson repeat "$REPEAT" --argjson partial "$PARTIAL" --arg only "$ONLY" --argjson leaked "$leaked" \
+	--argjson repeat "$REPEAT" --argjson partial "$PARTIAL" --arg only "$ONLY" --arg table "$TABLE" --argjson leaked "$leaked" \
 	--slurpfile scenarios <(for tag in $RAN; do cat "$OUT/scenarios/$tag/scenario.json"; done) '
 {
 	kind: "aml-fault-drill", started: $started, finished: $finished,
-	partialRun: $partial, selected: (if $partial then ($only | split(",")) else "all" end), repeat: $repeat,
+	partialRun: $partial, table: $table, selected: (if $only == "" then "all" else ($only | split(",")) end), repeat: $repeat,
 	build: $build, scripts: $scripts, go: $go, host: $host, cpus: $cpus,
 	tools: {toxiproxy: "v2.12.0, go run github.com/Shopify/toxiproxy/v2/cmd/server@v2.12.0, driven through its HTTP API with curl, when a scenario needs it"},
 	setup: {
@@ -695,7 +697,7 @@ jq -r '
 	"$OUT/report.json" >"$OUT/matrix.md"
 
 aml_say "report: $OUT/report.json"
-summary=$(jq -r '"\(.matrix | length) scenario runs\(if .partialRun then ", a partial run (--only)" else "" end); measured that did not hold: \(if (.measuredNotHeld | length) == 0 then "none" else "\(.measuredNotHeld | length) (\(.measuredNotHeld | join("; ")))" end)"' "$OUT/report.json")
+summary=$(jq -r '"\(.matrix | length) scenario runs\(if .partialRun then ", a partial run (\(if .table == "built-in" then "--only" else "the table \(.table)" end))" else "" end); measured that did not hold: \(if (.measuredNotHeld | length) == 0 then "none" else "\(.measuredNotHeld | length) (\(.measuredNotHeld | join("; ")))" end)"' "$OUT/report.json")
 if [ "$leaked" = 1 ]; then
 	aml_say "FAIL: a secret appears in $OUT ($summary)"
 	AML_EXIT_OURS=1
