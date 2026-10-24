@@ -266,9 +266,13 @@ func retryableStatus(code int) bool {
 type breaker struct {
 	cb circuitbreaker.CircuitBreaker[any]
 	// mu orders the records and guards consecutive. It is held across the
-	// breaker's own calls, which take its lock and call no listener.
+	// breaker's own calls, which take its lock and call no listener but the
+	// trip counter's.
 	mu          sync.Mutex
 	consecutive int
+	// trips counts the times the breaker opened, from closed or from
+	// half-open (a failed probe), since it was made. It only grows.
+	trips atomic.Int64
 }
 
 const (
@@ -280,11 +284,16 @@ const (
 )
 
 func newBreaker() *breaker {
-	return &breaker{cb: circuitbreaker.NewBuilder[any]().
+	b := &breaker{}
+	b.cb = circuitbreaker.NewBuilder[any]().
 		WithFailureThresholdRatio(breakerFailures, breakerWindow).
 		WithDelay(breakerDelay).
 		WithSuccessThreshold(breakerSuccesses).
-		Build()}
+		// The listener runs on the goroutine that tripped the breaker, once
+		// the breaker has changed state; it only adds to a counter.
+		OnOpen(func(circuitbreaker.StateChangedEvent) { b.trips.Add(1) }).
+		Build()
+	return b
 }
 
 // open reports whether the breaker refuses calls for now: it is open and its
@@ -325,6 +334,21 @@ func (m Models) Breakers() []BreakerStatus {
 		out = append(out, BreakerStatus{Kind: p.config.Kind, State: p.breaker.state()})
 	}
 	return out
+}
+
+// BreakerTrips counts, by provider kind, the times the circuit breakers of
+// the models' providers opened since they were made: a failed probe of a
+// half-open breaker opens it again and counts. Unlike the states of Breakers,
+// which are the moment of the call, a count only grows, so a breaker that
+// opened and closed again between two readings still moved it. A kind with
+// several providers sums their counts. The map has a key for each kind among
+// the models, and is empty for models that are not providers.
+func (m Models) BreakerTrips() map[string]int64 {
+	trips := map[string]int64{}
+	for _, p := range m.providers() {
+		trips[p.config.Kind] += p.breaker.trips.Load()
+	}
+	return trips
 }
 
 // permit takes the breaker's permission to send one request, which record

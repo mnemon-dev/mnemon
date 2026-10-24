@@ -1,0 +1,983 @@
+package memory
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"log/slog"
+	"maps"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"syscall"
+	"time"
+	"unicode/utf8"
+
+	"github.com/mnemon-dev/mnemon/internal/aml"
+	"github.com/mnemon-dev/mnemon/internal/memoryagent"
+	"github.com/spf13/cobra"
+)
+
+// aml-watch is the alert watcher of an aml-serve: a one-shot command that a
+// systemd timer runs every minute. One run
+//
+//  1. reads the admin listener's /ready and /admin/status and the public
+//     listener's /health, each within 5 seconds;
+//  2. applies the rules below to what it read and to the state the last run
+//     left (counters, when they last rose, when a condition began);
+//  3. posts one text message per alert that fires, per firing alert that is
+//     due again, and per alert that clears, to the webhook in AML_ALERT_WEBHOOK
+//     (AML_ALERT_KIND: feishu or wecom), each within 10 seconds; and
+//  4. saves the state, atomically (a temporary file in the state's directory,
+//     renamed over it; mode 0600), whether or not a post failed.
+//
+// The webhook's URL is a secret (its path is a bearer token): it is never
+// printed, logged or put in an error. A failed post says the HTTP status, the
+// code the webhook answered with, or that the webhook could not be reached
+// (net/http's own error names the URL, so it is not used). A message that
+// went out is recorded as sent, and not sent again as a new alert (unless the
+// state cannot be saved: then the run exits non-zero and the next run says it
+// again); one that did not go out stays unsent in the state, the next run
+// sends it, and the run exits non-zero. Without a webhook the alerts are
+// logged instead and the run exits zero, so that the timer can run before the
+// webhook is configured.
+//
+// Rules, each an alert of the name shown (a name with a colon is per kind of
+// model provider, or account):
+//
+//	degraded-search          a Search was answered by the raw ranking since the last run
+//	partial-search           more than 5% of the last 10 minutes' Searches were partially
+//	                         degraded, once there were 20 of them
+//	breaker-open:<kind>      a provider's circuit breaker is open, or opened since the last
+//	                         run (the count of trips only grows, so one that opened and
+//	                         recovered between two runs still shows)
+//	budget-high:<kind>       an account's spent and held amounts are above 80% of its cap
+//	budget-held:<kind>       an account's held reservations are above 2% of its cap
+//	backlog-age              the oldest work not yet consolidated has waited more than 15 minutes
+//	backlog-lag              the largest user backlog has been above the server's lag bound
+//	                         for 15 minutes (the bound is read from the status)
+//	consolidation-dropped    a batch was dropped from the consolidation layer
+//	link-fallback            a batch was linked without JEV
+//	add-outran               an Add waited out its window for consolidation
+//	restart                  the server started at another time than at the last run
+//	ready                    /ready did not answer 200, or /admin/status could not be read
+//	health                   the public /health did not answer 200
+//
+// The counters of the status count from the server's start, so a restart
+// starts them at zero: after one, whatever they count is new. The first run
+// (no state file) takes the counters as they are and says nothing about them.
+//
+// An alert about something that happens (degraded-search, breaker-open,
+// consolidation-dropped, link-fallback, add-outran and restart: the others
+// are about how things are) is firing for 10 minutes after the last run that
+// saw it happen, so that a stream of events is one alert, repeated every 30
+// minutes while it lasts and then resolved, not a pair of messages per event.
+// Any firing alert is said again 30 minutes after its last message. When the
+// status cannot be read, the alerts that come from it are neither repeated
+// nor resolved: the ready alert says what is wrong.
+
+const (
+	// watchRepeat is how long after its last message a firing alert is said
+	// again.
+	watchRepeat = 30 * time.Minute
+	// watchHold is how long an alert about a counter keeps firing after the
+	// last time the counter was seen to rise.
+	watchHold = 10 * time.Minute
+
+	watchBacklogAge = 15 * time.Minute
+	watchLagFor     = 15 * time.Minute
+	// watchBudgetUsed is the share of a cap spent and held above which an
+	// account alerts; watchBudgetHeld, the share held alone.
+	watchBudgetUsed = 0.80
+	watchBudgetHeld = 0.02
+	// watchPartialPercent is the share of the last 10 minutes' Searches that
+	// may be partially degraded, in percent, and watchPartialSearches the
+	// fewest Searches in that window from which the share counts.
+	watchPartialPercent  = 5
+	watchPartialSearches = 20
+
+	// watchMessageBytes bounds a message: under 1,000 characters, and under
+	// WeCom's 2,048 bytes whatever the characters.
+	watchMessageBytes = 999
+
+	watchReadTimeout = 5 * time.Second
+	watchHookTimeout = 10 * time.Second
+	// watchRunLimit bounds a run: what it has not sent by then is left to
+	// the next run.
+	watchRunLimit = time.Minute
+
+	watchStateVersion = 1
+	// watchValueBytes bounds the value an alert keeps in the state.
+	watchValueBytes  = 1000
+	watchReadLimit   = 1 << 20
+	watchAnswerLimit = 64 << 10
+)
+
+// newAMLWatchCommand is `mnemon memory-agent aml-watch`: one run of the alert
+// watcher (the comment above).
+func newAMLWatchCommand() *cobra.Command {
+	command := &cobra.Command{
+		Use:   "aml-watch",
+		Short: "Check a running aml-serve once and post its alerts to a Feishu or WeCom webhook",
+		Long: `Check a running aml-serve once: read its admin listener's /ready and /admin/status and its
+public /health, apply the alert rules, and post a text message for each alert that fires, each
+firing alert that is due again (every 30 minutes) and each alert that clears, to the webhook named
+by the environment variable AML_ALERT_WEBHOOK, in the payload of AML_ALERT_KIND (feishu or wecom).
+Run it every minute with a systemd timer. The webhook URL is a secret and is never printed. With no
+webhook the alerts are logged only. The state between runs is the file --state.`,
+		Args: cobra.NoArgs,
+		RunE: runAMLWatch,
+	}
+	flags := command.Flags()
+	flags.String("admin", "http://127.0.0.1:8091", "URL of aml-serve's admin listener (--admin-listen)")
+	flags.String("public-url", "", "URL of the public listener as clients reach it, such as https://memory.example.com, whose /health is checked; empty to skip that check")
+	flags.String("state", "", "Absolute path of the state file kept between runs, such as /var/lib/mnemon-aml/watch-state.json (required)")
+	return command
+}
+
+// watchSettings are aml-watch's checked settings. webhook is empty to log the
+// alerts instead of posting them.
+type watchSettings struct {
+	admin, public, state string
+	webhook, kind        string
+}
+
+// amlWatchSettings reads and checks aml-watch's flags and environment; it
+// touches nothing. The webhook and its kind are checked when the watcher runs.
+func amlWatchSettings(cmd *cobra.Command) (watchSettings, error) {
+	flags := cmd.Flags()
+	var s watchSettings
+	admin, _ := flags.GetString("admin")
+	public, _ := flags.GetString("public-url")
+	s.state, _ = flags.GetString("state")
+	var err error
+	if s.admin, err = watchBaseURL("--admin", admin); err != nil {
+		return s, err
+	}
+	if public != "" {
+		if s.public, err = watchBaseURL("--public-url", public); err != nil {
+			return s, err
+		}
+	}
+	switch {
+	case s.state == "":
+		return s, errors.New("--state is required: the file the watcher keeps between runs")
+	case !filepath.IsAbs(s.state):
+		return s, errors.New("--state must be an absolute path")
+	}
+	s.webhook = strings.TrimSpace(os.Getenv("AML_ALERT_WEBHOOK"))
+	s.kind = strings.ToLower(strings.TrimSpace(os.Getenv("AML_ALERT_KIND")))
+	return s, nil
+}
+
+// watchBaseURL is raw as the base of the requests of flag: an http or https
+// URL without credentials, query or trailing slash.
+func watchBaseURL(flag, raw string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("%s must be an http or https URL, such as http://127.0.0.1:8091", flag)
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("%s must not contain credentials", flag)
+	}
+	u.RawQuery, u.Fragment = "", ""
+	return strings.TrimRight(u.String(), "/"), nil
+}
+
+// runAMLWatch is one run: the process's SIGINT and SIGTERM end the requests
+// in flight, and the state is saved all the same.
+func runAMLWatch(cmd *cobra.Command, _ []string) error {
+	settings, err := amlWatchSettings(cmd)
+	if err != nil {
+		return err
+	}
+	parent := cmd.Context()
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	return newWatcher(settings, amlLogger("text", cmd.ErrOrStderr())).run(ctx)
+}
+
+// watcher is one aml-watch run's world: where to look, where to post, the
+// clock and the logger.
+type watcher struct {
+	watchSettings
+	host string
+	now  func() time.Time
+	log  *slog.Logger
+	// reads makes the requests to the admin and public listeners, hooks the
+	// post to the webhook, which is not followed to another address.
+	reads, hooks *http.Client
+}
+
+func newWatcher(settings watchSettings, log *slog.Logger) *watcher {
+	host, err := os.Hostname()
+	if err != nil || host == "" {
+		host = "unknown-host"
+	}
+	return &watcher{
+		watchSettings: settings, host: host, now: time.Now, log: log,
+		reads: &http.Client{Timeout: watchReadTimeout},
+		hooks: &http.Client{
+			Timeout:       watchHookTimeout,
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
+	}
+}
+
+// run reads, evaluates, posts and saves, once. Its error says that a message
+// could not be delivered, that the state could not be saved or read, or that
+// the run was interrupted; an alert, a server that does not answer included,
+// is not an error.
+func (w *watcher) run(ctx context.Context) error {
+	if err := w.checkDelivery(); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(ctx, watchRunLimit)
+	defer cancel()
+	now := w.now().UTC()
+	prev, err := loadWatchState(w.state, w.log)
+	if err != nil {
+		return err
+	}
+	obs := w.observe(ctx)
+	if err := ctx.Err(); err != nil {
+		// An interrupted run saw nothing, whatever its probes made of that: it
+		// says nothing and keeps the state as it was.
+		return fmt.Errorf("aml-watch was interrupted before it had read the server: %w", err)
+	}
+	next, values, frozen := evaluate(obs, prev, now)
+	var messages []watchMessage
+	next.Firing, messages = planAlerts(now, w.host, values, frozen, prev.Firing)
+	outcomes, deliveryErr := w.deliver(ctx, messages)
+	settleAlerts(next.Firing, messages, outcomes, now)
+	return errors.Join(deliveryErr, saveWatchState(w.state, next))
+}
+
+// checkDelivery checks the webhook and its kind; without a webhook there is
+// nothing to check.
+func (w *watcher) checkDelivery() error {
+	if w.webhook == "" {
+		return nil
+	}
+	if w.kind != "feishu" && w.kind != "wecom" {
+		return errors.New("AML_ALERT_KIND must be feishu or wecom")
+	}
+	// The error never repeats the value: its path is a secret.
+	u, err := url.Parse(w.webhook)
+	if err != nil || u.Host == "" || !(u.Scheme == "https" || u.Scheme == "http" && watchLoopbackHost(u.Hostname())) {
+		return errors.New("AML_ALERT_WEBHOOK must be an https URL (http only to a loopback address)")
+	}
+	return nil
+}
+
+func watchLoopbackHost(host string) bool {
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// ---- what the run reads ----
+
+// watchObservation is what one run read. status is nil when /admin/status
+// could not be read; each other field is "" when its probe was fine, else
+// says what was wrong.
+type watchObservation struct {
+	status    *aml.AdminStatus
+	statusErr string
+	ready     string
+	health    string
+}
+
+// observe reads /ready, /admin/status and, with a public URL, /health.
+func (w *watcher) observe(ctx context.Context) watchObservation {
+	var obs watchObservation
+	obs.ready = w.probeReady(ctx)
+	obs.status, obs.statusErr = w.readStatus(ctx)
+	if w.public != "" {
+		obs.health = w.probeHealth(ctx)
+	}
+	return obs
+}
+
+// fetch GETs base+path and returns the status and the start of the body.
+func (w *watcher) fetch(ctx context.Context, base, path string) (int, []byte, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(base, "/")+path, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	request.Header.Set("Accept", "application/json")
+	response, err := w.reads.Do(request)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, watchReadLimit))
+	return response.StatusCode, body, err
+}
+
+// watchRequestError is err without the URL net/http puts in front of it.
+func watchRequestError(err error) string {
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		err = urlErr.Err
+	}
+	return err.Error()
+}
+
+func (w *watcher) probeReady(ctx context.Context) string {
+	code, body, err := w.fetch(ctx, w.admin, "/ready")
+	switch {
+	case err != nil:
+		return "/ready did not answer: " + watchRequestError(err)
+	case code == http.StatusOK:
+		return ""
+	}
+	var ready struct{ Reasons []string }
+	if code == http.StatusServiceUnavailable && json.Unmarshal(body, &ready) == nil && len(ready.Reasons) > 0 {
+		return "/ready answered 503: " + strings.Join(ready.Reasons, "; ")
+	}
+	return fmt.Sprintf("/ready answered %d", code)
+}
+
+func (w *watcher) readStatus(ctx context.Context) (*aml.AdminStatus, string) {
+	code, body, err := w.fetch(ctx, w.admin, "/admin/status")
+	if err != nil {
+		return nil, "/admin/status did not answer: " + watchRequestError(err)
+	}
+	if code != http.StatusOK {
+		return nil, fmt.Sprintf("/admin/status answered %d", code)
+	}
+	var status aml.AdminStatus
+	if json.Unmarshal(body, &status) != nil || status.StartedAt.IsZero() {
+		return nil, "/admin/status did not answer with an aml-serve status"
+	}
+	return &status, ""
+}
+
+func (w *watcher) probeHealth(ctx context.Context) string {
+	target := strings.TrimRight(w.public, "/") + "/health"
+	code, _, err := w.fetch(ctx, w.public, "/health")
+	switch {
+	case err != nil:
+		return fmt.Sprintf("GET %s did not answer: %s", target, watchRequestError(err))
+	case code != http.StatusOK:
+		return fmt.Sprintf("GET %s answered %d", target, code)
+	}
+	return ""
+}
+
+// ---- the state between runs ----
+
+// watchState is the state file: JSON, rewritten whole by every run.
+//
+//	startedAt  the start of the server whose counters these are (zero before
+//	           any status was read)
+//	counters   the status's counters as of the last run that read it, by name
+//	           (the status's own for the Search and consolidation counters,
+//	           "trips:<kind>" for a kind's breaker trips)
+//	rises      when each alert about a counter was last seen to be new
+//	since      when each condition that must last (backlog-lag) was first seen
+//	firing     the alerts that fired and have not been resolved
+type watchState struct {
+	Version   int                   `json:"version"`
+	CheckedAt time.Time             `json:"checkedAt"`
+	StartedAt time.Time             `json:"startedAt"`
+	Counters  map[string]int64      `json:"counters"`
+	Rises     map[string]time.Time  `json:"rises"`
+	Since     map[string]time.Time  `json:"since"`
+	Firing    map[string]watchAlert `json:"firing"`
+}
+
+// watchAlert is an alert in the state: since when it fires, when its message
+// last went out (zero if none did: it is sent by the next run), and the value
+// that fired it last. An alert that stopped firing stays in the state until
+// its resolution is delivered.
+type watchAlert struct {
+	Since    time.Time `json:"since"`
+	LastSent time.Time `json:"lastSent"`
+	Value    string    `json:"value"`
+}
+
+func newWatchState() watchState {
+	return watchState{Version: watchStateVersion, Counters: map[string]int64{}, Rises: map[string]time.Time{}, Since: map[string]time.Time{}, Firing: map[string]watchAlert{}}
+}
+
+// loadWatchState reads the state file. A missing file is a first run, and a
+// file that is not a state of this version is one too (said in the log): the
+// run goes on and writes a good one. A file that cannot be read is an error.
+func loadWatchState(path string, log *slog.Logger) (watchState, error) {
+	file, err := os.Open(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return newWatchState(), nil
+	}
+	if err != nil {
+		return watchState{}, fmt.Errorf("read the watch state: %w", err)
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, watchReadLimit))
+	if err != nil {
+		return watchState{}, fmt.Errorf("read the watch state: %w", err)
+	}
+	var state watchState
+	if err := json.Unmarshal(raw, &state); err != nil || state.Version != watchStateVersion {
+		log.Warn("aml-watch: the state file is unreadable or of another version; starting afresh", "path", path)
+		return newWatchState(), nil
+	}
+	state.normalize()
+	return state, nil
+}
+
+// normalize makes the maps of a state read from a file (null, or missing)
+// maps again.
+func (s *watchState) normalize() {
+	if s.Counters == nil {
+		s.Counters = map[string]int64{}
+	}
+	if s.Rises == nil {
+		s.Rises = map[string]time.Time{}
+	}
+	if s.Since == nil {
+		s.Since = map[string]time.Time{}
+	}
+	if s.Firing == nil {
+		s.Firing = map[string]watchAlert{}
+	}
+}
+
+// saveWatchState writes state to path atomically: to a temporary file in the
+// same directory (os.CreateTemp makes it mode 0600; it is flushed), renamed
+// over the old state. The directory is made if it is missing.
+func saveWatchState(path string, state watchState) error {
+	raw, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("save the watch state: %w", err)
+	}
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("save the watch state: %w", err)
+	}
+	temp, err := os.CreateTemp(dir, ".watch-state-*.tmp")
+	if err != nil {
+		return fmt.Errorf("save the watch state: %w", err)
+	}
+	_, writeErr := temp.Write(append(raw, '\n'))
+	syncErr := temp.Sync()
+	closeErr := temp.Close()
+	err = errors.Join(writeErr, syncErr, closeErr)
+	if err == nil {
+		err = os.Rename(temp.Name(), path)
+	}
+	if err != nil {
+		os.Remove(temp.Name())
+		return fmt.Errorf("save the watch state: %w", err)
+	}
+	return nil
+}
+
+// ---- the rules ----
+
+// evaluation is one application of the rules: the state the next run starts
+// from (next), and the value of each alert that fires now (firing).
+type evaluation struct {
+	now  time.Time
+	prev watchState
+	next watchState
+	// fresh: no status was read before. restarted: the server is another
+	// process than the last status's.
+	fresh, restarted bool
+	// since: the conditions that have lasted, as of the last run.
+	since  map[string]time.Time
+	firing map[string]string
+}
+
+// evaluate applies the rules to obs and the last run's state. It returns the
+// state to save (its firing alerts are planned next: planAlerts), the value of
+// each alert that fires now, and the alerts whose rules could not be applied
+// because the status could not be read: they are left as they were.
+func evaluate(obs watchObservation, prev watchState, now time.Time) (watchState, map[string]string, map[string]bool) {
+	e := &evaluation{now: now, prev: prev, firing: map[string]string{}, since: prev.Since}
+	e.next = watchState{
+		Version: watchStateVersion, CheckedAt: now, StartedAt: prev.StartedAt,
+		Counters: prev.Counters, Rises: map[string]time.Time{}, Since: prev.Since,
+	}
+	if obs.ready != "" || obs.statusErr != "" {
+		e.firing["ready"] = strings.Join(slices.DeleteFunc([]string{obs.ready, obs.statusErr}, func(s string) bool { return s == "" }), "; ")
+	}
+	if obs.health != "" {
+		e.firing["health"] = obs.health
+	}
+	frozen := map[string]bool{}
+	if obs.status == nil {
+		// Whatever the status would have said is unknown: the rises are kept
+		// to be measured against later.
+		maps.Copy(e.next.Rises, prev.Rises)
+		for name := range prev.Firing {
+			frozen[name] = name != "ready" && name != "health"
+		}
+		return e.next, e.firing, frozen
+	}
+	e.status(obs.status)
+	return e.next, e.firing, frozen
+}
+
+// status applies the rules that read the status.
+func (e *evaluation) status(st *aml.AdminStatus) {
+	e.fresh = e.prev.StartedAt.IsZero()
+	e.restarted = !e.fresh && !st.StartedAt.Equal(e.prev.StartedAt)
+	e.next.StartedAt = st.StartedAt
+	e.next.Counters = map[string]int64{}
+	e.next.Since = map[string]time.Time{}
+	if e.restarted {
+		// The backlog is the new process's.
+		e.since = map[string]time.Time{}
+	}
+	e.event("restart", e.restarted,
+		fmt.Sprintf("aml-serve restarted: it started at %s; the last run saw the one that started at %s", watchTime(st.StartedAt), watchTime(e.prev.StartedAt)),
+		fmt.Sprintf("aml-serve restarted and has run since %s", watchTime(st.StartedAt)))
+	e.counter("degraded-search", "degraded", watchNoun{"degraded Search", "degraded Searches"}, st.Degraded)
+	e.counter("consolidation-dropped", "dropped", watchNoun{"drop from the consolidation layer", "drops from the consolidation layer"}, st.Dropped)
+	e.counter("link-fallback", "linkFallbacks", watchNoun{"batch linked without JEV", "batches linked without JEV"}, st.LinkFallbacks)
+	e.counter("add-outran", "addOutran", watchNoun{"Add that waited out its window for consolidation", "Adds that waited out their window for consolidation"}, st.AddOutran)
+	e.breakers(st)
+	e.partial(st)
+	e.budgets(st.Budgets)
+	e.backlog(st)
+}
+
+// base is the count the last run left for the counter key, which is what
+// "new" is measured from: the current count on the first run (the history is
+// not new), zero after a restart (the counters count from the start).
+func (e *evaluation) base(key string, current int64) int64 {
+	if e.fresh {
+		return current
+	}
+	if e.restarted {
+		return 0
+	}
+	if last, ok := e.prev.Counters[key]; ok {
+		return last
+	}
+	return current
+}
+
+// watchNoun is a noun in the singular and the plural.
+type watchNoun struct{ one, many string }
+
+// of is the noun for n of them.
+func (noun watchNoun) of(n int64) string {
+	if n == 1 {
+		return noun.one
+	}
+	return noun.many
+}
+
+// count is n of them: "1 trip", "2 trips".
+func (noun watchNoun) count(n int64) string { return fmt.Sprintf("%d %s", n, noun.of(n)) }
+
+// counter is the alert about a counter that grows when something happens.
+func (e *evaluation) counter(alert, key string, noun watchNoun, current int64) {
+	base := e.base(key, current)
+	e.next.Counters[key] = current
+	e.event(alert, current > base,
+		fmt.Sprintf("%d new %s (%d since the process started)", current-base, noun.of(current-base), current),
+		fmt.Sprintf("%s since the process started", noun.count(current)))
+}
+
+// event is an alert about something that happens: it fires when rose, and
+// goes on firing for watchHold after the last run that saw it rise. risen is
+// its value in a run that saw it, held in one that did not.
+func (e *evaluation) event(alert string, rose bool, risen, held string) {
+	if rose {
+		e.next.Rises[alert] = e.now
+		e.firing[alert] = risen
+		return
+	}
+	last, ok := e.prev.Rises[alert]
+	if !ok || e.now.Sub(last) >= watchHold {
+		return
+	}
+	e.next.Rises[alert] = last
+	e.firing[alert] = fmt.Sprintf("%s (last seen %s ago)", held, e.now.Sub(last).Round(time.Second))
+}
+
+// breakers: a provider kind's breaker is open now, or opened since the last
+// run.
+func (e *evaluation) breakers(st *aml.AdminStatus) {
+	kinds := map[string]bool{}
+	for kind := range st.Breakers {
+		kinds[kind] = true
+	}
+	for kind := range st.BreakerTrips {
+		kinds[kind] = true
+	}
+	times, trip := watchNoun{"time", "times"}, watchNoun{"trip", "trips"}
+	for _, kind := range slices.Sorted(maps.Keys(kinds)) {
+		trips := st.BreakerTrips[kind]
+		base := e.base("trips:"+kind, trips)
+		e.next.Counters["trips:"+kind] = trips
+		open := st.Breakers[kind] == memoryagent.BreakerOpen
+		risen := fmt.Sprintf("%s circuit breaker is open (%s since the process started)", kind, trip.count(trips))
+		if !open {
+			risen = fmt.Sprintf("%s circuit breaker opened %s since the last run and is closed now (%s since the process started)", kind, times.count(trips-base), trip.count(trips))
+		}
+		e.event("breaker-open:"+kind, open || trips > base, risen,
+			fmt.Sprintf("%s circuit breaker has opened %s since the process started", kind, times.count(trips)))
+	}
+}
+
+// partial: more than watchPartialPercent of the last ten minutes' Searches
+// were partially degraded, with at least watchPartialSearches of them so that
+// a handful cannot page.
+func (e *evaluation) partial(st *aml.AdminStatus) {
+	if st.SearchesLast10m >= watchPartialSearches && st.PartialLast10m*100 > st.SearchesLast10m*watchPartialPercent {
+		e.firing["partial-search"] = fmt.Sprintf("%d of %d Searches in the last 10 minutes (%.1f%%) were partially degraded, above %d%%",
+			st.PartialLast10m, st.SearchesLast10m, 100*float64(st.PartialLast10m)/float64(st.SearchesLast10m), watchPartialPercent)
+	}
+}
+
+// budgets: an account above watchBudgetUsed of its cap, spent and held
+// together (as /ready counts), or holding more than watchBudgetHeld of it in
+// reservations. A cap of zero has no share.
+func (e *evaluation) budgets(accounts []memoryagent.BudgetAccount) {
+	number := func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
+	for _, a := range accounts {
+		if a.Cap <= 0 {
+			continue
+		}
+		if used := (a.Spent + a.Held) / a.Cap; used > watchBudgetUsed {
+			e.firing["budget-high:"+a.Kind] = fmt.Sprintf("%s is at %.1f%% of its cap (spent %s, held %s, cap %s)", a.Kind, 100*used, number(a.Spent), number(a.Held), number(a.Cap))
+		}
+		if held := a.Held / a.Cap; held > watchBudgetHeld {
+			e.firing["budget-held:"+a.Kind] = fmt.Sprintf("%s holds %.1f%% of its cap in reservations (held %s of %s)", a.Kind, 100*held, number(a.Held), number(a.Cap))
+		}
+	}
+}
+
+// backlog: the oldest work not yet consolidated is older than
+// watchBacklogAge, or the largest backlog has been above the server's lag
+// bound for watchLagFor of runs. Without a bound (consolidation is not
+// background) there is nothing to be above.
+func (e *evaluation) backlog(st *aml.AdminStatus) {
+	if age := st.Queue.OldestQueued; age > watchBacklogAge {
+		e.firing["backlog-age"] = fmt.Sprintf("the oldest work not yet consolidated has waited %s, above %s", age.Round(time.Second), watchBacklogAge)
+	}
+	if st.LagBound <= 0 || st.Queue.MaxBacklog <= st.LagBound {
+		return
+	}
+	began, ok := e.since["backlog-lag"]
+	if !ok {
+		began = e.now
+	}
+	e.next.Since["backlog-lag"] = began
+	if lasted := e.now.Sub(began); lasted >= watchLagFor {
+		e.firing["backlog-lag"] = fmt.Sprintf("the largest backlog is %d characters, above the lag bound of %d, for %s", st.Queue.MaxBacklog, st.LagBound, lasted.Round(time.Second))
+	}
+}
+
+func watchTime(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+
+// ---- what to say ----
+
+// The kinds of message: a new alert (or one whose first message did not go
+// out), a firing alert said again, an alert that cleared.
+type watchEvent string
+
+const (
+	watchNew      watchEvent = "alert"
+	watchAgain    watchEvent = "repeat"
+	watchResolved watchEvent = "resolved"
+)
+
+// watchMessage is a message to post, and what it is about.
+type watchMessage struct {
+	alert string
+	event watchEvent
+	text  string
+}
+
+// planAlerts decides, from the alerts that fire now (with their values), the
+// ones the status could not speak for (frozen) and the alerts of the last
+// run, which messages to post and what the alerts' state is if they are all
+// delivered. The messages are in the order of the alerts' names.
+func planAlerts(now time.Time, host string, firing map[string]string, frozen map[string]bool, prev map[string]watchAlert) (map[string]watchAlert, []watchMessage) {
+	names := map[string]bool{}
+	for name := range firing {
+		names[name] = true
+	}
+	for name := range prev {
+		names[name] = true
+	}
+	next, messages := map[string]watchAlert{}, []watchMessage{}
+	say := func(name string, event watchEvent, alert watchAlert, value string) {
+		messages = append(messages, watchMessage{name, event, watchText(event, name, host, now.Sub(alert.Since), value, now)})
+	}
+	for _, name := range slices.Sorted(maps.Keys(names)) {
+		old, wasFiring := prev[name]
+		value, isFiring := firing[name]
+		switch {
+		case frozen[name]:
+			next[name] = old
+		case isFiring && !wasFiring:
+			next[name] = watchAlert{Since: now, Value: watchTruncate(value, watchValueBytes)}
+			say(name, watchNew, next[name], value)
+		case isFiring:
+			alert := watchAlert{Since: old.Since, LastSent: old.LastSent, Value: watchTruncate(value, watchValueBytes)}
+			next[name] = alert
+			if old.LastSent.IsZero() {
+				say(name, watchNew, alert, value)
+			} else if now.Sub(old.LastSent) >= watchRepeat {
+				say(name, watchAgain, alert, value)
+			}
+		case old.LastSent.IsZero():
+			// It never reached anybody, so nobody is told it is over.
+		default:
+			next[name] = old
+			say(name, watchResolved, old, "was: "+old.Value)
+		}
+	}
+	return next, messages
+}
+
+// watchText is the text of a message: the alert, the host and how long it has
+// fired; the value that fired it; and the time in UTC. The value is cut to
+// keep the message under watchMessageBytes.
+func watchText(event watchEvent, alert, host string, firedFor time.Duration, value string, now time.Time) string {
+	header := fmt.Sprintf("ALERT %s on %s", alert, host)
+	switch event {
+	case watchAgain:
+		header += fmt.Sprintf(" (still firing after %s)", firedFor.Round(time.Second))
+	case watchResolved:
+		header = fmt.Sprintf("RESOLVED %s on %s (after %s)", alert, host, firedFor.Round(time.Second))
+	}
+	footer := now.UTC().Format("2006-01-02 15:04:05") + " UTC"
+	value = strings.Join(strings.Fields(value), " ")
+	room := watchMessageBytes - len(header) - len(footer) - 2
+	return watchTruncate(header+"\n"+watchTruncate(value, max(room, 0))+"\n"+footer, watchMessageBytes)
+}
+
+// watchTruncate is s cut to at most limit bytes, whole characters, with "..."
+// where it was cut.
+func watchTruncate(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	if limit <= 3 {
+		return "..."[:limit]
+	}
+	cut := limit - 3
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "..."
+}
+
+// ---- delivery ----
+
+// How a message ended up: delivered; unsent (kept for the next run); or
+// dropped (there was nowhere to post it and nothing to keep).
+type watchOutcome int
+
+const (
+	watchDelivered watchOutcome = iota
+	watchUnsent
+	watchDropped
+)
+
+// deliver posts the messages in order, or logs them when there is no webhook.
+// A message that is rejected does not hold up the others, but a webhook that
+// does not answer is given up on for the run, so that the run ends in
+// bounded time. The error says how many messages were not delivered, and why.
+func (w *watcher) deliver(ctx context.Context, messages []watchMessage) ([]watchOutcome, error) {
+	if w.webhook == "" {
+		return w.logUnposted(messages), nil
+	}
+	outcomes := make([]watchOutcome, len(messages))
+	var reasons []string
+	for i, m := range messages {
+		err := w.post(ctx, m.text)
+		if err == nil {
+			w.log.Info("aml-watch: posted", "alert", m.alert, "event", m.event)
+			continue
+		}
+		w.log.Error("aml-watch: not delivered", "alert", m.alert, "event", m.event, "reason", err.Error())
+		outcomes[i] = watchUnsent
+		if !slices.Contains(reasons, err.Error()) {
+			reasons = append(reasons, err.Error())
+		}
+		var failure *webhookFailure
+		if errors.As(err, &failure) && failure.unreachable {
+			for j := i + 1; j < len(messages); j++ {
+				outcomes[j] = watchUnsent
+			}
+			break
+		}
+	}
+	if len(reasons) == 0 {
+		return outcomes, nil
+	}
+	return outcomes, fmt.Errorf("alert delivery failed: %d of %d messages not delivered (%s); the next run sends them again",
+		countOutcome(outcomes, watchUnsent), len(messages), strings.Join(reasons, "; "))
+}
+
+func countOutcome(outcomes []watchOutcome, want watchOutcome) int {
+	n := 0
+	for _, outcome := range outcomes {
+		if outcome == want {
+			n++
+		}
+	}
+	return n
+}
+
+// logUnposted logs the messages there is no webhook to post. An alert is kept
+// unsent, to be posted once there is a webhook; a resolution is dropped,
+// since nobody was told the alert fired.
+func (w *watcher) logUnposted(messages []watchMessage) []watchOutcome {
+	outcomes := make([]watchOutcome, len(messages))
+	for i, m := range messages {
+		w.log.Warn("aml-watch: AML_ALERT_WEBHOOK is empty: not posting", "alert", m.alert, "event", m.event, "message", m.text)
+		outcomes[i] = watchUnsent
+		if m.event == watchResolved {
+			outcomes[i] = watchDropped
+		}
+	}
+	return outcomes
+}
+
+// settleAlerts updates the planned state of the alerts with how their
+// messages ended up: a delivered one was sent now, a delivered resolution
+// ends the alert, and what could not be posted stays as planned.
+func settleAlerts(alerts map[string]watchAlert, messages []watchMessage, outcomes []watchOutcome, now time.Time) {
+	for i, m := range messages {
+		alert := alerts[m.alert]
+		switch {
+		case outcomes[i] == watchDropped || outcomes[i] == watchDelivered && m.event == watchResolved:
+			delete(alerts, m.alert)
+		case outcomes[i] == watchDelivered:
+			alert.LastSent = now
+			alerts[m.alert] = alert
+		}
+	}
+}
+
+// webhookFailure is why a post failed. Its text never contains the URL or the
+// webhook's own words. unreachable: no answer came back.
+type webhookFailure struct {
+	reason      string
+	unreachable bool
+}
+
+func (f *webhookFailure) Error() string { return f.reason }
+
+// post sends text to the webhook as the payload of its kind.
+func (w *watcher) post(ctx context.Context, text string) error {
+	body, err := watchPayload(w.kind, text)
+	if err != nil {
+		return &webhookFailure{reason: "the message could not be encoded"}
+	}
+	// The errors of net/http name the URL, which is the secret: none of them
+	// is passed on.
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, w.webhook, bytes.NewReader(body))
+	if err != nil {
+		return &webhookFailure{reason: "the webhook request could not be made"}
+	}
+	request.Header.Set("Content-Type", "application/json; charset=utf-8")
+	response, err := w.hooks.Do(request)
+	if err != nil {
+		return watchTransportFailure(err)
+	}
+	defer response.Body.Close()
+	answer, _ := io.ReadAll(io.LimitReader(response.Body, watchAnswerLimit))
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		return &webhookFailure{reason: fmt.Sprintf("the webhook answered HTTP %d", response.StatusCode)}
+	}
+	if code, rejected := watchRejection(answer); rejected {
+		return &webhookFailure{reason: fmt.Sprintf("the webhook rejected the message (code %d)", code)}
+	}
+	return nil
+}
+
+// watchTransportFailure says what kind of failure err is, and nothing else.
+func watchTransportFailure(err error) *webhookFailure {
+	var timeout interface{ Timeout() bool }
+	switch {
+	case errors.Is(err, context.Canceled):
+		return &webhookFailure{reason: "the post was interrupted", unreachable: true}
+	case errors.Is(err, context.DeadlineExceeded) || errors.As(err, &timeout) && timeout.Timeout():
+		return &webhookFailure{reason: "the webhook did not answer in time", unreachable: true}
+	}
+	return &webhookFailure{reason: "the webhook could not be reached", unreachable: true}
+}
+
+// watchRejection is the code of an answer, however it is spelled, that says
+// the webhook did not take the message though it answered 2xx: Feishu's code
+// (or StatusCode) and WeCom's errcode, when not zero. Anything else, an
+// answer that is not JSON included, is taken as success.
+func watchRejection(answer []byte) (int, bool) {
+	var body struct {
+		Code       *int `json:"code"`
+		StatusCode *int `json:"StatusCode"`
+		ErrCode    *int `json:"errcode"`
+	}
+	if json.Unmarshal(answer, &body) != nil {
+		return 0, false
+	}
+	for _, code := range []*int{body.Code, body.StatusCode, body.ErrCode} {
+		if code != nil && *code != 0 {
+			return *code, true
+		}
+	}
+	return 0, false
+}
+
+// The payloads of the two kinds of webhook: Feishu's custom bot and WeCom's
+// group robot, both a plain text message.
+type feishuPayload struct {
+	MsgType string `json:"msg_type"`
+	Content struct {
+		Text string `json:"text"`
+	} `json:"content"`
+}
+
+type wecomPayload struct {
+	MsgType string `json:"msgtype"`
+	Text    struct {
+		Content string `json:"content"`
+	} `json:"text"`
+}
+
+// watchPayload is the JSON body that posts text to a webhook of kind.
+func watchPayload(kind, text string) ([]byte, error) {
+	var payload any
+	switch kind {
+	case "feishu":
+		p := feishuPayload{MsgType: "text"}
+		p.Content.Text = text
+		payload = p
+	case "wecom":
+		p := wecomPayload{MsgType: "text"}
+		p.Text.Content = text
+		payload = p
+	default:
+		return nil, fmt.Errorf("unknown kind %q", kind)
+	}
+	var body bytes.Buffer
+	encoder := json.NewEncoder(&body)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(payload); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(body.Bytes(), "\n"), nil
+}

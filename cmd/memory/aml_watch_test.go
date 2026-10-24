@@ -1,0 +1,1569 @@
+package memory
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+	"unicode/utf8"
+
+	"github.com/mnemon-dev/mnemon/internal/aml"
+	"github.com/mnemon-dev/mnemon/internal/memoryagent"
+)
+
+// The watcher's world is fake: an aml-serve's admin and public listeners and a
+// webhook, each an httptest server whose answers a test sets, and a clock a
+// test moves. Nothing here waits for time to pass.
+
+// watchToken is the secret part of the test webhook's URL.
+const watchToken = "s3cr3t-t0k3n-4f9a"
+
+var (
+	// watchNow is the clock's first reading; the fake server started a day
+	// before it.
+	watchNow     = time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
+	watchStarted = watchNow.Add(-24 * time.Hour)
+)
+
+// watchHealthy is the status of a server that is well: nothing counted, every
+// breaker closed, the accounts a fifth spent, no backlog.
+func watchHealthy(started time.Time) aml.AdminStatus {
+	return aml.AdminStatus{
+		StartedAt: started, Adds: 900, Searches: 500, SearchesLast10m: 100, LagBound: 160000,
+		Breakers:     map[string]string{"deepseek": "closed", "jev": "closed", "openai": "closed"},
+		BreakerTrips: map[string]int64{"deepseek": 0, "jev": 0, "openai": 0},
+		Budgets:      []memoryagent.BudgetAccount{{Kind: "deepseek", Cap: 600, Spent: 120}, {Kind: "jev", Cap: 60, Spent: 12}},
+	}
+}
+
+// watchStack is what aml-watch talks to.
+type watchStack struct {
+	admin, public, hook *httptest.Server
+
+	mu           sync.Mutex
+	status       aml.AdminStatus
+	statusRaw    string // served instead of status when set
+	statusCode   int    // 0 for 200
+	readyCode    int    // 0 for 200
+	readyReasons []string
+	healthCode   int    // 0 for 200
+	hookCode     int    // 0 for 200
+	hookBody     string // "" for the answer of a webhook that took the message
+	hookHandler  http.HandlerFunc
+	posts        []watchPost
+	taken        int
+}
+
+type watchPost struct {
+	path, contentType string
+	body              []byte
+}
+
+func newWatchStack(t *testing.T) *watchStack {
+	t.Helper()
+	s := &watchStack{status: watchHealthy(watchStarted)}
+	admin := http.NewServeMux()
+	admin.HandleFunc("GET /ready", func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.readyCode != 0 && s.readyCode != http.StatusOK {
+			w.WriteHeader(s.readyCode)
+			json.NewEncoder(w).Encode(map[string]any{"ready": false, "reasons": s.readyReasons})
+			return
+		}
+		io.WriteString(w, `{"ready":true}`)
+	})
+	admin.HandleFunc("GET /admin/status", func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.statusCode != 0 && s.statusCode != http.StatusOK {
+			w.WriteHeader(s.statusCode)
+			return
+		}
+		if s.statusRaw != "" {
+			io.WriteString(w, s.statusRaw)
+			return
+		}
+		json.NewEncoder(w).Encode(s.status)
+	})
+	public := http.NewServeMux()
+	public.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.healthCode != 0 {
+			w.WriteHeader(s.healthCode)
+		}
+	})
+	hook := http.NewServeMux()
+	hook.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		s.mu.Lock()
+		handler := s.hookHandler
+		s.posts = append(s.posts, watchPost{path: r.Method + " " + r.URL.RequestURI(), contentType: r.Header.Get("Content-Type"), body: body})
+		code, answer := s.hookCode, s.hookBody
+		s.mu.Unlock()
+		if handler != nil {
+			handler(w, r)
+			return
+		}
+		if code != 0 {
+			w.WriteHeader(code)
+		}
+		if answer == "" {
+			answer = `{"StatusCode":0,"StatusMessage":"success","code":0,"msg":"success"}`
+		}
+		io.WriteString(w, answer)
+	})
+	s.admin, s.public, s.hook = httptest.NewServer(admin), httptest.NewServer(public), httptest.NewServer(hook)
+	t.Cleanup(s.admin.Close)
+	t.Cleanup(s.public.Close)
+	t.Cleanup(s.hook.Close)
+	return s
+}
+
+// webhookURL is the webhook as an operator configures it: its path is secret.
+func (s *watchStack) webhookURL() string { return s.hook.URL + "/hook/" + watchToken }
+
+// set changes the status the fake server answers with.
+func (s *watchStack) set(edit func(*aml.AdminStatus)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	edit(&s.status)
+}
+
+// configure changes how the fake answers.
+func (s *watchStack) configure(edit func(*watchStack)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	edit(s)
+}
+
+// attempts counts the posts the webhook received.
+func (s *watchStack) attempts() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.posts)
+}
+
+// take returns the texts of the messages posted since the last call, whatever
+// the webhook answered, whichever the payload kind.
+func (s *watchStack) take(t *testing.T) []string {
+	t.Helper()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	texts := []string{}
+	for _, post := range s.posts[s.taken:] {
+		var body struct {
+			Content struct{ Text string }
+			Text    struct{ Content string }
+		}
+		if err := json.Unmarshal(post.body, &body); err != nil {
+			t.Fatal(err, string(post.body))
+		}
+		texts = append(texts, body.Content.Text+body.Text.Content)
+	}
+	s.taken = len(s.posts)
+	return texts
+}
+
+// watchClock is the watcher's clock.
+type watchClock struct{ at time.Time }
+
+func (c *watchClock) now() time.Time { return c.at }
+
+// watchRig is one watcher, its clock and its world.
+type watchRig struct {
+	t     *testing.T
+	stack *watchStack
+	clock *watchClock
+	w     *watcher
+	logs  *bytes.Buffer
+	state string
+}
+
+func newWatchRig(t *testing.T) *watchRig {
+	t.Helper()
+	stack := newWatchStack(t)
+	r := &watchRig{t: t, stack: stack, clock: &watchClock{at: watchNow}, logs: &bytes.Buffer{}, state: filepath.Join(t.TempDir(), "state", "watch-state.json")}
+	r.w = newWatcher(watchSettings{
+		admin: stack.admin.URL, public: stack.public.URL, state: r.state, webhook: stack.webhookURL(), kind: "feishu",
+	}, slog.New(slog.NewTextHandler(r.logs, nil)))
+	r.w.now, r.w.host = r.clock.now, "aml-test"
+	return r
+}
+
+// step moves the clock on, runs the watcher once and returns what it posted.
+func (r *watchRig) step(after time.Duration) []string {
+	r.t.Helper()
+	texts, err := r.stepErr(after)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	return texts
+}
+
+func (r *watchRig) stepErr(after time.Duration) ([]string, error) {
+	r.t.Helper()
+	r.clock.at = r.clock.at.Add(after)
+	err := r.w.run(context.Background())
+	return r.stack.take(r.t), err
+}
+
+// saved reads the state file back, field by field.
+func (r *watchRig) saved() map[string]json.RawMessage {
+	r.t.Helper()
+	raw, err := os.ReadFile(r.state)
+	if err != nil {
+		r.t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		r.t.Fatal(err, string(raw))
+	}
+	return fields
+}
+
+// firing lists the alerts in the state file, each with whether its last
+// message went out.
+func (r *watchRig) firing() map[string]bool {
+	r.t.Helper()
+	var firing map[string]struct {
+		LastSent time.Time `json:"lastSent"`
+	}
+	if err := json.Unmarshal(r.saved()["firing"], &firing); err != nil {
+		r.t.Fatal(err)
+	}
+	out := map[string]bool{}
+	for name, alert := range firing {
+		out[name] = !alert.LastSent.IsZero()
+	}
+	return out
+}
+
+// onlyAlert checks that texts is one message of the named alert and returns it.
+func onlyAlert(t *testing.T, texts []string, alert string) string {
+	t.Helper()
+	if len(texts) != 1 || !strings.Contains(texts[0], " "+alert+" on aml-test") {
+		t.Fatalf("want one message for %s, got %q", alert, texts)
+	}
+	return texts[0]
+}
+
+func TestWatchFiresAndRepeats(t *testing.T) {
+	r := newWatchRig(t)
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 5 })
+
+	// The first run only takes the counters as they are.
+	if texts := r.step(0); len(texts) != 0 {
+		t.Fatal("the first run said", texts)
+	}
+
+	// A degraded Search is one message, with the alert, the value, the host
+	// and the time in UTC.
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 6 })
+	first := onlyAlert(t, r.step(time.Minute), "degraded-search")
+	for _, want := range []string{"ALERT degraded-search on aml-test", "1 new", "6 since the process started", "2026-10-24 12:01:00 UTC"} {
+		if !strings.Contains(first, want) {
+			t.Fatalf("%q lacks %q", first, want)
+		}
+	}
+	if len(first) >= 1000 {
+		t.Fatal(len(first))
+	}
+
+	// While it goes on, a run within 30 minutes of the message is silent,
+	// however many Searches degrade: one more every five minutes, to 12:30.
+	degraded := int64(6)
+	for minute := 2; minute <= 30; minute++ {
+		if minute%5 == 0 {
+			degraded++
+			r.stack.set(func(s *aml.AdminStatus) { s.Degraded = degraded })
+		}
+		if texts := r.step(time.Minute); len(texts) != 0 {
+			t.Fatalf("at 12:%02d: %q", minute, texts)
+		}
+	}
+
+	// Thirty minutes after the message, with the counter still moving, it is
+	// said again.
+	repeat := onlyAlert(t, r.step(time.Minute), "degraded-search")
+	if !strings.Contains(repeat, "still firing after 30m0s") || !strings.Contains(repeat, "2026-10-24 12:31:00 UTC") {
+		t.Fatal(repeat)
+	}
+
+	// Then the counter is stable. The alert stays for ten minutes after the
+	// last new degraded Search (12:30), without a word…
+	for minute := 32; minute < 40; minute++ {
+		if texts := r.step(time.Minute); len(texts) != 0 {
+			t.Fatalf("at 12:%02d: %q", minute, texts)
+		}
+	}
+	// …and is then resolved, once.
+	resolved := onlyAlert(t, r.step(time.Minute), "degraded-search")
+	if !strings.HasPrefix(resolved, "RESOLVED degraded-search on aml-test (after 39m0s)") || !strings.Contains(resolved, "2026-10-24 12:40:00 UTC") ||
+		!strings.Contains(resolved, "\nwas: 12 degraded Searches since the process started") {
+		t.Fatal(resolved)
+	}
+	if texts := r.step(time.Minute); len(texts) != 0 {
+		t.Fatal("after it was resolved:", texts)
+	}
+	if got := r.firing(); len(got) != 0 {
+		t.Fatal("the state still has", got)
+	}
+}
+
+// A repeat is due 30 minutes after the last message, not a second before.
+func TestWatchRepeatsAtThirtyMinutesExactly(t *testing.T) {
+	r := newWatchRig(t)
+	r.step(0)
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	onlyAlert(t, r.step(time.Minute), "health")
+	if texts := r.step(29*time.Minute + 59*time.Second); len(texts) != 0 {
+		t.Fatal("29m59s later:", texts)
+	}
+	repeat := onlyAlert(t, r.step(time.Second), "health")
+	if !strings.Contains(repeat, "still firing after 30m0s") {
+		t.Fatal(repeat)
+	}
+	// The next repeat counts from the repeat.
+	if texts := r.step(29*time.Minute + 59*time.Second); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+	onlyAlert(t, r.step(time.Second), "health")
+}
+
+func TestWatchPayloadKinds(t *testing.T) {
+	for _, tc := range []struct {
+		kind, opening string
+	}{
+		{"feishu", `{"msg_type":"text","content":{"text":`},
+		{"wecom", `{"msgtype":"text","text":{"content":`},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			r := newWatchRig(t)
+			r.w.kind = tc.kind
+			r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+			texts := r.step(0)
+			wantText := fmt.Sprintf("ALERT health on aml-test\nGET %s/health answered 502\n2026-10-24 12:00:00 UTC", r.stack.public.URL)
+			if len(texts) != 1 || texts[0] != wantText {
+				t.Fatalf("got %q, want %q", texts, wantText)
+			}
+			r.stack.mu.Lock()
+			post := r.stack.posts[0]
+			r.stack.mu.Unlock()
+			// The body is exactly the payload of the kind: its key order, no
+			// other key, the text as one JSON string.
+			quoted, _ := json.Marshal(wantText)
+			if want := tc.opening + string(quoted) + `}}`; string(post.body) != want {
+				t.Fatalf("body %s\nwant %s", post.body, want)
+			}
+			if post.path != "POST /hook/"+watchToken || !strings.HasPrefix(post.contentType, "application/json") {
+				t.Fatal(post.path, post.contentType)
+			}
+		})
+	}
+
+	// The text is carried as it is, not HTML-escaped.
+	r := newWatchRig(t)
+	r.stack.configure(func(s *watchStack) {
+		s.readyCode, s.readyReasons = http.StatusServiceUnavailable, []string{"free disk <1 GiB & falling"}
+	})
+	r.step(0)
+	r.stack.mu.Lock()
+	raw := string(r.stack.posts[0].body)
+	r.stack.mu.Unlock()
+	if !strings.Contains(raw, `free disk <1 GiB & falling`) {
+		t.Fatal(raw)
+	}
+
+	// Anything else is refused before a message is built, and the value is
+	// not echoed.
+	for _, kind := range []string{"", "slack", "Feishu "} {
+		r := newWatchRig(t)
+		r.w.kind = kind
+		r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+		texts, err := r.stepErr(0)
+		if err == nil || !strings.Contains(err.Error(), "AML_ALERT_KIND must be feishu or wecom") || len(texts) != 0 || strings.Contains(err.Error(), watchToken) {
+			t.Fatalf("kind %q: %q %v", kind, texts, err)
+		}
+		if _, statErr := os.Stat(r.state); !os.IsNotExist(statErr) {
+			t.Fatalf("kind %q: a refused run wrote state: %v", kind, statErr)
+		}
+	}
+}
+
+func TestWatchDetectsRestart(t *testing.T) {
+	r := newWatchRig(t)
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded, s.Dropped = 4, 2 })
+	if texts := r.step(0); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+	// The same process, run after run: no restart.
+	if texts := r.step(time.Minute); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+
+	// A start later than the last run's is a restart, and the counters, which
+	// count from the start, are zero again: nothing else is said.
+	restarted := watchNow.Add(90 * time.Second)
+	r.stack.set(func(s *aml.AdminStatus) { *s = watchHealthy(restarted) })
+	message := onlyAlert(t, r.step(time.Minute), "restart") // 12:02
+	for _, want := range []string{"ALERT restart on aml-test", "restarted", "2026-10-24T12:01:30Z", "2026-10-23T12:00:00Z"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("%q lacks %q", message, want)
+		}
+	}
+	// The baseline is zero, not the old process's four: a Search that
+	// degrades now is seen.
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 1 })
+	if message = onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.Contains(message, "1 new") { // 12:03
+		t.Fatal(message)
+	}
+
+	// A restart is an event: ten minutes after it was seen, it is over; and
+	// so, ten minutes after the last degraded Search, is that.
+	if texts := r.step(8 * time.Minute); len(texts) != 0 { // 12:11
+		t.Fatal(texts)
+	}
+	if message = onlyAlert(t, r.step(time.Minute), "restart"); !strings.HasPrefix(message, "RESOLVED restart on aml-test") { // 12:12
+		t.Fatal(message)
+	}
+	if message = onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, "RESOLVED degraded-search") { // 12:13
+		t.Fatal(message)
+	}
+
+	// A process that restarted and counted before the watcher looked: all of
+	// it is new.
+	again := watchNow.Add(13*time.Minute + 30*time.Second)
+	r.stack.set(func(s *aml.AdminStatus) { *s = watchHealthy(again); s.Degraded, s.Dropped = 3, 1 })
+	texts := r.step(time.Minute) // 12:14
+	if len(texts) != 3 {
+		t.Fatal(texts)
+	}
+	for i, want := range []string{"ALERT consolidation-dropped on aml-test\n1 new", "ALERT degraded-search on aml-test\n3 new", "ALERT restart on aml-test"} {
+		if !strings.HasPrefix(texts[i], want) {
+			t.Errorf("message %d is %q, want %q", i, texts[i], want)
+		}
+	}
+
+	// A restart of a restart: the alerts are firing already, and are not said
+	// again for another start a minute later (the watcher does not repeat
+	// itself every minute through a crash loop)…
+	r.stack.set(func(s *aml.AdminStatus) { *s = watchHealthy(again.Add(time.Minute)); s.Degraded = 1 })
+	if texts = r.step(time.Minute); len(texts) != 0 { // 12:15
+		t.Fatal(texts)
+	}
+	// …and a server that started earlier than the last one seen is another
+	// process too, once they are over.
+	if texts = r.step(10 * time.Minute); len(texts) != 3 { // 12:25
+		t.Fatal(texts)
+	}
+	r.stack.set(func(s *aml.AdminStatus) { *s = watchHealthy(watchStarted) })
+	if message = onlyAlert(t, r.step(time.Minute), "restart"); !strings.HasPrefix(message, "ALERT restart") {
+		t.Fatal(message)
+	}
+}
+
+// The webhook is a secret: no output of the watcher shows it, whichever way
+// the post fails.
+func TestWatchNeverPrintsWebhook(t *testing.T) {
+	for name, fail := range map[string]func(*watchStack){
+		"HTTP 500": func(s *watchStack) { s.configure(func(s *watchStack) { s.hookCode = http.StatusInternalServerError }) },
+		"HTTP 400 with the path in its body": func(s *watchStack) {
+			s.configure(func(s *watchStack) { s.hookCode, s.hookBody = http.StatusBadRequest, "bad webhook /hook/"+watchToken })
+		},
+		"Feishu code": func(s *watchStack) {
+			s.configure(func(s *watchStack) {
+				s.hookBody = `{"code":19024,"msg":"Key Words Not Found /hook/` + watchToken + `"}`
+			})
+		},
+		"WeCom code": func(s *watchStack) {
+			s.configure(func(s *watchStack) {
+				s.hookBody = `{"errcode":93000,"errmsg":"invalid webhook url /hook/` + watchToken + `"}`
+			})
+		},
+		"redirect": func(s *watchStack) {
+			s.configure(func(s *watchStack) {
+				s.hookHandler = func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Location", "/elsewhere/"+watchToken)
+					w.WriteHeader(http.StatusFound)
+				}
+			})
+		},
+		"unreachable": func(s *watchStack) { s.hook.Close() },
+		"connection cut": func(s *watchStack) {
+			s.configure(func(s *watchStack) {
+				s.hookHandler = func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }
+			})
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			stack := newWatchStack(t)
+			state := filepath.Join(t.TempDir(), "watch-state.json")
+			t.Setenv("AML_ALERT_WEBHOOK", stack.webhookURL())
+			t.Setenv("AML_ALERT_KIND", "feishu")
+			var out bytes.Buffer
+			run := func() error {
+				command := newAMLWatchCommand()
+				command.SetArgs([]string{"--admin", stack.admin.URL, "--public-url", stack.public.URL, "--state", state})
+				command.SetOut(&out)
+				command.SetErr(&out)
+				err := command.Execute()
+				if err != nil {
+					fmt.Fprintln(&out, err) // what the product root prints after an error
+				}
+				return err
+			}
+			// A baseline run, then one more degraded Search to say.
+			if err := run(); err != nil {
+				t.Fatal(err)
+			}
+			stack.set(func(s *aml.AdminStatus) { s.Degraded = 1 })
+			fail(stack)
+			err := run()
+			if err == nil || !strings.Contains(err.Error(), "not delivered") {
+				t.Fatal("a failed post did not fail the run:", err)
+			}
+			everything := out.String()
+			for _, secret := range []string{watchToken, stack.webhookURL(), stack.hook.Listener.Addr().String(), "/hook/", "/elsewhere"} {
+				if strings.Contains(everything, secret) {
+					t.Errorf("the output shows %q:\n%s", secret, everything)
+				}
+			}
+			// The state was saved all the same, the message unsent, and
+			// without the secret.
+			raw, readErr := os.ReadFile(state)
+			if readErr != nil || !strings.Contains(string(raw), `"degraded-search"`) || strings.Contains(string(raw), watchToken) {
+				t.Errorf("state: %v\n%s", readErr, raw)
+			}
+			if name == "redirect" && stack.attempts() != 1 {
+				t.Error("a redirect was followed:", stack.attempts())
+			}
+		})
+	}
+
+	// Nor does it show when the post succeeds.
+	stack := newWatchStack(t)
+	var out bytes.Buffer
+	command := newAMLWatchCommand()
+	command.SetArgs([]string{"--admin", stack.admin.URL, "--state", filepath.Join(t.TempDir(), "watch-state.json")})
+	command.SetOut(&out)
+	command.SetErr(&out)
+	t.Setenv("AML_ALERT_WEBHOOK", stack.webhookURL())
+	t.Setenv("AML_ALERT_KIND", "wecom")
+	stack.configure(func(s *watchStack) {
+		s.readyCode, s.readyReasons = http.StatusServiceUnavailable, []string{"breaker open: jev"}
+	})
+	if err := command.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if got := stack.take(t); len(got) != 1 || strings.Contains(out.String(), watchToken) || strings.Contains(out.String(), stack.hook.Listener.Addr().String()) {
+		t.Fatalf("%q\n%s", got, out.String())
+	}
+}
+
+// A webhook that answers with something other than success is a failed
+// delivery, also when the status is 200: Feishu and WeCom answer a rejected
+// message that way.
+func TestWatchBusinessErrorsFailTheDelivery(t *testing.T) {
+	for _, tc := range []struct {
+		kind, body, want string
+	}{
+		{"feishu", `{"code":19024,"msg":"Key Words Not Found"}`, "rejected the message (code 19024)"},
+		{"feishu", `{"StatusCode":9499,"StatusMessage":"Bad Request"}`, "rejected the message (code 9499)"},
+		{"wecom", `{"errcode":93000,"errmsg":"invalid webhook url"}`, "rejected the message (code 93000)"},
+		{"wecom", `{"errcode":0,"errmsg":"ok"}`, ""},
+		{"feishu", `{"StatusCode":0,"StatusMessage":"success","code":0,"data":{},"msg":"success"}`, ""},
+		{"feishu", `ok`, ""}, // a webhook that does not answer in JSON took the message
+	} {
+		r := newWatchRig(t)
+		r.w.kind = tc.kind
+		r.stack.configure(func(s *watchStack) { s.hookBody = tc.body; s.healthCode = http.StatusBadGateway })
+		texts, err := r.stepErr(0)
+		if len(texts) != 1 {
+			t.Fatal(texts)
+		}
+		if tc.want == "" && err != nil || tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)) {
+			t.Errorf("%s %s: %v", tc.kind, tc.body, err)
+		}
+		if tc.want != "" && strings.Contains(err.Error(), "Key Words") {
+			t.Error("the webhook's own words are echoed:", err)
+		}
+	}
+}
+
+// A message that did not go out stays unsent in the state, which is saved,
+// the run exits non-zero, and the next run says it.
+func TestWatchDeliveryFailureIsRetried(t *testing.T) {
+	r := newWatchRig(t)
+	r.step(0)
+	r.stack.configure(func(s *watchStack) { s.hookCode = http.StatusInternalServerError })
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 1 })
+	texts, err := r.stepErr(time.Minute)
+	if err == nil || !strings.Contains(err.Error(), "HTTP 500") || len(texts) != 1 {
+		t.Fatalf("%q %v", texts, err)
+	}
+	if got := r.firing(); len(got) != 1 || got["degraded-search"] {
+		t.Fatal("the alert is not recorded as unsent:", got)
+	}
+	// The webhook is back: the message goes out as the alert it is (nobody
+	// has heard of it, so it is not "still firing"), and then the alert is
+	// quiet again.
+	r.stack.configure(func(s *watchStack) { s.hookCode = 0 })
+	if message := onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, "ALERT degraded-search") || strings.Contains(message, "still firing") {
+		t.Fatal(message)
+	}
+	if got := r.firing(); !got["degraded-search"] {
+		t.Fatal(got)
+	}
+	if texts = r.step(time.Minute); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+
+	// A "resolved" that cannot be delivered is kept and tried again.
+	r.stack.configure(func(s *watchStack) { s.hookCode = http.StatusInternalServerError })
+	texts, err = r.stepErr(10 * time.Minute)
+	if err == nil || len(texts) != 1 || !strings.HasPrefix(texts[0], "RESOLVED degraded-search") {
+		t.Fatalf("%q %v", texts, err)
+	}
+	if got := r.firing(); len(got) != 1 {
+		t.Fatal("the unsent resolution is lost:", got)
+	}
+	r.stack.configure(func(s *watchStack) { s.hookCode = 0 })
+	if message := onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, "RESOLVED degraded-search") {
+		t.Fatal(message)
+	}
+	if got := r.firing(); len(got) != 0 {
+		t.Fatal(got)
+	}
+	if texts = r.step(time.Minute); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+
+	// An alert that fired and ended while the webhook was down never reached
+	// anybody: nobody is told it is over.
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 2 })
+	r.stack.configure(func(s *watchStack) { s.hookCode = http.StatusInternalServerError })
+	if _, err = r.stepErr(time.Minute); err == nil {
+		t.Fatal("no error")
+	}
+	before := r.stack.attempts()
+	if _, err = r.stepErr(10 * time.Minute); err != nil || r.stack.attempts() != before {
+		t.Fatal("a resolution nobody was waiting for was posted:", err, before, r.stack.attempts())
+	}
+	if got := r.firing(); len(got) != 0 {
+		t.Fatal(got)
+	}
+	r.stack.configure(func(s *watchStack) { s.hookCode = 0 })
+
+	// An alert that fires again before its unsent resolution went out is
+	// just firing: nobody was told it stopped.
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 3 })
+	onlyAlert(t, r.step(time.Minute), "degraded-search")
+	r.stack.configure(func(s *watchStack) { s.hookCode = http.StatusInternalServerError })
+	if _, err = r.stepErr(10 * time.Minute); err == nil {
+		t.Fatal("no error")
+	}
+	r.stack.configure(func(s *watchStack) { s.hookCode = 0 })
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 4 })
+	if texts = r.step(time.Minute); len(texts) != 0 {
+		t.Fatal("an alert that never stopped, as far as anybody knows, was said again:", texts)
+	}
+	if got := r.firing(); len(got) != 1 || !got["degraded-search"] {
+		t.Fatal(got)
+	}
+}
+
+// roundTripFunc is an http.RoundTripper.
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// Each alert is its own message and one that is rejected does not hold up the
+// others; a webhook that cannot be reached is tried once per run, so that a
+// run ends in bounded time with its state saved.
+func TestWatchStopsAtAnUnreachableWebhook(t *testing.T) {
+	r := newWatchRig(t)
+	r.stack.configure(func(s *watchStack) {
+		s.healthCode = http.StatusBadGateway
+		s.readyCode, s.readyReasons = http.StatusServiceUnavailable, []string{"breaker open: jev"}
+	})
+	// Rejected: both are attempted.
+	r.stack.configure(func(s *watchStack) { s.hookCode = http.StatusBadRequest })
+	texts, err := r.stepErr(0)
+	if err == nil || len(texts) != 2 || !strings.Contains(err.Error(), "2 of 2") {
+		t.Fatalf("%q %v", texts, err)
+	}
+
+	// Unreachable: one attempt.
+	r = newWatchRig(t)
+	r.stack.configure(func(s *watchStack) {
+		s.healthCode = http.StatusBadGateway
+		s.readyCode, s.readyReasons = http.StatusServiceUnavailable, []string{"breaker open: jev"}
+	})
+	attempts := 0
+	r.w.hooks = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		attempts++
+		return nil, &errTransport{request.URL.String()}
+	})}
+	_, err = r.stepErr(0)
+	if err == nil || attempts != 1 || !strings.Contains(err.Error(), "2 of 2") || strings.Contains(err.Error(), watchToken) {
+		t.Fatal(attempts, err)
+	}
+	if got := r.firing(); len(got) != 2 || got["health"] || got["ready"] {
+		t.Fatal(got)
+	}
+}
+
+// errTransport is a transport failure whose text names the URL, as net/http's
+// do.
+type errTransport struct{ url string }
+
+func (e *errTransport) Error() string { return "dial tcp: lookup " + e.url + ": no such host" }
+
+func TestWatchWithoutWebhookLogsAndExitsZero(t *testing.T) {
+	r := newWatchRig(t)
+	r.w.webhook, r.w.kind = "", ""
+	r.step(0)
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 2 })
+	texts, err := r.stepErr(time.Minute)
+	if err != nil || len(texts) != 0 || r.stack.attempts() != 0 {
+		t.Fatal(texts, err)
+	}
+	for _, want := range []string{"AML_ALERT_WEBHOOK is empty", "ALERT degraded-search on aml-test", "2 new"} {
+		if !strings.Contains(r.logs.String(), want) {
+			t.Fatalf("the log lacks %q:\n%s", want, r.logs)
+		}
+	}
+	// The state is kept all the same, the alert not delivered…
+	if got := r.firing(); len(got) != 1 || got["degraded-search"] {
+		t.Fatal(got)
+	}
+	// …so that once the webhook is configured, what fires is said.
+	r.w.webhook, r.w.kind = r.stack.webhookURL(), "wecom"
+	onlyAlert(t, r.step(time.Minute), "degraded-search")
+
+	// A resolution nobody could be told of is dropped, not kept.
+	r.w.webhook, r.w.kind = "", ""
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 2 })
+	if _, err = r.stepErr(30 * time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.firing(); len(got) != 0 {
+		t.Fatal(got)
+	}
+	// A configuration error is not hidden by an empty webhook only when the
+	// webhook is set.
+	r.w.kind = "slack"
+	if _, err = r.stepErr(time.Minute); err != nil {
+		t.Fatal("a kind without a webhook is not checked:", err)
+	}
+}
+
+func TestWatchFirstRunSetsABaseline(t *testing.T) {
+	r := newWatchRig(t)
+	r.stack.set(func(s *aml.AdminStatus) {
+		s.Degraded, s.Dropped, s.LinkFallbacks, s.AddOutran = 7, 3, 2, 5
+		s.BreakerTrips = map[string]int64{"deepseek": 4, "jev": 1}
+	})
+	if texts := r.step(0); len(texts) != 0 {
+		t.Fatal("history is not new:", texts)
+	}
+	if texts := r.step(time.Minute); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+	// What the first run does say is what is wrong now.
+	r = newWatchRig(t)
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 7; s.Breakers["jev"] = "open" })
+	onlyAlert(t, r.step(0), "breaker-open:jev")
+}
+
+func TestWatchRules(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		edit func(*aml.AdminStatus)
+		want string // the alert that fires; "" for none
+		text string // what its message says
+	}{
+		{"degraded", func(s *aml.AdminStatus) { s.Degraded = 2 }, "degraded-search", "2 new"},
+		{"dropped", func(s *aml.AdminStatus) { s.Dropped = 1 }, "consolidation-dropped", "1 new"},
+		{"link fallbacks", func(s *aml.AdminStatus) { s.LinkFallbacks = 3 }, "link-fallback", "3 new"},
+		{"add outran", func(s *aml.AdminStatus) { s.AddOutran = 1 }, "add-outran", "1 new"},
+
+		// More than 5% of the Searches of ten minutes, from 20 Searches on.
+		{"partial 3 of 40", func(s *aml.AdminStatus) { s.SearchesLast10m, s.PartialLast10m = 40, 3 }, "partial-search", "3 of 40"},
+		{"partial 2 of 40 is 5%", func(s *aml.AdminStatus) { s.SearchesLast10m, s.PartialLast10m = 40, 2 }, "", ""},
+		{"partial 2 of 20", func(s *aml.AdminStatus) { s.SearchesLast10m, s.PartialLast10m = 20, 2 }, "partial-search", "2 of 20"},
+		{"partial 1 of 20 is 5%", func(s *aml.AdminStatus) { s.SearchesLast10m, s.PartialLast10m = 20, 1 }, "", ""},
+		{"partial 11 of 200 is 5.5%", func(s *aml.AdminStatus) { s.SearchesLast10m, s.PartialLast10m = 200, 11 }, "partial-search", "11 of 200 Searches in the last 10 minutes (5.5%)"},
+		{"partial 10 of 200 is 5%", func(s *aml.AdminStatus) { s.SearchesLast10m, s.PartialLast10m = 200, 10 }, "", ""},
+		{"partial 19 of 19 is too few Searches", func(s *aml.AdminStatus) { s.SearchesLast10m, s.PartialLast10m = 19, 19 }, "", ""},
+		{"partial 2 of 2 is too few Searches", func(s *aml.AdminStatus) { s.SearchesLast10m, s.PartialLast10m = 2, 2 }, "", ""},
+		{"partial 0 of 0", func(s *aml.AdminStatus) { s.SearchesLast10m, s.PartialLast10m = 0, 0 }, "", ""},
+
+		{"breaker open", func(s *aml.AdminStatus) { s.Breakers["jev"] = "open"; s.BreakerTrips["jev"] = 1 }, "breaker-open:jev", "jev circuit breaker is open"},
+		{"breaker open, no trip count", func(s *aml.AdminStatus) { s.Breakers["deepseek"] = "open" }, "breaker-open:deepseek", "is open"},
+		{"breaker half-open", func(s *aml.AdminStatus) { s.Breakers["jev"] = "half-open" }, "", ""},
+		{"breaker closed again after a trip", func(s *aml.AdminStatus) { s.BreakerTrips["openai"] = 2 }, "breaker-open:openai", "opened 2 times"},
+
+		// Above 80% of the cap, spent and held together; held reservations
+		// above 2% of it.
+		{"account at 80.1%", func(s *aml.AdminStatus) {
+			s.Budgets = []memoryagent.BudgetAccount{{Kind: "deepseek", Cap: 1000, Spent: 801}}
+		}, "budget-high:deepseek", "80.1%"},
+		{"account at 80%", func(s *aml.AdminStatus) {
+			s.Budgets = []memoryagent.BudgetAccount{{Kind: "deepseek", Cap: 1000, Spent: 800}}
+		}, "", ""},
+		{"account at 80% of spent and held", func(s *aml.AdminStatus) {
+			s.Budgets = []memoryagent.BudgetAccount{{Kind: "jev", Cap: 1000, Spent: 790, Held: 11}}
+		}, "budget-high:jev", "80.1%"},
+		{"held 2.1%", func(s *aml.AdminStatus) {
+			s.Budgets = []memoryagent.BudgetAccount{{Kind: "openai", Cap: 1000, Spent: 100, Held: 21}}
+		}, "budget-held:openai", "2.1%"},
+		{"held 2%", func(s *aml.AdminStatus) {
+			s.Budgets = []memoryagent.BudgetAccount{{Kind: "openai", Cap: 1000, Spent: 100, Held: 20}}
+		}, "", ""},
+		{"a cap of zero has no share", func(s *aml.AdminStatus) {
+			s.Budgets = []memoryagent.BudgetAccount{{Kind: "openai", Cap: 0, Spent: 5, Held: 1}}
+		}, "", ""},
+
+		{"oldest queued 15m", func(s *aml.AdminStatus) { s.Queue.OldestQueued = 15 * time.Minute }, "", ""},
+		{"oldest queued past 15m", func(s *aml.AdminStatus) { s.Queue.OldestQueued = 15*time.Minute + time.Nanosecond }, "backlog-age", "15m0s"},
+		{"a backlog over the bound needs time", func(s *aml.AdminStatus) { s.Queue.MaxBacklog = 170000 }, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newWatchRig(t)
+			r.step(0)
+			r.stack.set(tc.edit)
+			texts := r.step(time.Minute)
+			if tc.want == "" {
+				if len(texts) != 0 {
+					t.Fatal(texts)
+				}
+				return
+			}
+			if message := onlyAlert(t, texts, tc.want); !strings.Contains(message, tc.text) {
+				t.Fatalf("%q lacks %q", message, tc.text)
+			}
+		})
+	}
+}
+
+// The alerts of a kind are one each: two accounts or two breakers are two
+// messages.
+func TestWatchAlertsAreNamedBySubject(t *testing.T) {
+	r := newWatchRig(t)
+	r.step(0)
+	r.stack.set(func(s *aml.AdminStatus) {
+		s.Breakers["jev"], s.Breakers["deepseek"] = "open", "open"
+		s.Budgets = []memoryagent.BudgetAccount{{Kind: "deepseek", Cap: 100, Spent: 90}, {Kind: "jev", Cap: 100, Spent: 85}}
+	})
+	texts := r.step(time.Minute)
+	if len(texts) != 4 {
+		t.Fatal(texts)
+	}
+	for i, alert := range []string{"breaker-open:deepseek", "breaker-open:jev", "budget-high:deepseek", "budget-high:jev"} {
+		if !strings.HasPrefix(texts[i], "ALERT "+alert+" on aml-test") {
+			t.Errorf("message %d: %q, want %s", i, texts[i], alert)
+		}
+	}
+}
+
+// A breaker's open spell can end between two runs; the trips it left show.
+// The alert stays ten minutes after the last sign of it.
+func TestWatchBreakerTripBetweenRuns(t *testing.T) {
+	r := newWatchRig(t)
+	r.step(0)
+	r.stack.set(func(s *aml.AdminStatus) { s.BreakerTrips["deepseek"] = 1 })
+	message := onlyAlert(t, r.step(time.Minute), "breaker-open:deepseek")
+	if !strings.Contains(message, "opened 1 time since the last run") || !strings.Contains(message, "closed") {
+		t.Fatal(message)
+	}
+	if texts := r.step(5 * time.Minute); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+	// Open now: the ten minutes count from the last time it was seen so.
+	r.stack.set(func(s *aml.AdminStatus) { s.Breakers["deepseek"] = "open"; s.BreakerTrips["deepseek"] = 2 })
+	if texts := r.step(time.Minute); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+	r.stack.set(func(s *aml.AdminStatus) { s.Breakers["deepseek"] = "closed" })
+	if texts := r.step(9 * time.Minute); len(texts) != 0 {
+		t.Fatal("still within ten minutes of the last time it was open:", texts)
+	}
+	if message = onlyAlert(t, r.step(time.Minute), "breaker-open:deepseek"); !strings.HasPrefix(message, "RESOLVED") {
+		t.Fatal(message)
+	}
+}
+
+// A backlog above the bound is an alert once it has been above for 15
+// minutes of runs; a run below the bound starts the count over.
+func TestWatchBacklogAboveTheBoundForFifteenMinutes(t *testing.T) {
+	r := newWatchRig(t)
+	r.step(0)
+	over := func(backlog int64) { r.stack.set(func(s *aml.AdminStatus) { s.Queue.MaxBacklog = backlog }) }
+	over(160001)
+	for minute := 1; minute <= 10; minute++ {
+		if texts := r.step(time.Minute); len(texts) != 0 {
+			t.Fatalf("after %d minutes: %q", minute, texts)
+		}
+	}
+	over(160000) // at the bound is within it
+	if texts := r.step(time.Minute); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+	over(170000)
+	for minute := 0; minute < 15; minute++ {
+		if texts := r.step(time.Minute); len(texts) != 0 {
+			t.Fatalf("minute %d of the second spell: %q", minute, texts)
+		}
+	}
+	message := onlyAlert(t, r.step(time.Minute), "backlog-lag")
+	for _, want := range []string{"170000 characters", "160000", "15m0s"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("%q lacks %q", message, want)
+		}
+	}
+	over(1000)
+	if message = onlyAlert(t, r.step(time.Minute), "backlog-lag"); !strings.HasPrefix(message, "RESOLVED") {
+		t.Fatal(message)
+	}
+
+	// Without a bound (consolidation is not background) there is nothing to
+	// be above.
+	r = newWatchRig(t)
+	r.stack.set(func(s *aml.AdminStatus) { s.LagBound, s.Queue.MaxBacklog = 0, 5000000 })
+	r.step(0)
+	if texts := r.step(time.Hour); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+}
+
+func TestWatchReadyAndHealth(t *testing.T) {
+	r := newWatchRig(t)
+	if texts := r.step(0); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+
+	// /ready says why it is not ready; the message has every reason.
+	r.stack.configure(func(s *watchStack) {
+		s.readyCode, s.readyReasons = http.StatusServiceUnavailable, []string{"breaker open: jev", "free disk 400 MiB is below 1 GiB"}
+	})
+	message := onlyAlert(t, r.step(time.Minute), "ready")
+	for _, want := range []string{"/ready answered 503", "breaker open: jev", "free disk 400 MiB is below 1 GiB"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("%q lacks %q", message, want)
+		}
+	}
+	if texts := r.step(time.Minute); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+	r.stack.configure(func(s *watchStack) { s.readyCode = 0 })
+	if message = onlyAlert(t, r.step(time.Minute), "ready"); !strings.HasPrefix(message, "RESOLVED ready on aml-test") {
+		t.Fatal(message)
+	}
+
+	// Only a 200 is ready, and a 200 is healthy: another answer, a 404 from
+	// the wrong address say, is a fault.
+	r.stack.configure(func(s *watchStack) { s.readyCode = http.StatusNotFound })
+	if message = onlyAlert(t, r.step(time.Minute), "ready"); !strings.Contains(message, "/ready answered 404") {
+		t.Fatal(message)
+	}
+	r.stack.configure(func(s *watchStack) { s.readyCode = 0 })
+	if message = onlyAlert(t, r.step(time.Minute), "ready"); !strings.HasPrefix(message, "RESOLVED ready") {
+		t.Fatal(message)
+	}
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusNotFound })
+	if message = onlyAlert(t, r.step(time.Minute), "health"); !strings.Contains(message, "answered 404") {
+		t.Fatal(message)
+	}
+	r.stack.configure(func(s *watchStack) { s.healthCode = 0 })
+	onlyAlert(t, r.step(time.Minute), "health") // resolved
+
+	// /health through the public URL.
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusServiceUnavailable })
+	message = onlyAlert(t, r.step(time.Minute), "health")
+	if want := "GET " + r.stack.public.URL + "/health answered 503"; !strings.Contains(message, want) {
+		t.Fatalf("%q lacks %q", message, want)
+	}
+	r.stack.configure(func(s *watchStack) { s.healthCode = 0 })
+	if message = onlyAlert(t, r.step(time.Minute), "health"); !strings.HasPrefix(message, "RESOLVED") {
+		t.Fatal(message)
+	}
+
+	// Without a public URL it is not checked.
+	r.w.public = ""
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	if texts := r.step(time.Minute); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+	r.w.public = r.stack.public.URL
+
+	// A server that does not answer at all is not ready, and the message says
+	// how it did not answer.
+	r.stack.configure(func(s *watchStack) { s.healthCode = 0 })
+	r.stack.admin.Close()
+	message = onlyAlert(t, r.step(time.Minute), "ready")
+	if !strings.Contains(message, "/ready did not answer") || !strings.Contains(message, "/admin/status did not answer") || strings.Contains(message, "Get \"") {
+		t.Fatal(message)
+	}
+}
+
+// What the admin listener could not say is neither an alert that is over nor a
+// new one: the alerts that were firing go on, and the counters are measured
+// from the last reading once there is one.
+func TestWatchUnreadableStatusKeepsFiringAlerts(t *testing.T) {
+	r := newWatchRig(t)
+	r.step(0)
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 1; s.Breakers["jev"] = "open"; s.BreakerTrips["jev"] = 1 })
+	if texts := r.step(time.Minute); len(texts) != 2 {
+		t.Fatal(texts)
+	}
+
+	for name, tc := range map[string]struct {
+		fail func(*watchStack)
+		want string
+	}{
+		"HTTP 500":           {func(s *watchStack) { s.statusCode = http.StatusInternalServerError }, "/admin/status answered 500"},
+		"HTTP 404":           {func(s *watchStack) { s.statusCode = http.StatusNotFound }, "/admin/status answered 404"},
+		"not JSON":           {func(s *watchStack) { s.statusRaw = "<html>" }, "/admin/status did not answer with an aml-serve status"},
+		"not an AML status":  {func(s *watchStack) { s.statusRaw = `{"ok":true}` }, "/admin/status did not answer with an aml-serve status"},
+		"a null status":      {func(s *watchStack) { s.statusRaw = `null` }, "/admin/status did not answer with an aml-serve status"},
+		"a truncated status": {func(s *watchStack) { s.statusRaw = `{"startedAt":"2026-10-2` }, "/admin/status did not answer with an aml-serve status"},
+	} {
+		r.stack.configure(tc.fail)
+		message := onlyAlert(t, r.step(time.Minute), "ready")
+		if !strings.Contains(message, tc.want) {
+			t.Fatalf("%s: %q lacks %q", name, message, tc.want)
+		}
+		// Twenty minutes unreadable: the alerts that were firing are neither
+		// resolved nor said again, and the rises of that time are not lost.
+		for range 20 {
+			if texts := r.step(time.Minute); len(texts) != 0 {
+				t.Fatalf("%s: %q", name, texts)
+			}
+		}
+		r.stack.configure(func(s *watchStack) { s.statusCode, s.statusRaw = 0, "" })
+		r.stack.set(func(s *aml.AdminStatus) { s.Degraded++; s.Breakers["jev"] = "open" })
+		texts := r.step(time.Minute)
+		joined := strings.Join(texts, "\n")
+		if strings.Contains(joined, "RESOLVED degraded") || strings.Contains(joined, "RESOLVED breaker") || !strings.Contains(joined, "RESOLVED ready") {
+			t.Fatalf("%s: %q", name, texts)
+		}
+	}
+	if got := r.firing(); !got["degraded-search"] || !got["breaker-open:jev"] {
+		t.Fatal(got)
+	}
+}
+
+func TestWatchStateFile(t *testing.T) {
+	r := newWatchRig(t)
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 2 })
+	r.step(0)
+	// The directory is made, the file is private, and the temporary file the
+	// write goes through is gone.
+	info, err := os.Stat(r.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatalf("mode %v", info.Mode())
+	}
+	if entries, err := os.ReadDir(filepath.Dir(r.state)); err != nil || len(entries) != 1 || entries[0].Name() != "watch-state.json" {
+		t.Fatal(entries, err)
+	}
+	fields := r.saved()
+	var version int
+	var counters map[string]int64
+	var started time.Time
+	if json.Unmarshal(fields["version"], &version) != nil || version != 1 ||
+		json.Unmarshal(fields["counters"], &counters) != nil || counters["degraded"] != 2 ||
+		json.Unmarshal(fields["startedAt"], &started) != nil || !started.Equal(watchStarted) {
+		t.Fatalf("%s", fields)
+	}
+	for _, name := range []string{"firing", "rises", "since"} {
+		if _, ok := fields[name]; !ok {
+			t.Errorf("no %q in the state", name)
+		}
+	}
+
+	// A state that is too open is made private again.
+	if runtime.GOOS != "windows" {
+		if err := os.Chmod(r.state, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		r.step(time.Minute)
+		if info, err = os.Stat(r.state); err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatal(info.Mode(), err)
+		}
+	}
+
+	// A state nobody can read is a state to begin again from, said in the
+	// log; the run goes on and writes a good one.
+	for name, content := range map[string]string{"garbage": "{not json", "empty": "", "wrong version": `{"version":99,"counters":{"degraded":1}}`, "not an object": `[1,2]`} {
+		if err := os.WriteFile(r.state, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		r.logs.Reset()
+		if texts := r.step(time.Minute); len(texts) != 0 || !strings.Contains(r.logs.String(), "starting afresh") {
+			t.Fatalf("%s: %q\n%s", name, texts, r.logs)
+		}
+		if raw, err := os.ReadFile(r.state); err != nil || !json.Valid(raw) || !strings.Contains(string(raw), `"version": 1`) {
+			t.Fatalf("%s: %s %v", name, raw, err)
+		}
+	}
+}
+
+// A state that cannot be read (it is not a missing file, nor a file of
+// something else: it cannot be opened) stops the run, which changes nothing.
+func TestWatchStateThatCannotBeRead(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("what reading a directory does is not specified the same way")
+	}
+	r := newWatchRig(t)
+	// A directory where the file should be.
+	if err := os.MkdirAll(filepath.Join(r.state, "occupied"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	texts, err := r.stepErr(0)
+	if err == nil || !strings.Contains(err.Error(), "state") || len(texts) != 0 {
+		t.Fatalf("%q %v", texts, err)
+	}
+	if strings.Contains(err.Error(), watchToken) {
+		t.Fatal(err)
+	}
+	if entries, readErr := os.ReadDir(filepath.Dir(r.state)); readErr != nil || len(entries) != 1 {
+		t.Fatal(entries, readErr)
+	}
+}
+
+// A state that cannot be written is an error, and leaves nothing behind. The
+// alerts of the run are said all the same.
+func TestWatchStateThatCannotBeWritten(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permissions do not stop this user")
+	}
+	r := newWatchRig(t)
+	dir := filepath.Dir(r.state)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(dir, 0o700) })
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	texts, err := r.stepErr(0)
+	if err == nil || !strings.Contains(err.Error(), "state") || len(texts) != 1 {
+		t.Fatalf("%q %v", texts, err)
+	}
+	if entries, readErr := os.ReadDir(dir); readErr != nil || len(entries) != 0 {
+		t.Fatal("the failed write left", entries, readErr)
+	}
+}
+
+func TestWatchMessagesStayUnderAThousandCharacters(t *testing.T) {
+	r := newWatchRig(t)
+	reasons := []string{}
+	for i := range 80 {
+		reasons = append(reasons, fmt.Sprintf("data root is not writable: open /var/lib/mnemon-aml/users/%08d: permission denied — é", i))
+	}
+	r.stack.configure(func(s *watchStack) { s.readyCode, s.readyReasons = http.StatusServiceUnavailable, reasons })
+	r.w.host = strings.Repeat("h", 200)
+	texts := r.step(0)
+	if len(texts) != 1 || len(texts[0]) >= 1000 || len([]rune(texts[0])) >= 1000 || !strings.Contains(texts[0], "...") || !strings.Contains(texts[0], "UTC") {
+		t.Fatalf("%d bytes: %q", len(texts[0]), texts)
+	}
+	if !strings.HasPrefix(texts[0], "ALERT ready on "+r.w.host) || strings.Contains(texts[0], "\uFFFD") {
+		t.Fatal(texts[0])
+	}
+	// What the state keeps of it is bounded too, in the run that raised the
+	// alert and in the ones that find it firing.
+	for range 2 {
+		if info, err := os.Stat(r.state); err != nil || info.Size() > 4096 {
+			t.Fatal(info.Size(), err)
+		}
+		if again := r.step(time.Minute); len(again) != 0 {
+			t.Fatal(again)
+		}
+	}
+	// And so is the resolution.
+	r.stack.configure(func(s *watchStack) { s.readyCode = 0 })
+	if texts = r.step(time.Minute); len(texts) != 1 || len(texts[0]) >= 1000 || !strings.Contains(texts[0], "\nwas: ") || !strings.HasPrefix(texts[0], "RESOLVED ready on "+r.w.host) {
+		t.Fatalf("%d bytes: %q", len(texts[0]), texts)
+	}
+}
+
+// A run that is interrupted has not seen the server: it posts nothing, and
+// leaves the state as it was.
+func TestWatchInterruptedRunChangesNothing(t *testing.T) {
+	r := newWatchRig(t)
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 1 })
+	r.step(0)
+	before, err := os.ReadFile(r.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 2 })
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	r.clock.at = r.clock.at.Add(time.Minute)
+	err = r.w.run(ctx)
+	if err == nil || !strings.Contains(err.Error(), "interrupted") || !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	after, readErr := os.ReadFile(r.state)
+	if readErr != nil || !bytes.Equal(before, after) || r.stack.attempts() != 0 {
+		t.Fatalf("%v %d posts\n%s\n%s", readErr, r.stack.attempts(), before, after)
+	}
+	// The next run sees what the interrupted one did not.
+	texts := r.step(time.Minute)
+	if len(texts) != 2 {
+		t.Fatal(texts)
+	}
+}
+
+// A cut message is whole characters, whatever their width, within the limit,
+// and says it was cut.
+func TestWatchTruncateKeepsWholeCharacters(t *testing.T) {
+	s := strings.Repeat("é—😀x", 12) // 2, 3, 4 and 1 bytes
+	for limit := 0; limit <= len(s)+2; limit++ {
+		got := watchTruncate(s, limit)
+		switch {
+		case len(s) <= limit:
+			if got != s {
+				t.Fatalf("limit %d: %q", limit, got)
+			}
+		case limit <= 3:
+			if got != "..."[:limit] {
+				t.Fatalf("limit %d: %q", limit, got)
+			}
+		default:
+			if len(got) > limit || !utf8.ValidString(got) || !strings.HasSuffix(got, "...") || !strings.HasPrefix(s, strings.TrimSuffix(got, "...")) {
+				t.Fatalf("limit %d: %q", limit, got)
+			}
+			// No more than three bytes short of the limit: the cut is at the
+			// last character that fits.
+			if len(got) < limit-3 {
+				t.Fatalf("limit %d: %q is cut too early", limit, got)
+			}
+		}
+	}
+}
+
+func TestAMLWatchIsAMemoryAgentSubcommand(t *testing.T) {
+	command, _, err := rootCmd.Find([]string{"memory-agent", "aml-watch"})
+	if err != nil || command.Name() != "aml-watch" || command.Parent().Name() != "memory-agent" {
+		t.Fatal(command, err)
+	}
+	for flag, value := range map[string]string{"admin": "http://127.0.0.1:8091", "public-url": "", "state": ""} {
+		if f := command.Flags().Lookup(flag); f == nil || f.DefValue != value {
+			t.Fatal(flag, f)
+		}
+	}
+}
+
+// executeAMLWatch runs aml-watch with args to its end, its output kept.
+func executeAMLWatch(args ...string) (string, error) {
+	command := newAMLWatchCommand()
+	var out bytes.Buffer
+	command.SetArgs(args)
+	command.SetOut(&out)
+	command.SetErr(&out)
+	err := command.Execute()
+	return out.String(), err
+}
+
+func TestWatchCommandChecksItsSettings(t *testing.T) {
+	state := filepath.Join(t.TempDir(), "watch-state.json")
+	good := []string{"--state", state}
+	secret := "https://hooks.example.com/hook/" + watchToken
+	for name, tc := range map[string]struct {
+		args    []string
+		webhook string
+		kind    string
+		want    string
+	}{
+		"no state":                {nil, "", "", "--state is required"},
+		"relative state":          {[]string{"--state", "watch-state.json"}, "", "", "--state must be an absolute path"},
+		"admin not a URL":         {append([]string{"--admin", "127.0.0.1:8091"}, good...), "", "", "--admin must be an http or https URL"},
+		"admin with credentials":  {append([]string{"--admin", "http://user:pass@127.0.0.1:8091"}, good...), "", "", "--admin must not contain credentials"},
+		"public not a URL":        {append([]string{"--public-url", "example.com"}, good...), "", "", "--public-url must be an http or https URL"},
+		"public with credentials": {append([]string{"--public-url", "https://user@example.com"}, good...), "", "", "--public-url must not contain credentials"},
+		"webhook without a kind":  {good, secret, "", "AML_ALERT_KIND must be feishu or wecom"},
+		"webhook of another kind": {good, secret, "slack", "AML_ALERT_KIND must be feishu or wecom"},
+		"webhook not a URL":       {good, "hooks.example.com/hook/" + watchToken, "feishu", "AML_ALERT_WEBHOOK must be an https URL"},
+		"webhook over plain http": {good, "http://hooks.example.com/hook/" + watchToken, "feishu", "AML_ALERT_WEBHOOK must be an https URL"},
+		"webhook with a bad host": {good, "https:///hook/" + watchToken, "feishu", "AML_ALERT_WEBHOOK must be an https URL"},
+		"webhook unparsable":      {good, "https://hooks.example.com/hook/%zz" + watchToken, "feishu", "AML_ALERT_WEBHOOK must be an https URL"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("AML_ALERT_WEBHOOK", tc.webhook)
+			t.Setenv("AML_ALERT_KIND", tc.kind)
+			out, err := executeAMLWatch(tc.args...)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("%v\n%s", err, out)
+			}
+			if strings.Contains(err.Error()+out, watchToken) {
+				t.Errorf("the webhook is echoed: %v\n%s", err, out)
+			}
+			if _, statErr := os.Stat(state); !os.IsNotExist(statErr) {
+				t.Errorf("a refused run wrote state: %v", statErr)
+			}
+		})
+	}
+
+	// http is for a webhook on this host (a relay, a test); https anywhere.
+	// Whitespace around the values, as an environment file leaves it, is not
+	// part of them.
+	stack := newWatchStack(t)
+	t.Setenv("AML_ALERT_WEBHOOK", " "+stack.webhookURL()+"\n")
+	t.Setenv("AML_ALERT_KIND", " WeCom\n")
+	stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	out, err := executeAMLWatch("--admin", stack.admin.URL, "--public-url", stack.public.URL+"/", "--state", state)
+	if err != nil {
+		t.Fatal(err, out)
+	}
+	host, _ := os.Hostname()
+	if got := stack.take(t); len(got) != 1 || !strings.Contains(got[0], "ALERT health on "+host) || !strings.HasSuffix(got[0], " UTC") {
+		t.Fatalf("%q (host %q)", got, host)
+	}
+	stack.mu.Lock()
+	body := string(stack.posts[0].body)
+	stack.mu.Unlock()
+	if !strings.HasPrefix(body, `{"msgtype":"text","text":{"content":"ALERT health on `) {
+		t.Fatal(body)
+	}
+}
+
+// A URL that cannot be fetched is told apart from one that answered badly,
+// and the watcher gives up on a server that hangs: its requests are bounded.
+func TestWatchRequestsAreBounded(t *testing.T) {
+	r := newWatchRig(t)
+	for name, client := range map[string]*http.Client{"admin and public": r.w.reads, "webhook": r.w.hooks} {
+		if client.Timeout <= 0 {
+			t.Errorf("%s requests have no timeout", name)
+		}
+	}
+	if r.w.reads.Timeout != 5*time.Second || r.w.hooks.Timeout != 10*time.Second {
+		t.Fatal(r.w.reads.Timeout, r.w.hooks.Timeout)
+	}
+	// A webhook that redirects is a failure, not a request to follow: its
+	// Location is not the operator's.
+	if err := r.w.hooks.CheckRedirect(nil, nil); !errors.Is(err, http.ErrUseLastResponse) {
+		t.Fatal(err)
+	}
+}
+
+// A restart gives the server a backlog of its own: the time it has been above
+// the bound starts again.
+func TestWatchRestartStartsTheBacklogCountOver(t *testing.T) {
+	r := newWatchRig(t)
+	r.step(0)
+	r.stack.set(func(s *aml.AdminStatus) { s.Queue.MaxBacklog = 170000 })
+	for minute := 1; minute <= 10; minute++ { // above the bound since 12:01
+		if texts := r.step(time.Minute); len(texts) != 0 {
+			t.Fatalf("at 12:%02d: %q", minute, texts)
+		}
+	}
+	r.stack.set(func(s *aml.AdminStatus) {
+		*s = watchHealthy(watchNow.Add(10*time.Minute + 30*time.Second))
+		s.Queue.MaxBacklog = 170000
+	})
+	onlyAlert(t, r.step(time.Minute), "restart") // 12:11
+	for minute := 12; minute <= 25; minute++ {
+		texts := r.step(time.Minute)
+		if len(texts) != 0 && !(minute == 21 && strings.HasPrefix(texts[0], "RESOLVED restart")) {
+			t.Fatalf("at 12:%02d: %q", minute, texts)
+		}
+	}
+	if message := onlyAlert(t, r.step(time.Minute), "backlog-lag"); !strings.Contains(message, "for 15m0s") { // 12:26, 15 minutes after the restart
+		t.Fatal(message)
+	}
+}
+
+// What the last run did not know is not new: its history is not news.
+func TestWatchACounterTheLastRunDidNotKnowIsNotNew(t *testing.T) {
+	r := newWatchRig(t)
+	r.step(0)
+	r.stack.set(func(s *aml.AdminStatus) { s.Breakers["groq"], s.BreakerTrips["groq"] = "closed", 3 })
+	if texts := r.step(time.Minute); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+	r.stack.set(func(s *aml.AdminStatus) { s.BreakerTrips["groq"] = 4 })
+	if message := onlyAlert(t, r.step(time.Minute), "breaker-open:groq"); !strings.Contains(message, "opened 1 time since the last run") {
+		t.Fatal(message)
+	}
+}
+
+// An unreadable status leaves the alerts it cannot speak for as they were, the
+// time they have left to fire included; the alerts that do not come from it
+// (ready, health) go on as usual.
+func TestWatchUnreadableStatusLeavesHeldAlertsHeld(t *testing.T) {
+	r := newWatchRig(t)
+	r.step(0)
+	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 1 })
+	onlyAlert(t, r.step(time.Minute), "degraded-search") // 12:01
+	r.stack.configure(func(s *watchStack) { s.statusCode = http.StatusInternalServerError })
+	onlyAlert(t, r.step(time.Minute), "ready") // 12:02
+	r.step(time.Minute)                        // 12:03
+	r.stack.configure(func(s *watchStack) { s.statusCode = 0 })
+	if message := onlyAlert(t, r.step(time.Minute), "ready"); !strings.HasPrefix(message, "RESOLVED ready") { // 12:04
+		t.Fatal(message)
+	}
+	// It rose at 12:01 and is firing until 12:11, however the minutes between
+	// were read.
+	for minute := 5; minute <= 10; minute++ {
+		if texts := r.step(time.Minute); len(texts) != 0 {
+			t.Fatalf("at 12:%02d: %q", minute, texts)
+		}
+	}
+	if message := onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, "RESOLVED") {
+		t.Fatal(message)
+	}
+
+	// A status that stays unreadable is said again every 30 minutes, to the
+	// second, like any alert.
+	r.stack.configure(func(s *watchStack) { s.statusCode = http.StatusInternalServerError })
+	onlyAlert(t, r.step(time.Minute), "ready")
+	if texts := r.step(29*time.Minute + 59*time.Second); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+	if message := onlyAlert(t, r.step(time.Second), "ready"); !strings.Contains(message, "still firing after 30m0s") {
+		t.Fatal(message)
+	}
+
+	// /health is read whether or not the status is, and its alert ends when it
+	// should.
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	onlyAlert(t, r.step(time.Minute), "health")
+	r.stack.configure(func(s *watchStack) { s.healthCode = 0 })
+	if message := onlyAlert(t, r.step(time.Minute), "health"); !strings.HasPrefix(message, "RESOLVED health") {
+		t.Fatal(message)
+	}
+}
+
+// A status with fields this watcher does not know (the server is newer) is
+// read.
+func TestWatchReadsAStatusWithNewFields(t *testing.T) {
+	r := newWatchRig(t)
+	r.stack.configure(func(s *watchStack) {
+		raw, err := json.Marshal(s.status)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.statusRaw = strings.TrimSuffix(string(raw), "}") + `,"someFutureField":{"a":[1,2]},"queue2":null}`
+	})
+	if texts := r.step(0); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+	if texts := r.step(time.Minute); len(texts) != 0 {
+		t.Fatal(texts)
+	}
+}
+
+// A state file with null maps (hand-edited, or from a tool that drops empty
+// ones) is read, and written back with maps.
+func TestWatchStateWithNullMaps(t *testing.T) {
+	r := newWatchRig(t)
+	if err := os.MkdirAll(filepath.Dir(r.state), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	null := `{"version":1,"startedAt":"` + watchStarted.Format(time.RFC3339) + `","counters":null,"rises":null,"since":null,"firing":null}`
+	if err := os.WriteFile(r.state, []byte(null), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// With the status unreadable the maps are carried over.
+	r.stack.configure(func(s *watchStack) { s.statusCode = http.StatusInternalServerError })
+	onlyAlert(t, r.step(0), "ready")
+	saved := r.saved()
+	for _, name := range []string{"counters", "rises", "since"} {
+		if string(saved[name]) != "{}" {
+			t.Errorf("%s is %s", name, saved[name])
+		}
+	}
+}
+
+// The state is replaced whole or not at all, and a write that fails leaves no
+// temporary file.
+func TestSaveWatchStateLeavesNothingBehind(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("renaming a file over a directory is not specified the same way")
+	}
+	dir := t.TempDir()
+	path := filepath.Join(dir, "watch-state.json")
+	// A directory with something in it where the file should be: the rename
+	// fails.
+	if err := os.MkdirAll(filepath.Join(path, "occupied"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveWatchState(path, newWatchState()); err == nil || !strings.Contains(err.Error(), "state") {
+		t.Fatal(err)
+	}
+	if entries, err := os.ReadDir(dir); err != nil || len(entries) != 1 || entries[0].Name() != "watch-state.json" {
+		t.Fatal("the failed write left", entries, err)
+	}
+}
+
+// The time in a message is UTC, whatever the clock's zone.
+func TestWatchSaysTheTimeInUTC(t *testing.T) {
+	zone := time.FixedZone("CST", 8*3600)
+	if text := watchText(watchNew, "health", "aml-test", 0, "down", watchNow.In(zone)); !strings.HasSuffix(text, "\n2026-10-24 12:00:00 UTC") {
+		t.Fatal(text)
+	}
+	r := newWatchRig(t)
+	r.clock.at = watchNow.In(zone) // 20:00 in the clock's zone
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	if texts := r.step(0); len(texts) != 1 || !strings.HasSuffix(texts[0], "\n2026-10-24 12:00:00 UTC") {
+		t.Fatal(texts)
+	}
+	var state struct{ CheckedAt time.Time }
+	raw, err := os.ReadFile(r.state)
+	if err != nil || json.Unmarshal(raw, &state) != nil || !state.CheckedAt.Equal(watchNow) || !strings.Contains(string(raw), `"checkedAt": "2026-10-24T12:00:00Z"`) {
+		t.Fatalf("%v\n%s", err, raw)
+	}
+}
+
+// timeoutError is a net.Error that timed out.
+type timeoutError struct{}
+
+func (timeoutError) Error() string   { return "i/o timeout" }
+func (timeoutError) Timeout() bool   { return true }
+func (timeoutError) Temporary() bool { return true }
+
+// A failed request says what kind of failure it was, and never repeats the
+// error net/http made, which names the webhook's URL.
+func TestWatchTransportFailuresSayOnlyTheirKind(t *testing.T) {
+	secret := "https://hooks.example.com/hook/" + watchToken
+	wrap := func(err error) error { return &url.Error{Op: "Post", URL: secret, Err: err} }
+	for name, tc := range map[string]struct {
+		err  error
+		want string
+	}{
+		"canceled":  {wrap(context.Canceled), "the post was interrupted"},
+		"deadline":  {wrap(context.DeadlineExceeded), "the webhook did not answer in time"},
+		"timeout":   {wrap(timeoutError{}), "the webhook did not answer in time"},
+		"refused":   {wrap(errors.New("dial tcp " + secret + ": connect: connection refused")), "the webhook could not be reached"},
+		"unwrapped": {errors.New("lookup " + secret + ": no such host"), "the webhook could not be reached"},
+	} {
+		got := watchTransportFailure(tc.err)
+		if got.Error() != tc.want || !got.unreachable {
+			t.Errorf("%s: %q (unreachable %v), want %q", name, got.Error(), got.unreachable, tc.want)
+		}
+	}
+}

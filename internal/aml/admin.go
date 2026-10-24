@@ -50,9 +50,16 @@ const (
 //	                 queued, running, backingOff and held users; oldestQueued, in nanoseconds,
 //	                 the age of the oldest work not yet consolidated; maxBacklog, the largest
 //	                 user backlog in characters
+//	lagBound         the backlog, in characters, above which an Add waits for consolidation: the
+//	                 unit of queue.maxBacklog (zero unless consolidation is background)
 //	breakers         the state of the circuit breaker of each provider kind: "closed", "open"
 //	                 (refusing calls) or "half-open" (probing); the worst of a kind's breakers
-//	budgets          each paid account that has been used: kind, cap, spent and held
+//	breakerTrips     by provider kind, how many times a circuit breaker of the kind has opened
+//	                 (a failed probe of a half-open one included): unlike breakers it only grows,
+//	                 so a breaker that opened and closed between two readings still moves it
+//	budgets          each paid account that has been used: kind, cap, spent and held; always an
+//	                 array, empty when none has been used and when the budget file cannot be read
+//	                 (/ready says so)
 //	openStores       user stores open now
 type AdminStatus struct {
 	StartedAt       time.Time                   `json:"startedAt"`
@@ -66,7 +73,9 @@ type AdminStatus struct {
 	PartialLast10m  int64                       `json:"partialLast10m"`
 	SearchesLast10m int64                       `json:"searchesLast10m"`
 	Queue           SchedulerStatus             `json:"queue"`
+	LagBound        int64                       `json:"lagBound"`
 	Breakers        map[string]string           `json:"breakers"`
+	BreakerTrips    map[string]int64            `json:"breakerTrips"`
 	Budgets         []memoryagent.BudgetAccount `json:"budgets"`
 	OpenStores      int                         `json:"openStores"`
 }
@@ -109,8 +118,12 @@ func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) status(ctx context.Context) AdminStatus {
 	m := s.metrics
 	searches, partial := m.recent.totals()
-	// An unreadable budget file shows as no accounts here; /ready says why.
-	accounts, _ := s.Accounts(ctx)
+	// An unreadable budget file shows as no accounts here (an empty array,
+	// not null); /ready says why.
+	accounts, err := s.Accounts(ctx)
+	if err != nil || accounts == nil {
+		accounts = []memoryagent.BudgetAccount{}
+	}
 	return AdminStatus{
 		StartedAt:       s.started,
 		Adds:            m.adds.Load(),
@@ -123,10 +136,22 @@ func (s *Server) status(ctx context.Context) AdminStatus {
 		PartialLast10m:  partial,
 		SearchesLast10m: searches,
 		Queue:           s.queueStatus(),
+		LagBound:        s.consolidationLagBound(),
 		Breakers:        s.breakerStates(),
+		BreakerTrips:    s.models.BreakerTrips(),
 		Budgets:         accounts,
 		OpenStores:      s.users.open(),
 	}
+}
+
+// consolidationLagBound is the backlog, in characters, above which an Add
+// waits for consolidation; zero unless consolidation is background, where
+// no Add waits.
+func (s *Server) consolidationLagBound() int64 {
+	if s.mode != ConsolidationBackground {
+		return 0
+	}
+	return s.lagBound
 }
 
 // queueStatus is the scheduler's status; zero without a scheduler.

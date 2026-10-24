@@ -865,3 +865,66 @@ func TestModelsBreakersReportEachProvidersState(t *testing.T) {
 		t.Fatalf("got %#v", got)
 	}
 }
+
+// BreakerTrips counts, by kind, the times breakers opened: a breaker that
+// opened and closed again between two readings has still moved its count,
+// which the states of Breakers would not show.
+func TestModelsBreakerTripsCountOpenings(t *testing.T) {
+	deepseek := &Provider{config: ModelConfig{Kind: "deepseek"}, breaker: newBreaker()}
+	other := &Provider{config: ModelConfig{Kind: "deepseek"}, breaker: newBreaker()}
+	jev := &Provider{config: ModelConfig{Kind: "jev"}, breaker: newBreaker()}
+	// Two roles share a provider (counted once); another deepseek provider
+	// adds to the kind.
+	models := Models{Planner: deepseek, Judge: jev, Consolidator: other}
+	shared := Models{Planner: deepseek, Judge: jev, Consolidator: deepseek}
+	want := func(m Models, trips map[string]int64) {
+		t.Helper()
+		if got := m.BreakerTrips(); fmt.Sprint(got) != fmt.Sprint(trips) {
+			t.Fatalf("got %v, want %v", got, trips)
+		}
+	}
+	want(models, map[string]int64{"deepseek": 0, "jev": 0})
+
+	// A run of failures opens a breaker: one trip, however long it stays open.
+	for range breakerConsecutive {
+		deepseek.breaker.record(true)
+	}
+	want(models, map[string]int64{"deepseek": 1, "jev": 0})
+	want(shared, map[string]int64{"deepseek": 1, "jev": 0})
+	deepseek.breaker.record(true) // refused calls are not recorded, but even so it is already open
+	want(models, map[string]int64{"deepseek": 1, "jev": 0})
+
+	// A failed probe opens it again: a second trip.
+	deepseek.breaker.cb.HalfOpen()
+	if !deepseek.breaker.permit() {
+		t.Fatal("no probe")
+	}
+	deepseek.breaker.record(true)
+	want(models, map[string]int64{"deepseek": 2, "jev": 0})
+
+	// Closing it again, however it closes, takes nothing back…
+	deepseek.breaker.cb.HalfOpen()
+	for range breakerSuccesses {
+		if !deepseek.breaker.permit() {
+			t.Fatal("no probe")
+		}
+		deepseek.breaker.record(false)
+	}
+	if got := deepseek.breaker.state(); got != BreakerClosed {
+		t.Fatal(got)
+	}
+	want(models, map[string]int64{"deepseek": 2, "jev": 0})
+
+	// …and the kind's count is the sum of its providers'.
+	for range breakerConsecutive {
+		other.breaker.record(true)
+		jev.breaker.record(true)
+	}
+	want(models, map[string]int64{"deepseek": 3, "jev": 1})
+	want(shared, map[string]int64{"deepseek": 2, "jev": 1})
+
+	// Models of no provider have no kinds: an empty map, not nil.
+	if got := (Models{Planner: completeFunc(nil)}).BreakerTrips(); got == nil || len(got) != 0 {
+		t.Fatalf("got %#v", got)
+	}
+}

@@ -34,6 +34,7 @@ func init() {
 		group.AddCommand(child)
 	}
 	group.AddCommand(newAMLServeCommand())
+	group.AddCommand(newAMLWatchCommand())
 	rootCmd.AddCommand(group)
 }
 

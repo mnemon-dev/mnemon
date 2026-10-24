@@ -361,7 +361,7 @@ func TestAdminStatusFieldsAreStable(t *testing.T) {
 		slices.Sort(out)
 		return out
 	}
-	want := []string{"addOutran", "adds", "breakers", "budgets", "degraded", "dropped", "linkFallbacks", "openStores", "partial", "partialLast10m", "queue", "searches", "searchesLast10m", "startedAt"}
+	want := []string{"addOutran", "adds", "breakerTrips", "breakers", "budgets", "degraded", "dropped", "lagBound", "linkFallbacks", "openStores", "partial", "partialLast10m", "queue", "searches", "searchesLast10m", "startedAt"}
 	if got := keys(fields); !slices.Equal(got, want) {
 		t.Fatalf("fields %v, want %v", got, want)
 	}
@@ -372,9 +372,10 @@ func TestAdminStatusFieldsAreStable(t *testing.T) {
 	if got, want := keys(queue), []string{"backingOff", "held", "maxBacklog", "oldestQueued", "queued", "running"}; !slices.Equal(got, want) {
 		t.Fatalf("queue fields %v, want %v", got, want)
 	}
-	// No provider or paid account: empty, not null.
-	if string(fields["breakers"]) != "{}" || string(fields["budgets"]) != "[]" {
-		t.Fatal(string(fields["breakers"]), string(fields["budgets"]))
+	// No provider or paid account: empty, not null. No consolidation lag
+	// bound without background consolidation.
+	if string(fields["breakers"]) != "{}" || string(fields["breakerTrips"]) != "{}" || string(fields["budgets"]) != "[]" || string(fields["lagBound"]) != "0" {
+		t.Fatal(string(fields["breakers"]), string(fields["breakerTrips"]), string(fields["budgets"]), string(fields["lagBound"]))
 	}
 	var started time.Time
 	if err := json.Unmarshal(fields["startedAt"], &started); err != nil || started.Before(before) || started.After(time.Now()) {
@@ -435,5 +436,85 @@ func TestAdminStatusCountsWhatTheStatusLinePrints(t *testing.T) {
 	}
 	if line := h.server.statusLine(context.Background()); line != "status: adds 2, searches 2, degraded 1, partially degraded 0" {
 		t.Fatal(line)
+	}
+}
+
+// lagBound is the bound a background Add waits at, in the unit of
+// queue.maxBacklog, so that the alert watcher compares the two without a
+// number of its own. Without background consolidation no Add waits, and the
+// status says so with 0.
+func TestAdminStatusReportsTheLagBound(t *testing.T) {
+	settings := memoryagent.ConsolidationConfig{Mode: "timelines", BatchCharacters: 300, MaxBatches: 2}
+	bound := func(mode ConsolidationMode, settings memoryagent.ConsolidationConfig) int64 {
+		t.Helper()
+		h := newHarness(t, func(config *ServerConfig) {
+			config.MemoryConfig.Consolidation = &settings
+			config.Consolidation = mode
+		})
+		return h.adminStatus(t).LagBound
+	}
+	if got := bound(ConsolidationBackground, settings); got != 600 {
+		t.Fatal("two batches of 300 characters:", got)
+	}
+	if got := bound(ConsolidationBackground, memoryagent.ConsolidationConfig{Mode: "layered"}); got != 160000 {
+		t.Fatal("the default job window:", got)
+	}
+	for _, mode := range []ConsolidationMode{ConsolidationOff, ConsolidationOnAdd} {
+		if got := bound(mode, settings); got != 0 {
+			t.Fatalf("mode %q: %d", mode, got)
+		}
+	}
+}
+
+// A breaker's openings only grow, so a breaker that opened and closed between
+// two reads still shows: the states of breakers do not.
+func TestAdminStatusCountsBreakerTrips(t *testing.T) {
+	broken := openBreaker(t)
+	h := serverWith(t, broken)
+	status := h.adminStatus(t)
+	if status.Breakers["local"] != "open" || len(status.BreakerTrips) != 1 || status.BreakerTrips["local"] != 1 {
+		t.Fatalf("breakers %v, trips %v", status.Breakers, status.BreakerTrips)
+	}
+	// Reading it changes nothing.
+	if again := h.adminStatus(t); again.BreakerTrips["local"] != 1 {
+		t.Fatal(again.BreakerTrips)
+	}
+	// A kind with a closed breaker is in the map with 0 trips.
+	endpoint := newModelEndpoint(t, func(_ int, w http.ResponseWriter) {
+		json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"content": "ok"}, "finish_reason": "stop"}}})
+	})
+	healthy, err := memoryagent.NewProvider(memoryagent.ModelConfig{Kind: "local", Model: "m", BaseURL: endpoint.URL + "/v1"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { healthy.Close() })
+	closed := serverWith(t, healthy).adminStatus(t)
+	if closed.Breakers["local"] != "closed" || len(closed.BreakerTrips) != 1 || closed.BreakerTrips["local"] != 0 {
+		t.Fatalf("breakers %v, trips %v", closed.Breakers, closed.BreakerTrips)
+	}
+}
+
+// budgets is always an array: [] when no account has been used and when the
+// budget file cannot be read (/ready reports why), never null.
+func TestAdminStatusBudgetsAreAnArrayWhenTheBudgetCannotBeRead(t *testing.T) {
+	h := newHarness(t, nil)
+	holdBudget(t, h, 1)
+	body := func() map[string]json.RawMessage {
+		t.Helper()
+		response := h.adminCall("GET", "/admin/status")
+		var fields map[string]json.RawMessage
+		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &fields) != nil {
+			t.Fatal(response.Code, response.Body.String())
+		}
+		return fields
+	}
+	if got := string(body()["budgets"]); !strings.HasPrefix(got, `[{"kind":"openai"`) {
+		t.Fatal(got)
+	}
+	if err := h.server.budget.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got := string(body()["budgets"]); got != "[]" {
+		t.Fatal("an unreadable budget file shows as", got)
 	}
 }
