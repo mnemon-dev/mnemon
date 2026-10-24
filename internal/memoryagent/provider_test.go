@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -1131,6 +1132,19 @@ func TestProvidersUseOwnTransport(t *testing.T) {
 	defer budget.Close()
 	t.Setenv("UNIT_JEV_CREDENTIAL", "test-only-placeholder")
 	t.Setenv("UNIT_DEEPSEEK_CREDENTIAL", "test-only-placeholder")
+	// A transport dials through providerDialer: the bounds below are those of
+	// the dialer it dials with only if it is that one (the re-review of the
+	// final fix's N5). A dialer of the same bounds that counts its dials takes
+	// the place of providerDialer, and each transport is made to dial.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	bounds, dials := providerDialer, &atomic.Int32{}
+	providerDialer = &net.Dialer{Timeout: bounds.Timeout, KeepAlive: bounds.KeepAlive,
+		Control: func(string, string, syscall.RawConn) error { dials.Add(1); return nil }}
+	defer func() { providerDialer = bounds }()
 	seen := map[*http.Transport]bool{}
 	for _, config := range []ModelConfig{
 		{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CREDENTIAL"},
@@ -1167,7 +1181,16 @@ func TestProvidersUseOwnTransport(t *testing.T) {
 		if transport.DialContext == nil || transport.Proxy == nil {
 			t.Fatal(config.Kind, "dialer or proxy missing")
 		}
-		if d := providerDialer; d.Timeout <= 0 || d.Timeout > 5*time.Second || d.KeepAlive <= 0 || d.KeepAlive > 30*time.Second {
+		dials.Store(0)
+		conn, err := transport.DialContext(context.Background(), "tcp", listener.Addr().String())
+		if err != nil {
+			t.Fatal(config.Kind, "dial", err)
+		}
+		conn.Close()
+		if n := dials.Load(); n != 1 {
+			t.Fatal(config.Kind, "transport does not dial through providerDialer: its dials", n)
+		}
+		if d := bounds; d.Timeout <= 0 || d.Timeout > 5*time.Second || d.KeepAlive <= 0 || d.KeepAlive > 30*time.Second {
 			t.Fatal(config.Kind, "dial timeout or keep-alive", d.Timeout, d.KeepAlive)
 		}
 	}

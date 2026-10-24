@@ -160,25 +160,53 @@ func TestPrivateModeCheckIsPOSIXOnly(t *testing.T) {
 		},
 	}
 	for _, posix := range []bool{true, false} {
-		previous := posixModes
-		posixModes = posix
-		for name, open := range open {
-			readable := filepath.Join(t.TempDir(), "readable.db")
-			if err := os.WriteFile(readable, nil, 0o600); err != nil {
-				t.Fatal(err)
+		t.Run(fmt.Sprintf("POSIX modes %v", posix), func(t *testing.T) {
+			setPOSIXModes(t, posix)
+			for name, open := range open {
+				readable := filepath.Join(t.TempDir(), "readable.db")
+				if err := os.WriteFile(readable, nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				// Chmod, as WriteFile's mode passes through the umask.
+				if err := os.Chmod(readable, 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := open(readable); posix && (err == nil || !strings.Contains(err.Error(), "must be a private regular file")) || !posix && err != nil {
+					t.Errorf("POSIX modes %v: a %s readable by others opened with %v", posix, name, err)
+				}
+				if err := open(t.TempDir()); err == nil {
+					t.Errorf("POSIX modes %v: a directory opened as a %s", posix, name)
+				}
 			}
-			// Chmod, as WriteFile's mode passes through the umask.
-			if err := os.Chmod(readable, 0o644); err != nil {
-				t.Fatal(err)
-			}
-			if err := open(readable); posix && (err == nil || !strings.Contains(err.Error(), "must be a private regular file")) || !posix && err != nil {
-				t.Errorf("POSIX modes %v: a %s readable by others opened with %v", posix, name, err)
-			}
-			if err := open(t.TempDir()); err == nil {
-				t.Errorf("POSIX modes %v: a directory opened as a %s", posix, name)
-			}
+		})
+	}
+}
+
+// setPOSIXModes sets posixModes for the rest of the test and puts it back
+// when the test ends, passed or failed: a test that stops halfway (t.Fatal)
+// must not leave the private-mode check on or off for the tests after it (the
+// re-review of the final fix's N4).
+func setPOSIXModes(t *testing.T, value bool) {
+	t.Helper()
+	previous := posixModes
+	t.Cleanup(func() { posixModes = previous })
+	posixModes = value
+}
+
+// A test that ends early, where t.Fatal ends one (the goroutine exits, its
+// cleanups run; t.SkipNow does the same without failing the run), leaves
+// posixModes as it was.
+func TestSetPOSIXModesIsUndoneWhenATestEndsEarly(t *testing.T) {
+	before := posixModes
+	t.Run("sets them and stops", func(t *testing.T) {
+		setPOSIXModes(t, !before)
+		if posixModes == before {
+			t.Fatal("the setting did not change")
 		}
-		posixModes = previous
+		t.SkipNow()
+	})
+	if posixModes != before {
+		t.Fatalf("posixModes is %v after the test that set it ended, want %v", posixModes, before)
 	}
 }
 
