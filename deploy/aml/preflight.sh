@@ -10,7 +10,11 @@
 #   - /admin/status: a lag bound (background consolidation) and every
 #     budget's spent and held below 80% of its cap, printing the numbers;
 #   - no store of smoke-user, the runbook's smoke-test user, in the data root;
-#   - aml-serve@<n>, aml-watch@<n>.timer and caddy active;
+#   - only while its inspect service is on (inspect.env): inspect.env root's,
+#     mode 0600, holding every name it needs, and the inspect listener's
+#     /healthz answering 200 with its token;
+#   - aml-serve@<n>, aml-watch@<n>.timer, aml-inspect@<n> while inspect is
+#     on, and caddy active;
 #   - systemd-analyze verify on the unit templates, and caddy validate, when
 #     the tools are here;
 #   - wg0 up with the AML_ADMIN_LISTEN address, and ufw active with the rules
@@ -282,9 +286,37 @@ check_smoke_user() {
 		fail "the data root holds the store of smoke-user (store ${key:0:8}), the runbook's smoke-test user: printf 'smoke-user\\n' | mnemon-instance delete-user $NAME"
 }
 
+# inspect_on: the instance's inspect service is on.
+inspect_on() { [ -f "$ROOT$ETC/$NAME/inspect.env" ]; }
+
+# check_inspect: only while the instance's inspect service is on: inspect.env
+# is root's, mode 0600, and holds the names aml-inspect@.service reads and
+# the provider keys the configuration names; /healthz on the inspect
+# listener answers 200 with the inspect token.
+check_inspect() {
+	inspect_on || return 0
+	checking
+	local inspect="$ROOT$ETC/$NAME/inspect.env" owner mode keys var code
+	read -r owner mode <<EOF
+$(owner_mode "$inspect")
+EOF
+	[ "$owner" = "$(owner_uid)" ] || fail "$ETC/$NAME/inspect.env is owned by uid $owner, not root"
+	[ "$mode" = 600 ] || fail "$ETC/$NAME/inspect.env has mode $mode, not 0600"
+	keys=$(jq -r '[.. | objects | .keyEnv? | strings] | unique | .[]' "$ROOT$ETC/$NAME/memory-config.json" 2>/dev/null) || keys=
+	for var in AML_INSPECT_LISTEN AML_INSPECT_DEBUG_CAPS MNEMON_INSPECT_TOKEN $keys; do
+		has "$inspect" "$var" || fail "$ETC/$NAME/inspect.env lacks $var"
+	done
+	checking
+	code=$(printf 'header = "Authorization: Bearer %s"\n' "$(env_get "$inspect" MNEMON_INSPECT_TOKEN)" |
+		curl --disable --config - --silent --output /dev/null --max-time 10 --write-out '%{http_code}' \
+			"http://$(env_get "$inspect" AML_INSPECT_LISTEN)/healthz") || true
+	[ "${code:-000}" = 200 ] || fail "/healthz on the inspect listener $(answered "${code:-000}")"
+}
+
 check_units() {
-	local unit state
-	for unit in "aml-serve@$NAME.service" "aml-watch@$NAME.timer" caddy.service; do
+	local unit state units="aml-serve@$NAME.service aml-watch@$NAME.timer"
+	! inspect_on || units="$units aml-inspect@$NAME.service"
+	for unit in $units caddy.service; do
 		checking
 		state=$(systemctl is-active "$unit" 2>/dev/null) || true
 		[ "$state" = active ] || fail "$unit is ${state:-unknown}, not active"
@@ -292,10 +324,11 @@ check_units() {
 }
 
 check_tools() {
-	local out
+	local out templates=("$UNITS/aml-serve@.service" "$UNITS/aml-watch@.service" "$UNITS/aml-watch@.timer")
+	! inspect_on || templates+=("$UNITS/aml-inspect@.service")
 	if command -v systemd-analyze >/dev/null 2>&1; then
 		checking
-		out=$(systemd-analyze verify "$UNITS/aml-serve@.service" "$UNITS/aml-watch@.service" "$UNITS/aml-watch@.timer" 2>&1) ||
+		out=$(systemd-analyze verify "${templates[@]}" 2>&1) ||
 			fail "systemd-analyze verify of the unit templates failed: $(printf '%s\n' "$out" | head -n 1)"
 	fi
 	if command -v caddy >/dev/null 2>&1; then
@@ -440,6 +473,7 @@ main() {
 	check_ready
 	check_status
 	check_smoke_user
+	check_inspect
 	if [ "$SYSTEMD" = 1 ]; then
 		check_units
 		check_tools

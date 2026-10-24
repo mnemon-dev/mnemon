@@ -112,7 +112,7 @@ Any other path answers `404 {"error":"not_found"}`; another method on a route an
 | --- | --- |
 | `version` | the product version of the build |
 | `modes.lexical` | always `true` |
-| `modes.full` | `true` when full searches may run: a debug budget file is set and every paid model the read path calls (the planner's and the judge's kinds) has a positive cap; else `false`, and a full search answers `409 full_disabled` |
+| `modes.full` | `true` when full searches may run: a debug budget file is set, at least one cap is positive, and every paid model the read path calls (the planner's and the judge's kinds) has a positive cap; else `false`, and a full search answers `409 full_disabled` |
 | `debugBudget.currency` | the currency of each kind: `deepseek` CNY, `jev` USD |
 | `debugBudget.caps` | the cap of each kind, from `--debug-caps`; 0 for a kind with none |
 | `debugBudget.spent` | what full searches of any run of this service have spent from the debug budget file, by kind; 0 without the file |

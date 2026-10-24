@@ -1111,53 +1111,94 @@ func (s *Server) read(ctx context.Context, user *userEntry, req memoryagent.Read
 	return user.agent.Read(ctx, req)
 }
 
-// answer writes a Search's items, scored by position (1/(position+1), in
-// the order delivered), and counts the Search.
+// answer writes a Search's items, scored by position (scoreByPosition), and
+// counts the Search.
 func (s *Server) answer(w http.ResponseWriter, items []SearchItem) {
-	for i := range items {
-		items[i].Score = 1 / float64(i+1)
-	}
+	scoreByPosition(items)
 	s.metrics.searchAnswered()
 	writeJSON(w, http.StatusOK, SearchResponse{Data: items})
 }
 
-// rawSearch is the store's own ranking of the query, hybrid when the
-// configuration embeds (words when the embedder fails), hydrated as reads
-// hydrate evidence, cut at top_k by rank and listed as the View's order
-// setting lists a read's records (time order with view.order "time"; on a
-// failure to order, rank order, logged). It uses no model.
+// scoreByPosition scores a Search's items by position, 1/(position+1), in
+// the order delivered.
+func scoreByPosition(items []SearchItem) {
+	for i := range items {
+		items[i].Score = 1 / float64(i+1)
+	}
+}
+
+// rawSearch is the raw ranking (rawRanking) of the user's store, what a
+// degraded Search answers; what it falls back from is logged.
 func (s *Server) rawSearch(ctx context.Context, user *userEntry, query string, topK int) ([]SearchItem, error) {
-	snapshot, err := user.store.Get(ctx, records.GetRequest{IDs: []string{}})
-	if err != nil {
-		return nil, err
+	ranking, err := rawRanking(ctx, user.store, user.agent, s.config.MemoryConfig, query, topK, s.rawWarn(ctx, user))
+	return ranking.items, err
+}
+
+// rawWarn logs, as a warning that names the user, what the raw ranking of
+// the user's store fell back from.
+func (s *Server) rawWarn(ctx context.Context, user *userEntry) func(event string, err error) {
+	return func(event string, err error) {
+		s.logf(ctx, slog.LevelWarn, "%s (user %s): %v", event, user.key[:8], err)
 	}
-	config := s.config.MemoryConfig
-	ids, err := rawQuery(ctx, user.store, snapshot.Revision, query, config.Embedding, config.Index)
-	if err != nil && config.Embedding != nil {
-		s.logf(ctx, slog.LevelWarn, "hybrid search failed, searching words (user %s): %v", user.key[:8], err)
-		ids, err = rawQuery(ctx, user.store, snapshot.Revision, query, nil, config.Index)
-	}
-	if err != nil {
-		return nil, err
-	}
-	evidence, err := user.agent.Hydrate(ctx, snapshot.Revision, records.Scope{}, ids[:min(len(ids), topK, 200)])
-	if err != nil {
-		return nil, err
-	}
-	items := []SearchItem{}
-	for _, item := range s.ordered(ctx, user, snapshot.Revision, evidence) {
-		items = append(items, SearchItem{ID: item.ID, Content: item.Text, CreatedAt: item.Date})
-	}
-	return items, nil
 }
 
 // ordered lists the raw ranking's evidence as the View's order setting lists
-// a read's records. When their write positions cannot be read it keeps the
-// rank order and logs it: a degraded Search still answers.
+// a read's records (orderedEvidence), logging a failure to order.
 func (s *Server) ordered(ctx context.Context, user *userEntry, revision string, evidence []memoryagent.Evidence) []memoryagent.Evidence {
-	ordered, err := user.agent.OrderRecords(ctx, revision, evidence)
+	return orderedEvidence(ctx, user.agent, revision, evidence, s.rawWarn(ctx, user))
+}
+
+// rawRanked is a raw ranking: its items (unscored), the ids it hydrated in
+// rank order, how many records the store ranked (at most 200), and the
+// revision it read.
+type rawRanked struct {
+	items    []SearchItem
+	hydrated []string
+	ranked   int
+	revision string
+}
+
+// rawRanking is the store's own ranking of the query, hybrid when the
+// configuration embeds (words when the embedder fails), hydrated as reads
+// hydrate evidence, cut at top_k by rank and listed as the View's order
+// setting lists a read's records (time order with view.order "time"; on a
+// failure to order, rank order). It uses no model. warn is told what it
+// falls back from: the event and its error. aml-serve's degraded Search and
+// the inspect service's lexical mode both answer it.
+func rawRanking(ctx context.Context, store *records.Store, agent *memoryagent.Agent, config memoryagent.Config, query string, topK int, warn func(event string, err error)) (rawRanked, error) {
+	snapshot, err := store.Get(ctx, records.GetRequest{IDs: []string{}})
 	if err != nil {
-		s.logf(ctx, slog.LevelWarn, "degraded search kept rank order (user %s): %v", user.key[:8], err)
+		return rawRanked{}, err
+	}
+	ids, err := rawQuery(ctx, store, snapshot.Revision, query, config.Embedding, config.Index)
+	if err != nil && config.Embedding != nil {
+		warn("hybrid search failed, searching words", err)
+		ids, err = rawQuery(ctx, store, snapshot.Revision, query, nil, config.Index)
+	}
+	if err != nil {
+		return rawRanked{}, err
+	}
+	evidence, err := agent.Hydrate(ctx, snapshot.Revision, records.Scope{}, ids[:min(len(ids), topK, 200)])
+	if err != nil {
+		return rawRanked{}, err
+	}
+	ranking := rawRanked{items: []SearchItem{}, hydrated: []string{}, ranked: min(len(ids), 200), revision: snapshot.Revision}
+	for _, item := range evidence {
+		ranking.hydrated = append(ranking.hydrated, item.ID)
+	}
+	for _, item := range orderedEvidence(ctx, agent, snapshot.Revision, evidence, warn) {
+		ranking.items = append(ranking.items, SearchItem{ID: item.ID, Content: item.Text, CreatedAt: item.Date})
+	}
+	return ranking, nil
+}
+
+// orderedEvidence lists the raw ranking's evidence as the View's order
+// setting lists a read's records. When their write positions cannot be read
+// it keeps the rank order and tells warn: a degraded Search still answers.
+func orderedEvidence(ctx context.Context, agent *memoryagent.Agent, revision string, evidence []memoryagent.Evidence, warn func(event string, err error)) []memoryagent.Evidence {
+	ordered, err := agent.OrderRecords(ctx, revision, evidence)
+	if err != nil {
+		warn("degraded search kept rank order", err)
 		return evidence
 	}
 	return ordered

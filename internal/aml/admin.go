@@ -132,29 +132,42 @@ func (s *Server) adminRoutes() http.Handler {
 // nor its length leaks through timing. Without an admin token it is next
 // itself.
 func (s *Server) requireAdminToken(next http.Handler) http.Handler {
-	if s.adminKey == nil {
+	return requireBearer(s.adminKey, func(w http.ResponseWriter) {
+		s.metrics.adminAuthFailures.Inc()
+		w.Header().Set("WWW-Authenticate", `Bearer realm="mnemon-admin"`)
+		writeError(w, http.StatusUnauthorized, "missing or invalid admin token")
+	}, next)
+}
+
+// requireBearer is the bearer token rule of the admin listener and of the
+// inspect service: every request of next must carry the token whose SHA-256
+// digest is key as `Authorization: Bearer <token>` (the scheme in any case),
+// and refuse answers one that does not, before next sees it. No other header
+// or scheme stands in for it. The digests are compared in constant time, so
+// neither the token nor its length leaks through timing; refuse is given
+// nothing of what was sent. With a nil key it is next itself.
+func requireBearer(key *[sha256.Size]byte, refuse func(http.ResponseWriter), next http.Handler) http.Handler {
+	if key == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !s.adminAuthorized(r) {
-			s.metrics.adminAuthFailures.Inc()
-			w.Header().Set("WWW-Authenticate", `Bearer realm="mnemon-admin"`)
-			writeError(w, http.StatusUnauthorized, "missing or invalid admin token")
+		if !bearerAuthorized(r, key) {
+			refuse(w)
 			return
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// adminAuthorized reports whether r carries the admin token as a Bearer
-// token.
-func (s *Server) adminAuthorized(r *http.Request) bool {
+// bearerAuthorized reports whether r carries the token whose digest is key
+// as a Bearer token.
+func bearerAuthorized(r *http.Request, key *[sha256.Size]byte) bool {
 	scheme, token, found := strings.Cut(strings.TrimSpace(r.Header.Get("Authorization")), " ")
 	if !found || !strings.EqualFold(scheme, "Bearer") {
 		return false
 	}
 	digest := sha256.Sum256([]byte(strings.TrimSpace(token)))
-	return subtle.ConstantTimeCompare(digest[:], s.adminKey[:]) == 1
+	return subtle.ConstantTimeCompare(digest[:], key[:]) == 1
 }
 
 func (s *Server) serveStatus(w http.ResponseWriter, r *http.Request) {

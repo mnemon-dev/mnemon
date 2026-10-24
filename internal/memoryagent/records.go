@@ -340,15 +340,8 @@ func evidence(ctx context.Context, store *records.Store, revision string, scope 
 		if json.Unmarshal([]byte(raw), &value) != nil || value.Kind == "memory-document" || value.Kind == "memory-index" {
 			continue
 		}
-		item := Evidence{Reference: reference(value.ID, raw), Text: value.Content, End: len(value.Content)}
+		item := Evidence{Reference: reference(value.ID, raw), Text: value.Content, End: len(value.Content), Date: evidenceDate(value)}
 		item.Source, _ = value.Data["source"].(string)
-		item.Date, _ = value.Data["eventAt"].(string)
-		if item.Date == "" && value.Date != nil {
-			item.Date = *value.Date
-		}
-		if item.Date == "" {
-			item.Date = value.CreatedAt
-		}
 		if value.Kind == "memory-record" {
 			parent, err := verifyParent(ctx, store, revision, value)
 			if err != nil {
@@ -361,6 +354,19 @@ func evidence(ctx context.Context, store *records.Store, revision string, scope 
 		}
 	}
 	return out, nil
+}
+
+// evidenceDate is a record's date as reads give it (Evidence.Date): the
+// writer's data.eventAt, else the record's date, else its creation time.
+func evidenceDate(value recordValue) string {
+	date, _ := value.Data["eventAt"].(string)
+	if date == "" && value.Date != nil {
+		date = *value.Date
+	}
+	if date == "" {
+		date = value.CreatedAt
+	}
+	return date
 }
 
 func verifyParent(ctx context.Context, store *records.Store, revision string, child recordValue) (Reference, error) {

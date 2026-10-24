@@ -5,13 +5,16 @@
 # lists the commands.
 #
 # Instance <n> is these files, and the units aml-serve@<n>.service,
-# aml-watch@<n>.service and aml-watch@<n>.timer:
+# aml-watch@<n>.service and aml-watch@<n>.timer (and aml-inspect@<n>.service
+# while its inspect service is on):
 #
 #   /etc/mnemon-aml/<n>/env                engine environment: record, addresses, limits, secrets
 #   /etc/mnemon-aml/<n>/watch.env          watcher environment: alert bot, public URL, admin token
+#   /etc/mnemon-aml/<n>/inspect.env        inspect environment, while it is on: listener, caps, token, provider keys
 #   /etc/mnemon-aml/<n>/memory-config.json the shipped configuration with this instance's caps
 #   /var/lib/mnemon-aml/<n>/               data root (data/) and model budget file
 #   /var/lib/mnemon-aml-watch/<n>/         the watcher's state
+#   /var/lib/mnemon-aml-inspect/<n>/       the inspect service's debug budget, while it is on
 #   /etc/systemd/system/aml-serve@<n>.service.d/limits.conf   MemoryMax= and CPUQuota=
 #   /etc/caddy/mnemon-instances/<n>.caddy  the route, on a shared host
 #
@@ -23,7 +26,7 @@
 # /etc/mnemon-aml/host.env) never appear in an argument of a program, a URL or
 # a log line. They move through files, pipes and shell builtins only, reach
 # curl as a config on its standard input (--config -), and are printed only
-# in the one-time output of new and rotate-key.
+# in the one-time output of new, rotate-key and inspect enable.
 #
 # For tests, --root DIR reads and writes every file under DIR (the files still
 # name the host's paths), and --no-systemd runs neither systemctl, logger,
@@ -42,6 +45,7 @@ readonly ETC=/etc/mnemon-aml
 readonly HOST_ENV=/etc/mnemon-aml/host.env
 readonly STATE=/var/lib/mnemon-aml
 readonly WATCH_STATE=/var/lib/mnemon-aml-watch
+readonly INSPECT_STATE=/var/lib/mnemon-aml-inspect
 readonly UNITS=/etc/systemd/system
 readonly SNIPPETS=/etc/caddy/mnemon-instances
 readonly CADDYFILE=/etc/caddy/Caddyfile
@@ -52,18 +56,23 @@ readonly JOURNAL=/var/log/mnemon-instance.log
 
 # Shared slots run 0 to 49: data port 8100+10s, admin port 8101+10s.
 readonly SLOTS=50
-# Seconds new, resume, rotate-key and delete-user wait for /ready.
+# Seconds new, resume, rotate-key and delete-user wait for /ready, and
+# inspect enable for the inspect service's /healthz.
 readonly READY_WAIT=120
+# inspect enable's debug caps, in the instance's currencies (DeepSeek CNY,
+# JEV USD), and the MemoryMax= of aml-inspect@.service.
+readonly INSPECT_DEEPSEEK_CAP=5 INSPECT_JEV_CAP=1 INSPECT_MEMORY_MAX=1G
 # Instance names that collide with a path of the kit or read as a common word.
 readonly RESERVED_NAMES=" data env host host-env users watch instances aml mnemon caddy test-instance "
 
 ROOT=
 SYSTEMD=1
 # Cleanup on exit: temporary files not yet renamed into place, what an
-# unfinished new has created, the instance an unfinished resume has started,
-# and the lock.
+# unfinished new (or inspect enable: CREATING) has created, the instance an
+# unfinished resume has started, and the lock.
 TEMPS=
 CREATED=
+CREATING=new
 RESUMING=
 LOCKED=
 
@@ -112,8 +121,16 @@ The engine instances of this host, one per account. Run as root.
   delete-user <n>   Ask for one user id (type it at the prompt; never put it
                     in a command) and remove that user's store, stopping and
                     starting the instance around it.
-  list              Name, layout, slot, addresses, status and public URL of
-                    every instance. No secrets.
+  list              Name, layout, slot, addresses, status, whether inspect is
+                    on, and public URL of every instance. No secrets.
+  inspect enable <n> [--debug-deepseek-cap CNY] [--debug-jev-cap USD]
+      Turn on the inspect service of <n> (the console's read-only 检索 tab):
+      write inspect.env, start aml-inspect@<n>, wait for its /healthz, and
+      print the inspect URL, the inspect token and the console's JSON. The
+      token is shown only then. Debug caps: 5 CNY and 1 USD by default.
+  inspect disable <n>
+      Stop and disable aml-inspect@<n>, and remove inspect.env and the
+      inspect state.
 
 For tests: --root DIR reads and writes every file under DIR; --no-systemd runs
 no systemctl, logger, curl, caddy or mnemon-preflight, and writes the journal
@@ -141,7 +158,7 @@ on_exit() {
 		for path in $CREATED; do
 			rm -rf -- "$path"
 		done
-		say "new stopped before it finished; it removed what it had written"
+		say "$CREATING stopped before it finished; it removed what it had written"
 		[ "$status" -ne 0 ] || status=1
 	fi
 	if [ -n "$RESUMING" ]; then
@@ -372,7 +389,7 @@ check_name() {
 
 # instance_paths NAME: the host paths an instance owns.
 instance_paths() {
-	printf '%s\n' "$ETC/$1" "$STATE/$1" "$WATCH_STATE/$1" "$UNITS/aml-serve@$1.service.d" "$SNIPPETS/$1.caddy"
+	printf '%s\n' "$ETC/$1" "$STATE/$1" "$WATCH_STATE/$1" "$INSPECT_STATE/$1" "$UNITS/aml-serve@$1.service.d" "$SNIPPETS/$1.caddy"
 }
 
 # require_instance NAME: the instance exists (its env file does).
@@ -872,20 +889,24 @@ EOF
 	layout=$(env_get "$ROOT$ETC/$name/env" AML_LAYOUT)
 	sctl disable --now "aml-watch@$name.timer"
 	sctl stop "aml-watch@$name.service"
+	# A host that never turned inspect on may not have its template.
+	if [ -e "$ROOT$ETC/$name/inspect.env" ] || [ -e "$ROOT$INSPECT_STATE/$name" ]; then
+		sctl disable --now "aml-inspect@$name.service"
+	fi
 	sctl disable --now "aml-serve@$name.service"
 	if [ -e "$ROOT$SNIPPETS/$name.caddy" ]; then
 		rm -f -- "$ROOT$SNIPPETS/$name.caddy"
 		reload_caddy || say "warning: Caddy did not reload; run: systemctl reload caddy"
 		printf 'removed %s\n' "$SNIPPETS/$name.caddy"
 	fi
-	for path in "$ETC/$name" "$STATE/$name" "$WATCH_STATE/$name" "$UNITS/aml-serve@$name.service.d"; do
+	for path in "$ETC/$name" "$STATE/$name" "$WATCH_STATE/$name" "$INSPECT_STATE/$name" "$UNITS/aml-serve@$name.service.d"; do
 		if [ -e "$ROOT$path" ]; then
 			rm -rf -- "$ROOT$path"
 			printf 'removed %s\n' "$path"
 		fi
 	done
 	sctl daemon-reload
-	sctl reset-failed "aml-serve@$name.service" "aml-watch@$name.service" "aml-watch@$name.timer" 2>/dev/null || true
+	sctl reset-failed "aml-serve@$name.service" "aml-watch@$name.service" "aml-watch@$name.timer" "aml-inspect@$name.service" 2>/dev/null || true
 	journal "delete $name"
 	if [ "$layout" = dedicated ]; then
 		printf '%s still proxies to 127.0.0.1:8090, which answers 502 until the next dedicated instance runs.\n' "$CADDYFILE"
@@ -928,17 +949,165 @@ cmd_list() {
 		die "run as root: the environment files are root's"
 	fi
 	need grep tail
-	local env dir format='%-31s  %-9s  %4s  %-15s  %-21s  %-9s  %s\n'
+	local env dir inspect format='%-31s  %-9s  %4s  %-15s  %-21s  %-9s  %-7s  %s\n'
 	# shellcheck disable=SC2059
-	printf "$format" NAME LAYOUT SLOT DATA ADMIN STATUS 'PUBLIC URL'
+	printf "$format" NAME LAYOUT SLOT DATA ADMIN STATUS INSPECT 'PUBLIC URL'
 	for env in "$ROOT$ETC"/*/env; do
 		[ -f "$env" ] || continue
 		dir=${env%/env}
+		inspect=off
+		[ ! -f "$dir/inspect.env" ] || inspect=on
 		# shellcheck disable=SC2059
 		printf "$format" "${dir##*/}" "$(env_get "$env" AML_LAYOUT)" "$(env_get "$env" AML_SLOT)" \
 			"$(env_get "$env" AML_LISTEN)" "$(env_get "$env" AML_ADMIN_LISTEN)" "$(env_get "$env" AML_STATUS)" \
-			"$(env_get "$dir/watch.env" AML_PUBLIC_URL)"
+			"$inspect" "$(env_get "$dir/watch.env" AML_PUBLIC_URL)"
 	done
+}
+
+# inspect_status NAME PATH: the HTTP status the instance's inspect service
+# answers for PATH, with its token, "000" without an answer.
+inspect_status() {
+	local env="$ROOT$ETC/$1/inspect.env" code
+	code=$(printf 'header = "Authorization: Bearer %s"\n' "$(env_get "$env" MNEMON_INSPECT_TOKEN)" |
+		curl --disable --config - --silent --output /dev/null --max-time 5 --write-out '%{http_code}' "http://$(env_get "$env" AML_INSPECT_LISTEN)$2") || true
+	printf '%s' "${code:-000}"
+}
+
+# wait_inspect NAME: waits for the inspect service's /healthz to answer 200,
+# for READY_WAIT seconds at most, as wait_ready waits for /ready.
+wait_inspect() {
+	[ "$SYSTEMD" = 1 ] || return 0
+	local deadline=$((SECONDS + READY_WAIT))
+	while :; do
+		[ "$(inspect_status "$1" /healthz)" != 200 ] || return 0
+		[ "$SECONDS" -lt "$deadline" ] || break
+		sleep 1
+	done
+	say "$1: the inspect service's /healthz did not answer 200 within ${READY_WAIT}s; see journalctl -u aml-inspect@$1"
+	return 1
+}
+
+cmd_inspect() {
+	[ $# -ge 1 ] || usage_error "inspect: give enable or disable, and the instance name"
+	local action=$1
+	shift
+	case $action in
+	enable) inspect_enable "$@" ;;
+	disable) inspect_disable "$@" ;;
+	*) usage_error "inspect: enable or disable, not \"$action\"" ;;
+	esac
+}
+
+# inspect_enable NAME [--debug-deepseek-cap CNY] [--debug-jev-cap USD]: the
+# instance's content-access switch, on. The inspect service listens on the
+# admin listener's address at its port + 1 (8092 dedicated, 8102 + 10 × the
+# slot shared), inside the firewall's overlay rule for 8091 to 8600.
+inspect_enable() {
+	local name= deepseek_cap=$INSPECT_DEEPSEEK_CAP jev_cap=$INSPECT_JEV_CAP opt value
+	while [ $# -gt 0 ]; do
+		case $1 in
+		--*=*) set -- "${1%%=*}" "${1#*=}" "${@:2}" ;;
+		esac
+		case $1 in
+		--debug-deepseek-cap | --debug-jev-cap)
+			[ $# -ge 2 ] || usage_error "inspect enable: $1 needs a value"
+			opt=$1 value=$2
+			shift 2
+			case $opt in
+			--debug-deepseek-cap) deepseek_cap=$value ;;
+			--debug-jev-cap) jev_cap=$value ;;
+			esac
+			;;
+		-*) usage_error "inspect enable: unknown flag $1" ;;
+		*)
+			[ -z "$name" ] || usage_error "inspect enable: one instance name, not \"$name\" and \"$1\""
+			name=$1
+			shift
+			;;
+		esac
+	done
+	[ -n "$name" ] || usage_error "inspect enable: give the instance name"
+	require_instance "$name"
+	local cap='^(0|[1-9][0-9]*)(\.[0-9]+)?$' zero='^0(\.0+)?$'
+	for value in "$deepseek_cap" "$jev_cap"; do
+		[[ $value =~ $cap ]] && ! [[ $value =~ $zero ]] || usage_error "inspect enable: --debug-deepseek-cap and --debug-jev-cap must be positive numbers, such as 5 or 0.5"
+	done
+	host_checks
+	local dir="$ROOT$ETC/$name" keys var
+	keys=$(config_keys "$dir/memory-config.json") || die "$ETC/$name/memory-config.json is not readable JSON"
+	check_host_env "$keys"
+	if [ "$SYSTEMD" = 1 ]; then
+		[ -f "$ROOT$UNITS/aml-inspect@.service" ] || die "$UNITS/aml-inspect@.service is missing: install the unit template first"
+	fi
+	lock
+	[ ! -e "$dir/inspect.env" ] || die "inspect is already on for $name ($ETC/$name/inspect.env); $PROG inspect disable $name first"
+	[ ! -e "$ROOT$INSPECT_STATE/$name" ] || die "$INSPECT_STATE/$name exists already; $PROG inspect disable $name removes it"
+	local admin port listen token
+	admin=$(env_get "$dir/env" AML_ADMIN_LISTEN)
+	port=${admin##*:}
+	[[ $port =~ ^[1-9][0-9]{3,4}$ ]] && private_ipv4 "${admin%:*}" || die "$ETC/$name/env: AML_ADMIN_LISTEN \"$admin\" is not a private address and a port"
+	listen="${admin%:*}:$((port + 1))"
+	token=$(new_secret)
+
+	# Write it; if anything fails before it starts, on_exit removes it.
+	CREATING="inspect enable"
+	make_temp "$dir"
+	CREATED="$dir/inspect.env"
+	{
+		printf '# aml-inspect@%s: written by %s inspect enable. Root-only (0600): it\n' "$name" "$PROG"
+		printf '# holds the inspect token and the provider keys. systemd reads it as root.\n'
+		printf '# The listener: the admin address at the admin port + 1.\n'
+		printf 'AML_INSPECT_LISTEN=%s\n' "$listen"
+		printf '# The debug budget'"'"'s caps: DeepSeek in CNY, JEV in USD.\n'
+		printf 'AML_INSPECT_DEBUG_CAPS=deepseek=%s,jev=%s\n' "$deepseek_cap" "$jev_cap"
+		printf '# The soft memory limit of the Go runtime: 80%% of MemoryMax=%s.\n' "$INSPECT_MEMORY_MAX"
+		printf 'GOMEMLIMIT=%sMiB\n' "$(gomemlimit_mib "$INSPECT_MEMORY_MAX")"
+		printf '# Secrets: the inspect token, the provider keys.\n'
+		printf 'MNEMON_INSPECT_TOKEN=%s\n' "$token"
+		for var in $keys; do
+			host_line "$var"
+		done
+	} >"$TMP"
+	commit "$TMP" "$dir/inspect.env" 0600 root:root
+	ensure_dir "$ROOT$INSPECT_STATE" 0755
+	new_dir "$ROOT$INSPECT_STATE/$name" 0700 mnemon:mnemon
+	CREATED=
+	# The token is printed below whatever happens from here on.
+	journal "inspect enable $name: listen $listen, debug caps deepseek $deepseek_cap CNY, jev $jev_cap USD" ||
+		say "could not write the journal line"
+	local started=1
+	if [ "$SYSTEMD" = 1 ]; then
+		say "starting aml-inspect@$name"
+		sctl daemon-reload && sctl enable --now "aml-inspect@$name.service" && wait_inspect "$name" || started=0
+	fi
+	local url="http://$listen"
+	printf '\nInspect service of %s\n\n' "$name"
+	printf 'Inspect URL:    %s\n' "$url"
+	printf 'Inspect token:  %s\n\n' "$token"
+	printf 'For the console (it holds the inspect token):\n'
+	printf '{"inspectUrl":"%s","inspectToken":"%s"}\n\n' "$url" "$token"
+	printf 'The inspect token is shown only now.\n'
+	[ "$started" = 1 ] || die "inspect for $name is written but did not start (see above): journalctl -u aml-inspect@$name; $PROG inspect disable $name removes it"
+}
+
+# inspect_disable NAME: the instance's content-access switch, off.
+inspect_disable() {
+	[ $# -eq 1 ] || usage_error "inspect disable: give the instance name"
+	require_instance "$1"
+	local name=$1 path
+	host_checks
+	lock
+	[ -e "$ROOT$ETC/$name/inspect.env" ] || [ -e "$ROOT$INSPECT_STATE/$name" ] || die "inspect is not on for $name"
+	sctl disable --now "aml-inspect@$name.service"
+	for path in "$ETC/$name/inspect.env" "$INSPECT_STATE/$name"; do
+		if [ -e "$ROOT$path" ]; then
+			rm -rf -- "$ROOT$path"
+			printf 'removed %s\n' "$path"
+		fi
+	done
+	sctl reset-failed "aml-inspect@$name.service" 2>/dev/null || true
+	journal "inspect disable $name"
+	printf 'Inspect is off for %s: remove its inspect URL and token in the console.\n' "$name"
 }
 
 main() {
@@ -981,6 +1150,7 @@ main() {
 	delete) cmd_delete "$@" ;;
 	delete-user) cmd_delete_user "$@" ;;
 	list) cmd_list "$@" ;;
+	inspect) cmd_inspect "$@" ;;
 	help) usage ;;
 	*) usage_error "unknown command $command" ;;
 	esac

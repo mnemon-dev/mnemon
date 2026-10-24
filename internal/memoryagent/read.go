@@ -314,6 +314,9 @@ type Agent struct {
 	// extractions keeps the L0 extractions of batches that jobs with
 	// DeferLinks extracted but left pending (layered.go).
 	extractions extractionCache
+	// indexCheck is a reader agent's check of its derived index (OpenReader,
+	// Unchanged); nil otherwise.
+	indexCheck func() error
 }
 
 func New(store *records.Store, config Config, models Models, overlay *Overlay) (*Agent, error) {

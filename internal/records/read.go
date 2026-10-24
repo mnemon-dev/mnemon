@@ -25,7 +25,7 @@ func (s *Store) Heads(ctx context.Context, hash string, scope Scope) (string, []
 	}
 	heads := []Head{}
 	for _, r := range docs {
-		if visible(r, scope) && r.State == "active" && r.Kind != "memory-document" && r.Kind != "memory-index" {
+		if isHead(r, scope) {
 			heads = append(heads, Head{ID: r.ID, Version: r.VersionID})
 		}
 	}

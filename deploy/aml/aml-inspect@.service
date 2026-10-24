@@ -1,0 +1,62 @@
+# systemd template for the inspect service of engine instance %i: the
+# memory cloud console's read-only retrieval backend (docs/inspect-api.md),
+# beside aml-serve@%i and never in its process. Install once per host as
+# /etc/systemd/system/aml-inspect@.service; `mnemon-instance inspect enable
+# <n>` writes inspect.env and starts aml-inspect@<n>, and `inspect disable`
+# stops it. It is off by default: whether it runs is the instance's
+# content-access switch. See docs/aml-adapter.md ("Inspect (检索)").
+#
+# It reads the instance's data root and memory configuration and writes
+# nothing of the instance's: its state (data root and budget file) is
+# mounted read only, and its full searches spend from a debug budget of its
+# own, in its StateDirectory. It runs at a low priority within small limits.
+[Unit]
+Description=Mnemon inspect service (read-only retrieval for the console), instance %i
+# It listens on the host's WireGuard address, at the slot's admin port + 1.
+After=network-online.target wg-quick@wg0.service aml-serve@%i.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=on-failure
+RestartSec=5
+# The shutdown, in aml_inspect.go: the requests in flight have 30 s, those
+# canceled then 5 s more, within the 45 s below.
+TimeoutStopSec=45
+User=mnemon
+Group=mnemon
+# AML_INSPECT_LISTEN, AML_INSPECT_DEBUG_CAPS, MNEMON_INSPECT_TOKEN,
+# GOMEMLIMIT and the provider keys. Mode 0600, root's: systemd reads it
+# before it drops to User=mnemon.
+EnvironmentFile=/etc/mnemon-aml/%i/inspect.env
+ExecStart=/usr/local/bin/mnemon memory-agent aml-inspect --listen ${AML_INSPECT_LISTEN} --token-env MNEMON_INSPECT_TOKEN --data-root /var/lib/mnemon-aml/%i/data --memory-config /etc/mnemon-aml/%i/memory-config.json --debug-budget-file /var/lib/mnemon-aml-inspect/%i/debug-budget.db --debug-caps ${AML_INSPECT_DEBUG_CAPS} --max-concurrent 2 --log-format json
+
+# Read only: the instance's data root and its budget file. SQLite reads a
+# store aml-serve holds through its -wal and -shm, read only, and one it
+# does not by its main file alone (records.OpenReader).
+ReadOnlyPaths=/var/lib/mnemon-aml/%i
+# The debug budget file.
+StateDirectory=mnemon-aml-inspect/%i
+StateDirectoryMode=0700
+# Low priority, small limits: the engine comes first.
+MemoryMax=1G
+CPUQuota=100%
+Nice=10
+IOSchedulingClass=idle
+
+# The same sandboxing as aml-serve@.service.
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target

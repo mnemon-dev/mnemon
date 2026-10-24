@@ -103,6 +103,12 @@ func (index *lexicalIndex) search(query string) []string {
 }
 
 func (index *lexicalIndex) searchN(query string, limit int) []string {
+	return rank(index.hits(query), limit)
+}
+
+// hits is every document's words score for query, the positive ones only,
+// in no particular order: what searchN ranks.
+func (index *lexicalIndex) hits(query string) []scored {
 	terms := []string{}
 	seen := map[string]bool{}
 	for _, t := range Tokens(query) {
@@ -113,7 +119,7 @@ func (index *lexicalIndex) searchN(query string, limit int) []string {
 	}
 	n := float64(index.n)
 	if len(terms) == 0 {
-		return []string{}
+		return nil
 	}
 	average := 1.0
 	if n > 0 {
@@ -132,7 +138,7 @@ func (index *lexicalIndex) searchN(query string, limit int) []string {
 		for _, part := range parts {
 			hits = part.appendPostingScores(hits, terms, n, average, index.df)
 		}
-		return rank(hits, limit)
+		return hits
 	}
 	idfs := make([]float64, len(terms))
 	for i, token := range terms {
@@ -155,7 +161,7 @@ func (index *lexicalIndex) searchN(query string, limit int) []string {
 			hits = append(hits, scored{doc.id, score})
 		}
 	}
-	return rank(hits, limit)
+	return hits
 }
 
 func (index *lexicalIndex) potentialHits(terms []string) int {

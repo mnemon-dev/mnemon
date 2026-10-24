@@ -200,11 +200,13 @@ func layerCandidates(lit litSets, threadIDs, keys []string, nearThreads, nearVal
 //     is not counted.
 //
 // Records name the records linked from what each block shows, in order,
-// each once, by id only; the read keeps those its View shows.
+// each once, by id only; the read keeps those its View shows. Items name
+// the items each block shows, in order (Consolidation's ids: "d<i>", thread
+// ids, "e<i>", keys).
 func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSets) []IndexItem {
 	_, by := eventThreads(m)
 	blocks := []IndexItem{}
-	add := func(id, text string, linked []string) {
+	add := func(id, text string, items, linked []string) {
 		refs, seen := []Reference{}, map[string]bool{}
 		for _, record := range linked {
 			if !seen[record] {
@@ -212,21 +214,22 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 				refs = append(refs, Reference{ID: record})
 			}
 		}
-		blocks = append(blocks, IndexItem{ID: id, Kind: id, Text: text, Records: refs})
+		blocks = append(blocks, IndexItem{ID: id, Kind: id, Text: text, Records: refs, Items: items})
 	}
 
-	text, linked := "Standing instructions and preferences the user stated:", []string{}
+	text, linked, items := "Standing instructions and preferences the user stated:", []string{}, []string{}
 	size, shown := jsLen(text), 0
-	for _, d := range m.Directives {
+	for i, d := range m.Directives {
 		line := "\n- (" + d.Date + ") " + d.Text
 		if size+jsLen(line) > layerInstructions {
 			break
 		}
 		text, size, shown = text+line, size+jsLen(line), shown+1
 		linked = append(linked, d.Records...)
+		items = append(items, itemID("d", i))
 	}
 	if shown > 0 {
-		add("1-instructions", text, linked)
+		add("1-instructions", text, items, linked)
 	}
 
 	type span struct {
@@ -262,17 +265,18 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 		size += jsLen(topicLine(spans[i]))
 	}
 	if len(keep) > 0 {
-		text = head
+		text, items = head, []string{}
 		for _, s := range spans {
 			if keep[s.id] {
 				text += topicLine(s)
+				items = append(items, s.id)
 			}
 		}
-		add("2-topics", text, nil)
+		add("2-topics", text, items, nil)
 	}
 
 	eventLine := func(i int) string { return "\n- " + m.Events[i].Date + ": " + m.Events[i].Text }
-	timelines, linked := "", []string{}
+	timelines, linked, items := "", []string{}, []string{}
 	size = 0
 	for _, id := range threadOrder {
 		room := min(layerThread, layerTimelines-size)
@@ -317,6 +321,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 		for _, i := range chosen {
 			part += eventLine(i)
 			linked = append(linked, m.Events[i].Records...)
+			items = append(items, itemID("e", i))
 		}
 		if timelines != "" {
 			timelines, size = timelines+"\n\n", size+2
@@ -324,10 +329,10 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 		timelines, size = timelines+part, size+jsLen(part)
 	}
 	if timelines != "" {
-		add("3-timelines", timelinesHead+timelines, linked)
+		add("3-timelines", timelinesHead+timelines, items, linked)
 	}
 
-	values, linked := "", []string{}
+	values, linked, items := "", []string{}, []string{}
 	size = 0
 	for _, key := range valueOrder {
 		list, ok := m.Facts[key]
@@ -342,9 +347,10 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 		for _, v := range list {
 			linked = append(linked, v.Records...)
 		}
+		items = append(items, key)
 	}
 	if values != "" {
-		add("4-values", valuesHead+values, linked)
+		add("4-values", valuesHead+values, items, linked)
 	}
 	return blocks
 }
@@ -384,6 +390,7 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 	if len(m.Events) == 0 && len(m.Directives) == 0 && len(m.Facts) == 0 {
 		return view, nil
 	}
+	r.stage(traceCandidates)
 	anchors := map[string]bool{}
 	for _, record := range view.Records {
 		anchors[record.ID] = true
@@ -418,12 +425,18 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 	for _, key := range values {
 		candidates = append(candidates, judgeCandidate{Source: "value", Text: valueTexts[key]})
 	}
+	r.stage(traceJudge)
 	scores, err := r.judgeNeeded(ctx, candidates)
+	r.stage(traceCompose)
 	if err != nil {
 		if ctx.Err() != nil {
 			return View{}, ctx.Err()
 		}
 		r.degrade("layer")
+	}
+	if r.trace != nil {
+		r.traceLayer(layerTrace{memory: m, anchors: anchors, lit: lit, threadIDs: ids, topics: topics, values: values,
+			nearThreads: nearThreads, nearValues: nearValues, threadTexts: threadTexts, valueTexts: valueTexts, scores: scores})
 	}
 	threadScore, valueScore := map[string]float64{}, map[string]float64{}
 	for i, id := range topics {
@@ -545,7 +558,9 @@ func (r *simpleRun) expand(ctx context.Context, blocks []IndexItem, kept []Evide
 			candidates = append(candidates, judgeCandidate{Source: judgeSource, Text: value.Text})
 		}
 	}
+	r.stage(traceJudge)
 	scores, err := r.judgeNeeded(ctx, candidates)
+	r.stage(traceCompose)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -567,6 +582,9 @@ func (r *simpleRun) expand(ctx context.Context, blocks []IndexItem, kept []Evide
 		}
 		found[i].Score = scores[i]
 		kept, used, expanded = append(kept, found[i]), used+n, expanded+1
+	}
+	if r.trace != nil {
+		r.traceLinked(found, scores, kept)
 	}
 	return kept, nil
 }

@@ -106,20 +106,38 @@ func amlServeFlags(cmd *cobra.Command) (amlServeOptions, error) {
 	return o, nil
 }
 
-// amlAdminToken is the admin token the environment variable name holds, ""
-// when name is empty (no token). A variable that is unset, empty or shorter
-// than aml.MinAdminTokenLength is an error that names the variable and says
-// nothing of what it holds.
-func amlAdminToken(name string) (string, error) {
+// tokenListener is a listener that the bind rule (checkListen) and the
+// token rule (listenToken) guard, as their errors name it: its address
+// flag, an example port, its token's flag, what the token is called, and
+// what anyone who reaches the listener without one could do. aml-serve's
+// admin listener and aml-inspect's listener follow the same rules.
+type tokenListener struct {
+	listen, port, tokenEnv, token, exposes string
+}
+
+var (
+	adminListener   = tokenListener{listen: "--admin-listen", port: "8091", tokenEnv: "--admin-token-env", token: "admin token", exposes: "profile the process and read its state"}
+	inspectListener = tokenListener{listen: "--listen", port: "8092", tokenEnv: "--token-env", token: "inspect token", exposes: "read every user's records"}
+)
+
+// amlAdminToken is the admin token the environment variable name holds
+// (listenToken).
+func amlAdminToken(name string) (string, error) { return listenToken(adminListener, name) }
+
+// listenToken is the token the environment variable name holds, "" when
+// name is empty (no token). A variable that is unset, empty or shorter than
+// aml.MinAdminTokenLength is an error that names the flag and the variable
+// and says nothing of what it holds.
+func listenToken(l tokenListener, name string) (string, error) {
 	if name == "" {
 		return "", nil
 	}
 	token := os.Getenv(name)
 	switch {
 	case token == "":
-		return "", fmt.Errorf("--admin-token-env names $%s, which is unset or empty: it must hold the admin token, %d characters at least", name, aml.MinAdminTokenLength)
+		return "", fmt.Errorf("%s names $%s, which is unset or empty: it must hold the %s, %d characters at least", l.tokenEnv, name, l.token, aml.MinAdminTokenLength)
 	case len(token) < aml.MinAdminTokenLength:
-		return "", fmt.Errorf("--admin-token-env names $%s, which holds fewer than %d characters: the admin token must hold %d at least", name, aml.MinAdminTokenLength, aml.MinAdminTokenLength)
+		return "", fmt.Errorf("%s names $%s, which holds fewer than %d characters: the %s must hold %d at least", l.tokenEnv, name, aml.MinAdminTokenLength, l.token, aml.MinAdminTokenLength)
 	}
 	return token, nil
 }
@@ -149,20 +167,26 @@ func amlConsolidation(cmd *cobra.Command) (aml.ConsolidationMode, error) {
 	}
 }
 
-// checkAdminListen checks the address of the admin listener, "" for none.
-// Anyone who reaches that listener can profile the process and read its
-// state, so it is a loopback address, which only this machine reaches, or a
-// private one (netip's IsPrivate: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16
-// and fc00::/7) when the admin token is set, which only a client that holds it
-// passes. Every other address is refused, the token or not: unspecified,
-// link-local, shared (100.64.0.0/10) and public ones.
+// checkAdminListen checks the address of the admin listener, "" for none
+// (checkListen).
 func checkAdminListen(addr string, tokenSet bool) error {
+	return checkListen(adminListener, addr, tokenSet)
+}
+
+// checkListen checks the address of a listener, "" for none. Anyone who
+// reaches the listener can do what l.exposes says, so it is a loopback
+// address, which only this machine reaches, or a private one (netip's
+// IsPrivate: 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 and fc00::/7) when
+// its token is set, which only a client that holds it passes. Every other
+// address is refused, the token or not: unspecified, link-local, shared
+// (100.64.0.0/10) and public ones.
+func checkListen(l tokenListener, addr string, tokenSet bool) error {
 	if addr == "" {
 		return nil
 	}
 	ip, ok := adminIP(addr)
 	if !ok {
-		return fmt.Errorf("--admin-listen must be an IP address and a port, such as 127.0.0.1:8091 or 10.0.0.5:8091; a host name is not accepted, as what it resolves to is not the command's to check; not %q", addr)
+		return fmt.Errorf("%s must be an IP address and a port, such as 127.0.0.1:%s or 10.0.0.5:%s; a host name is not accepted, as what it resolves to is not the command's to check; not %q", l.listen, l.port, l.port, addr)
 	}
 	switch {
 	case ip.IsLoopback():
@@ -170,9 +194,9 @@ func checkAdminListen(addr string, tokenSet bool) error {
 	case ip.IsPrivate() && tokenSet:
 		return nil
 	case ip.IsPrivate():
-		return fmt.Errorf("--admin-listen %q is a private address, which needs --admin-token-env: without a token anyone who reaches the listener can profile the process and read its state", addr)
+		return fmt.Errorf("%s %q is a private address, which needs %s: without a token anyone who reaches the listener can %s", l.listen, addr, l.tokenEnv, l.exposes)
 	}
-	return fmt.Errorf("--admin-listen must be a loopback IP address, or a private one (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) with --admin-token-env, not an unspecified, link-local, shared or public one; not %q", addr)
+	return fmt.Errorf("%s must be a loopback IP address, or a private one (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, fc00::/7) with %s, not an unspecified, link-local, shared or public one; not %q", l.listen, l.tokenEnv, addr)
 }
 
 // adminIP is the IP address of addr, which must be an address literal and a

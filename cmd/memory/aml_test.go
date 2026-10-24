@@ -106,6 +106,24 @@ func TestConsolidateFlagValues(t *testing.T) {
 	}
 }
 
+// The E1 cases of a listener's address, which aml-serve's --admin-listen
+// (TestAdminListenRules) and aml-inspect's --listen (TestInspectAuthAndListen)
+// both follow: loopback addresses need no token, private ones need it, and
+// every other is refused, token or not.
+var (
+	loopbackListens = []string{"127.0.0.1:8091", "127.0.0.1:0", "127.0.0.2:8091", "[::1]:8091", "[::ffff:127.0.0.1]:8091"}
+	privateListens  = []string{"10.0.0.5:8091", "172.16.0.1:8091", "172.31.255.255:8091", "192.168.1.2:8091", "[fd00::1]:8091", "[::ffff:10.0.0.5]:8091"}
+	// Unspecified, link-local, shared (100.64/10), public and documentation
+	// addresses, the neighbours of the private ranges, host names, and what
+	// is not an address and a port.
+	refusedListens = []string{
+		"0.0.0.0:8091", "[::]:8091", ":8091", "[::ffff:0.0.0.0]:8091",
+		"169.254.1.1:8091", "[fe80::1]:8091", "[fe80::1%eth0]:8091", "[fd00::1%eth0]:8091",
+		"100.64.0.1:8091", "203.0.113.5:8091", "[::ffff:203.0.113.5]:8091", "[2001:db8::1]:8091", "172.32.0.1:8091", "172.15.255.255:8091", "11.0.0.1:8091", "192.169.0.1:8091",
+		"localhost:8091", "example.com:8091", "10.0.0.5", "10.0.0.5:", "10.0.0.5:99999", "10.0.0.5:http", "[10.0.0.5]", "http://10.0.0.5:8091",
+	}
+)
+
 // The admin endpoints are served on a loopback address, where an admin token
 // is optional, or on a private one (10/8, 172.16/12, 192.168/16, fc00::/7),
 // where it is required. Every other address is refused, with a token or
@@ -128,7 +146,7 @@ func TestAdminListenRules(t *testing.T) {
 
 	// Loopback addresses, and none at all, need no token. An IPv4 address
 	// spelled as an IPv6 one is the IPv4 address.
-	for _, addr := range []string{"", "127.0.0.1:8091", "127.0.0.1:0", "127.0.0.2:8091", "[::1]:8091", "[::ffff:127.0.0.1]:8091"} {
+	for _, addr := range append([]string{""}, loopbackListens...) {
 		if options, err := amlFlags(t, "--admin-listen", addr); err != nil || options.adminListen != addr || options.adminToken != "" {
 			t.Fatal(addr, options.adminListen, err)
 		}
@@ -140,7 +158,7 @@ func TestAdminListenRules(t *testing.T) {
 	}
 
 	// Private addresses are refused without a token, and accepted with one.
-	for _, addr := range []string{"10.0.0.5:8091", "172.16.0.1:8091", "172.31.255.255:8091", "192.168.1.2:8091", "[fd00::1]:8091", "[::ffff:10.0.0.5]:8091"} {
+	for _, addr := range privateListens {
 		_, err := amlFlags(t, "--admin-listen", addr)
 		wantError(t, err, "--admin-listen", "private", "--admin-token-env")
 		t.Setenv(variable, token)
@@ -149,15 +167,8 @@ func TestAdminListenRules(t *testing.T) {
 		}
 	}
 
-	// Everything else is refused, whatever the token: unspecified, link-local,
-	// shared (100.64/10), public and documentation addresses, the neighbours
-	// of the private ranges, host names, and what is not an address and a port.
-	for _, addr := range []string{
-		"0.0.0.0:8091", "[::]:8091", ":8091", "[::ffff:0.0.0.0]:8091",
-		"169.254.1.1:8091", "[fe80::1]:8091", "[fe80::1%eth0]:8091", "[fd00::1%eth0]:8091",
-		"100.64.0.1:8091", "203.0.113.5:8091", "[::ffff:203.0.113.5]:8091", "[2001:db8::1]:8091", "172.32.0.1:8091", "172.15.255.255:8091", "11.0.0.1:8091", "192.169.0.1:8091",
-		"localhost:8091", "example.com:8091", "10.0.0.5", "10.0.0.5:", "10.0.0.5:99999", "10.0.0.5:http", "[10.0.0.5]", "http://10.0.0.5:8091",
-	} {
+	// Everything else is refused, whatever the token.
+	for _, addr := range refusedListens {
 		_, err := amlFlags(t, "--admin-listen", addr)
 		wantError(t, err, "--admin-listen must be")
 		t.Setenv(variable, token)
@@ -641,6 +652,99 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 			t.Errorf("aml-watch@.timer [%s] %s=%s, want %s", s.section, s.key, got, s.want)
 		}
 	}
+
+	// The inspect service: inspect.env, as mnemon-instance inspect enable
+	// writes it, with only its own names.
+	inspectEnv := map[string]string{
+		"AML_INSPECT_LISTEN": "10.0.0.5:8092", "AML_INSPECT_DEBUG_CAPS": "deepseek=5,jev=1", "MNEMON_INSPECT_TOKEN": "mnm_inspect-token",
+		"GOMEMLIMIT": "819MiB", "DEEPSEEK_API_KEY": "sk-deepseek", "TYPESAFE_API_KEY": "ts-jev",
+	}
+	inspect := readUnit(t, "aml-inspect@.service")
+	args = execArgs(t, inspect.get(t, "Service", "ExecStart"), instance, inspectEnv)
+	if len(args) < 3 || !slices.Equal(args[:3], []string{"/usr/local/bin/mnemon", "memory-agent", "aml-inspect"}) {
+		t.Fatal("aml-inspect@.service runs", args)
+	}
+	command = newAMLInspectCommand()
+	if err := command.ParseFlags(args[3:]); err != nil {
+		t.Fatal(err)
+	}
+	if rest := command.Flags().Args(); len(rest) > 0 {
+		t.Fatal("aml-inspect@.service passes arguments that are not flags:", rest)
+	}
+	for flag, want := range map[string]string{
+		"listen":            "10.0.0.5:8092",
+		"token-env":         "MNEMON_INSPECT_TOKEN",
+		"data-root":         "/var/lib/mnemon-aml/eval/data",
+		"memory-config":     "/etc/mnemon-aml/eval/memory-config.json",
+		"debug-budget-file": "/var/lib/mnemon-aml-inspect/eval/debug-budget.db",
+		"debug-caps":        "deepseek=5,jev=1",
+		"max-concurrent":    "2",
+		"log-format":        "json",
+	} {
+		if f := command.Flags().Lookup(flag); !f.Changed || f.Value.String() != want {
+			t.Errorf("aml-inspect@.service passes --%s %q, want %q", flag, f.Value.String(), want)
+		}
+	}
+	t.Setenv("MNEMON_INSPECT_TOKEN", strings.Repeat("i", 47))
+	options, err := amlInspectFlags(command)
+	if err != nil || options.caps["deepseek"] != 5 || options.caps["jev"] != 1 {
+		t.Fatal("aml-inspect@.service's flags do not parse:", err)
+	}
+	// The debug budget lives in the service's own state, apart from the
+	// instance's budget file (memory-config.json's budgetFile).
+	if dir := path.Dir(options.debugBudget); dir != "/var/lib/mnemon-aml-inspect/eval" || options.debugBudget == "/var/lib/mnemon-aml/eval/model-budget.db" {
+		t.Errorf("--debug-budget-file %q is not in the service's state directory", options.debugBudget)
+	}
+	for _, s := range []struct{ section, key, want string }{
+		{"Service", "Type", "simple"},
+		{"Service", "User", "mnemon"},
+		{"Service", "Group", "mnemon"},
+		{"Service", "Restart", "on-failure"},
+		{"Service", "EnvironmentFile", "/etc/mnemon-aml/%i/inspect.env"},
+		// The instance's state (data root and budget file) is mounted read only.
+		{"Service", "ReadOnlyPaths", "/var/lib/mnemon-aml/%i"},
+		{"Service", "StateDirectory", "mnemon-aml-inspect/%i"},
+		{"Service", "StateDirectoryMode", "0700"},
+		{"Service", "MemoryMax", "1G"},
+		{"Service", "CPUQuota", "100%"},
+		{"Service", "Nice", "10"},
+		{"Service", "IOSchedulingClass", "idle"},
+		{"Install", "WantedBy", "multi-user.target"},
+	} {
+		if got := inspect.get(t, s.section, s.key); got != s.want {
+			t.Errorf("aml-inspect@.service [%s] %s=%s, want %s", s.section, s.key, got, s.want)
+		}
+	}
+	if !strings.HasPrefix(options.dataRoot, strings.ReplaceAll(inspect.get(t, "Service", "ReadOnlyPaths"), "%i", instance)+"/") {
+		t.Errorf("--data-root %s is not under ReadOnlyPaths=", options.dataRoot)
+	}
+	if requires, ok := inspect["Unit"]["Requires"]; ok {
+		t.Errorf("aml-inspect@.service requires %q: it reads stores whether aml-serve runs or not", requires)
+	}
+	for _, key := range unitSandbox {
+		if want := serve["Service"][key]; len(want) == 0 || !slices.Equal(inspect["Service"][key], want) {
+			t.Errorf("%s is %q in aml-serve@.service and %q in aml-inspect@.service, want one value in both", key, want, inspect["Service"][key])
+		}
+	}
+	// The inspect port is the admin port + 1, inside the firewall's
+	// 8091–8600 overlay rule.
+	_, port, _ := strings.Cut(inspectEnv["AML_INSPECT_LISTEN"], ":")
+	_, adminPort, _ := strings.Cut(env["AML_ADMIN_LISTEN"], ":")
+	if p, a := atoiPort(t, port), atoiPort(t, adminPort); p != a+1 || p < 8091 || p > 8600 {
+		t.Errorf("inspect port %d, admin port %d", p, a)
+	}
+}
+
+func atoiPort(t *testing.T, port string) int {
+	t.Helper()
+	n := 0
+	for _, c := range port {
+		if c < '0' || c > '9' {
+			t.Fatalf("port %q", port)
+		}
+		n = n*10 + int(c-'0')
+	}
+	return n
 }
 
 // The Caddyfiles must proxy to the ports the instances listen on, hold

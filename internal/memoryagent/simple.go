@@ -53,7 +53,10 @@ type simpleRun struct {
 	// held is the expansions compose held reserved slots for: the layer's
 	// character trim drops other records first.
 	held map[string]bool
-	mu   sync.Mutex // guards stats during concurrent model calls
+	// trace records the read for the inspect service (trace.go); nil, the
+	// read records nothing.
+	trace *ReadTrace
+	mu    sync.Mutex // guards stats during concurrent model calls
 }
 
 // simpleItem is one pooled record and what the models said about it.
@@ -78,7 +81,11 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if req.MaxItems == 0 {
 		req.MaxItems = a.config.View.MaxItems
 	}
-	r := &simpleRun{agent: a, req: req, revision: revision, items: map[string]*simpleItem{}}
+	r := &simpleRun{agent: a, req: req, revision: revision, items: map[string]*simpleItem{}, trace: readTraceFrom(ctx)}
+	if r.trace != nil {
+		r.traceStart()
+		defer r.traceEnd()
+	}
 	if a.config.View.Intent == viewIntentQuestion {
 		r.intent = string(retrieval.DetectIntent(intentText(req.Question)))
 		r.stats.Intent = r.intent
@@ -95,6 +102,10 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if err != nil {
 		return View{}, err
 	}
+	if r.trace != nil {
+		r.tracePlan(cues)
+	}
+	r.stage(traceCandidates)
 	pages, err := r.runCues(ctx, cues)
 	if err != nil {
 		return View{}, err
@@ -103,18 +114,28 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if err != nil {
 		return View{}, err
 	}
+	if r.trace != nil {
+		r.traceSearches()
+		r.tracePool(pool)
+	}
 	// JEV screens the bounded pool (N:928), then the loop reads on for the
 	// needs.
+	r.stage(traceJudge)
 	if err = r.screen(ctx, pool); err != nil {
 		return View{}, err
 	}
+	r.stage(traceNeed)
 	stop, err := r.loop(ctx)
 	if err != nil {
 		return View{}, err
 	}
+	if r.trace != nil {
+		r.traceStop(stop)
+	}
 	// JEV judges the shortlist (N:1002-1009). From here a judgement that
 	// fails or finds the budget spent degrades the View to the screen; only
 	// a canceled read fails.
+	r.stage(traceJudge)
 	scored := shortlist(r.tableItems(), r.viewable(r.screened()), r.needs)
 	if err = r.judgeAll(ctx, scored); err != nil {
 		if ctx.Err() != nil {
@@ -130,6 +151,7 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 			return View{}, err
 		}
 	}
+	r.stage(traceCompose)
 	view, err := r.compose(ctx, stop, scored)
 	if err == nil && a.layerOn() {
 		// In timelines mode the consolidated layer goes before the records

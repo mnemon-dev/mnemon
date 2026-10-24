@@ -105,7 +105,9 @@ words, and every subcommand refuses them.
 | Watcher env (root:root 0600) | `/etc/mnemon-aml/<n>/watch.env`: `AML_ALERT_WEBHOOK`, `AML_ALERT_KIND`, `AML_PUBLIC_URL`, `AML_ADMIN_LISTEN` (the engine's value), `MNEMON_ADMIN_TOKEN`; never a provider key or the API key |
 | State (mnemon 0700) | `/var/lib/mnemon-aml/<n>/` (`StateDirectory=mnemon-aml/%i`): `data/`, the data root, and `model-budget.db`, the budget file |
 | Watcher state (mnemon 0700) | `/var/lib/mnemon-aml-watch/<n>/state.json` (`StateDirectory=mnemon-aml-watch/%i`) |
-| Units | `aml-serve@<n>.service`, `aml-watch@<n>.service` and `aml-watch@<n>.timer` |
+| Inspect env (root:root 0600), while inspect is on | `/etc/mnemon-aml/<n>/inspect.env`: `AML_INSPECT_LISTEN`, `AML_INSPECT_DEBUG_CAPS`, `GOMEMLIMIT`, and the secrets `MNEMON_INSPECT_TOKEN` and the provider keys ("Inspect (检索)") |
+| Inspect state (mnemon 0700), while inspect is on | `/var/lib/mnemon-aml-inspect/<n>/debug-budget.db` (`StateDirectory=mnemon-aml-inspect/%i`) |
+| Units | `aml-serve@<n>.service`, `aml-watch@<n>.service` and `aml-watch@<n>.timer`; `aml-inspect@<n>.service` while inspect is on |
 | Limits | `/etc/systemd/system/aml-serve@<n>.service.d/limits.conf`: `MemoryMax=` and `CPUQuota=` only. The flag values live in the engine env, so the template's `ExecStart` is the same for every instance. |
 | Route | dedicated: the host's Caddyfile. Shared: `/etc/caddy/mnemon-instances/<n>.caddy` |
 
@@ -115,10 +117,10 @@ the status (`active` or `suspended`) there, and nothing else keeps state.
 **Ports follow from a slot.** `mnemon-instance new` takes the lowest slot no instance's env
 file uses.
 
-| Layout | Slot | Data listener | Admin listener |
-| --- | --- | --- | --- |
-| dedicated | 0 | `127.0.0.1:8090` | `<overlay address>:8091` |
-| shared | 0 to 49 | `127.0.0.1:(8100+10s)` | `<overlay address>:(8101+10s)`, so 8101 to 8591 |
+| Layout | Slot | Data listener | Admin listener | Inspect listener (while on) |
+| --- | --- | --- | --- | --- |
+| dedicated | 0 | `127.0.0.1:8090` | `<overlay address>:8091` | `<overlay address>:8092` |
+| shared | 0 to 49 | `127.0.0.1:(8100+10s)` | `<overlay address>:(8101+10s)`, so 8101 to 8591 | `<overlay address>:(8102+10s)`, so 8102 to 8592 |
 
 A host is either dedicated, with one instance, or shared; the script refuses to mix them.
 
@@ -265,9 +267,9 @@ nftables, and live services depend on it.
    install -m 0755 -o root -g root /tmp/instance.sh /usr/local/sbin/mnemon-instance
    install -m 0755 -o root -g root /tmp/preflight.sh /usr/local/sbin/mnemon-preflight
    install -D -m 0644 -o root -g root /tmp/memory-config.industrial.json /usr/local/share/mnemon-aml/memory-config.industrial.json
-   install -m 0644 -o root -g root /tmp/aml-serve@.service /tmp/aml-watch@.service /tmp/aml-watch@.timer /etc/systemd/system/
+   install -m 0644 -o root -g root /tmp/aml-serve@.service /tmp/aml-watch@.service /tmp/aml-watch@.timer /tmp/aml-inspect@.service /etc/systemd/system/
    systemctl daemon-reload
-   systemd-analyze verify /etc/systemd/system/aml-serve@.service /etc/systemd/system/aml-watch@.service /etc/systemd/system/aml-watch@.timer
+   systemd-analyze verify /etc/systemd/system/aml-serve@.service /etc/systemd/system/aml-watch@.service /etc/systemd/system/aml-watch@.timer /etc/systemd/system/aml-inspect@.service
    ```
 
    `systemd-analyze verify` loads a template as the instance `test_instance` and prints
@@ -381,8 +383,8 @@ Then:
 ## Operate an instance
 
 `mnemon-instance help` lists every subcommand. Each refuses to overwrite an existing instance,
-writes its files atomically, prints a secret only in the one-time output of `new` and
-`rotate-key`, and logs one line per action to the journal (`journalctl -t mnemon-instance`),
+writes its files atomically, prints a secret only in the one-time output of `new`,
+`rotate-key` and `inspect enable`, and logs one line per action to the journal (`journalctl -t mnemon-instance`),
 naming the action and the instance, never a secret or a raw user id. One `mnemon-instance`
 changes a host at a time: it holds `/etc/mnemon-aml/.mnemon-instance.lock`, a directory, while
 it runs; if one is left behind by a killed run, remove it. The console's maintenance panel
@@ -395,12 +397,13 @@ mnemon-instance list
 ```
 
 ```
-NAME                             LAYOUT     SLOT  DATA             ADMIN                  STATUS     PUBLIC URL
-beta-alice                       shared        0  127.0.0.1:8100   10.77.0.3:8101         active     https://beta.example.com/i/beta-alice
+NAME                             LAYOUT     SLOT  DATA             ADMIN                  STATUS     INSPECT  PUBLIC URL
+beta-alice                       shared        0  127.0.0.1:8100   10.77.0.3:8101         active     off      https://beta.example.com/i/beta-alice
 ```
 
 It reads the env files and prints no secret. The status is the record's, not systemd's:
-`systemctl status aml-serve@<n>` shows the process.
+`systemctl status aml-serve@<n>` shows the process. `INSPECT` says whether the instance's
+inspect service is on (its `inspect.env` exists; "Inspect (检索)").
 
 ### `suspend` and `resume`
 
@@ -518,7 +521,11 @@ reads the env files with `grep` (never sourcing them), and checks:
 - `/admin/status` shows a `lagBound` above 0 (background consolidation), and every budget's
   spent and held below 80% of its cap; it prints those numbers and the version;
 - the data root holds no store of `smoke-user`;
-- `aml-serve@<n>`, `aml-watch@<n>.timer` and `caddy` are active;
+- only while the inspect service is on: `inspect.env` is root's with mode 0600 and holds
+  `AML_INSPECT_LISTEN`, `AML_INSPECT_DEBUG_CAPS`, `MNEMON_INSPECT_TOKEN` and the provider keys,
+  and `/healthz` on the inspect listener answers 200 with the inspect token (two more checks);
+- `aml-serve@<n>`, `aml-watch@<n>.timer`, `aml-inspect@<n>` while inspect is on, and `caddy`
+  are active;
 - `systemd-analyze verify` passes on the templates, and `caddy validate` on the Caddyfile, when
   the tools are installed;
 - `wg0` is up and carries the address of `AML_ADMIN_LISTEN`;
@@ -527,8 +534,8 @@ reads the env files with `grep` (never sourcing them), and checks:
   interface, by one port, a range or a list: each such rule is a `FAIL` line that names it.
 
 Every check runs; each failure prints one line that starts with `FAIL`, and the exit status is
-1 if any failed. It never prints a secret: the admin token reaches curl only as a config on its
-standard input, never as an argument. It needs `curl` and `jq`, and says so if they are
+1 if any failed. It never prints a secret: the admin and inspect tokens reach curl only as a
+config on its standard input, never as an argument. It needs `curl` and `jq`, and says so if they are
 missing.
 
 ## Configuration
@@ -720,6 +727,82 @@ The Go and process collectors (`go_goroutines`, `process_resident_memory_bytes`,
   split one. The two overlap: do not add them.
 - The watchdog's in-process `/health` probe is counted: it adds about 2 a minute (one every
   30 s) to `mnemon_aml_requests_total{route="health"}`.
+
+## Inspect (检索)
+
+The console's 检索 tab reads an instance's memory through the instance's **inspect service**,
+`aml-inspect@<n>` (`mnemon memory-agent aml-inspect`): a process of its own beside
+`aml-serve@<n>`, never a route of aml-serve. Its JSON is in [Inspect API](inspect-api.md):
+the stores, a user's records and consolidated memory (threads, events, facts with their
+conflicts and supersedes, directives, and what is pending), and retrieval with its trace,
+stage by stage. Whether it runs is the instance's **content-access switch**: it is off by
+default, `new` never turns it on, and the evaluation instance keeps it off unless the
+operator decides otherwise after checking the submission's rules.
+
+**Side-effect free, by construction.**
+
+- It opens every `records.db` and `memory-index.db` read only. A store aml-serve holds open
+  (its `-wal` and `-shm` exist) is read live through them; one it does not hold is read from
+  its main file alone (`immutable`), so that no `-wal` or `-shm` is ever made, and the file is
+  checked again when the request ends: a store that changed meanwhile answers
+  `503 store_busy`, and the console retries. Nothing checkpoints. The unit mounts
+  `/var/lib/mnemon-aml/<n>` read only (`ReadOnlyPaths=`): a write could not happen anyway.
+- It never folds or consolidates. A Search folds what is pending before it reads; a full
+  search of the inspect service does not, and its trace names the pending records instead.
+- Its full searches call the instance's models with the instance's configuration, billed to
+  a **debug budget** of their own, `/var/lib/mnemon-aml-inspect/<n>/debug-budget.db`, under
+  its caps (`AML_INSPECT_DEBUG_CAPS`; DeepSeek in CNY, JEV in USD). The instance's budget file
+  is never opened, the model cache is off, and the service has no metrics. Lexical searches,
+  the default, call no model and cost nothing: they are the raw ranking aml-serve answers a
+  degraded Search with, byte for byte.
+- It runs at a low priority within small limits: `Nice=10`, `IOSchedulingClass=idle`,
+  `MemoryMax=1G` (and `GOMEMLIMIT=819MiB`), `CPUQuota=100%`, two requests reading stores at
+  once (`--max-concurrent`).
+- Its log lines name the method, the route, the status, the time and the store by its
+  8-digit prefix (`journalctl -u aml-inspect@<n>`), never a key, a user id, a query or any
+  content; resolving a user id logs no store at all.
+
+**Turn it on.**
+
+```sh
+mnemon-instance inspect enable beta-alice                     # debug caps: deepseek 5 CNY, jev 1 USD
+mnemon-instance inspect enable beta-alice --debug-deepseek-cap 10 --debug-jev-cap 2
+```
+
+It makes the inspect token (`mnm_` and 32 random bytes in base64url, as the admin token),
+writes `inspect.env` (root's, 0600) with the token, the listener, the caps, `GOMEMLIMIT` and
+the provider keys the configuration names, copied from `host.env`; makes the inspect state;
+enables and starts `aml-inspect@<n>`; waits up to 120 s for its `/healthz`; and prints, once,
+the inspect URL, the token and the JSON for the console:
+
+```
+Inspect URL:    http://10.77.0.3:8102
+Inspect token:  mnm_…
+
+For the console (it holds the inspect token):
+{"inspectUrl":"http://10.77.0.3:8102","inspectToken":"mnm_…"}
+```
+
+Register both beside the instance's admin URL and token. The token is shown only then; it
+refuses to run while inspect is on already.
+
+**Where it listens.** On the admin listener's overlay address, at its port + 1: 8092 on a
+dedicated host, 8102 + 10 × the slot on a shared one. That is inside the firewall's rule for
+8091 to 8600 from the hub on `wg0`: no firewall change. Its rules are the admin listener's
+(loopback without a token, a private address only with one), and every request, `/healthz`
+included, carries `Authorization: Bearer <inspect token>`.
+
+**Turn it off.** `mnemon-instance inspect disable beta-alice` stops and disables the unit and
+removes `inspect.env` and the inspect state, the debug budget with it; remove the URL and the
+token from the console. To rotate the token, disable it and enable it again. `delete` removes
+the inspect state with the instance; `list` shows `INSPECT on`; `mnemon-preflight` checks
+inspect only while it is on.
+
+**When a full search is refused.** `409 full_disabled`: the service has no debug caps.
+`402 debug_budget_exhausted`: the debug budget is spent; `GET /v1/info` shows what is left,
+and `inspect disable` then `inspect enable` with higher caps starts a new one.
+`502 provider_failed`: the read failed (a provider, the breaker, the 10-minute bound); the
+answer carries the raw ranking `/search` would have given, and what the read did.
 
 ## Logs
 

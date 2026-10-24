@@ -235,12 +235,16 @@ func (r *simpleRun) loop(ctx context.Context) (string, error) {
 				}
 			}
 		}
+		var traced []TracePage // the pages read, for the trace
 		for _, at := range pages {
 			paged := r.next(r.searches[at])
 			offset[at] += len(latest[at])
 			latest[at] = paged
 			locate(at, paged)
 			addFresh(paged)
+			if r.trace != nil {
+				traced = append(traced, TracePage{Search: at, IDs: slices.Clone(paged)})
+			}
 		}
 		if len(lost) > 0 {
 			cues, err := r.rewrite(ctx, lost)
@@ -260,6 +264,9 @@ func (r *simpleRun) loop(ctx context.Context) (string, error) {
 		}
 		if _, err := r.admit(ctx, fresh); err != nil {
 			return "", err
+		}
+		if r.trace != nil {
+			r.traceRound(round, steps, traced, fresh)
 		}
 		unseen, unseenItems := []string{}, []*simpleItem{}
 		for _, id := range fresh {

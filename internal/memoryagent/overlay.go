@@ -22,6 +22,11 @@ type IndexItem struct {
 	Text    string      `json:"text"`
 	Date    string      `json:"date"`
 	Records []Reference `json:"records"`
+	// Items names the consolidated items a block of a simple read's
+	// timelines layer shows, by their Consolidation ids, in the order it
+	// shows them. It is never serialized: neither a View nor a stored
+	// overlay carries it.
+	Items []string `json:"-"`
 }
 
 type overlayState struct {

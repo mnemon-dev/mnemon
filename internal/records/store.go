@@ -103,6 +103,9 @@ type Store struct {
 	// sessionBuilds counts how many it built.
 	sessionCache  sessionCache
 	sessionBuilds atomic.Int64
+	// unchanged is a reader's check of its file (OpenReader, Unchanged); nil
+	// for a store Open opened.
+	unchanged func() error
 }
 
 func (s *Store) ReadOnly() bool { return s.readonly }

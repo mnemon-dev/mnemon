@@ -45,6 +45,10 @@ func (s *Store) ServeUsing(ctx context.Context, path string, handler localrpc.Ha
 // its last call, before Close. Ending ctx stops the worker only. A store runs
 // one runtime at a time: a start while one runs fails and changes nothing.
 func (s *Store) StartRuntime(ctx context.Context) (stop func(), err error) {
+	if s.unchanged != nil {
+		// Its pool's connections would not follow the readers' rules (reader.go).
+		return nil, errors.New("a reader store runs no query runtime")
+	}
 	if !s.running.CompareAndSwap(false, true) {
 		return nil, errors.New("records runtime is already running")
 	}

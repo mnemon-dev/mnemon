@@ -249,7 +249,7 @@ type storeEntry struct {
 // serveStores answers GET /admin/v1/stores?limit=<1..500, default 100>&after=<cursor>
 // from the latest scan of the data root. A malformed limit or cursor is a 400.
 func (s *Server) serveStores(w http.ResponseWriter, r *http.Request) {
-	limit, after, err := storesQuery(r.URL.Query())
+	limit, after, err := storesQuery(r.URL.Query(), defaultStoresPage)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -268,49 +268,65 @@ func (s *Server) serveStores(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.storesPage(scan, limit, after))
 }
 
-// storesQuery reads the limit and the cursor of an overview request; its
-// error is the message of the 400 a malformed one is answered with.
-func storesQuery(query url.Values) (limit int, after string, err error) {
-	limit = defaultStoresPage
+// fieldError is the error of a malformed field of a request: its message is
+// what the admin listener answers 400 with, field the field the inspect
+// service names.
+type fieldError struct{ field, message string }
+
+func (e *fieldError) Error() string { return e.message }
+
+// storesQuery reads the limit (fallback when absent) and the cursor of a
+// store page request (the overview's, the inspect service's); its error is a
+// *fieldError.
+func storesQuery(query url.Values, fallback int) (limit int, after string, err error) {
+	limit = fallback
 	if query.Has("limit") {
 		limit, err = strconv.Atoi(query.Get("limit"))
 		if err != nil || limit < 1 || limit > maxStoresPage {
-			return 0, "", fmt.Errorf("limit must be a whole number from 1 to %d", maxStoresPage)
+			return 0, "", &fieldError{"limit", fmt.Sprintf("limit must be a whole number from 1 to %d", maxStoresPage)}
 		}
 	}
 	if query.Has("after") {
 		if after = query.Get("after"); !isUserKey(after) {
-			return 0, "", errors.New("after must be a cursor the overview gave: 32 lowercase hex digits")
+			return 0, "", &fieldError{"after", "after must be a cursor the overview gave: 32 lowercase hex digits"}
 		}
 	}
 	return limit, after, nil
 }
 
-// storesPage is the page of scan that follows the cursor after (exclusive; ""
-// for the first page), limit stores at most.
-func (s *Server) storesPage(scan *storeScan, limit int, after string) storesPage {
+// storesAfter is the page of stores (in key order) that follows the cursor
+// after (exclusive; "" for the first page), limit stores at most, and the
+// cursor of the next page: the page's last key, nil on the last page.
+func storesAfter(stores []storeStat, after string, limit int) ([]storeStat, *string) {
 	start := 0
 	if after != "" {
 		var found bool
-		start, found = slices.BinarySearchFunc(scan.stores, after, func(store storeStat, key string) int { return strings.Compare(store.key, key) })
+		start, found = slices.BinarySearchFunc(stores, after, func(store storeStat, key string) int { return strings.Compare(store.key, key) })
 		if found {
 			start++
 		}
 	}
-	end := min(start+limit, len(scan.stores))
+	end := min(start+limit, len(stores))
+	if end < len(stores) {
+		next := stores[end-1].key
+		return stores[start:end], &next
+	}
+	return stores[start:end], nil
+}
+
+// storesPage is the page of scan that follows the cursor after (exclusive; ""
+// for the first page), limit stores at most.
+func (s *Server) storesPage(scan *storeScan, limit int, after string) storesPage {
+	stores, next := storesAfter(scan.stores, after, limit)
 	page := storesPage{
 		Total: len(scan.stores), Bytes: scan.bytes, ScannedAt: scan.at.UTC().Format(time.RFC3339),
-		Stores: make([]storeEntry, 0, end-start),
+		Stores: make([]storeEntry, 0, len(stores)), Next: next,
 	}
-	for _, store := range scan.stores[start:end] {
+	for _, store := range stores {
 		page.Stores = append(page.Stores, storeEntry{
 			Store: short(store.key), Bytes: store.bytes, Modified: store.modified.UTC().Format(time.RFC3339),
 			Open: s.users.isOpen(store.key), Backlog: s.storeBacklog(store.key),
 		})
-	}
-	if end < len(scan.stores) {
-		next := scan.stores[end-1].key
-		page.Next = &next
 	}
 	return page
 }

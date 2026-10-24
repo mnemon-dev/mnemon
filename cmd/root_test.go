@@ -193,3 +193,15 @@ func TestAMLServeFailureIsPrintedOnceThroughTheProductRoot(t *testing.T) {
 		t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout.String(), stderr.String())
 	}
 }
+
+// aml-inspect is run by systemd too: its failure is printed once and bare.
+func TestAMLInspectFailureIsPrintedOnceThroughTheProductRoot(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	exitCode := Execute(context.Background(),
+		[]string{"memory-agent", "aml-inspect", "--data-root", "relative", "--memory-config", "relative.json"},
+		strings.NewReader(""), &stdout, &stderr)
+	if exitCode != 1 || stdout.Len() != 0 || strings.Count(stderr.String(), "aml-inspect requires an absolute --data-root") != 1 ||
+		strings.Contains(stderr.String(), "Usage:") || strings.Contains(stderr.String(), "Error:") {
+		t.Fatalf("exit=%d stdout=%q stderr=%q", exitCode, stdout.String(), stderr.String())
+	}
+}

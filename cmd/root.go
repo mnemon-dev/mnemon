@@ -65,11 +65,11 @@ func belongsToAgency(command *cobra.Command) bool {
 
 // quietProductCommands are the product commands whose failure is printed once
 // and bare: no usage block and no cobra "Error:" line, only the error. update
-// prints a one-line hint; aml-serve and aml-watch are run by systemd, so their
-// standard error is the journal, and aml-watch fails routinely (every minute
-// while its webhook is down), which would otherwise write 15 to 20 lines a
-// minute.
-var quietProductCommands = []string{"update", "aml-serve", "aml-watch"}
+// prints a one-line hint; aml-serve, aml-watch and aml-inspect are run by
+// systemd, so their standard error is the journal, and aml-watch fails
+// routinely (every minute while its webhook is down), which would otherwise
+// write 15 to 20 lines a minute.
+var quietProductCommands = []string{"update", "aml-serve", "aml-watch", "aml-inspect"}
 
 func belongsToQuietProductCommand(command *cobra.Command) bool {
 	for _, name := range quietProductCommands {

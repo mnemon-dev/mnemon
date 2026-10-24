@@ -15,13 +15,15 @@ dedicated instance `eval`.
 | `memory-config.industrial.json` | The memory strategy configuration, installed once per host as `/usr/local/share/mnemon-aml/memory-config.industrial.json`; `mnemon-instance new` writes each instance's copy with its caps. |
 | `aml-serve@.service` | systemd template of an instance's `mnemon memory-agent aml-serve`, per instance through `%i`. |
 | `aml-watch@.service`, `aml-watch@.timer` | The instance's alert watcher, run every minute. |
+| `aml-inspect@.service` | The instance's inspect service, `mnemon memory-agent aml-inspect`: the console's read-only retrieval backend, off until `mnemon-instance inspect enable`. |
 | `Caddyfile.dedicated` | TLS reverse proxy of a dedicated host: one instance at its domain's root, 31-minute timeouts, a 30 MiB body limit, requests held through a restart. |
 | `Caddyfile.shared` | The same for a shared host: instance `<n>` at `/i/<n>`, one snippet per instance. |
-| `instance.sh` | Installed as `/usr/local/sbin/mnemon-instance`: `new`, `suspend`, `resume`, `rotate-key`, `delete`, `delete-user`, `list`. |
+| `instance.sh` | Installed as `/usr/local/sbin/mnemon-instance`: `new`, `suspend`, `resume`, `rotate-key`, `delete`, `delete-user`, `list`, `inspect enable`, `inspect disable`. |
 | `preflight.sh` | Installed as `/usr/local/sbin/mnemon-preflight`: the checks before a job, for one instance. |
 | `wg0.conf.example` | The WireGuard spoke of an instance host: the admin listeners' private network. |
 | `../../docs/aml-adapter.md` | Runbook: install, instances, operate, alerts, capacity, troubleshooting, data deletion. |
 | `../../docs/admin-api.md` | The admin listener: token, private bind, routes. |
+| `../../docs/inspect-api.md` | The inspect service: its routes, their JSON, the retrieval trace. |
 | `make build-linux-amd64` | Builds the static `bin/mnemon-linux-amd64`. |
 
 ## System

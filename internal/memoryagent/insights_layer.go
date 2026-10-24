@@ -132,9 +132,10 @@ func (r *simpleRun) nearestInsights(ctx context.Context, message string, texts [
 // order (ids are indexes into m.Insights), each line "- (<date>) <text>"
 // kept while it fits layerInsights characters (the header not counted, a
 // line that does not fit skipped), and how many it shows. Records name the
-// shown insights' records, in order, each once, by id only.
+// shown insights' records, in order, each once, by id only; Items the shown
+// insights ("i<index>").
 func composeInsights(m timelineMemory, order []string) (IndexItem, int) {
-	text, size, shown, linked := "", 0, 0, []string{}
+	text, size, shown, linked, items := "", 0, 0, []string{}, []string{}
 	for _, id := range order {
 		i, err := strconv.Atoi(id)
 		if err != nil || i < 0 || i >= len(m.Insights) {
@@ -146,6 +147,7 @@ func composeInsights(m timelineMemory, order []string) (IndexItem, int) {
 		}
 		text, size, shown = text+line, size+jsLen(line), shown+1
 		linked = append(linked, m.Insights[i].Records...)
+		items = append(items, itemID("i", i))
 	}
 	refs, seen := []Reference{}, map[string]bool{}
 	for _, record := range linked {
@@ -154,5 +156,5 @@ func composeInsights(m timelineMemory, order []string) (IndexItem, int) {
 			refs = append(refs, Reference{ID: record})
 		}
 	}
-	return IndexItem{ID: "5-insights", Kind: "5-insights", Text: insightsHead + text, Records: refs}, shown
+	return IndexItem{ID: "5-insights", Kind: "5-insights", Text: insightsHead + text, Records: refs, Items: items}, shown
 }

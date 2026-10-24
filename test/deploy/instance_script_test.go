@@ -326,9 +326,10 @@ func (h *host) checkLimits(name, want string) {
 
 // checkNoSecrets checks every run's output and the journal: no run prints a
 // secret on its standard error; on its standard output only new prints the
-// instance's API key and admin token, and rotate-key its new key (labels
-// "<n> API key", "<n> admin token" and "<n> rotated API key"). Neither the
-// journal nor any output carries a raw user id.
+// instance's API key and admin token, rotate-key its new key and inspect
+// enable its inspect token (labels "<n> API key", "<n> admin token", "<n>
+// rotated API key" and "<n> inspect token"). Neither the journal nor any
+// output carries a raw user id.
 func (h *host) checkNoSecrets() {
 	h.t.Helper()
 	journal, err := os.ReadFile(h.path("/var/log/mnemon-instance.log"))
@@ -347,6 +348,9 @@ func (h *host) checkNoSecrets() {
 			allowed[r.args[1]+" API key"], allowed[r.args[1]+" admin token"] = true, true
 		case r.args[0] == "rotate-key" && r.ok:
 			allowed[r.args[1]+" rotated API key"] = true
+		case len(r.args) >= 3 && r.args[0] == "inspect" && r.args[1] == "enable":
+			// Printed once written, even when the start then fails.
+			allowed[r.args[2]+" inspect token"] = true
 		}
 		for label, secret := range h.secrets {
 			if strings.Contains(r.stderr, secret) || strings.Contains(r.stdout, secret) && !allowed[label] {
@@ -754,7 +758,7 @@ func TestInstanceScriptLifecycle(t *testing.T) {
 		t.Helper()
 		rows := map[string][]string{}
 		lines := strings.Split(strings.TrimSuffix(h.ok("", "list"), "\n"), "\n")
-		if header := strings.Fields(lines[0]); !slices.Equal(header, []string{"NAME", "LAYOUT", "SLOT", "DATA", "ADMIN", "STATUS", "PUBLIC", "URL"}) {
+		if header := strings.Fields(lines[0]); !slices.Equal(header, []string{"NAME", "LAYOUT", "SLOT", "DATA", "ADMIN", "STATUS", "INSPECT", "PUBLIC", "URL"}) {
 			t.Fatalf("list header %q", header)
 		}
 		for _, line := range lines[1:] {
@@ -764,8 +768,8 @@ func TestInstanceScriptLifecycle(t *testing.T) {
 		return rows
 	}
 	if got, want := listed(), map[string][]string{
-		"beta-alice": {"shared", "0", "127.0.0.1:8100", "10.77.0.3:8101", "active", "https://beta.example.com/i/beta-alice"},
-		"beta-bob":   {"shared", "1", "127.0.0.1:8110", "10.77.0.3:8111", "active", "https://beta.example.com/i/beta-bob"},
+		"beta-alice": {"shared", "0", "127.0.0.1:8100", "10.77.0.3:8101", "active", "off", "https://beta.example.com/i/beta-alice"},
+		"beta-bob":   {"shared", "1", "127.0.0.1:8110", "10.77.0.3:8111", "active", "off", "https://beta.example.com/i/beta-bob"},
 	}; !reflect.DeepEqual(got, want) {
 		t.Errorf("list\n got %q\nwant %q", got, want)
 	}
