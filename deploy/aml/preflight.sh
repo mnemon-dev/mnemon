@@ -129,9 +129,12 @@ env_get() {
 # telegram_url URL: URL is a Telegram bot's sendMessage with its chat, as the
 # watcher requires: https://<host>/bot<token>/sendMessage?chat_id=<chat id>,
 # chat_id its only parameter, a chat's number (negative for a group or a
-# channel) or a channel's @username. The value never leaves the shell.
+# channel) or a channel's @username. The value never leaves the shell. It is
+# never looser than the watcher's rule (no control character in the path); it
+# is stricter in taking https only, no IPv6 host, no user:password@, no
+# fragment and no space (test/deploy: TestTelegramRuleNeverLooserThanTheWatchers).
 telegram_url() {
-	local re='^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/([^?#%[:space:]]*/)?sendMessage\?chat_id=(-?[0-9]{1,20}|(@|%40)[A-Za-z][A-Za-z0-9_]{4,31})$'
+	local re='^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/([^?#%[:space:][:cntrl:]]*/)?sendMessage\?chat_id=(-?[0-9]{1,20}|(@|%40)[A-Za-z][A-Za-z0-9_]{4,31})$'
 	[[ $1 =~ $re ]]
 }
 
@@ -195,14 +198,23 @@ check_engine_env() {
 # listener and token.
 check_watch_env() {
 	checking
-	local env="$ROOT$ETC/$NAME/env" watch="$ROOT$ETC/$NAME/watch.env" var
+	local env="$ROOT$ETC/$NAME/env" watch="$ROOT$ETC/$NAME/watch.env" var kind
 	[ -f "$watch" ] || return 0
 	for var in AML_ALERT_WEBHOOK AML_ALERT_KIND AML_PUBLIC_URL AML_ADMIN_LISTEN MNEMON_ADMIN_TOKEN; do
 		has "$watch" "$var" || fail "$ETC/$NAME/watch.env lacks $var"
 	done
-	case $(env_get "$watch" AML_ALERT_KIND) in
+	kind=$(env_get "$watch" AML_ALERT_KIND)
+	case $kind in
 	telegram | feishu | wecom | "") ;;
-	*) fail "$ETC/$NAME/watch.env: AML_ALERT_KIND is \"$(env_get "$watch" AML_ALERT_KIND)\", not telegram, feishu or wecom" ;;
+	*)
+		# The kind is named only when it looks like one: what was pasted into
+		# this line by mistake may be the webhook or its token.
+		if [[ $kind =~ ^[a-z0-9-]{1,16}$ ]]; then
+			fail "$ETC/$NAME/watch.env: AML_ALERT_KIND is \"$kind\", not telegram, feishu or wecom"
+		else
+			fail "$ETC/$NAME/watch.env: AML_ALERT_KIND is not telegram, feishu or wecom"
+		fi
+		;;
 	esac
 	case $(env_get "$watch" AML_ALERT_WEBHOOK) in
 	"") ;;
@@ -361,12 +373,14 @@ check_wg0() {
 
 # open_to_anywhere RULE: RULE, a line of `ufw status verbose` with its spaces
 # squeezed, lets anyone reach 51820/udp or an admin port (8091 to 8600, tcp):
-# an ALLOW or LIMIT IN rule from Anywhere, over IPv4 or IPv6 ("(v6)"), on any
-# interface ("on wg0"), to any address, whose ports (one, a range, a list, or
-# all of them: "Anywhere") hold one of those. A trailing "# comment" is
-# allowed. Rules for application profiles name no port, and pass.
+# an ALLOW or LIMIT IN rule from Anywhere (also written "Anywhere/tcp" or
+# "Anywhere/udp" for a rule given a protocol), over IPv4 or IPv6 ("(v6)"), on
+# any interface ("on wg0"), to any address, whose ports (one, a range, a list,
+# or all of them: "Anywhere", "Anywhere/tcp" or "Anywhere/udp", all of a
+# protocol's) hold one of those. A trailing "# comment" is allowed. Rules for
+# application profiles name no port, and pass.
 open_to_anywhere() {
-	local re='^(.+) (ALLOW|LIMIT) IN Anywhere( \(v6\))?( #.*)?$'
+	local re='^(.+) (ALLOW|LIMIT) IN Anywhere(/tcp|/udp)?( \(v6\))?( #.*)?$'
 	local ports_re='^[0-9]{1,5}(:[0-9]{1,5})?(,[0-9]{1,5}(:[0-9]{1,5})?)*$'
 	local rule=$1 to ports proto= item lo hi
 	while [[ $rule == *' ' ]]; do
@@ -377,7 +391,9 @@ open_to_anywhere() {
 	to=${to% on *}
 	to=${to% (v6)}
 	to=${to##* }
-	[ "$to" != Anywhere ] || return 0
+	case $to in
+	Anywhere | Anywhere/tcp | Anywhere/udp) return 0 ;;
+	esac
 	case $to in
 	*/tcp) proto=tcp ports=${to%/tcp} ;;
 	*/udp) proto=udp ports=${to%/udp} ;;

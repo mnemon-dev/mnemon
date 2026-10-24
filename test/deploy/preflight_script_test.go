@@ -270,6 +270,30 @@ func TestPreflightScriptAlertKinds(t *testing.T) {
 			t.Errorf("the preflight printed the webhook:\n%s", out)
 		}
 	}
+	// The kind is named in the FAIL line only when it looks like one (a short
+	// word of lowercase letters, digits and hyphens): a value pasted into the
+	// wrong line may be a secret, and is not echoed (the final review's
+	// parked T15-g).
+	for _, kind := range []string{
+		bot + "/sendMessage?chat_id=42",    // the webhook, in the kind's line
+		token,                              // the bot's token alone
+		"Telegram",                         // not lowercase
+		"telegram bot",                     // a space
+		"0123456789abcdef0",                // 17 characters
+		strings.ToLower("S3cret-" + token), // a secret that happens to be lowercase, and long
+	} {
+		p.rewrite("/etc/mnemon-aml/beta-alice/watch.env", map[string]string{"AML_ALERT_KIND": kind, "AML_ALERT_WEBHOOK": bot + "/sendMessage?chat_id=42"})
+		out, ok := preflight(t, p.h, p.caBundle, p.record, "beta-alice")
+		got := fails(out)
+		if ok || len(got) != 1 || !strings.Contains(got[0], "AML_ALERT_KIND is not telegram, feishu or wecom") || strings.Contains(out, kind) || strings.Contains(out, token) {
+			t.Errorf("a kind that is no word (%d characters): want one FAIL line that does not repeat it:\n%s", len(kind), out)
+		}
+	}
+	// A short word is named, so that the operator sees what is wrong.
+	p.rewrite("/etc/mnemon-aml/beta-alice/watch.env", map[string]string{"AML_ALERT_KIND": "dingtalk", "AML_ALERT_WEBHOOK": bot + "/sendMessage?chat_id=42"})
+	if out, ok := preflight(t, p.h, p.caBundle, p.record, "beta-alice"); ok || len(fails(out)) != 1 || !strings.Contains(fails(out)[0], `AML_ALERT_KIND is "dingtalk", not telegram, feishu or wecom`) {
+		t.Errorf("a kind that is a word:\n%s", out)
+	}
 	// The webhook is checked in the shell: no program is given it.
 	if arguments, err := os.ReadFile(p.record); err != nil || strings.Contains(string(arguments), token) {
 		t.Errorf("curl's arguments held the bot's token (%v)", err)
@@ -436,6 +460,21 @@ func TestPreflightScriptOnAHost(t *testing.T) {
 		"10.77.0.3 8101/tcp         ALLOW IN    Anywhere",
 		"Anywhere on wg0            ALLOW IN    Anywhere",
 		"Anywhere (v6) on wg0       ALLOW IN    Anywhere (v6)",
+		// A source that names a protocol: ufw writes "Anywhere/tcp" or
+		// "Anywhere/udp" for a rule given one (the final review's parked
+		// T15-b); a destination that is all of a protocol's ports holds the
+		// ports too.
+		"8101/tcp                   ALLOW IN    Anywhere/tcp",
+		"8101/tcp (v6)              ALLOW IN    Anywhere/tcp (v6)",
+		"8091:8600/tcp on wg0       ALLOW IN    Anywhere/tcp",
+		"8101/tcp                   LIMIT IN    Anywhere/tcp               # admin",
+		"51820/udp                  ALLOW IN    Anywhere/udp",
+		"51820/udp (v6)             ALLOW IN    Anywhere/udp (v6)",
+		"51820                      ALLOW IN    Anywhere/udp",
+		"Anywhere/tcp               ALLOW IN    Anywhere/tcp",
+		"Anywhere/udp               ALLOW IN    Anywhere/udp",
+		"Anywhere/tcp (v6)          ALLOW IN    Anywhere/tcp (v6)",
+		"Anywhere/udp on wg0        ALLOW IN    Anywhere/udp",
 	} {
 		canned(map[string]string{"ip-link": upLink, "ip-addr": addr, "ufw-status": ufwStatus(rule)})
 		out, ok := run()
@@ -458,6 +497,11 @@ func TestPreflightScriptOnAHost(t *testing.T) {
 		"51820/udp (v6)             ALLOW IN    2001:db8::10",
 		"Nginx Full                 ALLOW IN    Anywhere",
 		"8101/tcp                   ALLOW OUT   Anywhere",
+		"8101/udp                   ALLOW IN    Anywhere/udp",
+		"51820/tcp                  ALLOW IN    Anywhere/tcp",
+		"8090/tcp                   ALLOW IN    Anywhere/tcp",
+		"51821/udp (v6)             ALLOW IN    Anywhere/udp (v6)",
+		"8101/tcp                   ALLOW IN    10.77.0.1/tcp",
 	} {
 		canned(map[string]string{"ip-link": upLink, "ip-addr": addr, "ufw-status": ufwStatus(rule)})
 		if out, ok := run(); !ok || len(fails(out)) != 0 {

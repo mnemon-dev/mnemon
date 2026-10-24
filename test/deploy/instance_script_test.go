@@ -314,7 +314,13 @@ func (h *host) checkConfig(name string, deepseek, jev float64) {
 func (h *host) checkLimits(name, want string) {
 	h.t.Helper()
 	var settings []string
-	for _, line := range strings.Split(h.read("/etc/systemd/system/aml-serve@"+name+".service.d/limits.conf"), "\n") {
+	raw := h.read("/etc/systemd/system/aml-serve@" + name + ".service.d/limits.conf")
+	// The note on a host's file points at the runbook, not at a step of the
+	// plan the kit was built by.
+	if strings.Contains(raw, "Task ") || strings.Contains(raw, "serve-hardening") {
+		h.t.Errorf("%s: limits.conf names the build plan, want the runbook:\n%s", name, raw)
+	}
+	for _, line := range strings.Split(raw, "\n") {
 		if line != "" && !strings.HasPrefix(line, "#") {
 			settings = append(settings, line)
 		}
@@ -1188,7 +1194,9 @@ func TestInstanceScriptTelegramAlerts(t *testing.T) {
 		bot + "/sendMessage/?chat_id=42",
 		bot + "?chat_id=42",
 		"http://api.telegram.org/bot" + token + "/sendMessage?chat_id=42",
-		// What the watcher's URL parser refuses, the shell refuses too.
+		// What the watcher's URL parser refuses, the shell refuses too, and a
+		// fragment, which the watcher drops, it refuses as well
+		// (TestTelegramRuleNeverLooserThanTheWatchers has the whole table).
 		"https://api.telegram.org/bot" + token + "%zz/sendMessage?chat_id=42",
 		"https://api telegram.org/bot" + token + "/sendMessage?chat_id=42",
 		"https://api.telegram.org/bot" + token + "/sendMessage?chat_id=42#x",
@@ -1432,6 +1440,53 @@ func TestInstanceScriptResume(t *testing.T) {
 	h.checkNoSecrets()
 }
 
+// Once resume has restored the route the instance is back, and the two steps
+// that remain (recording AML_STATUS=active, enabling the watcher's timer) must
+// not leave it half done without a word: a failure there says so, and what to
+// run to finish it. The instance is not stopped again: it serves (the final
+// review's parked T15-d).
+func TestInstanceScriptResumeFailsLoudlyAfterTheRoute(t *testing.T) {
+	h, active := newSharedAlice(t)
+	const snippet = "/etc/caddy/mnemon-instances/beta-alice.caddy"
+	statusOf := func() string { return h.env("/etc/mnemon-aml/beta-alice/env")["AML_STATUS"] }
+	for _, c := range []struct {
+		name, code, status string
+	}{
+		{"the timer does not start", `systemctl() { printf 'systemctl %s (status %s)\n' "$*" "$(env_get "$ROOT$ETC/$INSTANCE/env" AML_STATUS)" >>"$CALLS"; case "$*" in "enable --now aml-watch@"*) return 1 ;; esac; }
+cmd_resume beta-alice`, "active"},
+		{"the status cannot be recorded", `env_set() { return 1; }
+cmd_resume beta-alice`, "suspended"},
+	} {
+		h.ok("", "suspend", "beta-alice")
+		r, calls := h.sourced("beta-alice", c.code)
+		if r.ok {
+			t.Errorf("%s: resume succeeded", c.name)
+		}
+		for _, want := range []string{"resume beta-alice stopped after the instance was back", "aml-serve@beta-alice runs", "run mnemon-instance resume beta-alice again"} {
+			if !strings.Contains(r.stderr, want) {
+				t.Errorf("%s: resume did not say %q:\n%s", c.name, want, r.stderr)
+			}
+		}
+		if strings.Contains(r.stderr, "stays suspended") {
+			t.Errorf("%s: resume says the instance is suspended, but its route is back:\n%s", c.name, r.stderr)
+		}
+		for _, call := range systemctlCalls(calls) {
+			if strings.HasPrefix(call, "disable --now aml-serve@") {
+				t.Errorf("%s: resume stopped an instance whose route it had restored: %q", c.name, systemctlCalls(calls))
+			}
+		}
+		if h.read(snippet) != active || statusOf() != c.status {
+			t.Errorf("%s: the route is not active (%v) or AML_STATUS is %q, want %q", c.name, h.read(snippet) == active, statusOf(), c.status)
+		}
+		// Run again, it finishes.
+		r, _ = h.sourced("beta-alice", `cmd_resume beta-alice`)
+		if !r.ok || statusOf() != "active" {
+			t.Errorf("%s: resume again: %s%s (AML_STATUS %q)", c.name, r.stdout, r.stderr, statusOf())
+		}
+	}
+	h.checkNoSecrets()
+}
+
 // new on a shared host whose Caddy refuses the new instance's route removes
 // the snippet it wrote (there was none before), so that the host's Caddyfile
 // stays valid; it prints the keys all the same, and says what went wrong.
@@ -1448,6 +1503,12 @@ cmd_new beta-alice --layout shared --public-url https://beta.example.com/i/beta-
 `)
 	if r.ok || !strings.Contains(r.stderr, "Caddy did not take the route of beta-alice; its snippet is removed") || h.exists("/etc/caddy/mnemon-instances/beta-alice.caddy") {
 		t.Fatalf("new with a refused route:\n%s%s", r.stdout, r.stderr)
+	}
+	// It says how to put the route back once the Caddyfile is fixed: resume
+	// writes the snippet of an instance that is running (the final review's
+	// parked T15-c).
+	if !strings.Contains(r.stderr, "fix the Caddyfile, then run mnemon-instance resume beta-alice") {
+		t.Errorf("new did not say how to put the route back:\n%s", r.stderr)
 	}
 	want := []string{"daemon-reload", "enable --now aml-serve@beta-alice.service", "enable --now aml-watch@beta-alice.timer"}
 	if got := systemctlCalls(calls); !slices.Equal(got, want) {
@@ -1468,23 +1529,139 @@ cmd_new beta-alice --layout shared --public-url https://beta.example.com/i/beta-
 	}
 }
 
+// telegramURLRule is the body of the telegram_url function of a script of
+// deploy/aml.
+func telegramURLRule(t *testing.T, script string) string {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("..", "..", "deploy", "aml", script))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, body, found := strings.Cut(string(raw), "\ntelegram_url() {\n")
+	body, _, closed := strings.Cut(body, "\n}\n")
+	if !found || !closed || !strings.Contains(body, "sendMessage") {
+		t.Fatalf("%s has no telegram_url function", script)
+	}
+	return body
+}
+
 // Both scripts check a Telegram webhook by the same rule, which is never
 // looser than the watcher's: new refuses what preflight would fail, and the
 // other way round.
 func TestScriptsShareTheTelegramRule(t *testing.T) {
-	rule := func(script string) string {
-		raw, err := os.ReadFile(filepath.Join("..", "..", "deploy", "aml", script))
-		if err != nil {
-			t.Fatal(err)
-		}
-		_, body, found := strings.Cut(string(raw), "\ntelegram_url() {\n")
-		body, _, closed := strings.Cut(body, "\n}\n")
-		if !found || !closed || !strings.Contains(body, "sendMessage") {
-			t.Fatalf("%s has no telegram_url function", script)
-		}
-		return body
-	}
-	if instance, preflight := rule("instance.sh"), rule("preflight.sh"); instance != preflight {
+	if instance, preflight := telegramURLRule(t, "instance.sh"), telegramURLRule(t, "preflight.sh"); instance != preflight {
 		t.Errorf("the scripts' telegram_url differ:\ninstance.sh:\n%s\npreflight.sh:\n%s", instance, preflight)
+	}
+}
+
+// telegramCase is a Telegram webhook with what the watcher answers (its
+// checkDelivery) and what the scripts' telegram_url must.
+type telegramCase struct {
+	url              string
+	watcher, scripts bool
+	why              string
+}
+
+// telegramCases are the cases of TestWatchTelegramNeedsChatID
+// (cmd/memory/aml_watch_test.go), with others the scripts' shell had to get
+// right. The watcher's answers were taken from checkDelivery when the table
+// was written.
+func telegramCases() []telegramCase {
+	const token = "7012345678:AAabcdef"
+	bot := "https://api.telegram.org/bot" + token
+	return []telegramCase{
+		{bot + "/sendMessage?chat_id=123456789", true, true, "a private chat"},
+		{bot + "/sendMessage?chat_id=-1001234567890", true, true, "a supergroup"},
+		{bot + "/sendMessage?chat_id=@mnemon_alerts", true, true, "a channel"},
+		{bot + "/sendMessage?chat_id=%40mnemon_alerts", true, true, "a channel, @ escaped"},
+		{bot + "/sendMessage?chat_id=" + strings.Repeat("9", 20), true, true, "the longest number"},
+		{bot + "/sendMessage?chat_id=@a" + strings.Repeat("b", 31), true, true, "the longest channel name"},
+		{"https://bots.example.com/bot" + token + "/sendMessage?chat_id=42", true, true, "another host"},
+		{"https://api.telegram.org:8443/bot" + token + "/sendMessage?chat_id=42", true, true, "a port"},
+		{"https://api.telegram.org/sendMessage?chat_id=42", true, true, "a Bot API server with no bot in its path"},
+		{"https://api.telegram.org/a/b/c/sendMessage?chat_id=42", true, true, "a deeper path"},
+		{"https://api.telegram.org/bot" + token + "é/sendMessage?chat_id=42", true, true, "a non-ASCII character in the path"},
+
+		// What the watcher takes and the scripts are stricter about.
+		{"http://127.0.0.1:8081/bot" + token + "/sendMessage?chat_id=42", true, false, "http to this machine: the scripts take https only"},
+		{"http://localhost:8081/bot" + token + "/sendMessage?chat_id=42", true, false, "http to localhost"},
+		{"https://[2001:db8::1]:8081/bot" + token + "/sendMessage?chat_id=42", true, false, "an IPv6 host"},
+		{"https://user:pw@bots.example.com/bot" + token + "/sendMessage?chat_id=42", true, false, "user:password@"},
+		{bot + "/sendMessage?chat_id=42#x", true, false, "a fragment, which the watcher drops"},
+		{"https://api.telegram.org/bot" + token + " /sendMessage?chat_id=42", true, false, "a space in the path, which the watcher escapes"},
+
+		// What both refuse.
+		{bot + "/sendMessage", false, false, "no query"},
+		{bot + "/sendMessage?", false, false, "an empty query"},
+		{bot + "/sendMessage?chat_id=", false, false, "an empty chat"},
+		{bot + "/sendMessage?chat_id=abc", false, false, "a word"},
+		{bot + "/sendMessage?chat_id=12.5", false, false, "a fraction"},
+		{bot + "/sendMessage?chat_id=%2B42", false, false, "a plus sign"},
+		{bot + "/sendMessage?chat_id=--42", false, false, "two minus signs"},
+		{bot + "/sendMessage?chat_id=" + strings.Repeat("9", 21), false, false, "a number too long"},
+		{bot + "/sendMessage?chat_id=@abcd", false, false, "a channel name too short"},
+		{bot + "/sendMessage?chat_id=@1channel", false, false, "a channel name that starts with a digit"},
+		{bot + "/sendMessage?chat_id=@a" + strings.Repeat("b", 32), false, false, "a channel name too long"},
+		{bot + "/sendMessage?chat_id=42%0A", false, false, "a newline escaped in the chat"},
+		{bot + "/sendMessage?chat_id=42&chat_id=43", false, false, "two chats"},
+		{bot + "/sendMessage?chat_id=42&parse_mode=HTML", false, false, "another parameter"},
+		{bot + "/sendMessage?chat_id=42;x=1", false, false, "a semicolon"},
+		{bot + "/sendMessage?chat=42", false, false, "another parameter name"},
+		{bot + "/getUpdates?chat_id=42", false, false, "another method"},
+		{bot + "/sendMessage/?chat_id=42", false, false, "a trailing slash"},
+		{bot + "/sendmessage?chat_id=42", false, false, "another case"},
+		{bot + "?chat_id=42", false, false, "no method"},
+		{"http://api.telegram.org/bot" + token + "/sendMessage?chat_id=42", false, false, "http to another host"},
+		{"https:///bot" + token + "/sendMessage?chat_id=42", false, false, "no host"},
+		{"api.telegram.org/bot" + token + "/sendMessage?chat_id=42", false, false, "no scheme"},
+		{"https://api.telegram.org/bot" + token + "/sendMessage?chat_id=4%zz2", false, false, "a bad escape in the chat"},
+		{"https://api.telegram.org/bot" + token + "%zz/sendMessage?chat_id=42", false, false, "a bad escape in the path"},
+		{"https://api telegram.org/bot" + token + "/sendMessage?chat_id=42", false, false, "a space in the host"},
+		{"https://api.telegram.org/bot" + token + "\t/sendMessage?chat_id=42", false, false, "a tab in the path"},
+		{"https://api.telegram.org/bot" + token + "\n/sendMessage?chat_id=42", false, false, "a newline in the path"},
+		{"https://api.telegram.org/bot" + token + "\x01/sendMessage?chat_id=42", false, false, "a control character in the path"},
+		{"https://api.telegram.org/bot" + token + "\x1f/sendMessage?chat_id=42", false, false, "the last control character below the space"},
+		{"https://api.telegram.org/bot" + token + "\x7f/sendMessage?chat_id=42", false, false, "DEL in the path"},
+		{"https://api.telegram.org/bot" + token + "/send\x01Message?chat_id=42", false, false, "a control character in the method"},
+		{"https://api.telegram.org\x01/bot" + token + "/sendMessage?chat_id=42", false, false, "a control character in the host"},
+		{bot + "/sendMessage?chat_id=4\x012", false, false, "a control character in the chat"},
+	}
+}
+
+// The scripts' Telegram rule never takes a webhook the watcher refuses, and
+// takes the ones the table says it does. The scripts may be stricter than the
+// watcher (they take https only, no IPv6 host, no user:password@, no fragment,
+// no space), and are never looser. Control characters were the gap (the final
+// review's parked T15-a): the watcher's URL parser refuses them in the path,
+// and the shell's character class let all but the white-space ones through.
+func TestTelegramRuleNeverLooserThanTheWatchers(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is missing")
+	}
+	cases := telegramCases()
+	for _, c := range cases {
+		if c.scripts && !c.watcher {
+			t.Fatalf("%q (%s): the table has the scripts take what the watcher refuses", c.url, c.why)
+		}
+	}
+	for _, script := range []string{"instance.sh", "preflight.sh"} {
+		urls := make([]string, len(cases))
+		for i, c := range cases {
+			urls[i] = c.url
+		}
+		code := "LC_ALL=C\ntelegram_url() {\n" + telegramURLRule(t, script) + "\n}\nfor url; do if telegram_url \"$url\"; then echo yes; else echo no; fi; done\n"
+		out, err := exec.Command("bash", append([]string{"-c", code, "_"}, urls...)...).Output()
+		if err != nil {
+			t.Fatalf("%s: %v", script, err)
+		}
+		answers := strings.Fields(string(out))
+		if len(answers) != len(cases) {
+			t.Fatalf("%s answered %d of %d cases", script, len(answers), len(cases))
+		}
+		for i, c := range cases {
+			if got := answers[i] == "yes"; got != c.scripts {
+				t.Errorf("%s takes %q (%s): %v, want %v (the watcher: %v)", script, c.url, c.why, got, c.scripts, c.watcher)
+			}
+		}
 	}
 }

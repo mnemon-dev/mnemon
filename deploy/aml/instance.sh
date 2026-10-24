@@ -69,16 +69,19 @@ ROOT=
 SYSTEMD=1
 # Cleanup on exit: temporary files not yet renamed into place, what an
 # unfinished new (or inspect enable: CREATING) has created, the instance an
-# unfinished resume has started, and the lock.
+# unfinished resume has started (RESUMING, until its route is back) or has
+# brought back but not finished (RESUMED, until its status and its watcher's
+# timer are set), and the lock.
 TEMPS=
 CREATED=
 CREATING=new
 RESUMING=
+RESUMED=
 LOCKED=
 
 # Defaults by layout, which new's flags override. The dedicated numbers are
-# provisional: the load test on the evaluation host (Task 12 of the
-# serve-hardening plan) replaces them with measured values.
+# provisional: the load test on the evaluation host (docs/aml-adapter.md,
+# "Capacity declaration") replaces them with measured values.
 dedicated_defaults() {
 	ADDS=16 SEARCHES=16 STORES=16 WORKERS=4 MEMORY_MAX=40G CPU_QUOTA= DEEPSEEK_CAP=600 JEV_CAP=60
 }
@@ -167,6 +170,11 @@ on_exit() {
 		else
 			say "resume $RESUMING did not finish, and aml-serve@$RESUMING could not be stopped: systemctl disable --now aml-serve@$RESUMING"
 		fi
+		[ "$status" -ne 0 ] || status=1
+	fi
+	if [ -n "$RESUMED" ]; then
+		# The instance serves again; it is not stopped for want of the record.
+		say "resume $RESUMED stopped after the instance was back: aml-serve@$RESUMED runs, but its status or its watcher's timer is not set; run $PROG resume $RESUMED again"
 		[ "$status" -ne 0 ] || status=1
 	fi
 	if [ -n "$LOCKED" ]; then
@@ -459,9 +467,12 @@ EOF
 # telegram_url URL: URL is a Telegram bot's sendMessage with its chat, as the
 # watcher requires: https://<host>/bot<token>/sendMessage?chat_id=<chat id>,
 # chat_id its only parameter, a chat's number (negative for a group or a
-# channel) or a channel's @username. The value never leaves the shell.
+# channel) or a channel's @username. The value never leaves the shell. It is
+# never looser than the watcher's rule (no control character in the path); it
+# is stricter in taking https only, no IPv6 host, no user:password@, no
+# fragment and no space (test/deploy: TestTelegramRuleNeverLooserThanTheWatchers).
 telegram_url() {
-	local re='^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/([^?#%[:space:]]*/)?sendMessage\?chat_id=(-?[0-9]{1,20}|(@|%40)[A-Za-z][A-Za-z0-9_]{4,31})$'
+	local re='^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/([^?#%[:space:][:cntrl:]]*/)?sendMessage\?chat_id=(-?[0-9]{1,20}|(@|%40)[A-Za-z][A-Za-z0-9_]{4,31})$'
 	[[ $1 =~ $re ]]
 }
 
@@ -744,8 +755,8 @@ EOF
 	{
 		printf '# aml-serve@%s: its resource limits, written by %s new.\n' "$name" "$PROG"
 		if [ "$layout" = dedicated ]; then
-			printf '# Provisional: the load test on the evaluation host (Task 12 of the\n'
-			printf '# serve-hardening plan) replaces these numbers with measured values.\n'
+			printf '# Provisional: the load test on the evaluation host (docs/aml-adapter.md,\n'
+			printf '# "Capacity declaration") replaces these numbers with measured values.\n'
 		fi
 		printf '[Service]\nMemoryMax=%s\n' "$MEMORY_MAX"
 		[ -z "$CPU_QUOTA" ] || printf 'CPUQuota=%s\n' "$CPU_QUOTA"
@@ -773,7 +784,7 @@ EOF
 			# before), so that the host's Caddyfile stays valid.
 			if [ "$layout" = shared ] && ! reload_caddy; then
 				rm -f -- "$ROOT$SNIPPETS/$name.caddy"
-				say "Caddy did not take the route of $name; its snippet is removed, so that the host's Caddyfile stays valid"
+				say "Caddy did not take the route of $name; its snippet is removed, so that the host's Caddyfile stays valid: fix the Caddyfile, then run $PROG resume $name to put the route back"
 				started=0
 			fi
 		else
@@ -827,7 +838,10 @@ cmd_suspend() {
 # it restore the route, record AML_STATUS=active and enable the watcher's
 # timer. For a suspended instance, until the route is back, any failure (or a
 # signal) makes on_exit stop and disable aml-serve@NAME again: the instance
-# stays fully suspended. An active one is left running whatever happens.
+# stays fully suspended. An active one is left running whatever happens. Once
+# the route is back the instance serves and is not stopped again: a failure in
+# the two steps left (the status, the timer) makes on_exit say what to run to
+# finish (RESUMED), which is this command again.
 cmd_resume() {
 	[ $# -eq 1 ] || usage_error "resume: give the instance name"
 	require_instance "$1"
@@ -839,8 +853,10 @@ cmd_resume() {
 	wait_ready "$name" || die "resume $name: the instance did not become ready"
 	set_route "$name" active
 	RESUMING=
+	RESUMED=$name
 	env_set "$env" AML_STATUS active
 	sctl enable --now "aml-watch@$name.timer"
+	RESUMED=
 	journal "resume $name"
 	printf '%s is running again.\n' "$name"
 }
