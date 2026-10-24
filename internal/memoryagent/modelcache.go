@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/mnemon-dev/mnemon/internal/records"
 	"modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
 )
@@ -58,11 +59,7 @@ func OpenModelCache(path string) (*ModelCache, error) {
 	if err != nil || !privateFile(info) {
 		return nil, errors.New("model cache must be a private regular file")
 	}
-	u := url.URL{Scheme: "file", Path: path}
-	q := u.Query()
-	q.Set("_pragma", "busy_timeout(10000)")
-	u.RawQuery = q.Encode()
-	db, err := sql.Open("sqlite", u.String())
+	db, err := sql.Open("sqlite", modelCacheDSN(path))
 	if err != nil {
 		return nil, err
 	}
@@ -75,6 +72,13 @@ func OpenModelCache(path string) (*ModelCache, error) {
 		return nil, err
 	}
 	return &ModelCache{db: db}, nil
+}
+
+// modelCacheDSN is the DSN of the cache file at path (records.SQLiteURI).
+func modelCacheDSN(path string) string {
+	q := url.Values{}
+	q.Set("_pragma", "busy_timeout(10000)")
+	return records.SQLiteURI(path, q)
 }
 
 // walMode puts the file in write-ahead-log mode. Processes that open a new

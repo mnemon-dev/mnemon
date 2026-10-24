@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/mnemon-dev/mnemon/internal/records"
 	_ "modernc.org/sqlite"
 )
 
@@ -102,14 +103,7 @@ func OpenBudgetWithCaps(path string, caps map[string]float64) (*Budget, error) {
 	if err != nil || !privateFile(info) {
 		return nil, errors.New("budget file must be a private regular file")
 	}
-	u := url.URL{Scheme: "file", Path: path}
-	q := u.Query()
-	q.Set("_pragma", "busy_timeout(10000)")
-	// Reserve the writer before reading an attempt. Deferred transactions can
-	// deadlock when two processes both upgrade settlement reads to writes.
-	q.Set("_txlock", "immediate")
-	u.RawQuery = q.Encode()
-	db, err := sql.Open("sqlite", u.String())
+	db, err := sql.Open("sqlite", budgetDSN(path))
 	if err != nil {
 		return nil, err
 	}
@@ -124,6 +118,16 @@ CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY,kind TEXT NOT NULL,reque
 		return nil, err
 	}
 	return &Budget{db: db, caps: resolved}, nil
+}
+
+// budgetDSN is the DSN of the budget file at path (records.SQLiteURI).
+func budgetDSN(path string) string {
+	q := url.Values{}
+	q.Set("_pragma", "busy_timeout(10000)")
+	// Reserve the writer before reading an attempt. Deferred transactions can
+	// deadlock when two processes both upgrade settlement reads to writes.
+	q.Set("_txlock", "immediate")
+	return records.SQLiteURI(path, q)
 }
 
 // addEstimateColumns gives the attempts of a budget file made before they

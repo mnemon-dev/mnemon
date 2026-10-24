@@ -142,16 +142,16 @@ func Open(directory string, readonly bool) (*Store, error) {
 	return s, nil
 }
 
+// sqliteDSN is the DSN of the store at path (SQLiteURI): a writer takes the
+// write lock when a transaction begins, and a read-only one opens mode=ro.
 func sqliteDSN(path string, readonly bool) string {
-	u := url.URL{Scheme: "file", Path: path}
-	q := u.Query()
+	q := url.Values{}
 	q.Set("_pragma", "busy_timeout(10000)")
 	q.Set("_txlock", "immediate")
 	if readonly {
 		q.Set("mode", "ro")
 	}
-	u.RawQuery = q.Encode()
-	return u.String()
+	return SQLiteURI(path, q)
 }
 
 func (s *Store) readDB() *sql.DB {

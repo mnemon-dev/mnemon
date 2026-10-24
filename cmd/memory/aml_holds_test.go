@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
+	"github.com/mnemon-dev/mnemon/internal/records"
 )
 
 // These tests hold aml-serve and aml-inspect to ruling R90: a restart holds
@@ -43,7 +43,7 @@ func leaveHolds(t *testing.T, path string, holds ...leftHold) {
 		t.Fatal(err)
 	}
 	budget.Close()
-	db, err := sql.Open("sqlite", (&url.URL{Scheme: "file", Path: path}).String())
+	db, err := sql.Open("sqlite", records.SQLiteURI(path, nil))
 	if err != nil {
 		t.Fatal(err)
 	}

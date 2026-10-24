@@ -55,14 +55,7 @@ func OpenOverlay(path string, readonly bool) (*Overlay, error) {
 			return nil, err
 		}
 	}
-	u := url.URL{Scheme: "file", Path: path}
-	q := u.Query()
-	q.Set("_pragma", "busy_timeout(10000)")
-	if readonly {
-		q.Set("mode", "ro")
-	}
-	u.RawQuery = q.Encode()
-	db, err := sql.Open("sqlite", u.String())
+	db, err := sql.Open("sqlite", overlayDSN(path, readonly))
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +73,17 @@ func OpenOverlay(path string, readonly bool) (*Overlay, error) {
 		return nil, err
 	}
 	return &Overlay{db: db, readonly: readonly}, nil
+}
+
+// overlayDSN is the DSN of the overlay file at path (records.SQLiteURI),
+// mode=ro for a read-only one.
+func overlayDSN(path string, readonly bool) string {
+	q := url.Values{}
+	q.Set("_pragma", "busy_timeout(10000)")
+	if readonly {
+		q.Set("mode", "ro")
+	}
+	return records.SQLiteURI(path, q)
 }
 
 func (o *Overlay) Close() error { return o.db.Close() }

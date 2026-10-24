@@ -87,18 +87,16 @@ func openReaderDB(path string) (*sql.DB, func() error, error) {
 	return db, func() error { return unchanged(path, stamp) }, nil
 }
 
-// readerDSN is a reader's DSN for path: mode=ro, and immutable=1 for a
-// quiescent file. It takes no write lock (no _txlock).
+// readerDSN is a reader's DSN for path (SQLiteURI): mode=ro, and immutable=1
+// for a quiescent file. It takes no write lock (no _txlock).
 func readerDSN(path string, immutable bool) string {
-	u := url.URL{Scheme: "file", Path: path}
-	q := u.Query()
+	q := url.Values{}
 	q.Set("_pragma", "busy_timeout(10000)")
 	q.Set("mode", "ro")
 	if immutable {
 		q.Set("immutable", "1")
 	}
-	u.RawQuery = q.Encode()
-	return u.String()
+	return SQLiteURI(path, q)
 }
 
 // walFile reports whether the SQLite file at path is in WAL mode: the file
