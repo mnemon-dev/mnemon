@@ -325,7 +325,8 @@ func (w *watcher) origin() string {
 // the run was interrupted; an alert, a server that does not answer included,
 // is not an error.
 func (w *watcher) run(ctx context.Context) error {
-	if err := w.checkDelivery(); err != nil {
+	target, err := w.checkDelivery()
+	if err != nil {
 		return err
 	}
 	unlock, otherRun := w.lockRun()
@@ -336,7 +337,7 @@ func (w *watcher) run(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, watchRunLimit)
 	defer cancel()
 	now := w.now().UTC()
-	prev, err := loadWatchState(w.state, w.log)
+	prev, err := loadWatchState(w.state, now, w.log)
 	if err != nil {
 		return err
 	}
@@ -349,7 +350,7 @@ func (w *watcher) run(ctx context.Context) error {
 	next, values, frozen := evaluate(obs, prev, now)
 	var messages []watchMessage
 	next.Firing, messages = planAlerts(now, w.origin(), values, frozen, prev.Firing)
-	outcomes, deliveryErr := w.deliver(ctx, messages)
+	outcomes, deliveryErr := w.deliver(ctx, target, messages)
 	settleAlerts(next.Firing, messages, outcomes, now)
 	return errors.Join(deliveryErr, saveWatchState(w.state, next))
 }
@@ -386,24 +387,34 @@ func (w *watcher) lockRun() (unlock func(), otherRun bool) {
 	}, false
 }
 
-// checkDelivery checks the webhook and its kind; without a webhook there is
-// nothing to check.
-func (w *watcher) checkDelivery() error {
+// hookTarget is where a run posts its messages: the webhook's URL, or for a
+// Telegram bot its sendMessage without the query, with the chat the payload
+// names ("" for the other kinds). url is "" without a webhook.
+type hookTarget struct{ url, chat string }
+
+// checkDelivery checks the webhook and its kind, and is where the run's
+// messages go: the webhook is parsed once a run, not once a message (the
+// final review's parked T15-h). Without a webhook there is nothing to check,
+// and the target is empty.
+func (w *watcher) checkDelivery() (hookTarget, error) {
 	if w.webhook == "" {
-		return nil
+		return hookTarget{}, nil
 	}
 	if w.kind != "feishu" && w.kind != "wecom" && w.kind != "telegram" {
-		return errors.New("AML_ALERT_KIND must be feishu or wecom or telegram")
+		return hookTarget{}, errors.New("AML_ALERT_KIND must be feishu or wecom or telegram")
 	}
 	// The errors never repeat the value: its path is a secret.
 	u, err := url.Parse(w.webhook)
 	if err != nil || u.Host == "" || !(u.Scheme == "https" || u.Scheme == "http" && watchLoopbackHost(u.Hostname())) {
-		return errors.New("AML_ALERT_WEBHOOK must be an https URL (http only to localhost or a loopback address)")
+		return hookTarget{}, errors.New("AML_ALERT_WEBHOOK must be an https URL (http only to localhost or a loopback address)")
 	}
+	target := hookTarget{url: w.webhook}
 	if w.kind == "telegram" {
-		_, _, err = telegramTarget(u)
+		if target.url, target.chat, err = telegramTarget(u); err != nil {
+			return hookTarget{}, err
+		}
 	}
-	return err
+	return target, nil
 }
 
 // watchTelegramChat is the shape of a Telegram chat id: a chat's number (a
@@ -575,10 +586,13 @@ func newWatchState() watchState {
 	return watchState{Version: watchStateVersion, Counters: map[string]int64{}, Rises: map[string]time.Time{}, Since: map[string]time.Time{}, Firing: map[string]watchAlert{}}
 }
 
-// loadWatchState reads the state file. A missing file is a first run, and a
-// file that is not a state of this version is one too (said in the log): the
-// run goes on and writes a good one. A file that cannot be read is an error.
-func loadWatchState(path string, log *slog.Logger) (watchState, error) {
+// loadWatchState reads the state file. A missing file is a first run. A file
+// that is not a state of this version is one too, said in the log, but it is
+// moved aside as <path>.bad-<time> rather than overwritten, and the alerts it
+// owes messages for (its firing alerts, when they decode) are kept, so that
+// their resolutions still go out (the final review's parked T10-a): the run
+// goes on and writes a good state. A file that cannot be read is an error.
+func loadWatchState(path string, now time.Time, log *slog.Logger) (watchState, error) {
 	file, err := os.Open(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return newWatchState(), nil
@@ -586,18 +600,34 @@ func loadWatchState(path string, log *slog.Logger) (watchState, error) {
 	if err != nil {
 		return watchState{}, fmt.Errorf("read the watch state: %w", err)
 	}
-	defer file.Close()
 	raw, err := io.ReadAll(io.LimitReader(file, watchReadLimit))
+	file.Close() // before the file may be moved aside
 	if err != nil {
 		return watchState{}, fmt.Errorf("read the watch state: %w", err)
 	}
 	var state watchState
-	if err := json.Unmarshal(raw, &state); err != nil || state.Version != watchStateVersion {
-		log.Warn("aml-watch: the state file is unreadable or of another version; starting afresh", "path", path)
-		return newWatchState(), nil
+	if err := json.Unmarshal(raw, &state); err == nil && state.Version == watchStateVersion {
+		state.normalize()
+		return state, nil
 	}
-	state.normalize()
-	return state, nil
+	fresh := newWatchState()
+	var owed struct {
+		Firing map[string]watchAlert `json:"firing"`
+	}
+	if json.Unmarshal(raw, &owed) == nil {
+		for name, alert := range owed.Firing {
+			if name != "" && !alert.Since.IsZero() {
+				fresh.Firing[name] = alert
+			}
+		}
+	}
+	aside := path + ".bad-" + now.UTC().Format("20060102T150405Z")
+	if err := os.Rename(path, aside); err != nil {
+		log.Warn("aml-watch: the state file is unreadable or of another version; starting afresh, and it could not be moved aside", "path", path, "kept", len(fresh.Firing), "error", err)
+	} else {
+		log.Warn("aml-watch: the state file is unreadable or of another version; moved it aside and starting afresh", "path", path, "aside", aside, "kept", len(fresh.Firing))
+	}
+	return fresh, nil
 }
 
 // normalize makes the maps of a state read from a file (null, or missing)
@@ -1005,14 +1035,14 @@ const (
 // A message that is rejected does not hold up the others, but a webhook that
 // does not answer is given up on for the run, so that the run ends in
 // bounded time. The error says how many messages were not delivered, and why.
-func (w *watcher) deliver(ctx context.Context, messages []watchMessage) ([]watchOutcome, error) {
-	if w.webhook == "" {
+func (w *watcher) deliver(ctx context.Context, target hookTarget, messages []watchMessage) ([]watchOutcome, error) {
+	if target.url == "" {
 		return w.logUnposted(messages), nil
 	}
 	outcomes := make([]watchOutcome, len(messages))
 	var reasons []string
 	for i, m := range messages {
-		err := w.post(ctx, m.text)
+		err := w.post(ctx, target, m.text)
 		if err == nil {
 			w.log.Info("aml-watch: posted", "alert", m.alert, "event", m.event)
 			continue
@@ -1086,27 +1116,17 @@ type webhookFailure struct {
 
 func (f *webhookFailure) Error() string { return f.reason }
 
-// post sends text to the webhook as the payload of its kind: to a Feishu or
-// WeCom webhook as it is, to a Telegram bot's sendMessage without the query,
-// whose chat goes in the payload.
-func (w *watcher) post(ctx context.Context, text string) error {
-	target, chat := w.webhook, ""
-	if w.kind == "telegram" {
-		u, err := url.Parse(w.webhook)
-		if err == nil {
-			target, chat, err = telegramTarget(u)
-		}
-		if err != nil {
-			return &webhookFailure{reason: "the webhook request could not be made"}
-		}
-	}
-	body, err := watchPayload(w.kind, chat, text)
+// post sends text to the webhook as the payload of its kind, at target
+// (checkDelivery): to a Feishu or WeCom webhook as it is, to a Telegram bot's
+// sendMessage without the query, whose chat goes in the payload.
+func (w *watcher) post(ctx context.Context, target hookTarget, text string) error {
+	body, err := watchPayload(w.kind, target.chat, text)
 	if err != nil {
 		return &webhookFailure{reason: "the message could not be encoded"}
 	}
 	// The errors of net/http name the URL, which is the secret: none of them
 	// is passed on.
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, target.url, bytes.NewReader(body))
 	if err != nil {
 		return &webhookFailure{reason: "the webhook request could not be made"}
 	}

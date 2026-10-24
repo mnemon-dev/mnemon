@@ -953,7 +953,7 @@ func TestWatchTelegramNeedsChatID(t *testing.T) {
 		"https://api.telegram.org/bot" + watchToken + "%zz/sendMessage?chat_id=42": false,
 	} {
 		w := &watcher{watchSettings: watchSettings{webhook: webhook, kind: "telegram"}}
-		err := w.checkDelivery()
+		_, err := w.checkDelivery()
 		if (err == nil) != ok {
 			t.Errorf("%q: %v, want accepted %v", webhook, err, ok)
 		}
@@ -2395,7 +2395,7 @@ func TestWatchWebhookSchemeRules(t *testing.T) {
 		"https://hooks.example.com/hook/%zz" + watchToken:  false,
 	} {
 		w := &watcher{watchSettings: watchSettings{webhook: webhook, kind: "feishu"}}
-		err := w.checkDelivery()
+		_, err := w.checkDelivery()
 		if (err == nil) != ok {
 			t.Errorf("%q: %v, want accepted %v", webhook, err, ok)
 		}
@@ -2662,5 +2662,74 @@ func TestWatchNamesTheInstance(t *testing.T) {
 	}
 	if _, err := os.Stat(state); !os.IsNotExist(err) {
 		t.Errorf("a refused run wrote state: %v", err)
+	}
+}
+
+// Parked T10-a (final review): a state file the watcher cannot use (it does
+// not parse, or is of another version) is moved aside as <state>.bad-<time>,
+// and the log says so, rather than overwritten; and the alerts it owes
+// messages for (its firing alerts, when they decode) are kept, so that their
+// resolution still goes out: delivery stays at-least-once across a damaged or
+// downgraded state. One that does not parse keeps nothing.
+func TestWatchKeepsWhatABadStateOwes(t *testing.T) {
+	r := newWatchRig(t)
+	since := watchNow.Add(-time.Hour).UTC().Format(time.RFC3339)
+	bad := `{"version":99,"counters":{"degraded":1},"firing":{"health":{"since":"` + since + `","lastSent":"0001-01-01T00:00:00Z","value":"/health answered 502"}}}`
+	if err := os.MkdirAll(filepath.Dir(r.state), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(r.state, []byte(bad), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	texts := r.step(0)
+	if len(texts) != 1 || !strings.Contains(texts[0], "RESOLVED health on aml-test (after 1h0m0s, alert not delivered)") {
+		t.Fatalf("%q\n%s", texts, r.logs)
+	}
+	aside, err := filepath.Glob(r.state + ".bad-*")
+	if err != nil || len(aside) != 1 {
+		t.Fatal("the bad state was not moved aside:", aside, err)
+	}
+	if raw, err := os.ReadFile(aside[0]); err != nil || string(raw) != bad {
+		t.Fatalf("%s %v", raw, err)
+	}
+	if !strings.Contains(r.logs.String(), "moved it aside") || !strings.Contains(r.logs.String(), "kept=1") {
+		t.Fatal(r.logs.String())
+	}
+	if got := r.firing(); len(got) != 0 {
+		t.Fatal("the resolution, delivered, is still owed:", got)
+	}
+	// A file that does not parse keeps nothing, and goes aside too.
+	if err := os.WriteFile(r.state, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r.logs.Reset()
+	if texts := r.step(time.Minute); len(texts) != 0 || !strings.Contains(r.logs.String(), "kept=0") {
+		t.Fatalf("%q\n%s", texts, r.logs)
+	}
+	if aside, err = filepath.Glob(r.state + ".bad-*"); err != nil || len(aside) != 2 {
+		t.Fatal(aside, err)
+	}
+}
+
+// Parked T15-f (final review): a Telegram answer cut short, by the
+// watcher's 64 KiB bound on what it reads or by a connection that ends
+// mid-body, does not parse, so the message is not taken as delivered: it
+// stays owed, and the next run sends it again.
+func TestWatchTelegramAnswerCutShortIsNoDelivery(t *testing.T) {
+	for name, body := range map[string]string{
+		"past the bound": `{"ok":true,"result":{"text":"` + strings.Repeat("a", watchAnswerLimit+1) + `"}}`,
+		"cut mid-body":   `{"ok":true,"result":{"message_id":7`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			r := newTelegramRig(t)
+			r.stack.configure(func(s *watchStack) { s.hookBody, s.healthCode = body, http.StatusBadGateway })
+			texts, err := r.stepErr(0)
+			if len(texts) != 1 || err == nil || !strings.Contains(err.Error(), `the webhook answered HTTP 200 without "ok":true`) {
+				t.Fatalf("%d texts, %v", len(texts), err)
+			}
+			if got := r.firing(); len(got) != 1 || got["health"] {
+				t.Fatal("the message is not kept as unsent:", got)
+			}
+		})
 	}
 }
