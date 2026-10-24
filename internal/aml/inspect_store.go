@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"net/http"
 	"net/url"
+	"runtime/debug"
 	"slices"
 	"strconv"
 	"time"
@@ -50,6 +51,23 @@ func (i *Inspector) closeStore(s *readStore) error {
 	s.store.Close()
 	i.open.Add(-1)
 	return err
+}
+
+// readFrom opens the store with key as a reader, runs read on it, and closes
+// it, checking that what it read stands (closeStore); a panic in read is its
+// error. A missing store is an error wrapping fs.ErrNotExist.
+func (i *Inspector) readFrom(key string, read func(*readStore) error) (err error) {
+	s, err := i.openStore(key)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if value := recover(); value != nil {
+			err = fmt.Errorf("panic: %v\n%s", value, debug.Stack())
+		}
+		err = errors.Join(err, i.closeStore(s))
+	}()
+	return read(s)
 }
 
 // storeFailure answers a store that could not be read: 404 store_not_found
