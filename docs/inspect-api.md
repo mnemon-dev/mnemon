@@ -42,7 +42,7 @@ The rules are aml-serve's admin listener's ([Admin API](admin-api.md)):
 - `--listen` takes an IP address literal and a port. A loopback address needs no token; a private
   one (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, `fc00::/7`) needs `--token-env`; every other
   address is refused at startup, token or not.
-- `--token-env NAME` names the variable holding the bearer token, at least 32 characters.
+- `--token-env NAME` names the variable holding the bearer token, at least 32 bytes.
 - In the memory cloud the service listens on the instance's overlay address at the slot's admin
   port + 1: 8092 on a dedicated host, 8102 + 10 × the slot on a shared one.
 
@@ -62,7 +62,7 @@ never logged or answered.
 | `GET /v1/stores/{key}/records` page | `limit` 1–200, default 50 |
 | `GET /v1/stores/{key}/memory` page | `limit` 1–200, default 50 |
 | pending record ids | the first 100 |
-| a lookup's `{id}` (`/records/{id}`, `/memory/{section}/{id}`) | 1–256 bytes, decoded, no control character |
+| a lookup's `{id}` (`/records/{id}`, `/memory/{section}/{id}`) | 1–32,768 bytes, decoded, no control character |
 | `POST /v1/search` `top_k` | 1–100; default the View's `maxItems` (100 in the shipped configuration) |
 | `POST /v1/search` `query` | 1–12,000 bytes, not blank |
 | trace excerpts | 200 characters |
@@ -165,6 +165,12 @@ The data root's stores, sorted by key.
 malformed `after` or `limit` is `400 invalid` with `field` `after` or `limit`. Stores created
 between two pages appear in a later page if their key sorts after the cursor.
 
+**How fresh a row is.** `bytes` and `modified` are read on every request. A row's `records` and
+`consolidation` cost a read of the store, so a row is counted at most once in 60 seconds while the
+store's files are unchanged (their sizes and newest modification time): `records` and
+`consolidation` may be up to 60 s old, and are counted again as soon as the files change. A
+row with an `error` is never kept: the next page asks again.
+
 ### `POST /v1/resolve`
 
 ```json
@@ -219,8 +225,8 @@ One record, by the id a `result` item, a trace or a memory item's `records` name
 ```
 
 - `record` is the very object `/records` lists for that record: the same fields and bytes.
-- `{id}` is the record's id as one path segment, URL-encoded. Decoded, it is 1–256 bytes with
-  no control character, else `400 invalid` (`field` `id`).
+- `{id}` is the record's id as one path segment, URL-encoded. Decoded, it is 1–32,768 bytes
+  with no control character, else `400 invalid` (`field` `id`).
 - A store with no such record among those `/records` lists (an unknown id, or a document that
   records are cut from) is `404 record_not_found`; an unknown store is `404 store_not_found`.
 - To show the record in its context, page `/records` with `after` = its `seq` − 1: the page
@@ -288,8 +294,10 @@ candidate names.
 - `{section}` is `threads`, `events`, `facts` or `directives`, else `400 invalid`
   (`field` `section`).
 - `{id}` is the item's `id` as one path segment, URL-encoded: a fact's key holds spaces and
-  `·` (`pet%20%C2%B7%20name`). Decoded, it is 1–256 bytes with no control character, else
-  `400 invalid` (`field` `id`).
+  `·` (`pet%20%C2%B7%20name`). Decoded, it is 1–32,768 bytes with no control character (a key
+  is written by the consolidation's model and can be as long as its reply, so a long key is
+  found), else `400 invalid` (`field` `id`). A client or proxy that caps URLs lower cannot send
+  the longest.
 - A section with no item of that id is `404 item_not_found`, an id of another section
   included (`events/T1`); an unknown store is `404 store_not_found`.
 - To show the item in its context, page `/memory` with its `section` and `after` = its
@@ -356,7 +364,11 @@ neither, is `field` `key`); an unknown store is `404 store_not_found`.
   changed while the search read it, or SQLite was busy, once its read (the model calls) had
   run: nothing it read is answered, but what the read cost is. `trace` is null when its
   stages could not be built, or `trace` was `false`. A search that meets the same before its
-  read (and any lexical one) answers `{"error":"store_busy"}` alone.
+  read (and any lexical one) answers `{"error":"store_busy"}` alone;
+- `500 {"error":"internal","trace":[…],"usage":{…}}` when a failure retrying will not help (a
+  damaged store, say) comes after the read had run: what the read cost is answered, as for
+  `store_busy`, and `trace` is null unless the request asked for it and its stages could be built.
+  A failure before the read answers `{"error":"internal"}` alone.
 
 A read in which a stage fell back answers 200 and names the stages in `degraded`. A client that
 closes its connection cancels its full search: the search's model calls stop, and it is not
@@ -497,10 +509,17 @@ The View as `result` shows it, item by item.
 | 405 | `method_not_allowed` | another method on a route |
 | 409 | `full_disabled` | a full search while `modes.full` is false |
 | 413 | `too_large` | a body over 65,536 bytes |
-| 500 | `internal` | a failure retrying will not help (for example a damaged store) |
+| 500 | `internal` | a failure retrying will not help (for example a damaged store); after a full search's read, with its `trace` and `usage` |
 | 502 | `provider_failed` | a full search whose read failed; `result` (the raw ranking), partial `trace` and `usage` |
 | 503 | `busy` | `--max-concurrent` requests are reading, or the service is stopping; `Retry-After` says when to retry |
 | 503 | `store_busy` | the store changed while it was read without a write-ahead log, SQLite was busy, or a writer's crash left a journal its writer must roll back first; `Retry-After`. A full search whose read had run adds its `trace` and `usage` |
+
+**Retrying `store_busy`.** A `503 store_busy` that comes from a store changing under a read, or
+from SQLite being busy, passes in a moment. One that comes from a crash is different: a writer
+that died left a journal in the store's `memory-index.db`, and only the next time aml-serve opens
+the store does it roll the journal back, which for a user with no activity can be long; inspect
+never writes, so it cannot. The console therefore caps its retries of `store_busy` (3, say, spaced
+by `Retry-After`) and then shows "store recovering" for that store instead of retrying for ever.
 
 ## Side effects: none, by construction
 

@@ -202,8 +202,9 @@ validation), the failure counts toward a linking rule of the batch's own, with t
 rule's thresholds but counters apart from its extraction's (`linkErrors` and
 `firstLinkError` in the state): after three such jobs, the first at least ten minutes
 earlier, a job in which JEV fails it again links the batch without JEV as above, from its
-whole extraction (the one kept, else extracted as usual, never in drop mode), so nothing is
-split or dropped, and the counters reset. The result's `deferred` counts the batch so left
+whole extraction (the one kept, else extracted as usual, in drop mode only if its extraction
+rule is independently due), so the link fallback itself splits and drops nothing, and the
+counters reset. The result's `deferred` counts the batch so left
 pending. The job keeps the extractions of the batches it leaves pending, letting those
 still running end first, in memory (per agent, up to 64 batches), and the job that links
 them uses them without asking the consolidator again; another process, or a job without
@@ -529,7 +530,8 @@ encoded without HTML escaping. A request times out after the model's `timeoutSec
 a memory CLI/RPC request has a five-minute deadline. A call retries transport failures,
 timeouts and HTTP 408, 425, 429, 500, 502, 503, 504, 524 and 529 with jittered exponential
 backoff, waiting at least the endpoint's `Retry-After` and never into the caller's deadline,
-within a retry budget of 20% of the provider's calls over a minute (at least 5 a second). A
+within a retry budget of 20% of the provider's calls over a minute, and always 5 retries
+starting in any second (a retry is taken from the budget when it starts, after its wait). A
 200 reply that does not parse or validate is retried once. A 401, 402 or 403 (a refused
 key or balance) is not retried. A 429 is throttling, not a failure: when it names no wait
 (no `Retry-After`, or one of 0, an invalid value or a past date), a read or a Search's
@@ -567,8 +569,12 @@ tokens; OpenAI: its prices, four body bytes a token), so a body of at most 48,00
 with the default limits reserves the flat amount. Successful metered calls settle usage
 (an OpenAI call that costs more than its reservation is recorded at its metered price).
 A call that never connected, or that the endpoint refused with a non-2xx status, cost
-nothing: its reservation is released and recorded at 0. A call that failed after sending,
-or whose reply is unreadable, may have been billed and retains its reservation. Missing
+nothing: its reservation is released and recorded at 0. A call that failed or was cut after
+sending, or whose reply is unreadable or carries no metering, may have been billed: its
+reservation settles at its input estimate (the request's input tokens at the input price, no
+output), which the budget records with the reservation. A process that dies with calls in
+flight leaves their reservations held; the AML services (`aml-serve`, `aml-inspect`) settle
+them at those estimates when they next start, and log it. Missing
 probabilities and missing paid metering fail explicitly. DeepSeek usage is conservatively accounted at peak non-cache rates,
 rather than claiming an exact invoice amount.
 

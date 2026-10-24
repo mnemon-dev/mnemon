@@ -168,7 +168,8 @@ nears its `MemoryMax=`, rather than be killed there.
 
 The hosts' public addresses are in the memory cloud design. The hosts share no private
 network: the WireGuard overlay below is it. A dedicated host needs at least 8 vCPU, 32 GB and
-200 GB (16 open stores of up to about 744 MB each); the eval host is larger.
+200 GB (16 open stores of up to about 744 MB each, measured on 2026-10-24); the eval host is
+larger.
 
 Bring-up drills come before go-live, as the only place where the templates, the drop-ins,
 `handle_path`, WireGuard and the firewall meet a real systemd and Caddy:
@@ -217,9 +218,11 @@ ping -c 3 10.77.0.1
 The overlay address is the `--admin-ip` of every instance on the host: the admin listener
 binds it, which aml-serve accepts because it is private (10/8) and the instance has an admin
 token ([`docs/admin-api.md`](admin-api.md)). `aml-serve@.service` starts after
-`wg-quick@wg0.service`. An instance that starts while `wg0` is down cannot bind its admin
-listener, exits, and restarts every 5 seconds until the address is there (troubleshooting,
-below).
+`wg-quick@wg0.service` and wants it, but does not require it: the data plane never depends on
+the overlay. An instance that starts while `wg0` is down cannot bind its admin listener. It
+logs that once, serves its public listener all the same, and binds the admin listener again
+every 5 seconds until the address is there; meanwhile the console cannot read it and the
+watcher's `ready` alert fires (troubleshooting, below).
 
 ## Firewall
 
@@ -351,8 +354,9 @@ mnemon-instance new beta-alice --layout shared --public-url https://beta.<domain
    done, it removes what it wrote;
 5. runs `systemctl daemon-reload`, `systemctl enable --now aml-serve@<n>.service`, waits up to
    120 s for `/ready`, enables `aml-watch@<n>.timer`, reloads Caddy (shared; if Caddy refuses
-   the new route, the snippet is removed again, so that the host's Caddyfile stays valid), and
-   runs `mnemon-preflight <n>`;
+   the new route, the snippet is removed again, so that the host's Caddyfile stays valid, and
+   `new` says to fix the Caddyfile and run `mnemon-instance resume <n>`, which writes the route
+   again), and runs `mnemon-preflight <n>`;
 6. prints, once, the base URL, the API key, the admin URL `http://<admin-ip>:<port>`, the admin
    token, and the registration JSON for the console:
 
@@ -427,8 +431,11 @@ instance is suspended. `suspend` may be run again; it does the same again.
 (shared), record `AML_STATUS=active` and enable the watcher's timer. If the instance is not
 ready within 120 s, or Caddy refuses the route, `resume` stops and disables `aml-serve@<n>`
 again and exits 1: the instance stays fully suspended (its route answers 403, its watcher is
-off). `resume` of an instance that is not suspended never stops it. The watcher's next run
-reports the restart (`restart`, resolved 10 minutes later).
+off). `resume` of an instance that is not suspended never stops it. Nor does it stop one that
+is back (ready, and on a shared host its route restored): if recording the status or enabling the
+watcher's timer then fails (or it is interrupted), the instance serves, `resume` exits 1 and says
+which steps are left, and running `mnemon-instance resume <n>` again finishes them. The watcher's next run reports the
+restart (`restart`, resolved 10 minutes later).
 
 ### `rotate-key`
 
@@ -532,12 +539,14 @@ reads the env files with `grep` (never sourcing them), and checks:
 - `wg0` is up and carries the address of `AML_ADMIN_LISTEN`;
 - ufw is active, denies incoming by default, and has the rules of "Firewall", and no rule lets
   anyone reach 51820/udp or an admin port (8091 to 8600/tcp), over IPv4 or IPv6, on any
-  interface, by one port, a range or a list: each such rule is a `FAIL` line that names it.
+  interface, by one port, a range or a list, or by all of tcp or all of udp: each such rule is
+  a `FAIL` line that names it.
 
 Every check runs; each failure prints one line that starts with `FAIL`, and the exit status is
 1 if any failed. It never prints a secret: the admin and inspect tokens reach curl only as a
-config on its standard input, never as an argument. It needs `curl` and `jq`, and says so if they are
-missing.
+config on its standard input, never as an argument, and a wrong `AML_ALERT_KIND` is named only
+when it is a short lowercase word (what was pasted there by mistake may be the webhook). It needs
+`curl` and `jq`, and says so if they are missing.
 
 ## Configuration
 
@@ -557,7 +566,7 @@ comments, so the notes are here:
 | `judge` | `jev` / `jev-1.13.0` | The version is pinned; the endpoint is JEV's official one. It judges the reads and, in layered mode, links the consolidation items, so its budget pays for both. |
 | `consolidator` | DeepSeek Flash, no thinking, `timeoutSeconds` 600 | Each extraction asks for at most 8,192 output tokens whatever `maxTokens` says. A background job's extraction may run 600 s (`timeoutSeconds`, 1–1,800; models without it time out after 90 s). A Search's flush gives each extraction attempt at most 180 s, then retries it: about 10× a typical extraction of about 1,900 output tokens, which DeepSeek Flash returned in 15–17 s (about 110 tokens/s) from the evaluation host on 2026-10-24. In that measurement DeepSeek sent nothing until its reply was complete, so these caps are what bound the wait. Once a reply's headers have come, an attempt of any class whose body then sends nothing for 60 s is cut and retried (`the reply stopped sending`); the blank lines DeepSeek documents sending while a request waits under load are bytes, and keep it going. Unset, the planner would extract. |
 | `budgetFile` | `/var/lib/mnemon-aml/<n>/model-budget.db` | Absolute, private (0600), one per instance, shared by all users of the instance. Two profiles with different caps on one file would overwrite each other's stored cap. |
-| `budgets` | evaluation `{"jev": 60, "deepseek": 600}`, beta `{"jev": 3, "deepseek": 30}` | **Hard caps on spending**, in USD for `jev` and `openai` and CNY for `deepseek`: check them before a job. When a cap is reached the model calls stop (see Troubleshooting). Every call holds a reservation while it runs: USD 0.01 for JEV, CNY 0.25 for DeepSeek, more for a large fold (up to about CNY 0.46 for the largest request). A call that never connected or got a non-2xx answer releases it; a reply settles it at its metered usage; a call that failed or was cut after sending, or whose reply is unreadable or carries no metering, settles it at its input estimate (its request's input tokens at the input price, no output). Only calls in flight hold it, so the usable headroom is a little below the cap while they run. The configured value replaces the stored cap when the service starts; the amount already spent is kept. The `openai` cap is a soft one: a call that costs more than its reservation is recorded at its real price. |
+| `budgets` | evaluation `{"jev": 60, "deepseek": 600}`, beta `{"jev": 3, "deepseek": 30}` | **Hard caps on spending**, in USD for `jev` and `openai` and CNY for `deepseek`: check them before a job. When a cap is reached the model calls stop (see Troubleshooting). Every call holds a reservation while it runs: USD 0.01 for JEV, CNY 0.25 for DeepSeek, more for a large fold (up to about CNY 0.46 for the largest request). A call that never connected or got a non-2xx answer releases it; a reply settles it at its metered usage; a call that failed or was cut after sending, or whose reply is unreadable or carries no metering, settles it at its input estimate (its request's input tokens at the input price, no output). Only calls in flight hold it, so the usable headroom is a little below the cap while they run; a process that died with calls in flight leaves their reservations held until the next start, which settles them at their input estimates. The configured value replaces the stored cap when the service starts; the amount already spent is kept. The `openai` cap is a soft one: a call that costs more than its reservation is recorded at its real price. |
 
 A Search can make several planner calls and up to 128 JEV decision calls (the read budget).
 Layered consolidation makes one DeepSeek extraction call per batch (more when a reply must
@@ -566,7 +575,8 @@ calls per batch: one question per candidate for each new topic (up to 8 stored t
 two per candidate for each new fact (up to 8 stored facts), packed 128 questions to a call.
 Both happen in the background workers and before a user's next Search, so the `jev` cap pays
 for consolidation as well as for Searches. Estimate a job's spend from a trial run on a
-scratch instance (`mnemon-preflight` prints the budgets) before choosing the caps.
+scratch instance (`mnemon-preflight` prints the budgets) before choosing a beta instance's
+caps. The evaluation caps are fixed at 600/60: DeepSeek CNY 600 and JEV USD 60.
 
 ## Background consolidation
 
@@ -575,7 +585,10 @@ scratch instance (`mnemon-preflight` prints the budgets) before choosing the cap
   (`--consolidation-workers`, `AML_WORKERS`) fold the full batches, one job per user at a time.
 - **Bounded lag.** An Add waits while its user's backlog is above the lag bound, one job's
   window: 160,000 characters with the shipped configuration (16 batches of 10,000), the
-  `lagBound` of `/admin/status`. It keeps its admission slot while it waits, so declare the AML
+  `lagBound` of `/admin/status`. The scheduler knows a user's backlog from the user's first
+  job or first Add since the process started: that Add measures it once, after its write
+  (reading only), and later Adds add what they write; characters are UTF-16 units, as a job
+  counts them. It keeps its admission slot while it waits, so declare the AML
   concurrency at or below `--max-concurrent-adds` and `--max-concurrent-searches`. An Add waits
   at most until 25 minutes after it arrived; then it answers 200 all the same (its records are
   stored and searchable), counted in `addOutran` and logged as `add outran consolidation`.
@@ -592,23 +605,30 @@ scratch instance (`mnemon-preflight` prints the budgets) before choosing the cap
 - **The drop rule** is about extraction: when the provider fails three times on the same batch
   over at least ten minutes (not counting a spent budget), the next attempt splits it once and
   leaves a half that fails again out of the index (`consolidation dropped …`); the records stay
-  searchable. A failed job backs off, from 30 s doubling up to 10 minutes; a job stopped by the
-  budget reserve pauses for 10 minutes.
+  searchable. A failed job backs off from 30 s, doubling with each failure in a row, to at most
+  8 to 10 minutes (every wait is jittered, the cap too, so that users that keep failing do not
+  retry in step); a job stopped by the budget reserve pauses for 10 minutes.
 - **Insights (L2) are refused** in background mode: `consolidation.insights` fails the startup.
 - **Two-phase shutdown.** On SIGTERM the public listener closes and the scheduler drains: no
   job starts, no Add waits for it. Requests in flight and running jobs have 30 s together;
   then the requests still running are canceled (they answer 503, which the platform retries
   with the same `request_id`) and the jobs still running are cut (their saved batches stay,
   and they resume after a restart); the canceled requests have 5 s more. The stores and models
-  close within the same 35 s, inside `TimeoutStopSec=60`. A model call cut by a stop settles
-  at its input estimate; only a request still in flight when the process exits (an abandoned
-  attempt running on to its hard timeout) keeps its reservation held for good; check `held`
-  (`mnemon-preflight` prints it) and raise the cap by that much if the headroom gets tight.
+  close within the same 35 s. At its end the model requests still in flight (an attempt
+  abandoned past its timeout runs on to its hard timeout) are cut: each settles its budget
+  reservation at its input estimate, or releases it if the request was not sent, within 5 s
+  more. The whole shutdown is 30 + 5 + 5 s, 40 s, inside `TimeoutStopSec=60`, and leaves nothing
+  held. A shutdown that had to cancel or cut anything exits 1, and says what ("Logs").
+  Only a crash, or a settlement that did not finish within those last 5 s, leaves reservations
+  held; the next start settles them at their input estimates and logs it (`settled N budget
+  reservations a previous process left held`), so that `held` is 0 again with nothing for you to
+  do. (`mnemon-preflight` prints `held`.)
 - **One `aml-serve` per data root.** It takes an exclusive lock on `<data-root>/.aml-serve.lock`
   and refuses to run while another process holds it.
 - **`--max-open-stores`.** Every open user store keeps its query cache, which holds the
   records it searches: a BEAM-10M-scale user (about 98,500 records) holds about 744 MB when
-  its store is open, measured with BM25 only. Set the limit to the memory you can spare
+  its store is open, measured on 2026-10-24 with BM25 only, before the planned leaner query
+  snapshot (not built yet), which would lower it. Set the limit to the memory you can spare
   divided by the largest user: 16 on the evaluation host, 2 for a 1 GB beta instance, and 64
   (the command's default) only for small users (LoCoMo-scale users hold a few hundred chunks).
   A store that is in use is never closed, so more distinct users in flight than the limit use
@@ -637,10 +657,14 @@ scratch instance (`mnemon-preflight` prints the budgets) before choosing the cap
 
 `aml-serve@.service`:
 
-- `Type=notify` and `NotifyAccess=main`: `READY=1` once both listeners are bound and the
+- `Type=notify` and `NotifyAccess=main`: `READY=1` once the public listener is bound and the
   background work runs (its startup scan queued every user, its heartbeat ticks); `STOPPING=1`
-  when the shutdown starts. There is no "ready" log line: `systemctl status` shows the instance
-  `active (running)`.
+  when the shutdown starts. An admin address that cannot be bound yet (`wg0` down) does not hold
+  `READY=1` back: the admin listener is bound later, and the log says when. There is no "ready"
+  log line: `systemctl status` shows the instance `active (running)`.
+- `After=` and `Wants=` `wg-quick@wg0.service` and `network-online.target`, and no `Requires=`:
+  the instance starts after the overlay and asks for it, and neither a missing overlay nor a
+  stopped one stops it.
 - `WatchdogSec=60`: aml-serve pings every half interval while its liveness probe passes (the
   in-process `/health` answers 200, the background work's heartbeat ticked within the interval,
   and the budget file answers); systemd restarts an instance whose pings stop. aml-serve refuses
@@ -648,7 +672,8 @@ scratch instance (`mnemon-preflight` prints the budgets) before choosing the cap
   a dead process; `/ready` reports those.
 - `Restart=always`, `RestartSec=5`, and `StartLimitIntervalSec=0` in `[Unit]`, so a crash loop
   keeps retrying every 5 s.
-- `TimeoutStopSec=60`, which outlasts the 35 s shutdown.
+- `TimeoutStopSec=60`, which outlasts the 40 s shutdown (30 s, 5 s, and 5 s for the model
+  requests that were cut to settle).
 - `StateDirectory=mnemon-aml/%i` (0700), `User=mnemon`, `LimitNOFILE=65536`, and sandboxing
   (`ProtectSystem=strict`, `PrivateTmp`, `PrivateDevices`, `NoNewPrivileges` and the like).
 - `MemoryMax=` and `CPUQuota=` come from the instance's drop-in. `systemctl show
@@ -665,7 +690,10 @@ aml-serve: it must run, and alert, while aml-serve is down. `aml-watch@.timer` r
 Each instance's admin listener binds its overlay address with a token
 ([`docs/admin-api.md`](admin-api.md) has the address rules, the authentication and every
 route). The console, Prometheus (through the console) and the watcher read it; nothing on the
-internet reaches it. Read it by hand on the host without putting the token on a command line:
+internet reaches it. The admin token is a secret of its own, at least 32 bytes: `--admin-token-env`
+must name another variable than `--auth-key-env` (the unit passes `MNEMON_ADMIN_TOKEN` and
+`AML_API_KEY`), or startup is refused. Read it by hand on the host without putting the token on a
+command line:
 
 ```sh
 n=beta-alice
@@ -756,6 +784,15 @@ operator decides otherwise after checking the submission's rules.
   is never opened, the model cache is off, and the service has no metrics. Lexical searches,
   the default, call no model and cost nothing: they are the raw ranking aml-serve answers a
   degraded Search with, byte for byte.
+- The debug budget has one writer. While it runs, aml-inspect holds
+  `/var/lib/mnemon-aml-inspect/<n>/debug-budget.db.lock` beside it, and a second aml-inspect on
+  the same debug budget refuses to start (`another aml-inspect holds …`). Whatever a previous
+  run left held there (a crash, or a stop past its windows) is settled at its input estimates
+  when the service starts, and logged once as `settled N budget reservations a previous process
+  left held, at their input estimates: …`.
+- Its shutdown has aml-serve's phases: the requests in flight have 30 s, those canceled then 5 s more,
+  and the model requests of a full search that still run are cut and settle in the debug budget
+  within 5 s more. That is 30 + 5 + 5 s, inside the unit's `TimeoutStopSec=45`.
 - It runs at a low priority within small limits: `Nice=10`, `IOSchedulingClass=best-effort`
   at `IOSchedulingPriority=7` (the lowest), `MemoryMax=1G` (and `GOMEMLIMIT=819MiB`),
   `CPUQuota=100%`, two requests reading stores at once (`--max-concurrent`). Not the idle
@@ -796,7 +833,9 @@ refuses to run while inspect is on already.
 dedicated host, 8102 + 10 × the slot on a shared one. That is inside the firewall's rule for
 8091 to 8600 from the hub on `wg0`: no firewall change. Its rules are the admin listener's
 (loopback without a token, a private address only with one), and every request, `/healthz`
-included, carries `Authorization: Bearer <inspect token>`.
+included, carries `Authorization: Bearer <inspect token>`. Unlike aml-serve it has no data plane
+to keep serving: with `wg0` down it cannot bind, exits, and systemd restarts it every 5 s until
+the address is there.
 
 **Turn it off.** `mnemon-instance inspect disable beta-alice` stops and disables the unit and
 removes `inspect.env` and the inspect state, the debug budget with it; remove the URL and the
@@ -811,22 +850,29 @@ and `inspect disable` then `inspect enable` with higher caps starts a new one.
 answer carries the raw ranking `/search` would have given, and what the read did.
 `503 store_busy`: the store changed under the search (aml-serve opened it and wrote), SQLite was
 busy, or a crash left a journal aml-serve rolls back when it next opens the index; the console
-retries, and a full search's answer still carries what it cost. Closing the connection cancels a
-full search.
+retries, and a full search's answer still carries what it cost. An inactive user's store with a
+journal like that stays busy until aml-serve opens it again, which can be long: the console
+caps its retries (3, say) and shows "store recovering" after them. Closing the connection
+cancels a full search.
 
 ## Logs
 
 The instance logs to the journal: `journalctl -u aml-serve@<n> -f`. The template passes
-`--log-format json`, one JSON object per line (`time`, `level`, `msg`, and `request_id` on the
-lines of a request); `--log-format text` writes the same as `key=value` text. The `msg` keeps
-the wordings below. One line per Add and Search (`POST /search 200 83ms`); health checks are not
-logged. Request bodies and user ids are never logged; a user appears as the first eight hex
-digits of its store hash, `(user xxxxxxxx)`.
+`--log-format json`, one JSON object per line (`time`, `level`, `msg`; every line of a request
+carries its `request_id`, and its `user` once the request has named one); `--log-format text`
+writes the same as `key=value` text. The `msg` keeps the wordings below. One line per Add and
+Search (`POST /search 200 83ms`, with the request's `request_id` and `user`); health checks are
+not logged. Request bodies and user ids are never logged; a user appears as the first eight hex
+digits of its store hash, `(user xxxxxxxx)` in a message and `user` beside the `request_id` of
+a request's lines. A request that never named a user (a bad body, an unknown path) has none.
 
 | Line | Meaning |
 |---|---|
 | `aml-serve listening on 127.0.0.1:8100`, `aml-serve admin listening on 10.77.0.3:8101` | Startup: the listeners are bound. `READY=1` follows once the background work runs. |
-| `POST /add 200 41ms` | One line per request, with `request_id`. |
+| `aml-serve: --admin-listen: listen tcp 10.77.0.3:8101: bind: cannot assign requested address; serving without the admin listener and binding it again every 5s` | WARN, once: the admin address could not be bound (`wg0` is not up). The instance serves its public listener, and `aml-serve admin listening on …` follows when the retry, every 5 s and quiet, succeeds. |
+| `settled N budget reservations a previous process left held, at their input estimates: deepseek 2 (held 0.5000, settled 0.0030), jev 1 (held 0.0100, settled 0.0000)` | WARN, at start, in aml-serve (the instance's budget) and in aml-inspect (its debug budget): a crash, or a stop past its windows, left model requests' reservations held, and this start settled them by kind (the reservations, what they held and what they settled at, in each account's currency). Nothing held: no line. |
+| `aml-serve: settling what the budget file holds: <error>; it stays held until a start settles it` | ERROR, at start (aml-inspect: `settling what the debug budget holds: …`): the settlement failed; the reservations stay held, and the next start tries again. |
+| `POST /add 200 41ms` | One line per request, with `request_id`, and `user` once the request named one. |
 | `add shed: no free slot within 30s (limit 4)`, `search shed: …` | A request found no free slot for 30 s and got 503 with `Retry-After`. |
 | `degraded search N (user xxxxxxxx): <error>` | Search could not use the models and answered with the raw BM25 ranking (HTTP 200). `N` counts degraded searches since the process started. `context deadline exceeded` means the read ran past `--search-timeout`. |
 | `degraded search kept rank order (user xxxxxxxx): <error>` | A degraded Search could not read the write positions of its records (a store error), so it delivered the raw ranking in rank order instead of time order. |
@@ -834,9 +880,11 @@ digits of its store hash, `(user xxxxxxxx)`.
 | `status: adds A, searches S, degraded D, partially degraded P; budget deepseek spent … held … cap …, jev …` | Every 10 minutes: the Adds and Searches answered since the start, the degraded ones, and each budget account in use. |
 | `records query preparation: … (user xxxxxxxx)` | A user's store failed to build its words index or its query snapshot in the background (5 minutes at most); a later write, or the store's next opening, tries again. |
 | `add outran consolidation (user …)` | An Add waited out its 25-minute window at the lag bound and answered 200; its records are stored and searchable. |
-| `consolidation retries in 1m0s (user …)` | A background job failed; the user backs off (30 s doubling to 10 minutes). |
+| `consolidation backlog unreadable (user …): <error>` | WARN: the first Add of a user since the start could not measure the user's backlog (a store read failed); the lag bound holds from the user's first job instead. |
+| `consolidation retries in 1m0s (user …)` | A background job failed; the user backs off (30 s doubling, to at most 8 to 10 minutes, jittered). |
 | `consolidation paused: budget reserve (user …)` | The budget's reserve stopped a background job; it pauses for 10 minutes. |
-| `consolidation queue full: N users have work; dropped a notification (user …)` | The scheduler tracks at most 100,000 users with work; the user's next Add or Search picks the work up. Logged at most once a minute. |
+| `consolidation queue full: N users have work; dropped a notification (user …)` | The scheduler tracks at most 100,000 users with work; the user's next Add or Search picks the work up. Logged at most once a minute, on the line of the request that found it full (its `request_id` and `user`). |
+| `pack failed`, `open store failed`, `write failed (user …)`, `degraded search failed (user …)`: `<error>` | An Add failed (`pack`, `open store`, `write`), or the raw ranking a degraded Search falls back to did. WARN, with a 503 the platform retries, when a retry can pass (the shutdown, a cancellation or deadline, a busy or locked store, a write conflict, too many open files); else ERROR, with a 500. |
 | `consolidation failed (user …): <error>`, `flush failed (user …): <error>` | A job, or the fold before a Search, failed; the records are searchable, and the next job or request retries. |
 | `consolidation linked N batches without JEV (user …)` | Layered consolidation linked N batches without JEV because its calls failed or the `jev` budget is spent: their topics and facts started new ones instead of continuing stored ones. Nothing is dropped. |
 | `consolidation dropped N records (user …): <reason>` | The index leaves out N records whose fold the provider refused or timed out on for at least 10 minutes, whose fold request was too large, or whose reply never parsed. Outages, rate limits (429), 5xx and credential or balance refusals (401/402/403) never drop records. The records stay searchable. |
@@ -847,9 +895,10 @@ digits of its store hash, `(user xxxxxxxx)`.
 | `aml-serve: shutting down` | SIGTERM or SIGINT: the shutdown starts. |
 | `aml-serve: <component>: <error>; shutting down` | A component failed (a listener, the background work): the process shuts down and systemd restarts it. |
 | `aml-serve: the 30s grace has ended with <jobs>; cutting them: their saved batches stay, and they resume after a restart` | Consolidation jobs still ran at the end of the grace. |
-| `aml-serve: the 30s grace has ended with requests still running; canceling them` | Requests still ran at the end of the grace; they answer 503. |
+| `aml-serve: the 30s grace has ended with 3 requests still running; canceling them` | Requests still ran at the end of the grace (the count says how many); they answer 503. The command then exits 1: `canceled at the end of the 30s grace: 3 requests still running`. |
 | `aml-serve: requests still running 5s after they were canceled; closing their connections` | The canceled requests did not end. |
-| `aml-serve: closing the stores and models did not finish by the end of the shutdown; exiting while model requests are in flight: their budget reservations stay held` | The shutdown's end came first. |
+| `aml-serve: deepseek: cut 2 model requests still in flight at the close's deadline: their reservations settled at their input estimates, or were released if they were not sent` | WARN, at the end of the shutdown, one clause per provider (`; jev: cut …`): model requests still running (abandoned attempts) were cut, and settled or released within 5 s. With a failed settlement it ends `; 1 reservation stays held, their settlement failed: the next start settles them`. |
+| `aml-serve: closing the stores and models did not finish 5s after the end of the shutdown; exiting while model requests settle: their budget reservations stay held until the next start settles them` | ERROR: even the 5 s to settle the cut requests ran out. The process exits; the next start settles the holds (`settled N budget reservations …`). |
 
 A failed aml-serve or aml-watch run writes its error once, as one line, with no usage block:
 `journalctl -u aml-serve@<n> -n 50` shows why an instance would not start.
@@ -859,7 +908,12 @@ The watcher's lines (`journalctl -u aml-watch@<n>`): `aml-watch: posted` (with `
 not posting` (with the message), `aml-watch: another aml-watch run holds the lock; this run does
 nothing`, `aml-watch: could not take the run lock; going on without it`, `aml-watch: the public
 health probe is off because --public-url is empty`, and `aml-watch: the state file is unreadable
-or of another version; starting afresh`.
+or of another version; moved it aside and starting afresh` (with `path`, `aside` and `kept`).
+That last one moves the file to `state.json.bad-<UTC time>` (`state.json.bad-20261025T120301Z`)
+in the watcher's state directory, keeps the alerts it owed messages for when they decode (`kept`
+counts them), so that their resolutions still go out, and goes on with a fresh state; its
+variant `…; starting afresh, and it could not be moved aside` says the file stayed where it
+was, and the run's own save replaces it. Remove the `.bad-` files when you have looked at them.
 
 The instance script's lines (`journalctl -t mnemon-instance`), one per action:
 
@@ -988,9 +1042,11 @@ them from the file.
 
 The capacity table to submit is "Capacity, timeouts and limits" in
 [`deploy/aml/README.md`](../deploy/aml/README.md). Fill it in from measurements on a scratch
-dedicated instance on the evaluation host, never on `eval`, before the submission; do not
-submit the placeholders. The declared concurrency must stay at or below the instance's
-`--max-concurrent-adds` and `--max-concurrent-searches`.
+dedicated instance on the evaluation host, never on `eval`, before the submission. Until then it
+holds the values of the final run on a development machine with fake providers, marked as such
+and not the host's: do not submit them as the host's. The unit limits (16 Adds, 16 Searches)
+stay provisional until that load test. The declared concurrency must stay at or below the
+instance's `--max-concurrent-adds` and `--max-concurrent-searches`.
 
 Measure with the load test, [`scripts/aml/load.sh`](../scripts/aml/README.md), run as root on
 the host against the scratch instance `n`. It reads the API key and the admin token from the
@@ -1021,9 +1077,10 @@ lines in the journal while it runs. Adds return after persistence, but at the la
 wait for the workers, which call DeepSeek (up to four extractions at once per job) and JEV
 (linking): note the rate at which the providers answer `model HTTP 429`.
 
-The values marked "local, fake providers" come from the final verification run,
+The values marked "local machine, fake providers" come from the final verification run,
 `scripts/aml/final.sh` on a quiet development machine: the whole fault drill and both knees of
-one commit, built from its `git archive`, against the fake providers.
+one commit (`bc18487b`, run on 2026-10-25), built from its `git archive`, against the fake
+providers.
 
 ## Health and smoke test
 
@@ -1096,13 +1153,14 @@ scratch instance first if continuous replication is needed.
 | **404** `{"error":"not found"}` from a shared host | No instance has that `/i/<n>` prefix: check the base URL and `mnemon-instance list`. |
 | **413** | The body is over 30 MiB (the platform splits at 20 messages or 2,000 words, so this means a client bug). |
 | **502** or **504** from Caddy | The instance is down for longer than Caddy's 30 s of dialing (`systemctl status aml-serve@<n>`), a dedicated instance is suspended, or a proxy timeout is below the platform's 31 minutes: compare the timeouts with `deploy/aml/Caddyfile.dedicated` or the snippet. |
-| `degraded search …` in the log | The planner, JEV or a budget failed for that question, or the read ran past `--search-timeout`. The platform still got a 200 with the raw ranking. Read the error after the colon: `model HTTP 401` or `model HTTP 403` (a wrong, expired or revoked key) and `model HTTP 402` (an empty balance; DeepSeek says `Insufficient Balance`), which also page as `provider-rejected:<kind>` (below); `model HTTP 429` (the provider's rate limit outlasted the call's retries: up to its `Retry-After`, or without one (or with one of 0, an invalid value or a past date) a jittered floor of at most 2, 4, 8 and 16 s, down by up to a quarter, or the class's backoff when that is longer, as after earlier 5xx retries; 30 s in all per model call; a Search makes many calls, so under a long storm it can wait longer in all, up to its `--search-timeout` for the read and up to its own 10-minute flush window for the flush, and no wait is planned past them); `the provider's retry budget is spent` (the provider's retries, patient ones included, used up their budget: 20% of a minute's calls, at least 5 a second); `model endpoint unreachable` (network or DNS; nothing was sent), `request failed` (network, after sending), `attempt timed out` (an attempt waited past its timeout: 45 s for the planner, 20 s for JEV, 180 s for a flush's extraction), `the reply stopped sending` (a reply sent nothing for 60 s after its headers came), `context deadline exceeded` (the timeout), `spending cap reached` (below). |
+| `degraded search …` in the log | The planner, JEV or a budget failed for that question, or the read ran past `--search-timeout`. The platform still got a 200 with the raw ranking. Read the error after the colon: `model HTTP 401` or `model HTTP 403` (a wrong, expired or revoked key) and `model HTTP 402` (an empty balance; DeepSeek says `Insufficient Balance`), which also page as `provider-rejected:<kind>` (below); `model HTTP 429` (the provider's rate limit outlasted the call's retries: up to its `Retry-After`, or without one (or with one of 0, an invalid value or a past date) a jittered floor of at most 2, 4, 8 and 16 s, down by up to a quarter, or the class's backoff when that is longer, as after earlier 5xx retries; 30 s in all per model call; a Search makes many calls, so under a long storm it can wait longer in all, up to its `--search-timeout` for the read and up to its own 10-minute flush window for the flush, and no wait is planned past them); `the provider's retry budget is spent` (the provider's retries, patient ones included, used up their budget: 20% of a minute's calls, and always 5 retries starting in any second; a retry is taken from the budget when it starts, after its wait); `model endpoint unreachable` (network or DNS; nothing was sent), `request failed` (network, after sending), `attempt timed out` (an attempt waited past its timeout: 45 s for the planner, 20 s for JEV, 180 s for a flush's extraction), `the reply stopped sending` (a reply sent nothing for 60 s after its headers came), `context deadline exceeded` (the timeout), `spending cap reached` (below). |
 | `provider-rejected:<kind>` alert | The provider refuses the instance's requests: 401 or 403, a wrong, expired or revoked key; 402, an empty balance (DeepSeek: `Insufficient Balance`). They are not retried: Searches degrade or partially degrade, and consolidation backs off with its batches pending (no record is dropped). Check the account's balance in the provider's console and top it up: the next call goes through, with no restart. For a new key, put it into `DEEPSEEK_API_KEY=` or `TYPESAFE_API_KEY=` of `/etc/mnemon-aml/<n>/env` (and of `/etc/mnemon-aml/host.env`, which `new` copies from) with an editor, then `systemctl restart aml-serve@<n>`. `mnemon_aml_model_attempts_total{outcome="rejected"}` shows the call classes affected; the alert resolves once no new rejection has been seen for 10 minutes. |
-| `model spending cap reached, including unresolved reservations` | A budget is exhausted. Searches degrade to the raw ranking. A spent DeepSeek budget stops consolidation (a spent budget never drops records from the index). A spent JEV budget does not: layered consolidation goes on, but links without JEV. Raise `budgets` in `/etc/mnemon-aml/<n>/memory-config.json` and `systemctl restart aml-serve@<n>`; spent amounts are kept and the new cap applies at once. Check `spent` and `held` first (`mnemon-preflight <n>`): reservations held by calls in flight, or by requests still in flight when the service last exited, count against the cap. |
+| `model spending cap reached, including unresolved reservations` | A budget is exhausted. Searches degrade to the raw ranking. A spent DeepSeek budget stops consolidation (a spent budget never drops records from the index). A spent JEV budget does not: layered consolidation goes on, but links without JEV. Raise `budgets` in `/etc/mnemon-aml/<n>/memory-config.json` and `systemctl restart aml-serve@<n>`; spent amounts are kept and the new cap applies at once. Check `spent` and `held` first (`mnemon-preflight <n>`): reservations held by calls in flight count against the cap. Those a previous process left held (a crash) are settled at the next start (`settled N budget reservations a previous process left held` in the journal), so a restart clears them; there is nothing to raise the cap by. |
 | Empty or poor plans, many degraded searches with a DeepSeek planner | The planner has `thinking` on. Remove it (`deepseek-flash` without thinking). |
 | `model credential is unavailable` or a startup error naming a credential environment variable | A `keyEnv` variable is empty or absent in `/etc/mnemon-aml/<n>/env`. |
-| `aml-serve@<n>` restarts in a loop | `journalctl -u aml-serve@<n> -n 50`: an unreadable config (`memory-config.json` must be readable by group `mnemon`), `aml-serve requires a nonempty API key in $AML_API_KEY`, `another aml-serve holds …/.aml-serve.lock`, a port in use, or `--admin-listen: listen tcp 10.77.0.3:8101: bind: cannot assign requested address`: `wg0` is down (`systemctl start wg-quick@wg0`; the instance binds once it is up). |
-| The console shows an instance unreachable | From the ops host: `ping 10.77.0.3` (the overlay), then the ufw rule for `wg0` and port 8091:8600 on the instance host, then `mnemon-preflight <n>`. A 401 from the admin listener means the console holds another token than the instance. |
+| `aml-serve@<n>` restarts in a loop | `journalctl -u aml-serve@<n> -n 50`: an unreadable config (`memory-config.json` must be readable by group `mnemon`), `aml-serve requires a nonempty API key in $AML_API_KEY`, `another aml-serve holds …/.aml-serve.lock`, or the public port in use. An admin address that cannot be bound is not one of them: the instance serves without it ("The admin listener is down" below). |
+| The admin listener is down, and the instance serves | The log has `aml-serve: --admin-listen: listen tcp 10.77.0.3:8101: bind: cannot assign requested address; serving without the admin listener and binding it again every 5s`, once: `wg0` is down (`systemctl start wg-quick@wg0`). Searches and Adds are answered meanwhile. The instance binds the admin listener within 5 s of the address coming up and logs `aml-serve admin listening on …`. Until then the console cannot read it, `mnemon-instance new` and `resume` cannot see `/ready`, and the watcher's `ready` alert fires; it resolves by itself. Another bind error (the port in use) behaves the same, and is logged once as well. |
+| The console shows an instance unreachable | From the ops host: `ping 10.77.0.3` (the overlay), then the ufw rule for `wg0` and port 8091:8600 on the instance host, then `mnemon-preflight <n>`, then the journal for a `--admin-listen` line (the instance may be up without its admin listener, above). A 401 from the admin listener means the console holds another token than the instance. |
 | Alerts do not arrive | `journalctl -u aml-watch@<n>`: `not delivered` with the webhook's answer, or `AML_ALERT_WEBHOOK is empty`. Telegram answers `HTTP <status> with error_code <code>`: 400 is mostly a wrong `chat_id`, or a chat where the bot was never started; 401 a wrong token; 403 a bot that was blocked or removed from the group; 429 its rate limit (the next run sends the message again). A Feishu bot with a keyword needs `mnemon-aml`; one with signature verification rejects every message. Run the alert drill. |
 | Memory grows | Lower `AML_MAX_OPEN_STORES` in the engine env and restart; `MemoryMax=` in the drop-in caps the instance (systemd kills it above, and it restarts in 5 s), and `GOMEMLIMIT`, 80% of it, makes the Go runtime collect harder before that. |
 

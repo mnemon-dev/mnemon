@@ -26,14 +26,20 @@ ones (169.254.0.0/16, `fe80::/10`), shared address space (100.64.0.0/10) and eve
 address. So is an address with a zone (`[fe80::1%eth0]:8091`) or without a port. An IPv4 address
 spelled as an IPv6 one (`[::ffff:10.0.0.5]:8091`) is judged as the IPv4 address. A refusal is a
 startup error that names the flag and the rule; the command has not locked the data root or
-opened anything by then.
+opened anything by then. An address that passes the rules but cannot be bound (the overlay
+address before `wg0` is up) is not a startup error: the data plane never depends on the admin
+listener, so the process logs the failure once, serves its public listener, and binds this one
+again every 5 seconds until it can ([runbook](aml-adapter.md), "Private network").
 
 `--admin-token-env NAME` names the environment variable that holds the admin token. It is empty
 by default: no token. When it is set:
 
-- The variable must hold at least 32 characters. If it is unset, empty or shorter, startup fails
-  with an error that names `--admin-token-env` and the variable, never its value. This holds
-  whatever the address, and with no `--admin-listen` at all.
+- The variable must hold at least 32 bytes (not characters: a token of multi-byte characters
+  counts each byte). If it is unset, empty or shorter, startup fails with an error that names
+  `--admin-token-env` and the variable, never its value. This holds whatever the address, and
+  with no `--admin-listen` at all.
+- It must be another variable than the one `--auth-key-env` names (`AML_API_KEY` by default): the
+  admin token and the API key are two secrets. Startup is refused otherwise.
 - Every request to the admin listener must carry the token (below).
 
 Make a token from a source of randomness, for example `openssl rand -hex 32`, and keep it in the
@@ -111,7 +117,8 @@ of `/ready`, `/admin/status` and (when it succeeds) `/admin/v1/stores` are `Cach
 ### `GET /metrics`
 
 The server's own registry, with the Go and process collectors, in Prometheus's text format.
-Every series is named `mnemon_aml_*` and has a `HELP` line. No user, request or path ever labels a
+Every series of the server is named `mnemon_aml_*` and has a `HELP` line; the Go and process
+collectors' (`go_*`, `process_*`) come beside them. No user, request or path ever labels a
 series. Beside the series of the Add and Search paths, the models, the budgets and the
 consolidation queue, it carries these, which the memory cloud console reads:
 
@@ -128,8 +135,9 @@ consolidation queue, it carries these, which the memory cloud console reads:
 reads (below): a scrape makes a new scan only when the latest is older than 60 seconds, and
 shares it with a request that asks at the same time. A scan that fails leaves the two series out
 of that scrape rather than report 0, and the failure is logged once per streak of failures. The
-scrape waits for a scan for 5 seconds at most, so a data root whose scan takes longer is not
-measured here. They carry no store or user label.
+scrape waits for a scan for 5 seconds at most, also when the scan it joined was started by a
+`GET /admin/v1/stores` request (which has no such deadline): it leaves at its own, so a data root
+whose scan takes longer is not measured here. They carry no store or user label.
 
 ### `GET /ready`
 
@@ -169,7 +177,8 @@ A read-only overview of the user stores in the data root, for the console. Query
 - `after`: a cursor, exclusive: the `next` of the previous page. Exactly 32 lowercase hex digits.
 
 A `limit` or `after` that is malformed, an empty one included, is answered
-`400 {"error":"…"}`.
+`400 {"error":"…"}`, and so is a query string whose percent-encoding is malformed (`after=%zz`):
+it is not read as the query without that pair.
 
 ```json
 {
@@ -196,11 +205,12 @@ A `limit` or `after` that is malformed, an empty one included, is answered
   (the directory's own when it holds none), in RFC 3339, UTC, to the second.
 - `open` says the server holds the store open now: a read of the registry of open stores, with
   no I/O. A store that is not open costs nothing until a request needs it.
-- `backlog` is the scheduler's estimate of the characters of the store's records not yet
-  consolidated, the unit of `queue.maxBacklog` and `lagBound`. It is `null` when the scheduler has
-  no estimate: outside `--consolidate background`; before a consolidation job of the user has
-  ended and measured it since the process started; and for a store with nothing pending, which the
-  scheduler stops tracking.
+- `backlog` is the scheduler's estimate of the characters (UTF-16 units, as consolidation counts
+  them) of the store's records not yet consolidated, the unit of `queue.maxBacklog` and
+  `lagBound`. It is known from the user's first Add, or first consolidation job, since the process
+  started: that Add measures the backlog once, after its write, and counts what later Adds write.
+  It is `null` when the scheduler has no estimate: outside `--consolidate background`; before that
+  first Add or job; and for a store with nothing pending, which the scheduler stops tracking.
 - `next` is the last store of the page, as a cursor, to pass back as `after`. It is `null` on the
   last page. A cursor that names no store is where the order resumes, so a store removed
   between two pages does not end the walk.
@@ -208,11 +218,12 @@ A `limit` or `after` that is malformed, an empty one included, is answered
 The scan that makes `bytes` and `modified` lists the directories under `<data-root>/users/` whose
 names are user keys, reads each store's directory and nothing else, and honors the request's
 context between stores. It is kept for 60 seconds, the first request after that makes the next,
-and the requests that come meanwhile wait for it and share it, so a console that polls cannot
-make a storm of directory reads. `open` and `backlog` are read for each page when it is asked
-for, not kept. If the scan fails the answer is 500 `{"error":"the store scan failed"}` (503
-when it was interrupted), nothing is kept, and the server logs the failure once, naming a store by
-its 8-digit prefix, until a scan goes well again.
+and the requests that come meanwhile wait for it and share it (each leaves when its own
+deadline or its client does), so a console that polls cannot make a storm of directory reads.
+`open` and `backlog` are read for each page when it is asked for, not kept. If the scan fails the
+answer is 500 `{"error":"the store scan failed"}` (503 when it was interrupted), nothing is kept,
+and the server logs the failure once, naming a store by its 8-digit prefix, until a scan goes well
+again.
 
 ### `/debug/pprof/`
 
