@@ -550,3 +550,78 @@ func TestRequestLinesCarryTheUserPrefix(t *testing.T) {
 		}
 	}
 }
+
+// Parked T7-c (final review): a request's slot is given back however its
+// handler ends: by a panic, which answers 500; by the panic that aborts a
+// handler (http.ErrAbortHandler), which goes on up to net/http; or by
+// returning without an answer. At a limit of one, the next request is
+// admitted at once each time.
+func TestSlotIsReleasedAfterAPanicOrAnEarlyReturn(t *testing.T) {
+	h := newHarness(t, nil)
+	h.server.admitWait = 50 * time.Millisecond
+	g := newGate(1)
+	serve := func(handler http.HandlerFunc) (recorder *httptest.ResponseRecorder, panicked any) {
+		recorder = httptest.NewRecorder()
+		defer func() { panicked = recover() }()
+		h.server.admitted("search", g, h.server.recovered("search", handler))(recorder, httptest.NewRequest("POST", "/search", nil))
+		return recorder, nil
+	}
+	if got, _ := serve(func(http.ResponseWriter, *http.Request) { panic("boom") }); got.Code != http.StatusInternalServerError {
+		t.Fatal("the panic answered", got.Code)
+	}
+	if got, _ := serve(func(http.ResponseWriter, *http.Request) {}); got.Code != http.StatusOK {
+		t.Fatal("after a panic the next request was", got.Code, got.Body.String())
+	}
+	if _, panicked := serve(func(http.ResponseWriter, *http.Request) { panic(http.ErrAbortHandler) }); panicked != http.ErrAbortHandler {
+		t.Fatal("the abort did not go on up:", panicked)
+	}
+	if got, _ := serve(func(http.ResponseWriter, *http.Request) {}); got.Code != http.StatusOK {
+		t.Fatal("after an abort the next request was", got.Code, got.Body.String())
+	}
+	if got, _ := serve(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) }); got.Code != http.StatusNoContent {
+		t.Fatal("after an early return the next request was", got.Code, got.Body.String())
+	}
+	if strings.Contains(h.log.String(), "shed") {
+		t.Fatal(h.log.String())
+	}
+}
+
+// Parked T7-e (final review): a failure a retry can pass (here the server
+// shutting down) answers 503 and is logged as a warning, not as an error;
+// one it cannot stays an error.
+func TestRetryableFailuresLogAsWarnings(t *testing.T) {
+	h := newHarness(t, nil)
+	h.server.users.close()
+	if response := h.call("POST", "/add", addRequest("r1", "u1"), withAuth("X-Request-Id", "closing-1")...); response.Code != http.StatusServiceUnavailable {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	if lines := h.logLines(" request_id=closing-1", "open store failed"); len(lines) != 1 || !strings.Contains(lines[0], "level=WARN") {
+		t.Fatal(h.log.String())
+	}
+	recorder := httptest.NewRecorder()
+	h.server.fail(context.Background(), recorder, "write", "", errors.New("disk on fire"))
+	if recorder.Code != http.StatusInternalServerError || len(h.logLines("level=ERROR", "write failed")) != 1 {
+		t.Fatal(recorder.Code, h.log.String())
+	}
+}
+
+// Parked T7-f (final review): with the logger's AddSource, a line names the
+// place that logged it, not the server's logf.
+func TestLogLinesNameTheirCaller(t *testing.T) {
+	var out syncBuffer
+	h := newHarness(t, func(config *ServerConfig) {
+		config.Logger = slog.New(slog.NewTextHandler(&out, &slog.HandlerOptions{AddSource: true}))
+	})
+	h.server.logf(context.Background(), slog.LevelInfo, "from the test")
+	h.server.schedulerLog(context.Background(), "as the scheduler")
+	h.server.storeLog(userKey("u1"))("as a store")
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	for _, line := range lines {
+		if !strings.Contains(line, "middleware_test.go:") || strings.Contains(line, "server.go:") {
+			t.Fatal(line)
+		}
+	}
+	if len(lines) != 3 {
+		t.Fatal(lines)
+	}
+}

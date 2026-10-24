@@ -13,12 +13,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
+	"unicode/utf16"
 
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
 	"github.com/mnemon-dev/mnemon/internal/records"
@@ -260,30 +261,43 @@ func NewServer(config ServerConfig) (*Server, error) {
 
 // logf logs one line at level. The lines keep the wording they had before the
 // server logged through slog, which the runbook's table of lines quotes; ctx
-// is the context of the work the line is about.
+// is the context of the work the line is about. A line's source, with a
+// logger that adds it, is logf's caller (the final review's parked T7-f).
 func (s *Server) logf(ctx context.Context, level slog.Level, format string, args ...any) {
-	if s.log.Enabled(ctx, level) {
-		s.log.Log(ctx, level, fmt.Sprintf(format, args...))
-	}
+	s.logAt(ctx, 1, level, format, args...)
 }
 
-// schedulerLog is the scheduler's logf. Its lines report faults (a full
-// queue, a failed or panicked job, a pause), so they are warnings.
-func (s *Server) schedulerLog(format string, args ...any) {
-	s.logf(context.Background(), slog.LevelWarn, format, args...)
+// logAt logs a line whose source is the caller of skip frames between it
+// and logAt: 1 for the caller of logf, or of a logger of its own that calls
+// logAt (schedulerLog).
+func (s *Server) logAt(ctx context.Context, skip int, level slog.Level, format string, args ...any) {
+	if !s.log.Enabled(ctx, level) {
+		return
+	}
+	var pcs [1]uintptr
+	runtime.Callers(2+skip, pcs[:]) // past runtime.Callers, logAt and those frames
+	record := slog.NewRecord(time.Now(), level, fmt.Sprintf(format, args...), pcs[0])
+	_ = s.log.Handler().Handle(ctx, record)
+}
+
+// schedulerLog is the scheduler's logf, on the context of the work a line is
+// about (a request's carries its id). Its lines report faults (a full queue,
+// a failed or panicked job, a pause), so they are warnings.
+func (s *Server) schedulerLog(ctx context.Context, format string, args ...any) {
+	s.logAt(ctx, 1, slog.LevelWarn, format, args...)
 }
 
 // scanLog is the store scanner's logf. A scan that fails leaves the overview
 // and the store gauges out, which is a fault: a warning.
 func (s *Server) scanLog(format string, args ...any) {
-	s.logf(context.Background(), slog.LevelWarn, format, args...)
+	s.logAt(context.Background(), 1, slog.LevelWarn, format, args...)
 }
 
 // storeLog is the logger of the store of the user with key: what the store's
 // query runtime reports is a warning that names the user.
 func (s *Server) storeLog(key string) func(format string, args ...any) {
 	return func(format string, args ...any) {
-		s.logf(context.Background(), slog.LevelWarn, format+" (user %s)", append(args[:len(args):len(args)], short(key))...)
+		s.logAt(context.Background(), 1, slog.LevelWarn, format+" (user %s)", append(args[:len(args):len(args)], short(key))...)
 	}
 }
 
@@ -314,7 +328,8 @@ func consolidationMode(config ServerConfig) (ConsolidationMode, error) {
 		return "", fmt.Errorf("unknown consolidation %q: off (\"\"), on-add or background", mode)
 	}
 	if config.ConsolidationWorkers < 0 {
-		return "", errors.New("consolidation workers must be at least 1")
+		// 0 is the default (defaultConsolidationWorkers).
+		return "", errors.New("consolidation workers must not be negative")
 	}
 	return mode, nil
 }
@@ -558,7 +573,7 @@ func (s *Server) queueUsers() {
 	}
 	for _, entry := range entries {
 		if entry.IsDir() && isUserKey(entry.Name()) {
-			s.sched.Notify(entry.Name(), 0)
+			s.sched.Notify(context.Background(), entry.Name(), 0)
 		}
 	}
 }
@@ -587,7 +602,7 @@ func (s *Server) consolidateUser(ctx context.Context, key string) (int64, error)
 		}
 	}
 	if outcome.unfinished && outcome.err == nil {
-		s.sched.Notify(key, 0)
+		s.sched.Notify(ctx, key, 0)
 	}
 	backlog, err := user.agent.Backlog(ctx, records.Scope{})
 	if err != nil {
@@ -804,9 +819,13 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.sched != nil {
+		measure := s.measureUnknown(ctx, user)
 		// Stored: the wait needs the scheduler, not the store.
 		release()
-		s.sched.Notify(user.key, written)
+		s.sched.Notify(ctx, user.key, written)
+		if measure >= 0 {
+			s.sched.Measured(user.key, measure)
+		}
 		s.awaitConsolidation(ctx, user.key, deadline)
 	}
 	s.metrics.adds.Add(1)
@@ -815,8 +834,9 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 
 // writeParts writes an Add's parts under the user's write lock and embeds
 // their chunks; in on-add mode it then consolidates under the lock. It
-// returns the characters of the chunks written, about what consolidation
-// will read of them, and false when it answered with an error.
+// returns the characters of the chunks written, in UTF-16 units as a job's
+// window and the backlog's measure count them, about what consolidation will
+// read of them, and false when it answered with an error.
 func (s *Server) writeParts(ctx context.Context, w http.ResponseWriter, user *userEntry, parts []addPart, deadline time.Time) (int64, bool) {
 	user.waiting.Add(1)
 	user.writes.Lock()
@@ -847,9 +867,37 @@ func (s *Server) writeParts(ctx context.Context, w http.ResponseWriter, user *us
 	}
 	written := int64(0)
 	for _, chunk := range chunks {
-		written += int64(utf8.RuneCountInString(chunk))
+		written += utf16Units(chunk)
 	}
 	return written, true
+}
+
+// utf16Units is the length of s in UTF-16 code units, as JavaScript counts
+// it: a character outside the Basic Multilingual Plane is two.
+func utf16Units(s string) int64 {
+	n := int64(0)
+	for _, r := range s {
+		n += int64(max(utf16.RuneLen(r), 1))
+	}
+	return n
+}
+
+// measureUnknown is the user's backlog, measured now that its Add has
+// written, when the scheduler has no measure of it (after a start, or after
+// a Search's hold made the user known), so that the lag bound holds from this
+// Add on rather than from the user's first job (the final review's parked
+// T6-a): one measure per user and start. It is -1 when the scheduler has a
+// measure, or when the measure fails, which is logged.
+func (s *Server) measureUnknown(ctx context.Context, user *userEntry) int64 {
+	if _, known := s.sched.Backlog(user.key); known {
+		return -1
+	}
+	backlog, err := user.agent.Backlog(ctx, records.Scope{})
+	if err != nil {
+		s.logf(ctx, slog.LevelWarn, "consolidation backlog unreadable (user %s): %v", short(user.key), err)
+		return -1
+	}
+	return backlog.Characters
 }
 
 // awaitConsolidation waits until the user's backlog is within the lag bound,
@@ -974,7 +1022,7 @@ func (s *Server) flush(ctx context.Context, user *userEntry) {
 	defer cancel()
 	outcome := s.consolidate(ctx, user, false, "flush", nil)
 	if outcome.unfinished && s.sched != nil {
-		s.sched.Notify(user.key, 0)
+		s.sched.Notify(ctx, user.key, 0)
 	}
 	if outcome.folded == 0 {
 		return
@@ -1285,12 +1333,18 @@ func (s *Server) decode(w http.ResponseWriter, r *http.Request, into any) bool {
 }
 
 // fail logs an internal error and answers 503 when retrying can help (a busy
-// or changed store, shutdown, a canceled request), else 500.
+// or changed store, shutdown, a canceled request), else 500. One a retry can
+// pass is expected now and then, a warning; any other an error (the final
+// review's parked T7-e).
 func (s *Server) fail(ctx context.Context, w http.ResponseWriter, operation, user string, err error) {
 	if len(user) > 8 {
 		user = user[:8]
 	}
-	s.logf(ctx, slog.LevelError, "%s failed (user %s): %v", operation, user, err)
+	level := slog.LevelError
+	if retryable(err) {
+		level = slog.LevelWarn
+	}
+	s.logf(ctx, level, "%s failed (user %s): %v", operation, user, err)
 	if retryable(err) {
 		writeError(w, http.StatusServiceUnavailable, operation+" is temporarily unavailable; retry")
 		return

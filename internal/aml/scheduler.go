@@ -30,8 +30,8 @@ const (
 	// backing off); a notification beyond it is dropped.
 	maxConsolidationUsers = 100000
 	// A failed job's user is retried after retryBase × 2ⁿ⁻¹ for its n-th
-	// failure in a row, ±20%, at most retryMax; a job the budget reserve
-	// stopped after reservePause.
+	// failure in a row, ±20%, at most retryMax less up to 20% (retryDelay); a
+	// job the budget reserve stopped after reservePause.
 	retryBase    = 30 * time.Second
 	retryMax     = 10 * time.Minute
 	reservePause = 10 * time.Minute
@@ -121,13 +121,15 @@ type schedUser struct {
 
 // scheduler runs the users' consolidation jobs (run) on its workers. Its
 // callbacks run without its lock: run may block until its context ends and
-// may call the scheduler; logf and now must not block.
+// may call the scheduler; logf and now must not block. logf is given the
+// context of the work a line is about: a request's for a notification it
+// made, a job's for its own lines.
 type scheduler struct {
 	workers, maxUsers int
 	// run is a user's job; it returns the user's backlog measured after the
 	// job (negative when unknown) and the job's failure.
 	run  func(ctx context.Context, key string) (backlog int64, err error)
-	logf func(format string, args ...any)
+	logf func(ctx context.Context, format string, args ...any)
 	now  func() time.Time
 	// jitter is uniform in [0, 1): the backoff's jitter.
 	jitter func() float64
@@ -151,7 +153,7 @@ type scheduler struct {
 	fullLogged time.Time
 }
 
-func newScheduler(workers, maxUsers int, run func(ctx context.Context, key string) (backlog int64, err error), logf func(format string, args ...any), now func() time.Time) *scheduler {
+func newScheduler(workers, maxUsers int, run func(ctx context.Context, key string) (backlog int64, err error), logf func(ctx context.Context, format string, args ...any), now func() time.Time) *scheduler {
 	return &scheduler{workers: workers, maxUsers: maxUsers, run: run, logf: logf, now: now, jitter: rand.Float64,
 		users: map[string]*schedUser{}, queue: list.New(), changed: make(chan struct{})}
 }
@@ -160,13 +162,14 @@ func newScheduler(workers, maxUsers int, run func(ctx context.Context, key strin
 func short(key string) string { return key[:min(8, len(key))] }
 
 // Notify tells the scheduler that an Add wrote addedChars characters (0 for
-// none: a job left work, or a Search's flush did) for the user. Its backlog
-// grows by them and an idle user joins the back of the queue; a queued user
-// keeps its place, one backing off its retry time, and one running runs
-// again after its job. Past maxUsers users with work, the notification is
-// dropped and logged at most once per minute; the user's next Add or
-// Search picks it up.
-func (s *scheduler) Notify(key string, addedChars int64) {
+// none: a job left work, or a Search's flush did) for the user; ctx is the
+// work's that tells it, a request's or a job's. Its backlog grows by them
+// and an idle user joins the back of the queue; a queued user keeps its
+// place, one backing off its retry time, and one running runs again after
+// its job. Past maxUsers users with work, the notification is dropped and
+// logged at most once per minute, on ctx (with the request's id); the
+// user's next Add or Search picks it up.
+func (s *scheduler) Notify(ctx context.Context, key string, addedChars int64) {
 	now := s.now()
 	s.mu.Lock()
 	u := s.users[key]
@@ -177,7 +180,7 @@ func (s *scheduler) Notify(key string, addedChars int64) {
 		}
 		s.mu.Unlock()
 		if logFull {
-			s.logf("consolidation queue full: %d users have work; dropped a notification (user %s)", s.maxUsers, short(key))
+			s.logf(ctx, "consolidation queue full: %d users have work; dropped a notification (user %s)", s.maxUsers, short(key))
 		}
 		return
 	}
@@ -386,6 +389,23 @@ func (s *scheduler) Backlog(key string) (chars int64, known bool) {
 	return u.backlog, true
 }
 
+// Measured records a measure of the user's backlog taken outside a job, by
+// an Add of a user the scheduler had no measure of (Backlog unknown: after a
+// start, or after a Search's hold made the user known; the final review's
+// parked T6-a): the estimate is that measure from then on, plus what Adds
+// write after it. A user it has no entry for, one a job has measured, and
+// one whose job runs, which measures at its end, keep their estimate.
+func (s *scheduler) Measured(key string, chars int64) {
+	s.mu.Lock()
+	u := s.users[key]
+	if u == nil || u.measured || u.state == userRunning {
+		s.mu.Unlock()
+		return
+	}
+	u.backlog, u.measured = chars, true
+	s.unlockChanged()
+}
+
 // signal makes the workers look again, as after any change: a clock moved
 // by a test, say.
 func (s *scheduler) signal() {
@@ -462,7 +482,7 @@ func sleep(ctx context.Context, changed <-chan struct{}, wait time.Duration) {
 func (s *scheduler) call(ctx context.Context, key string) (backlog int64, err error) {
 	defer func() {
 		if value := recover(); value != nil {
-			s.logf("consolidation job panicked (user %s): %v\n%s", short(key), value, debug.Stack())
+			s.logf(ctx, "consolidation job panicked (user %s): %v\n%s", short(key), value, debug.Stack())
 			backlog, err = -1, fmt.Errorf("panic: %v", value)
 		}
 	}()
@@ -512,19 +532,22 @@ func (s *scheduler) finish(ctx context.Context, u *schedUser, backlog int64, err
 	s.forgetLocked(u)
 	s.unlockChanged()
 	if line != "" {
-		s.logf("%s", line)
+		s.logf(ctx, "%s", line)
 	}
 }
 
 // retryDelay is the wait before a user's retry after its failures-th failed
 // job in a row: retryBase × 2^(failures−1), times 0.8 + 0.4 × jitter (±20%
-// for a jitter in [0, 1)), at most retryMax.
+// for a jitter in [0, 1)), at most retryMax × (0.8 + 0.2 × jitter). The cap
+// is jittered too (the final review's parked T6-d), so that users which keep
+// failing do not all retry at exactly retryMax, in step.
 func retryDelay(failures int, jitter float64) time.Duration {
 	delay := retryMax
 	if failures <= 10 { // past ten, the doubling alone passes retryMax
 		delay = retryBase << max(failures-1, 0)
 	}
-	return min(time.Duration(math.Round(float64(delay)*(0.8+0.4*jitter))), retryMax)
+	jittered := time.Duration(math.Round(float64(delay) * (0.8 + 0.4*jitter)))
+	return min(jittered, time.Duration(math.Round(float64(retryMax)*(0.8+0.2*jitter))))
 }
 
 // activeLocked counts the users with work: queued, running or backing off.
@@ -562,7 +585,11 @@ func (s *scheduler) forgetLocked(u *schedUser) {
 }
 
 // changedLocked replaces the change channel and returns the old one, to be
-// closed once mu is released: closing it wakes every worker and waiter.
+// closed once mu is released: closing it wakes every worker and waiter. They
+// are few, the workers and the Adds waiting at the bound (at most the Adds
+// served at once), so one channel for all costs little; per-user channels
+// would pay only if waiters grew far beyond that (the final review's parked
+// T6-g).
 func (s *scheduler) changedLocked() chan struct{} {
 	old := s.changed
 	s.changed = make(chan struct{})

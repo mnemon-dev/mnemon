@@ -585,6 +585,11 @@ func TestServerConsolidationModes(t *testing.T) {
 			t.Fatal(name)
 		}
 	}
+	// 0 workers is the default, so the error says what is refused (parked
+	// T6-i).
+	if _, err := server(func(c *ServerConfig) { c.Consolidation, c.ConsolidationWorkers = ConsolidationBackground, -1 }); err == nil || err.Error() != "consolidation workers must not be negative" {
+		t.Fatal(err)
+	}
 	// The old flag alone is on-add; on-add and off have no scheduler.
 	for _, edit := range []func(*ServerConfig){
 		func(c *ServerConfig) { c.ConsolidateOnAdd = true },
@@ -979,5 +984,89 @@ func TestSearchPicksUpADroppedUser(t *testing.T) {
 	h.search(t, SearchRequest{Query: question, UserID: "u1", TopK: 100})
 	if status := h.server.sched.Status(); status.Queued != 1 || !strings.Contains(h.log.String(), "flush failed (user "+userKey("u1")[:8]+")") {
 		t.Fatal(status, h.log.String())
+	}
+}
+
+// Parked T6-a/T6-e (final review): until a job measured it, the scheduler
+// knew nothing of a user's backlog after a start (or after a Search's hold
+// made the user known), and an Add past the lag bound answered at once. An
+// Add for a user the scheduler has no measure of now measures the backlog
+// once, after its write: a backlog that piled up before (here consolidation
+// was off) holds the Add at the bound.
+func TestAddMeasuresABacklogTheSchedulerDoesNotKnow(t *testing.T) {
+	settings := memoryagent.ConsolidationConfig{Mode: "timelines", BatchCharacters: 300, MaxBatches: 1}
+	// Consolidation off: the records pile up, many jobs' windows of them.
+	off := newHarness(t, func(config *ServerConfig) { config.MemoryConfig.Consolidation = &settings })
+	for i := range 6 {
+		off.mustAdd(t, noteAdd(i, "u1"))
+	}
+	off.server.Close()
+	// The same data root in background mode, with no worker running: no job
+	// measures the backlog.
+	h := newHarness(t, func(config *ServerConfig) {
+		config.DataRoot = off.root
+		config.MemoryConfig.Consolidation = &settings
+		config.Consolidation = ConsolidationBackground
+	})
+	h.server.addWindow = 50 * time.Millisecond
+	start := time.Now()
+	h.mustAdd(t, noteAdd(6, "u1"))
+	if time.Since(start) < 50*time.Millisecond || !strings.Contains(h.log.String(), "add outran consolidation (user "+userKey("u1")[:8]+")") {
+		t.Fatal("an Add over a backlog past the bound answered at once:", time.Since(start), h.log.String())
+	}
+	if backlog, known := h.server.sched.Backlog(userKey("u1")); !known || backlog <= h.server.lagBound {
+		t.Fatal("the Add left no measure of the backlog", backlog, known, h.server.lagBound)
+	}
+}
+
+// Parked T6-b (final review): an Add adds what it wrote to the user's backlog
+// estimate in UTF-16 units, the units the backlog's measure and a job's
+// window count, not in runes: an emoji is two. Two Adds alike but for 100
+// characters of their text, ASCII in one and emoji in the other, differ by
+// 100 there.
+func TestAddCountsUTF16Units(t *testing.T) {
+	settings := memoryagent.ConsolidationConfig{Mode: "timelines", BatchCharacters: 50000, MaxBatches: 64}
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &settings
+		config.Consolidation = ConsolidationBackground
+	})
+	say := func(id, text string) AddRequest {
+		return AddRequest{RequestID: id, UserID: "u1", SessionID: id, Messages: []Message{{Role: "user", Content: text, Timestamp: at(0)}}}
+	}
+	estimate := func() int64 {
+		t.Helper()
+		backlog, known := h.server.sched.Backlog(userKey("u1"))
+		if !known {
+			t.Fatal("no estimate")
+		}
+		return backlog
+	}
+	h.mustAdd(t, say("r0", "The first note measures the backlog."))
+	before := estimate()
+	h.mustAdd(t, say("r1", "Plain: "+strings.Repeat("a", 100)))
+	ascii := estimate() - before
+	h.mustAdd(t, say("r2", "Plain: "+strings.Repeat("😀", 100)))
+	emoji := estimate() - before - ascii
+	if ascii <= 100 || emoji-ascii != 100 {
+		t.Fatalf("the ASCII Add added %d, the emoji one %d: want 100 more", ascii, emoji)
+	}
+}
+
+// Parked T7-b (final review): a notification dropped because the queue is
+// full is logged with the request that made it: its request_id and its
+// user.
+func TestQueueFullLineCarriesTheRequestID(t *testing.T) {
+	settings := memoryagent.ConsolidationConfig{Mode: "timelines", BatchCharacters: 50000, MaxBatches: 64}
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &settings
+		config.Consolidation = ConsolidationBackground
+	})
+	h.server.sched.maxUsers = 1 // no worker runs: u1 fills the queue
+	h.mustAdd(t, addRequest("r1", "u1"))
+	if response := h.call("POST", "/add", addRequest("r2", "u2"), withAuth("X-Request-Id", "full-1")...); response.Code != http.StatusOK {
+		t.Fatal(response.Code, response.Body.String())
+	}
+	if lines := h.logLines("consolidation queue full", " request_id=full-1", " user="+userKey("u2")[:8]); len(lines) != 1 {
+		t.Fatal(h.log.String())
 	}
 }

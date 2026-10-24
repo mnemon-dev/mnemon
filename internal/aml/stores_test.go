@@ -575,7 +575,7 @@ func TestSchedulerBacklogIsKnownOnceMeasured(t *testing.T) {
 
 	// Notified of 500 characters, the scheduler has a number it has not
 	// measured: not an estimate to show.
-	s.Notify(a, 500)
+	s.Notify(context.Background(), a, 500)
 	if status := s.Status(); status.MaxBacklog != 500 {
 		t.Fatal(status)
 	}
@@ -590,7 +590,7 @@ func TestSchedulerBacklogIsKnownOnceMeasured(t *testing.T) {
 	measure <- 120
 	eventually(t, func() bool { _, known := s.Backlog(a); return known })
 	known(a, 120, "after the first job")
-	s.Notify(a, 30)
+	s.Notify(context.Background(), a, 30)
 	known(a, 150, "after a notification")
 	if key := next(t, started); key != a {
 		t.Fatal(key)
@@ -603,7 +603,7 @@ func TestSchedulerBacklogIsKnownOnceMeasured(t *testing.T) {
 	unknown(a, "nothing pending")
 
 	// A job that cannot measure does not make a number known.
-	s.Notify(b, 10)
+	s.Notify(context.Background(), b, 10)
 	if key := next(t, started); key != b {
 		t.Fatal(key)
 	}
@@ -645,13 +645,14 @@ func TestStoresOpenAndBacklog(t *testing.T) {
 		return out
 	}
 
-	// The scheduler has been told of the Adds' characters and has measured
-	// none: the store is open, and its backlog is not known.
+	// No job has run: the first Add measured the user's backlog, which the
+	// scheduler had no measure of (the final review's parked T6-a), and the
+	// next two added their characters. The store is open, its backlog known.
 	if status := h.server.sched.Status(); status.MaxBacklog == 0 {
 		t.Fatal(status)
 	}
 	stores := byPrefix()
-	if got := stores[busy[:8]]; !got.Open || got.Backlog != nil {
+	if got := stores[busy[:8]]; !got.Open || got.Backlog == nil || *got.Backlog <= 0 {
 		t.Errorf("before any job: %+v", got)
 	}
 	if got := stores[onDisk[:8]]; got.Open || got.Backlog != nil {
