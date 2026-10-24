@@ -37,6 +37,11 @@ run. `replay` never reads a key. Nothing here prints, logs or writes a key.
 Paths are arguments: --root is the task directory (the runs, the model cache and budget file in its private/, the
 configuration), --inputs the six dataset files, --binary a build. `--dry` swaps in local models that fail at once, a private
 output directory (ROOT/dry) and no keys: a plumbing test that spends nothing.
+
+A run's label is one plain name, and its directory ROOT/<label> is what --force replaces. A replay or a run of the new build never
+replaces the recorded baseline (ROOT/old, or the run --old names), the model cache and budget file (ROOT/private) or anything else
+the task directory keeps, whatever way the label is spelled ('old/', './old', a link to it), and every input is checked before
+anything is removed: a run that cannot start leaves the task directory as it was.
 """
 import argparse, collections, concurrent.futures, datetime, hashlib, json, os, pathlib, re, secrets, shutil, signal, socket, sqlite3, \
     subprocess, sys, tempfile, threading, time, urllib.error, urllib.request
@@ -201,14 +206,73 @@ def effective_config(layout):
     return c
 
 
-def write_config(layout):
-    layout.make_private()
-    c = effective_config(layout)
-    text = json.dumps(c, indent=2) + '\n'
+def check_config(layout):
+    """The text of the configuration a run would write. A configuration the task directory has run on that differs from it is
+    refused. Nothing is written: a run checks this before it removes anything."""
+    text = json.dumps(effective_config(layout), indent=2) + '\n'
     if layout.config.exists() and layout.config.read_text() != text:
         raise SystemExit(f'{layout.config} differs from the configuration this script would write; refusing to run on a changed configuration')
+    return text
+
+
+def write_config(layout, text):
+    layout.make_private()
     layout.config.write_text(text)
-    return c
+
+
+# ---- which directory a run may write -------------------------------------------------------------------------------------------
+
+LABEL = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]*')      # a run's label: one plain name, the name of its directory under the task directory
+KEPT = {'private': 'the model cache and the budget file', 'bin': 'the build output', 'src': 'the build output',
+        'dry': 'the --dry runs', 'memory-config.json': 'the configuration both builds run on', 'report.json': 'the comparison of a live pair'}
+
+
+def same_directory(a, b):
+    """Whether two paths are one directory (or one file), however they are spelled. 'old', 'old/', './old', 'old/.' and a link to it
+    resolve to one path. Where both exist the file system is asked as well, which sees what no comparison of paths does: a file
+    system that folds case (macOS's, by default) reads 'OLD' as 'old'."""
+    if os.path.realpath(a) == os.path.realpath(b):
+        return True
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def holds(outer, inner):
+    """Whether outer is the directory inner, or a directory above it."""
+    here = os.path.realpath(inner)
+    while True:
+        if same_directory(outer, here):
+            return True
+        above = os.path.dirname(here)
+        if above == here:
+            return False
+        here = above
+
+
+def output_dir(layout, label, kind, compared=()):
+    """ROOT/LABEL: the directory a run writes and, with --force, first removes. Refused (SystemExit), before anything is touched:
+      - a directory that is, or holds, a run the new build is compared with (`compared`, and `old`, the baseline): a replay or a
+        run of the new build must not replace the recorded baseline;
+      - one that is, or holds, what the task directory keeps (KEPT: the model cache and the budget file, the build output, the
+        configuration, the reports), so that no label reaches the paid replies;
+      - a label that is not one plain name (a path, '.', '..'), and a directory that is a link or a file.
+    Directories are compared as the directories they are (same_directory, holds), never as the strings they were typed as, so
+    'old/', './old', 'old/.', 'OLD' where case folds, and a link to old are the baseline as much as 'old' is."""
+    out = layout.root / label       # an absolute label is not under the root at all: it is compared as it is, and refused below
+    if kind == 'new':
+        for old in [*compared, 'old']:
+            if holds(out, layout.root / old):
+                raise SystemExit(f'a run of the new build must not replace the run it compares with: {label!r} is, or holds, the baseline {old!r}; choose another label')
+    for name, what in KEPT.items():
+        if holds(out, layout.root / name):
+            raise SystemExit(f'{label!r} is, or holds, {name!r} ({what}), which a run never replaces; choose another label')
+    if not LABEL.fullmatch(label):
+        raise SystemExit(f"{label!r} is not a run label: a label is one plain name (letters, digits, '.', '_' and '-', not starting with '.' or '-'), the name of a directory under the task directory")
+    if os.path.islink(out) or (out.exists() and not out.is_dir()):
+        raise SystemExit(f'{out} is a link or a file, not the directory of a run: remove it, or choose another label')
+    return out
 
 
 # ---- the budget file -----------------------------------------------------------------------------------------------------------
@@ -576,22 +640,22 @@ def run_user(server, user, reqs, ledger, state, workers, out_dir, stall_ms=0, pr
     return rec
 
 
-def cmd_run(args, keys=None, dead_proxy=False):
+def cmd_run(args, keys=None, dead_proxy=False, compared=()):
     """One build over the whole request sequence. keys are the provider keys for the server's environment (a live
-    run's, read from the environment unless dry); `replay` gives placeholders and a dead proxy."""
+    run's, read from the environment unless dry); `replay` gives placeholders and a dead proxy, and `compared`, the labels of the
+    recorded runs it compares with, which the run must not replace.
+
+    Every input is checked, and the run's directory judged (output_dir), before anything is removed or written: a run that cannot
+    start leaves the task directory as it was, and the only removal (--force, of the run's own directory) comes last."""
     layout = Layout(args.dry)
     label = args.label or args.which
     kind = args.which
     if not pathlib.Path(args.binary).is_file():
         raise SystemExit(f'{args.binary}: no such binary')
-    if kind == 'new' and label == 'old':
-        raise SystemExit("a run of the new build must not take the label 'old', the baseline's directory")
-    out_dir = layout.root / label
-    if out_dir.exists():
-        if not args.force:
-            raise SystemExit(f'{out_dir} exists; pass --force to start this run again from an empty data root')
-        shutil.rmtree(out_dir)
-    config = write_config(layout)
+    out_dir = output_dir(layout, label, kind, compared)
+    if out_dir.exists() and not args.force:
+        raise SystemExit(f'{out_dir} exists; pass --force to start this run again from an empty data root')
+    config_text = check_config(layout)
     users = args.users or USERS
     plan = {u: build_requests(u, args.sessions, args.searches) for u in users}
     if keys is None:
@@ -604,6 +668,10 @@ def cmd_run(args, keys=None, dead_proxy=False):
                     builtFrom=args.built_from, deadProxy=dead_proxy,
                     argv=[a for a in server.argv], envNames=sorted(server.environment()), startedAt=datetime.datetime.now(datetime.timezone.utc).isoformat(),
                     searchWorkers=args.workers, stallMs=args.stall_ms, probeMs=args.probe_ms, users={})
+    # Nothing can refuse the run from here on: what --force replaces goes, and the configuration is written.
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    write_config(layout, config_text)
     started = time.perf_counter()
     say(stage='start', label=label, kind=kind, port=server.port, adminPort=server.admin_port, users=users,
         requests={u: dict(adds=sum(r['kind'] != 'search' for r in p), searches=sum(r['kind'] == 'search' for r in p)) for u, p in plan.items()})
@@ -894,15 +962,14 @@ def cmd_replay(args):
     The result is ROOT/LABEL/compare-report.json; ROOT/report.json (the comparison of a live pair) is left alone. Exit 0
     when the verdict is PASS: every body identical, the same requests, 0 paid calls, no fault in the log."""
     layout = Layout(args.dry)
-    if args.label == args.old:
-        raise SystemExit(f'the replay must not replace the run it compares with: {args.label!r} is the old run; choose another label')
+    output_dir(layout, args.label, 'new', [args.old])     # refuses before anything is read: cmd_run judges it again
     if not (layout.root / args.old / 'manifest.json').is_file():
         raise SystemExit(f'{layout.root / args.old / "manifest.json"} is missing: record the old run first (run old), or point --old at it')
     cache_before = cache_entries(layout)
     attempts_before = len(budget_read(layout.budget)[1])
     run = argparse.Namespace(dry=args.dry, which='new', label=args.label, force=args.force, users=args.users, workers=args.workers,
                              stall_ms=0, probe_ms=0, sessions=args.sessions, searches=args.searches, binary=args.binary, built_from=args.built_from)
-    code = cmd_run(run, keys=dict(PLACEHOLDER_KEYS), dead_proxy=True)
+    code = cmd_run(run, keys=dict(PLACEHOLDER_KEYS), dead_proxy=True, compared=[args.old])
     report = compare_runs(layout, args.old, args.label)
     report['replay'] = dict(
         binary=args.binary, binarySha256=sha256_file(args.binary), builtFrom=args.built_from, cacheBefore=cache_before,

@@ -89,9 +89,8 @@ python3 -I scripts/aml/parity/replay.py --root "$ROOT" --inputs "$INPUTS" \
     replay my-build --binary "$NEWBUILD" --built-from <commit>
 ```
 
-This runs the new build over the whole sequence and compares it with `ROOT/old` (the label must
-be another than `old`: `--force` replaces a run's directory, and the replay refuses to take the
-baseline's). The server is given what makes it safe to run anywhere:
+This runs the new build over the whole sequence and compares it with `ROOT/old`. The server is
+given what makes it safe to run anywhere:
 
 - **placeholder provider keys:** the real ones are never read, so the server could not
   authenticate to a provider even if it tried;
@@ -110,6 +109,18 @@ It prints the result as JSON, last, and writes it to `ROOT/my-build/compare-repo
 The exit status is 0 for `PASS` and 1 otherwise. A replay adds nothing to the model cache or the
 budget file: `cacheBefore` equals `cacheAfter`, and `budgetAttemptsBefore` equals
 `budgetAttemptsAfter`, in the report's `replay` object.
+
+**What a replay may replace.** The label names the run's directory, `ROOT/my-build`, and `--force`
+replaces that directory. A label is one plain name (letters, digits, `.`, `_` and `-`, starting
+with a letter or a digit), and the replay, like `run new`, never replaces what the task directory
+must keep: the baseline (`ROOT/old`, or the run `--old` names), `ROOT/private` (the model cache and
+the budget file), the build output (`bin`, `src`), the `--dry` runs (`dry`), the configuration and
+the report, or a directory that holds one of them. It compares the directories, not the labels as
+typed, so `old/`, `./old`, `old/.`, `.`, `..`, a link to `old` and, on a file system that folds
+case, `OLD` are refused as `old` is. It checks every input (the build, the datasets, the keys, the
+configuration) before it removes anything, so a run that cannot start leaves the task directory as
+it was. (`run old --force` records the baseline again, and is the one command that replaces
+`ROOT/old`.)
 
 **What it caught and what it proved.** For the final fixes of the serving hardening, `replay` on
 the build of that commit gave `PASS`: 152 of 152 Searches of `locomo-0` and 20 of 20 of

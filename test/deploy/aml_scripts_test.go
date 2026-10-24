@@ -1433,6 +1433,227 @@ func TestParityReplayPlanAndRefusals(t *testing.T) {
 	}
 }
 
+// ---- the replay never removes what it must keep (the final review's R95) ----
+
+// parityTask makes a task directory in the state the replay protects: the
+// recorded baseline (ROOT/old: a manifest and a body), a run of the new build
+// (ROOT/again), a build (ROOT/bin and ROOT/src) and, with databases, stand-ins
+// for the model cache and the budget file (ROOT/private). The stages that read
+// those files need real databases, which these are not, so only the test of
+// the label "private", which is refused before any read, asks for them. It
+// returns the task directory and the content of every file it wrote, which
+// parityIntact reads again.
+func parityTask(t *testing.T, databases bool) (string, map[string]string) {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "root")
+	files := map[string]string{
+		"old/manifest.json":                    `{"label": "old"}`,
+		"old/responses/locomo-0/0000-add.body": "the baseline's reply",
+		"again/manifest.json":                  `{"label": "again"}`,
+		"again/stale.body":                     "a run of the new build",
+		"bin/mnemon":                           "a build",
+		"src/main.go":                          "a build's source",
+	}
+	if databases {
+		files["private/model-cache.db"] = "the model cache: the baseline's paid replies"
+		files["private/model-budget.db"] = "the budget file"
+	}
+	for name, text := range files {
+		writeFile(t, filepath.Join(root, filepath.FromSlash(name)), text, 0o600)
+	}
+	return root, files
+}
+
+// parityIntact fails the test for each file of files (relative to root, or
+// absolute) that is gone or changed.
+func parityIntact(t *testing.T, root string, files map[string]string, command string) {
+	t.Helper()
+	for name, want := range files {
+		path := name
+		if !filepath.IsAbs(name) {
+			path = filepath.Join(root, filepath.FromSlash(name))
+		}
+		if got, err := os.ReadFile(path); err != nil || string(got) != want {
+			t.Errorf("%s: %s reads %q (%v), want %q", command, name, got, err, want)
+		}
+	}
+}
+
+// parityRefused runs the replay script with args and demands what every
+// refusal here is: status 1, the message, no traceback, and every file of the
+// task directory as it was.
+func parityRefused(t *testing.T, script string, env []string, root string, files map[string]string, command, want string, args ...string) {
+	t.Helper()
+	out, errs, code := replayRun(t, script, env, args...)
+	if code != 1 || !strings.Contains(out+errs, want) || strings.Contains(out+errs, "Traceback") {
+		t.Errorf("%s: exited %d, want 1 with %q and no traceback:\n%s%s", command, code, want, out, errs)
+	}
+	parityIntact(t, root, files, command)
+}
+
+// foldsCase says whether the file system of the temporary directory reads
+// "OLD" as "old", as macOS does by default.
+func foldsCase(t *testing.T) bool {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := os.Stat(filepath.Join(dir, "OLD"))
+	return err == nil
+}
+
+// TestParityReplayNeverReplacesItsBaseline: the recorded baseline (ROOT/old)
+// is the one thing a replay or a run of the new build must never replace, and
+// --force replaces a run's directory. The guard compares the directories, not
+// the labels as typed: "old/" (what shell completion adds), "./old", "old/.",
+// a link to old and, where the file system folds case, "OLD" are the baseline
+// as much as "old" is, and both commands refuse every one of them with the
+// baseline still in place.
+func TestParityReplayNeverReplacesItsBaseline(t *testing.T) {
+	script, inputs := parityScript(t), parityInputs(t)
+	binary, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("true is missing")
+	}
+	planted := "planted-secret-" + strings.Repeat("k", 20)
+	env := []string{"DEEPSEEK_API_KEY=" + planted, "TYPESAFE_API_KEY=" + planted}
+	spellings := []string{"old", "old/", "./old", "old/.", "alias"}
+	if foldsCase(t) {
+		spellings = append(spellings, "OLD")
+	}
+	for _, spelling := range spellings {
+		for _, command := range []string{"replay", "run new"} {
+			t.Run(fmt.Sprintf("%s %q", command, spelling), func(t *testing.T) {
+				root, files := parityTask(t, false)
+				if err := os.Symlink("old", filepath.Join(root, "alias")); err != nil {
+					t.Fatal(err)
+				}
+				args := []string{"--root", root, "--inputs", inputs, "replay", spelling, "--force", "--binary", binary}
+				if command == "run new" {
+					args = []string{"--root", root, "--inputs", inputs, "run", "new", "--label", spelling, "--force", "--binary", binary}
+				}
+				parityRefused(t, script, env, root, files, command+" "+spelling, "must not replace the run it compares with", args...)
+			})
+		}
+	}
+}
+
+// TestParityReplayRefusesLabelsThatAreNotARun: a label is the name of one
+// directory under the task directory, and never one the task directory keeps
+// or one that holds the baseline: not the model cache and the budget file
+// (ROOT/private), the build output, the configuration or the report, not ".",
+// ".." or a path, not a link, and not a directory elsewhere, which --force
+// would otherwise remove. A dry run's labels are under ROOT/dry and cannot
+// reach the real baseline either.
+func TestParityReplayRefusesLabelsThatAreNotARun(t *testing.T) {
+	script, inputs := parityScript(t), parityInputs(t)
+	binary, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("true is missing")
+	}
+	const baseline, kept, plain, link = "must not replace the run it compares with", "which a run never replaces", "is not a run label", "not the directory of a run"
+	outside := filepath.Join(t.TempDir(), "elsewhere")
+	writeFile(t, filepath.Join(outside, "marker"), "a directory that is not a run", 0o600)
+	for _, c := range []struct{ label, want string }{
+		{".", baseline}, {"..", baseline},
+		{"private", kept}, {"bin", kept}, {"src", kept}, {"dry", kept}, {"memory-config.json", kept}, {"report.json", kept},
+		{"again/", plain}, {"sub/again", plain}, {"../again", plain}, {outside, plain},
+		{"link", link},
+	} {
+		for _, command := range []string{"replay", "run new"} {
+			t.Run(fmt.Sprintf("%s %q", command, c.label), func(t *testing.T) {
+				root, files := parityTask(t, c.label == "private")
+				files[filepath.Join(outside, "marker")] = "a directory that is not a run"
+				if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+					t.Fatal(err)
+				}
+				args := []string{"--root", root, "--inputs", inputs, "replay", c.label, "--force", "--binary", binary}
+				if command == "run new" {
+					args = []string{"--root", root, "--inputs", inputs, "run", "new", "--label", c.label, "--force", "--binary", binary}
+				}
+				parityRefused(t, script, nil, root, files, command+" "+c.label, c.want, args...)
+			})
+		}
+	}
+
+	t.Run("a label that holds the run it compares with", func(t *testing.T) {
+		root, files := parityTask(t, false)
+		files["sub/inner/manifest.json"] = `{"label": "inner"}`
+		writeFile(t, filepath.Join(root, "sub", "inner", "manifest.json"), files["sub/inner/manifest.json"], 0o600)
+		parityRefused(t, script, nil, root, files, "replay sub --old sub/inner", baseline,
+			"--root", root, "--inputs", inputs, "replay", "sub", "--old", "sub/inner", "--force", "--binary", binary)
+	})
+
+	t.Run("a dry run cannot reach the real baseline", func(t *testing.T) {
+		root, files := parityTask(t, false)
+		for _, label := range []string{"../old", "../private"} {
+			parityRefused(t, script, nil, root, files, "--dry run new --label "+label, plain,
+				"--root", root, "--inputs", inputs, "--dry", "run", "new", "--label", label, "--force", "--binary", binary)
+		}
+	})
+}
+
+// TestParityReplayChecksItsInputsBeforeItRemovesAnything: --force removes a
+// run's directory, and a run that cannot start (a dataset file missing, no
+// key, a configuration that differs from the one the task has run on) must
+// not have removed it first. Each refusal leaves every file of the task
+// directory, the directory it would have replaced included, as it was; and
+// with every input in order, --force does replace it.
+func TestParityReplayChecksItsInputsBeforeItRemovesAnything(t *testing.T) {
+	script, inputs := parityScript(t), parityInputs(t)
+	binary, err := exec.LookPath("true")
+	if err != nil {
+		t.Skip("true is missing")
+	}
+	planted := "planted-secret-" + strings.Repeat("k", 20)
+	keys := []string{"DEEPSEEK_API_KEY=" + planted, "TYPESAFE_API_KEY=" + planted}
+	noDatasets := t.TempDir()
+	const missing, noKey, changed = "is missing: --inputs must hold", "DEEPSEEK_API_KEY is not set", "differs from the configuration this script would write"
+	for _, c := range []struct {
+		name    string
+		inputs  string
+		env     []string
+		changed bool
+		command []string
+		want    string
+	}{
+		{"run old without a dataset file", noDatasets, keys, false, []string{"run", "old"}, missing},
+		{"run old without a key", inputs, nil, false, []string{"run", "old"}, noKey},
+		{"run old on a changed configuration", inputs, keys, true, []string{"run", "old"}, changed},
+		{"run new without a dataset file", noDatasets, keys, false, []string{"run", "new", "--label", "again"}, missing},
+		{"run new without a key", inputs, nil, false, []string{"run", "new", "--label", "again"}, noKey},
+		{"run new on a changed configuration", inputs, keys, true, []string{"run", "new", "--label", "again"}, changed},
+		{"replay without a dataset file", noDatasets, nil, false, []string{"replay", "again"}, missing},
+		{"replay on a changed configuration", inputs, nil, true, []string{"replay", "again"}, changed},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			root, files := parityTask(t, false)
+			if c.changed {
+				files["memory-config.json"] = `{"changed": true}`
+				writeFile(t, filepath.Join(root, "memory-config.json"), files["memory-config.json"], 0o600)
+			}
+			args := append([]string{"--root", root, "--inputs", c.inputs}, c.command...)
+			parityRefused(t, script, c.env, root, files, c.name, c.want, append(args, "--force", "--binary", binary)...)
+		})
+	}
+
+	t.Run("with every input in order --force replaces the directory", func(t *testing.T) {
+		root, files := parityTask(t, false)
+		// The build is `true`: no server, so the run fails once it has started, after the directory was replaced.
+		_, errs, code := replayRun(t, script, keys, "--root", root, "--inputs", inputs, "run", "new", "--label", "again", "--force", "--binary", binary)
+		if _, err := os.Stat(filepath.Join(root, "again", "stale.body")); !os.IsNotExist(err) {
+			t.Errorf("the run of again kept its old files (%v); exited %d:\n%s", err, code, errs)
+		}
+		if code == 0 || !strings.Contains(errs, "aml-serve exited") {
+			t.Errorf("exited %d, want the run to have started and failed on its build:\n%s", code, errs)
+		}
+		delete(files, "again/manifest.json")
+		delete(files, "again/stale.body")
+		parityIntact(t, root, files, "run new --label again --force")
+	})
+}
+
 // TestParityReplayServerEnvironment imports the script and checks what it
 // gives the servers: the shipped configuration (BM25 only) with only the
 // budget file, the caps and the model cache changed, in the task directory's
