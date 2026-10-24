@@ -787,12 +787,12 @@ func (s *Server) recovered(operation string, next http.HandlerFunc) http.Handler
 // add stores one chunk of a conversation and returns once it is persisted and
 // searchable: written (in parts when it is longer than a document holds),
 // its new chunks embedded when the configuration embeds, and, in on-add
-// mode, consolidated (consolidateAdd). In background mode it then hands the
-// user to the scheduler and waits while the user's backlog is above the lag
-// bound (awaitConsolidation); it calls no model. A retry of a stored request
-// succeeds and finishes what the earlier attempt may not have. Only a
-// missing request_id, user_id or session_id, or a request_id reused for
-// other text, is a 400.
+// mode, consolidated (consolidateAdd). In background mode it hands what it
+// wrote to the scheduler (tellScheduler, as part of the write) and then waits
+// while the user's backlog is above the lag bound (awaitConsolidation); it
+// calls no model. A retry of a stored request succeeds and finishes what the
+// earlier attempt may not have. Only a missing request_id, user_id or
+// session_id, or a request_id reused for other text, is a 400.
 func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	deadline := time.Now().Add(s.addWindow)
 	ctx := r.Context()
@@ -826,18 +826,13 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	}
 	release := sync.OnceFunc(func() { s.users.release(user) })
 	defer release()
-	written, ok := s.writeParts(ctx, w, user, parts, deadline)
-	if !ok {
+	if !s.writeParts(ctx, w, user, parts, deadline) {
 		return
 	}
 	if s.sched != nil {
-		measure := s.measureUnknown(ctx, user)
-		// Stored: the wait needs the scheduler, not the store.
+		// Stored and told to the scheduler: the wait needs the scheduler, not
+		// the store.
 		release()
-		s.sched.Notify(ctx, user.key, written)
-		if measure >= 0 {
-			s.sched.Measured(user.key, measure)
-		}
 		s.awaitConsolidation(ctx, user.key, deadline)
 	}
 	s.metrics.adds.Add(1)
@@ -845,11 +840,10 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeParts writes an Add's parts under the user's write lock and embeds
-// their chunks; in on-add mode it then consolidates under the lock. It
-// returns the characters of the chunks written, in UTF-16 units as a job's
-// window and the backlog's measure count them, about what consolidation will
-// read of them, and false when it answered with an error.
-func (s *Server) writeParts(ctx context.Context, w http.ResponseWriter, user *userEntry, parts []addPart, deadline time.Time) (int64, bool) {
+// their chunks; in on-add mode it then consolidates under the lock, and in
+// background mode it tells the scheduler what it wrote (tellScheduler), also
+// under the lock. It returns false when it answered with an error.
+func (s *Server) writeParts(ctx context.Context, w http.ResponseWriter, user *userEntry, parts []addPart, deadline time.Time) bool {
 	user.waiting.Add(1)
 	user.writes.Lock()
 	user.waiting.Add(-1)
@@ -859,11 +853,11 @@ func (s *Server) writeParts(ctx context.Context, w http.ResponseWriter, user *us
 		err := s.write(ctx, user, part)
 		if errors.Is(err, errRequestReused) {
 			writeError(w, http.StatusBadRequest, err.Error())
-			return 0, false
+			return false
 		}
 		if err != nil {
 			s.fail(ctx, w, "write", user.key, err)
-			return 0, false
+			return false
 		}
 		chunks = append(chunks, part.chunks...)
 	}
@@ -871,17 +865,42 @@ func (s *Server) writeParts(ctx context.Context, w http.ResponseWriter, user *us
 		if err := embedChunks(ctx, user.store, *embedding, chunks); err != nil {
 			s.logf(ctx, slog.LevelError, "embedding failed (user %s): %v", user.key[:8], err)
 			writeError(w, http.StatusServiceUnavailable, "embedding is unavailable; retry the same request")
-			return 0, false
+			return false
 		}
 	}
 	if s.mode == ConsolidationOnAdd {
 		s.consolidateAdd(ctx, user, deadline)
 	}
-	written := int64(0)
-	for _, chunk := range chunks {
-		written += utf16Units(chunk)
+	if s.sched != nil {
+		// The characters of the chunks written, in UTF-16 units as a job's
+		// window and the backlog's measure count them, about what
+		// consolidation will read of them.
+		written := int64(0)
+		for _, chunk := range chunks {
+			written += utf16Units(chunk)
+		}
+		s.tellScheduler(ctx, user, written)
 	}
-	return written, true
+	return true
+}
+
+// tellScheduler hands the scheduler what an Add wrote for its user
+// (background mode): the user's backlog measured, when the scheduler has not
+// measured it yet (measureUnknown); the notification of the characters
+// written; and the measure, recorded (scheduler.Measured), which replaces the
+// estimate the notification has just grown. The caller holds the user's write
+// lock throughout, so that no other Add of the user writes or notifies between
+// the three, and the estimate is the measure plus what the Adds after it
+// wrote. Between them, another Add's records could be in the measure with its
+// notification after the record (counted twice), or its notification before
+// the record with its records out of the measure (not counted at all): the
+// estimate off by an Add (the re-review of the final fix's N6).
+func (s *Server) tellScheduler(ctx context.Context, user *userEntry, written int64) {
+	measure := s.measureUnknown(ctx, user)
+	s.sched.Notify(ctx, user.key, written)
+	if measure >= 0 {
+		s.sched.Measured(user.key, measure)
+	}
 }
 
 // utf16Units is the length of s in UTF-16 code units, as JavaScript counts
@@ -898,8 +917,10 @@ func utf16Units(s string) int64 {
 // written, when the scheduler has not measured the user since it started
 // (nor has a job), so that the lag bound holds from this Add on rather than
 // from the user's first job (the final review's parked T6-a): one measure per
-// user and start (scheduler.HasMeasured). It is -1 when the scheduler has
-// measured the user, or when the measure fails, which is logged.
+// user and start (scheduler.HasMeasured), whichever Add of the user comes
+// first, since the Adds of a user tell the scheduler one at a time
+// (tellScheduler). It is -1 when the scheduler has measured the user, or when
+// the measure fails, which is logged.
 func (s *Server) measureUnknown(ctx context.Context, user *userEntry) int64 {
 	if s.sched.HasMeasured(user.key) {
 		return -1

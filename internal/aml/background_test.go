@@ -1057,6 +1057,106 @@ func TestAddMeasuresAUserOnceAStart(t *testing.T) {
 	}
 }
 
+// N6 (the re-review of the final fix): two Adds of one user that the scheduler
+// has not measured, at once, must leave the estimate as the same two Adds one
+// after the other do. The first Add's measure, its notification and the record
+// of the measure are one step under the user's write lock: with another Add's
+// write and notification between them, the measure counted that Add's records
+// and its own notification counted them again (too high by an Add), or a
+// measure taken before that Add's write replaced a notification that counted
+// it (too low). The test holds the first Add where it tells the scheduler (the
+// scheduler's clock, which Notify reads first), lets the second come, and
+// frees the first.
+func TestConcurrentFirstAddsLeaveTheEstimateAsSequentialOnesDo(t *testing.T) {
+	settings := memoryagent.ConsolidationConfig{Mode: "timelines", BatchCharacters: 50000, MaxBatches: 64}
+	background := func() *harness {
+		return newHarness(t, func(config *ServerConfig) {
+			config.MemoryConfig.Consolidation = &settings
+			config.Consolidation = ConsolidationBackground
+		})
+	}
+	key := userKey("u1")
+
+	// The estimate of the two Adds one after the other: no worker runs, so
+	// the first measures, and the second adds what it wrote.
+	sequential := background()
+	sequential.mustAdd(t, noteAdd(0, "u1"))
+	sequential.mustAdd(t, noteAdd(1, "u1"))
+	want, known := sequential.server.sched.Backlog(key)
+	if !known {
+		t.Fatal("the sequential Adds left no estimate")
+	}
+
+	h := background()
+	user, err := h.server.users.acquire(context.Background(), "u1", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer h.server.users.release(user)
+	var gated, unlocked atomic.Bool
+	held, resume := make(chan struct{}), make(chan struct{})
+	free := sync.OnceFunc(func() { close(resume) })
+	defer free()
+	h.server.sched.now = func() time.Time {
+		if gated.CompareAndSwap(false, true) {
+			// The first Add is telling the scheduler: it holds the user's
+			// write lock still.
+			if user.writes.TryLock() {
+				user.writes.Unlock()
+				unlocked.Store(true)
+			}
+			close(held)
+			<-resume
+		}
+		return time.Now()
+	}
+	add := func(req AddRequest) <-chan int {
+		done := make(chan int, 1)
+		go func() { done <- h.call("POST", "/add", req).Code }()
+		return done
+	}
+	first := add(noteAdd(0, "u1"))
+	<-held
+	second := add(noteAdd(1, "u1"))
+	// The second Add cannot write while the first holds the lock; if it can,
+	// it finishes meanwhile.
+	secondCode, early := 0, false
+	select {
+	case secondCode = <-second:
+		early = true
+	case <-time.After(300 * time.Millisecond):
+	}
+	free()
+	answered := func(name string, done <-chan int) int {
+		t.Helper()
+		select {
+		case code := <-done:
+			return code
+		case <-time.After(10 * time.Second):
+			t.Fatalf("the %s Add did not answer", name)
+		}
+		return 0
+	}
+	if code := answered("first", first); code != http.StatusOK {
+		t.Errorf("the first Add answered %d", code)
+	}
+	if !early {
+		secondCode = answered("second", second)
+	}
+	if secondCode != http.StatusOK {
+		t.Errorf("the second Add answered %d", secondCode)
+	}
+	if unlocked.Load() {
+		t.Error("the first Add told the scheduler without its user's write lock")
+	}
+	if early {
+		t.Error("the second Add wrote while the first was between its measure and its notification")
+	}
+	if got, known := h.server.sched.Backlog(key); !known || got != want {
+		t.Errorf("the estimate after two Adds at once is %d (known %v), after the same two one after the other %d", got, known, want)
+	}
+}
+
 // Parked T6-b (final review): an Add adds what it wrote to the user's backlog
 // estimate in UTF-16 units, the units the backlog's measure and a job's
 // window count, not in runes: an emoji is two. Two Adds alike but for 100
