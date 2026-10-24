@@ -28,7 +28,10 @@ import (
 // server's background work (aml.Server.Run) starts, and is ready once its
 // startup scan has queued every user and its heartbeat ticks; then the admin
 // server, the public server and systemd's watchdog start, each once the one
-// before is ready; then systemd is told READY=1.
+// before is ready; then systemd is told READY=1. The data plane never
+// depends on the admin bind (ruling R91): an admin listener that cannot bind
+// (wg0 not up yet) is logged once, and the admin server binds it again every
+// amlAdminRetry in the background, while the public listener serves.
 //
 // Shutdown, on SIGINT or SIGTERM or when a component fails: systemd is told
 // STOPPING=1 and the watchdog stops; the public listener closes and the
@@ -70,6 +73,9 @@ var (
 	// windows have to settle their reservations before the process exits.
 	// 30 s + 5 s + 5 s stays within the unit's TimeoutStopSec=60.
 	amlSettleGrace = 5 * time.Second
+	// amlAdminRetry is how often an admin listener that could not bind is
+	// bound again. Tests shorten it.
+	amlAdminRetry = 5 * time.Second
 	// sdNotify tells systemd the service's state (sd_notify): nothing without
 	// NOTIFY_SOCKET, which stays set for the notifications to come. Tests
 	// record the states instead.
@@ -119,14 +125,18 @@ type amlProcess struct {
 	server *aml.Server
 	log    *slog.Logger
 	public *http.Server
-	// admin is nil without --admin-listen.
+	// admin is nil without --admin-listen, whose address is adminAddr; its
+	// listener is nil while that address has not bound (bindAdmin).
 	admin                         *http.Server
+	adminAddr                     string
 	publicListener, adminListener net.Listener
 	// watchdog is systemd's watchdog interval, 0 without one.
 	watchdog time.Duration
 }
 
-// newAMLProcess binds the process's listeners for server.
+// newAMLProcess binds the process's listeners for server. A public listener
+// that cannot bind fails it; an admin listener that cannot bind is logged,
+// and bound again later (bindAdmin).
 func newAMLProcess(server *aml.Server, options amlServeOptions, log *slog.Logger, watchdog time.Duration) (*amlProcess, error) {
 	p := &amlProcess{server: server, log: log, public: server.HTTPServer(options.listen), watchdog: watchdog}
 	var err error
@@ -135,12 +145,12 @@ func newAMLProcess(server *aml.Server, options amlServeOptions, log *slog.Logger
 	}
 	p.logf(slog.LevelInfo, "aml-serve listening on %s", p.publicListener.Addr())
 	if options.adminListen != "" {
+		p.admin, p.adminAddr = amlAdminServer(server.AdminHandler(), log), options.adminListen
 		if p.adminListener, err = net.Listen("tcp", options.adminListen); err != nil {
-			p.publicListener.Close()
-			return nil, fmt.Errorf("--admin-listen: %w", err)
+			p.logf(slog.LevelWarn, "aml-serve: --admin-listen: %v; serving without the admin listener and binding it again every %s", err, amlAdminRetry)
+		} else {
+			p.logf(slog.LevelInfo, "aml-serve admin listening on %s", p.adminListener.Addr())
 		}
-		p.admin = amlAdminServer(server.AdminHandler(), log)
-		p.logf(slog.LevelInfo, "aml-serve admin listening on %s", p.adminListener.Addr())
 	}
 	return p, nil
 }
@@ -171,7 +181,10 @@ func (p *amlProcess) serve(ctx context.Context, stopSignals func()) error {
 	defer stopWork()
 	watch, stopWatch := context.WithCancel(context.Background())
 	defer stopWatch()
-	if p.start(sup, work, watch) == nil {
+	// The admin server's retries of its bind end as it closes.
+	admin, stopAdmin := context.WithCancel(context.Background())
+	defer stopAdmin()
+	if p.start(sup, work, watch, admin) == nil {
 		p.notify(daemon.SdNotifyReady)
 		select {
 		case <-ctx.Done():
@@ -181,16 +194,16 @@ func (p *amlProcess) serve(ctx context.Context, stopSignals func()) error {
 		}
 	}
 	stopSignals()
-	cut := p.shutdown(sup, stopWork, stopWatch)
+	cut := p.shutdown(sup, stopWork, stopWatch, stopAdmin)
 	return errors.Join(sup.err(), cut)
 }
 
 // start starts the components in order, each once the one before is ready:
 // the background work (Run: its users queued and its heartbeat ticking), the
 // admin server, the public server and systemd's watchdog. Run ends with work,
-// the watchdog with watch. It returns the error of a component that failed
-// to start.
-func (p *amlProcess) start(sup *supervisor, work, watch context.Context) error {
+// the watchdog with watch, and an admin server still binding with admin. It
+// returns the error of a component that failed to start.
+func (p *amlProcess) start(sup *supervisor, work, watch, admin context.Context) error {
 	err := sup.start("background work", func(ready func()) error {
 		if err := p.server.Run(work, ready); err != nil {
 			return err
@@ -200,8 +213,12 @@ func (p *amlProcess) start(sup *supervisor, work, watch context.Context) error {
 		}
 		return nil
 	})
-	if err == nil && p.admin != nil {
+	switch {
+	case err != nil || p.admin == nil:
+	case p.adminListener != nil:
 		err = sup.start("admin server", serveHTTP(p.admin, p.adminListener))
+	default:
+		err = sup.start("admin server", p.bindAdmin(admin))
 	}
 	if err == nil {
 		err = sup.start("public server", serveHTTP(p.public, p.publicListener))
@@ -229,9 +246,36 @@ func serveHTTP(server *http.Server, listener net.Listener) func(ready func()) er
 	}
 }
 
+// bindAdmin is the admin server's component while its address has not
+// bound (R91): it is ready at once, so that the public server starts and
+// the data plane serves without it, and it binds the address again every
+// amlAdminRetry, quietly, until it can, then serves it as serveHTTP does
+// and says so; or until ctx ends, as the admin server closes. A listener
+// bound as the server closes is served and closed at once.
+func (p *amlProcess) bindAdmin(ctx context.Context) func(ready func()) error {
+	return func(ready func()) error {
+		ready()
+		retry := time.NewTicker(amlAdminRetry)
+		defer retry.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-retry.C:
+			}
+			listener, err := net.Listen("tcp", p.adminAddr)
+			if err != nil {
+				continue
+			}
+			p.logf(slog.LevelInfo, "aml-serve admin listening on %s", listener.Addr())
+			return serveHTTP(p.admin, listener)(func() {})
+		}
+	}
+}
+
 // shutdown stops the process in the phases the comment at the top of this
 // file describes and returns what it had to cut, nil when nothing.
-func (p *amlProcess) shutdown(sup *supervisor, stopWork, stopWatch context.CancelFunc) error {
+func (p *amlProcess) shutdown(sup *supervisor, stopWork, stopWatch, stopAdmin context.CancelFunc) error {
 	graceEnd := time.Now().Add(amlShutdownGrace)
 	end := graceEnd.Add(amlCancelGrace)
 	p.notify(daemon.SdNotifyStopping)
@@ -265,6 +309,7 @@ func (p *amlProcess) shutdown(sup *supervisor, stopWork, stopWatch context.Cance
 		cut = append(cut, fmt.Errorf("canceled at the end of the %s grace: requests still running", amlShutdownGrace))
 	}
 	if p.admin != nil {
+		stopAdmin()
 		p.admin.Close()
 	}
 	if stuck := sup.wait(end); len(stuck) > 0 {

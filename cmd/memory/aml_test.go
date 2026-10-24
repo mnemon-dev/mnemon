@@ -533,6 +533,20 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 	if command.Flags().Changed("consolidate-on-add") {
 		t.Error("aml-serve@.service passes --consolidate-on-add")
 	}
+	// The admin listener binds the host's WireGuard address: the unit starts
+	// wg0 with it and after it, but never needs it (R91: a Requires= would
+	// stop the evaluation with the overlay, and aml-serve serves its public
+	// listener while the admin one waits for wg0).
+	for _, key := range []string{"Wants", "After"} {
+		if values := strings.Fields(serve.get(t, "Unit", key)); !slices.Contains(values, "wg-quick@wg0.service") {
+			t.Errorf("aml-serve@.service %s=%q lacks wg-quick@wg0.service", key, values)
+		}
+	}
+	for _, key := range []string{"Requires", "Requisite", "BindsTo", "PartOf"} {
+		if values, ok := serve["Unit"][key]; ok {
+			t.Errorf("aml-serve@.service %s=%q: the data plane must not depend on the overlay", key, values)
+		}
+	}
 	// The admin listener binds the host's private overlay address, which
 	// aml-serve accepts only with the admin token.
 	if err := checkAdminListen(env["AML_ADMIN_LISTEN"], true); err != nil {

@@ -12,9 +12,12 @@
 # aml-serve holds a data root at a time (<data-root>/.aml-serve.lock).
 [Unit]
 Description=Mnemon AML memory adapter, instance %i
-# The admin listener binds the host's WireGuard address, which must exist.
+# The admin listener binds the host's WireGuard address: wg0 starts with
+# the instance and before it. The instance never depends on it (no
+# Requires=): without wg0 aml-serve serves its public listener and binds the
+# admin listener again every 5 s until wg0 is up.
 After=network-online.target wg-quick@wg0.service
-Wants=network-online.target
+Wants=network-online.target wg-quick@wg0.service
 # Restart=always without a cap: a crash loop keeps retrying every RestartSec.
 StartLimitIntervalSec=0
 
