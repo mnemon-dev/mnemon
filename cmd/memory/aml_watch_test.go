@@ -20,6 +20,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gofrs/flock"
 	"github.com/mnemon-dev/mnemon/internal/aml"
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
 )
@@ -30,6 +31,11 @@ import (
 
 // watchToken is the secret part of the test webhook's URL.
 const watchToken = "s3cr3t-t0k3n-4f9a"
+
+// watchWantTag starts every message. It is spelled out here, not taken from the
+// watcher: the runbook has operators register its word (mnemon-aml) as the
+// Feishu bot's keyword, so changing it must fail a test.
+const watchWantTag = "[mnemon-aml] "
 
 var (
 	// watchNow is the clock's first reading; the fake server started a day
@@ -63,6 +69,7 @@ type watchStack struct {
 	hookCode     int    // 0 for 200
 	hookBody     string // "" for the answer of a webhook that took the message
 	hookHandler  http.HandlerFunc
+	hookKeyword  string // a Feishu bot's keyword: a text without it is answered 200 with code 19024
 	posts        []watchPost
 	taken        int
 }
@@ -113,8 +120,11 @@ func newWatchStack(t *testing.T) *watchStack {
 		s.mu.Lock()
 		handler := s.hookHandler
 		s.posts = append(s.posts, watchPost{path: r.Method + " " + r.URL.RequestURI(), contentType: r.Header.Get("Content-Type"), body: body})
-		code, answer := s.hookCode, s.hookBody
+		code, answer, keyword := s.hookCode, s.hookBody, s.hookKeyword
 		s.mu.Unlock()
+		if keyword != "" && !strings.Contains(string(body), keyword) {
+			answer = `{"code":19024,"msg":"Key Words Not Found"}`
+		}
 		if handler != nil {
 			handler(w, r)
 			return
@@ -275,7 +285,7 @@ func TestWatchFiresAndRepeats(t *testing.T) {
 	// and the time in UTC.
 	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 6 })
 	first := onlyAlert(t, r.step(time.Minute), "degraded-search")
-	for _, want := range []string{"ALERT degraded-search on aml-test", "1 new", "6 since the process started", "2026-10-24 12:01:00 UTC"} {
+	for _, want := range []string{watchWantTag + "ALERT degraded-search on aml-test\n1 new degraded Search (6 since the process started)\n2026-10-24 12:01:00 UTC"} {
 		if !strings.Contains(first, want) {
 			t.Fatalf("%q lacks %q", first, want)
 		}
@@ -300,7 +310,7 @@ func TestWatchFiresAndRepeats(t *testing.T) {
 	// Thirty minutes after the message, with the counter still moving, it is
 	// said again.
 	repeat := onlyAlert(t, r.step(time.Minute), "degraded-search")
-	if !strings.Contains(repeat, "still firing after 30m0s") || !strings.Contains(repeat, "2026-10-24 12:31:00 UTC") {
+	if !strings.HasPrefix(repeat, watchWantTag+"ALERT degraded-search on aml-test (still firing after 30m0s)\n") || !strings.Contains(repeat, "2026-10-24 12:31:00 UTC") {
 		t.Fatal(repeat)
 	}
 
@@ -313,7 +323,7 @@ func TestWatchFiresAndRepeats(t *testing.T) {
 	}
 	// …and is then resolved, once.
 	resolved := onlyAlert(t, r.step(time.Minute), "degraded-search")
-	if !strings.HasPrefix(resolved, "RESOLVED degraded-search on aml-test (after 39m0s)") || !strings.Contains(resolved, "2026-10-24 12:40:00 UTC") ||
+	if !strings.HasPrefix(resolved, watchWantTag+"RESOLVED degraded-search on aml-test (after 39m0s)\n") || !strings.Contains(resolved, "2026-10-24 12:40:00 UTC") ||
 		!strings.Contains(resolved, "\nwas: 12 degraded Searches since the process started") {
 		t.Fatal(resolved)
 	}
@@ -357,7 +367,7 @@ func TestWatchPayloadKinds(t *testing.T) {
 			r.w.kind = tc.kind
 			r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
 			texts := r.step(0)
-			wantText := fmt.Sprintf("ALERT health on aml-test\nGET %s/health answered 502\n2026-10-24 12:00:00 UTC", r.stack.public.URL)
+			wantText := fmt.Sprintf(watchWantTag+"ALERT health on aml-test\nGET %s/health answered 502\n2026-10-24 12:00:00 UTC", r.stack.public.URL)
 			if len(texts) != 1 || texts[0] != wantText {
 				t.Fatalf("got %q, want %q", texts, wantText)
 			}
@@ -421,7 +431,7 @@ func TestWatchDetectsRestart(t *testing.T) {
 	restarted := watchNow.Add(90 * time.Second)
 	r.stack.set(func(s *aml.AdminStatus) { *s = watchHealthy(restarted) })
 	message := onlyAlert(t, r.step(time.Minute), "restart") // 12:02
-	for _, want := range []string{"ALERT restart on aml-test", "restarted", "2026-10-24T12:01:30Z", "2026-10-23T12:00:00Z"} {
+	for _, want := range []string{watchWantTag + "ALERT restart on aml-test", "restarted", "2026-10-24T12:01:30Z", "2026-10-23T12:00:00Z"} {
 		if !strings.Contains(message, want) {
 			t.Fatalf("%q lacks %q", message, want)
 		}
@@ -438,10 +448,10 @@ func TestWatchDetectsRestart(t *testing.T) {
 	if texts := r.step(8 * time.Minute); len(texts) != 0 { // 12:11
 		t.Fatal(texts)
 	}
-	if message = onlyAlert(t, r.step(time.Minute), "restart"); !strings.HasPrefix(message, "RESOLVED restart on aml-test") { // 12:12
+	if message = onlyAlert(t, r.step(time.Minute), "restart"); !strings.HasPrefix(message, watchWantTag+"RESOLVED restart on aml-test") { // 12:12
 		t.Fatal(message)
 	}
-	if message = onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, "RESOLVED degraded-search") { // 12:13
+	if message = onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, watchWantTag+"RESOLVED degraded-search") { // 12:13
 		t.Fatal(message)
 	}
 
@@ -453,7 +463,7 @@ func TestWatchDetectsRestart(t *testing.T) {
 	if len(texts) != 3 {
 		t.Fatal(texts)
 	}
-	for i, want := range []string{"ALERT consolidation-dropped on aml-test\n1 new", "ALERT degraded-search on aml-test\n3 new", "ALERT restart on aml-test"} {
+	for i, want := range []string{watchWantTag + "ALERT consolidation-dropped on aml-test\n1 new", watchWantTag + "ALERT degraded-search on aml-test\n3 new", watchWantTag + "ALERT restart on aml-test"} {
 		if !strings.HasPrefix(texts[i], want) {
 			t.Errorf("message %d is %q, want %q", i, texts[i], want)
 		}
@@ -472,13 +482,15 @@ func TestWatchDetectsRestart(t *testing.T) {
 		t.Fatal(texts)
 	}
 	r.stack.set(func(s *aml.AdminStatus) { *s = watchHealthy(watchStarted) })
-	if message = onlyAlert(t, r.step(time.Minute), "restart"); !strings.HasPrefix(message, "ALERT restart") {
+	if message = onlyAlert(t, r.step(time.Minute), "restart"); !strings.HasPrefix(message, watchWantTag+"ALERT restart") {
 		t.Fatal(message)
 	}
 }
 
 // The webhook is a secret: no output of the watcher shows it, whichever way
-// the post fails.
+// the post fails, on any of its paths: the run that finds the lock held, the
+// run that warns the public probe is off, the alert that cannot be delivered
+// and the resolution that is owed for it.
 func TestWatchNeverPrintsWebhook(t *testing.T) {
 	for name, fail := range map[string]func(*watchStack){
 		"HTTP 500": func(s *watchStack) { s.configure(func(s *watchStack) { s.hookCode = http.StatusInternalServerError }) },
@@ -512,13 +524,13 @@ func TestWatchNeverPrintsWebhook(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			stack := newWatchStack(t)
-			state := filepath.Join(t.TempDir(), "watch-state.json")
+			state := filepath.Join(t.TempDir(), "state", "watch-state.json")
 			t.Setenv("AML_ALERT_WEBHOOK", stack.webhookURL())
 			t.Setenv("AML_ALERT_KIND", "feishu")
 			var out bytes.Buffer
-			run := func() error {
+			run := func(extra ...string) error {
 				command := newAMLWatchCommand()
-				command.SetArgs([]string{"--admin", stack.admin.URL, "--public-url", stack.public.URL, "--state", state})
+				command.SetArgs(append([]string{"--admin", stack.admin.URL, "--state", state}, extra...))
 				command.SetOut(&out)
 				command.SetErr(&out)
 				err := command.Execute()
@@ -527,15 +539,36 @@ func TestWatchNeverPrintsWebhook(t *testing.T) {
 				}
 				return err
 			}
-			// A baseline run, then one more degraded Search to say.
-			if err := run(); err != nil {
-				t.Fatal(err)
+			public := []string{"--public-url", stack.public.URL}
+			// A baseline run with no public URL: it warns that the probe is off.
+			if err := run(); err != nil || !strings.Contains(out.String(), "the public health probe is off because --public-url is empty") {
+				t.Fatalf("%v\n%s", err, out.String())
 			}
-			stack.set(func(s *aml.AdminStatus) { s.Degraded = 1 })
+			// A run that finds another one holding the lock does nothing.
+			held := flock.New(state + ".lock")
+			if locked, err := held.TryLock(); !locked || err != nil {
+				t.Fatal(locked, err)
+			}
+			err := run(public...)
+			if unlockErr := held.Unlock(); unlockErr != nil || err != nil || !strings.Contains(out.String(), "another aml-watch run holds the lock") {
+				t.Fatalf("%v %v\n%s", err, unlockErr, out.String())
+			}
+			// One more degraded Search and work that has waited too long: two
+			// alerts to say, to a webhook that fails. (backlog-age sorts before
+			// degraded-search, so that a webhook that cannot be reached, which
+			// ends the run at its first failure, is tried with it first.)
+			stack.set(func(s *aml.AdminStatus) { s.Degraded = 1; s.Queue.OldestQueued = 20 * time.Minute })
 			fail(stack)
-			err := run()
+			err = run(public...)
 			if err == nil || !strings.Contains(err.Error(), "not delivered") {
 				t.Fatal("a failed post did not fail the run:", err)
+			}
+			// The work is done: the alert that never went out is resolved, and
+			// its resolution fails the same way.
+			stack.set(func(s *aml.AdminStatus) { s.Queue.OldestQueued = 0 })
+			err = run(public...)
+			if err == nil || !strings.Contains(err.Error(), "not delivered") || !strings.Contains(out.String(), "alert=backlog-age event=resolved") {
+				t.Fatalf("%v\n%s", err, out.String())
 			}
 			everything := out.String()
 			for _, secret := range []string{watchToken, stack.webhookURL(), stack.hook.Listener.Addr().String(), "/hook/", "/elsewhere"} {
@@ -543,14 +576,19 @@ func TestWatchNeverPrintsWebhook(t *testing.T) {
 					t.Errorf("the output shows %q:\n%s", secret, everything)
 				}
 			}
-			// The state was saved all the same, the message unsent, and
+			// The state was saved all the same, the messages owed, and
 			// without the secret.
 			raw, readErr := os.ReadFile(state)
-			if readErr != nil || !strings.Contains(string(raw), `"degraded-search"`) || strings.Contains(string(raw), watchToken) {
+			if readErr != nil || !strings.Contains(string(raw), `"degraded-search"`) || !strings.Contains(string(raw), `"backlog-age"`) || strings.Contains(string(raw), watchToken) {
 				t.Errorf("state: %v\n%s", readErr, raw)
 			}
-			if name == "redirect" && stack.attempts() != 1 {
-				t.Error("a redirect was followed:", stack.attempts())
+			// A redirect is a failure, not an address to post to.
+			stack.mu.Lock()
+			defer stack.mu.Unlock()
+			for _, post := range stack.posts {
+				if post.path != "POST /hook/"+watchToken {
+					t.Error("a post went to", post.path)
+				}
 			}
 		})
 	}
@@ -623,7 +661,7 @@ func TestWatchDeliveryFailureIsRetried(t *testing.T) {
 	// has heard of it, so it is not "still firing"), and then the alert is
 	// quiet again.
 	r.stack.configure(func(s *watchStack) { s.hookCode = 0 })
-	if message := onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, "ALERT degraded-search") || strings.Contains(message, "still firing") {
+	if message := onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, watchWantTag+"ALERT degraded-search") || strings.Contains(message, "still firing") {
 		t.Fatal(message)
 	}
 	if got := r.firing(); !got["degraded-search"] {
@@ -636,14 +674,14 @@ func TestWatchDeliveryFailureIsRetried(t *testing.T) {
 	// A "resolved" that cannot be delivered is kept and tried again.
 	r.stack.configure(func(s *watchStack) { s.hookCode = http.StatusInternalServerError })
 	texts, err = r.stepErr(10 * time.Minute)
-	if err == nil || len(texts) != 1 || !strings.HasPrefix(texts[0], "RESOLVED degraded-search") {
+	if err == nil || len(texts) != 1 || !strings.HasPrefix(texts[0], watchWantTag+"RESOLVED degraded-search") {
 		t.Fatalf("%q %v", texts, err)
 	}
 	if got := r.firing(); len(got) != 1 {
 		t.Fatal("the unsent resolution is lost:", got)
 	}
 	r.stack.configure(func(s *watchStack) { s.hookCode = 0 })
-	if message := onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, "RESOLVED degraded-search") {
+	if message := onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, watchWantTag+"RESOLVED degraded-search") {
 		t.Fatal(message)
 	}
 	if got := r.firing(); len(got) != 0 {
@@ -654,20 +692,43 @@ func TestWatchDeliveryFailureIsRetried(t *testing.T) {
 	}
 
 	// An alert that fired and ended while the webhook was down never reached
-	// anybody: nobody is told it is over.
+	// anybody. Its resolution is owed all the same: it says the alert itself
+	// was not delivered, it is kept (one entry for the alert) and tried again
+	// each run until the webhook takes it.
 	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 2 })
 	r.stack.configure(func(s *watchStack) { s.hookCode = http.StatusInternalServerError })
 	if _, err = r.stepErr(time.Minute); err == nil {
 		t.Fatal("no error")
 	}
-	before := r.stack.attempts()
-	if _, err = r.stepErr(10 * time.Minute); err != nil || r.stack.attempts() != before {
-		t.Fatal("a resolution nobody was waiting for was posted:", err, before, r.stack.attempts())
+	texts, err = r.stepErr(10 * time.Minute) // the ten minutes the alert is held are over
+	if err == nil || len(texts) != 1 {
+		t.Fatalf("%q %v", texts, err)
+	}
+	lines := strings.Split(texts[0], "\n")
+	if len(lines) != 3 || lines[0] != watchWantTag+"RESOLVED degraded-search on aml-test (after 10m0s, alert not delivered)" ||
+		lines[1] != "was: 1 new degraded Search (2 since the process started)" || !strings.HasSuffix(lines[2], " UTC") {
+		t.Fatalf("%q", texts[0])
+	}
+	if got := r.firing(); len(got) != 1 || got["degraded-search"] {
+		t.Fatal("the unsent resolution is not kept as owed:", got)
+	}
+	texts, err = r.stepErr(time.Minute)
+	if err == nil || len(texts) != 1 || !strings.HasPrefix(texts[0], watchWantTag+"RESOLVED degraded-search on aml-test (after 11m0s, alert not delivered)\n") {
+		t.Fatalf("the owed resolution was not tried again: %q %v", texts, err)
+	}
+	if got := r.firing(); len(got) != 1 {
+		t.Fatal(got)
+	}
+	r.stack.configure(func(s *watchStack) { s.hookCode = 0 })
+	if message := onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, watchWantTag+"RESOLVED degraded-search on aml-test (after 12m0s, alert not delivered)\n") {
+		t.Fatal(message)
 	}
 	if got := r.firing(); len(got) != 0 {
 		t.Fatal(got)
 	}
-	r.stack.configure(func(s *watchStack) { s.hookCode = 0 })
+	if texts = r.step(time.Minute); len(texts) != 0 {
+		t.Fatal("a resolution was said twice:", texts)
+	}
 
 	// An alert that fires again before its unsent resolution went out is
 	// just firing: nobody was told it stopped.
@@ -756,18 +817,43 @@ func TestWatchWithoutWebhookLogsAndExitsZero(t *testing.T) {
 	r.w.webhook, r.w.kind = r.stack.webhookURL(), "wecom"
 	onlyAlert(t, r.step(time.Minute), "degraded-search")
 
-	// A resolution nobody could be told of is dropped, not kept.
+	// A resolution is owed, whether its alert reached the webhook or not: with
+	// no webhook it is logged and kept, and posted once there is one.
 	r.w.webhook, r.w.kind = "", ""
-	r.stack.set(func(s *aml.AdminStatus) { s.Degraded = 2 })
-	if _, err = r.stepErr(30 * time.Minute); err != nil {
+	r.logs.Reset()
+	if texts, err = r.stepErr(30 * time.Minute); err != nil || len(texts) != 0 {
+		t.Fatal(texts, err)
+	}
+	if !strings.Contains(r.logs.String(), watchWantTag+"RESOLVED degraded-search on aml-test (after 31m0s)") {
+		t.Fatalf("the resolution was not logged:\n%s", r.logs)
+	}
+	if got := r.firing(); len(got) != 1 {
+		t.Fatal("the owed resolution is not kept:", got)
+	}
+	// An alert that fires and clears while there is no webhook was never
+	// delivered; its resolution says so, and is posted with the other.
+	r.stack.set(func(s *aml.AdminStatus) { s.Dropped = 1 })
+	if _, err = r.stepErr(time.Minute); err != nil {
 		t.Fatal(err)
+	}
+	if _, err = r.stepErr(10 * time.Minute); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.firing(); len(got) != 2 || got["consolidation-dropped"] || !got["degraded-search"] {
+		t.Fatal("one entry for each alert, only one of them delivered:", got)
+	}
+	r.w.webhook, r.w.kind = r.stack.webhookURL(), "feishu"
+	texts = r.step(time.Minute)
+	if len(texts) != 2 ||
+		!strings.HasPrefix(texts[0], watchWantTag+"RESOLVED consolidation-dropped on aml-test (after 11m0s, alert not delivered)\nwas: ") ||
+		!strings.HasPrefix(texts[1], watchWantTag+"RESOLVED degraded-search on aml-test (after 43m0s)\nwas: ") {
+		t.Fatalf("%q", texts)
 	}
 	if got := r.firing(); len(got) != 0 {
 		t.Fatal(got)
 	}
-	// A configuration error is not hidden by an empty webhook only when the
-	// webhook is set.
-	r.w.kind = "slack"
+	// With no webhook there is nothing to check a kind against.
+	r.w.webhook, r.w.kind = "", "slack"
 	if _, err = r.stepErr(time.Minute); err != nil {
 		t.Fatal("a kind without a webhook is not checked:", err)
 	}
@@ -876,7 +962,7 @@ func TestWatchAlertsAreNamedBySubject(t *testing.T) {
 		t.Fatal(texts)
 	}
 	for i, alert := range []string{"breaker-open:deepseek", "breaker-open:jev", "budget-high:deepseek", "budget-high:jev"} {
-		if !strings.HasPrefix(texts[i], "ALERT "+alert+" on aml-test") {
+		if !strings.HasPrefix(texts[i], watchWantTag+"ALERT "+alert+" on aml-test") {
 			t.Errorf("message %d: %q, want %s", i, texts[i], alert)
 		}
 	}
@@ -904,7 +990,7 @@ func TestWatchBreakerTripBetweenRuns(t *testing.T) {
 	if texts := r.step(9 * time.Minute); len(texts) != 0 {
 		t.Fatal("still within ten minutes of the last time it was open:", texts)
 	}
-	if message = onlyAlert(t, r.step(time.Minute), "breaker-open:deepseek"); !strings.HasPrefix(message, "RESOLVED") {
+	if message = onlyAlert(t, r.step(time.Minute), "breaker-open:deepseek"); !strings.HasPrefix(message, watchWantTag+"RESOLVED") {
 		t.Fatal(message)
 	}
 }
@@ -938,7 +1024,7 @@ func TestWatchBacklogAboveTheBoundForFifteenMinutes(t *testing.T) {
 		}
 	}
 	over(1000)
-	if message = onlyAlert(t, r.step(time.Minute), "backlog-lag"); !strings.HasPrefix(message, "RESOLVED") {
+	if message = onlyAlert(t, r.step(time.Minute), "backlog-lag"); !strings.HasPrefix(message, watchWantTag+"RESOLVED") {
 		t.Fatal(message)
 	}
 
@@ -972,7 +1058,7 @@ func TestWatchReadyAndHealth(t *testing.T) {
 		t.Fatal(texts)
 	}
 	r.stack.configure(func(s *watchStack) { s.readyCode = 0 })
-	if message = onlyAlert(t, r.step(time.Minute), "ready"); !strings.HasPrefix(message, "RESOLVED ready on aml-test") {
+	if message = onlyAlert(t, r.step(time.Minute), "ready"); !strings.HasPrefix(message, watchWantTag+"RESOLVED ready on aml-test") {
 		t.Fatal(message)
 	}
 
@@ -983,7 +1069,7 @@ func TestWatchReadyAndHealth(t *testing.T) {
 		t.Fatal(message)
 	}
 	r.stack.configure(func(s *watchStack) { s.readyCode = 0 })
-	if message = onlyAlert(t, r.step(time.Minute), "ready"); !strings.HasPrefix(message, "RESOLVED ready") {
+	if message = onlyAlert(t, r.step(time.Minute), "ready"); !strings.HasPrefix(message, watchWantTag+"RESOLVED ready") {
 		t.Fatal(message)
 	}
 	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusNotFound })
@@ -1000,7 +1086,7 @@ func TestWatchReadyAndHealth(t *testing.T) {
 		t.Fatalf("%q lacks %q", message, want)
 	}
 	r.stack.configure(func(s *watchStack) { s.healthCode = 0 })
-	if message = onlyAlert(t, r.step(time.Minute), "health"); !strings.HasPrefix(message, "RESOLVED") {
+	if message = onlyAlert(t, r.step(time.Minute), "health"); !strings.HasPrefix(message, watchWantTag+"RESOLVED") {
 		t.Fatal(message)
 	}
 
@@ -1082,8 +1168,13 @@ func TestWatchStateFile(t *testing.T) {
 	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %v", info.Mode())
 	}
-	if entries, err := os.ReadDir(filepath.Dir(r.state)); err != nil || len(entries) != 1 || entries[0].Name() != "watch-state.json" {
+	// The directory holds the state and the lock file of the runs (kept, not
+	// removed: removing a lock file would race), and no temporary file.
+	if entries, err := os.ReadDir(filepath.Dir(r.state)); err != nil || len(entries) != 2 || entries[0].Name() != "watch-state.json" || entries[1].Name() != "watch-state.json.lock" {
 		t.Fatal(entries, err)
+	}
+	if info, err := os.Stat(r.state + ".lock"); err != nil || runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
+		t.Fatal("the lock file:", info, err)
 	}
 	fields := r.saved()
 	var version int
@@ -1146,7 +1237,7 @@ func TestWatchStateThatCannotBeRead(t *testing.T) {
 	if strings.Contains(err.Error(), watchToken) {
 		t.Fatal(err)
 	}
-	if entries, readErr := os.ReadDir(filepath.Dir(r.state)); readErr != nil || len(entries) != 1 {
+	if entries, readErr := os.ReadDir(filepath.Dir(r.state)); readErr != nil || len(entries) != 2 { // the directory where the state should be, and the lock
 		t.Fatal(entries, readErr)
 	}
 }
@@ -1174,6 +1265,12 @@ func TestWatchStateThatCannotBeWritten(t *testing.T) {
 	if entries, readErr := os.ReadDir(dir); readErr != nil || len(entries) != 0 {
 		t.Fatal("the failed write left", entries, readErr)
 	}
+	// The lock is not what keeps alerts from going out: a run that cannot open
+	// its lock file (not because another run holds it) goes on without it, and
+	// says so.
+	if got := strings.Count(r.logs.String(), "could not take the run lock"); got != 1 || strings.Contains(r.logs.String(), "holds the lock") {
+		t.Fatalf("%d lines about the lock:\n%s", got, r.logs)
+	}
 }
 
 func TestWatchMessagesStayUnderAThousandCharacters(t *testing.T) {
@@ -1188,7 +1285,7 @@ func TestWatchMessagesStayUnderAThousandCharacters(t *testing.T) {
 	if len(texts) != 1 || len(texts[0]) >= 1000 || len([]rune(texts[0])) >= 1000 || !strings.Contains(texts[0], "...") || !strings.Contains(texts[0], "UTC") {
 		t.Fatalf("%d bytes: %q", len(texts[0]), texts)
 	}
-	if !strings.HasPrefix(texts[0], "ALERT ready on "+r.w.host) || strings.Contains(texts[0], "\uFFFD") {
+	if !strings.HasPrefix(texts[0], watchWantTag+"ALERT ready on "+r.w.host) || strings.Contains(texts[0], "\uFFFD") {
 		t.Fatal(texts[0])
 	}
 	// What the state keeps of it is bounded too, in the run that raised the
@@ -1203,7 +1300,7 @@ func TestWatchMessagesStayUnderAThousandCharacters(t *testing.T) {
 	}
 	// And so is the resolution.
 	r.stack.configure(func(s *watchStack) { s.readyCode = 0 })
-	if texts = r.step(time.Minute); len(texts) != 1 || len(texts[0]) >= 1000 || !strings.Contains(texts[0], "\nwas: ") || !strings.HasPrefix(texts[0], "RESOLVED ready on "+r.w.host) {
+	if texts = r.step(time.Minute); len(texts) != 1 || len(texts[0]) >= 1000 || !strings.Contains(texts[0], "\nwas: ") || !strings.HasPrefix(texts[0], watchWantTag+"RESOLVED ready on "+r.w.host) {
 		t.Fatalf("%d bytes: %q", len(texts[0]), texts)
 	}
 }
@@ -1346,7 +1443,7 @@ func TestWatchCommandChecksItsSettings(t *testing.T) {
 	stack.mu.Lock()
 	body := string(stack.posts[0].body)
 	stack.mu.Unlock()
-	if !strings.HasPrefix(body, `{"msgtype":"text","text":{"content":"ALERT health on `) {
+	if !strings.HasPrefix(body, `{"msgtype":"text","text":{"content":"`+watchWantTag+`ALERT health on `) {
 		t.Fatal(body)
 	}
 }
@@ -1388,7 +1485,7 @@ func TestWatchRestartStartsTheBacklogCountOver(t *testing.T) {
 	onlyAlert(t, r.step(time.Minute), "restart") // 12:11
 	for minute := 12; minute <= 25; minute++ {
 		texts := r.step(time.Minute)
-		if len(texts) != 0 && !(minute == 21 && strings.HasPrefix(texts[0], "RESOLVED restart")) {
+		if len(texts) != 0 && !(minute == 21 && strings.HasPrefix(texts[0], watchWantTag+"RESOLVED restart")) {
 			t.Fatalf("at 12:%02d: %q", minute, texts)
 		}
 	}
@@ -1423,7 +1520,7 @@ func TestWatchUnreadableStatusLeavesHeldAlertsHeld(t *testing.T) {
 	onlyAlert(t, r.step(time.Minute), "ready") // 12:02
 	r.step(time.Minute)                        // 12:03
 	r.stack.configure(func(s *watchStack) { s.statusCode = 0 })
-	if message := onlyAlert(t, r.step(time.Minute), "ready"); !strings.HasPrefix(message, "RESOLVED ready") { // 12:04
+	if message := onlyAlert(t, r.step(time.Minute), "ready"); !strings.HasPrefix(message, watchWantTag+"RESOLVED ready") { // 12:04
 		t.Fatal(message)
 	}
 	// It rose at 12:01 and is firing until 12:11, however the minutes between
@@ -1433,7 +1530,7 @@ func TestWatchUnreadableStatusLeavesHeldAlertsHeld(t *testing.T) {
 			t.Fatalf("at 12:%02d: %q", minute, texts)
 		}
 	}
-	if message := onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, "RESOLVED") {
+	if message := onlyAlert(t, r.step(time.Minute), "degraded-search"); !strings.HasPrefix(message, watchWantTag+"RESOLVED") {
 		t.Fatal(message)
 	}
 
@@ -1453,7 +1550,7 @@ func TestWatchUnreadableStatusLeavesHeldAlertsHeld(t *testing.T) {
 	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
 	onlyAlert(t, r.step(time.Minute), "health")
 	r.stack.configure(func(s *watchStack) { s.healthCode = 0 })
-	if message := onlyAlert(t, r.step(time.Minute), "health"); !strings.HasPrefix(message, "RESOLVED health") {
+	if message := onlyAlert(t, r.step(time.Minute), "health"); !strings.HasPrefix(message, watchWantTag+"RESOLVED health") {
 		t.Fatal(message)
 	}
 }
@@ -1523,7 +1620,7 @@ func TestSaveWatchStateLeavesNothingBehind(t *testing.T) {
 // The time in a message is UTC, whatever the clock's zone.
 func TestWatchSaysTheTimeInUTC(t *testing.T) {
 	zone := time.FixedZone("CST", 8*3600)
-	if text := watchText(watchNew, "health", "aml-test", 0, "down", watchNow.In(zone)); !strings.HasSuffix(text, "\n2026-10-24 12:00:00 UTC") {
+	if text := watchText(watchNew, "health", "aml-test", "", "down", watchNow.In(zone)); !strings.HasSuffix(text, "\n2026-10-24 12:00:00 UTC") {
 		t.Fatal(text)
 	}
 	r := newWatchRig(t)
@@ -1564,6 +1661,311 @@ func TestWatchTransportFailuresSayOnlyTheirKind(t *testing.T) {
 		got := watchTransportFailure(tc.err)
 		if got.Error() != tc.want || !got.unreachable {
 			t.Errorf("%s: %q (unreachable %v), want %q", name, got.Error(), got.unreachable, tc.want)
+		}
+	}
+}
+
+// Every message starts with the tag whose word the operator registers as the
+// Feishu bot's keyword: a bot protected by a keyword answers a text without it
+// 200 with a code, which is a failed delivery. The tag is on every kind of
+// message, a resolution and the resolution of an alert that never went out
+// included (those two had no "ALERT" in them).
+func TestWatchEveryMessageCarriesTheTag(t *testing.T) {
+	r := newWatchRig(t)
+	r.stack.configure(func(s *watchStack) { s.hookKeyword = "mnemon-aml" })
+	all := []string{}
+	say := func(after time.Duration) {
+		t.Helper()
+		all = append(all, r.step(after)...) // fails the test if the keyword was not found
+	}
+	say(0)
+	// An alert, said again, resolved.
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	say(time.Minute)
+	say(30 * time.Minute)
+	r.stack.configure(func(s *watchStack) { s.healthCode = 0 })
+	say(time.Minute)
+	// An alert that did not go out, resolved.
+	r.stack.configure(func(s *watchStack) {
+		s.hookCode = http.StatusInternalServerError
+		s.readyCode, s.readyReasons = http.StatusServiceUnavailable, []string{"breaker open: jev"}
+	})
+	failed, err := r.stepErr(time.Minute)
+	if err == nil {
+		t.Fatal("no error")
+	}
+	all = append(all, failed...)
+	r.stack.configure(func(s *watchStack) { s.hookCode, s.readyCode = 0, 0 })
+	say(time.Minute)
+
+	if len(all) != 5 {
+		t.Fatalf("%q", all)
+	}
+	for i, kind := range []string{"ALERT health on aml-test\n", "ALERT health on aml-test (still firing after 30m0s)\n", "RESOLVED health on aml-test (after 31m0s)\n",
+		"ALERT ready on aml-test\n", "RESOLVED ready on aml-test (after 1m0s, alert not delivered)\n"} {
+		if !strings.HasPrefix(all[i], "[mnemon-aml] "+kind) {
+			t.Errorf("message %d is %q, want it to start with %q", i, all[i], "[mnemon-aml] "+kind)
+		}
+	}
+	// A bot whose keyword is the old word of the alerts takes none of the
+	// resolutions: that was the defect.
+	r.stack.configure(func(s *watchStack) { s.hookKeyword = "ALERT" })
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	r.step(time.Minute)
+	r.stack.configure(func(s *watchStack) { s.healthCode = 0 })
+	if _, err = r.stepErr(time.Minute); err == nil || !strings.Contains(err.Error(), "rejected the message (code 19024)") {
+		t.Fatal("a resolution was taken by a bot that wants ALERT:", err)
+	}
+}
+
+// With no public URL the run says, every run, that the public health probe is
+// off: a forgotten flag is not silent.
+func TestWatchWarnsThatThePublicHealthProbeIsOff(t *testing.T) {
+	const warning = "the public health probe is off because --public-url is empty"
+	warnings := func(logs string) int {
+		n := 0
+		for _, line := range strings.Split(logs, "\n") {
+			if strings.Contains(line, warning) {
+				if !strings.Contains(line, "level=WARN") {
+					t.Errorf("not a warning: %s", line)
+				}
+				n++
+			}
+		}
+		return n
+	}
+	t.Setenv("AML_ALERT_WEBHOOK", "") // the command part posts nothing
+	t.Setenv("AML_ALERT_KIND", "")
+	r := newWatchRig(t)
+	r.w.public = ""
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway }) // nobody looks
+	for run := 1; run <= 3; run++ {
+		if texts := r.step(time.Minute); len(texts) != 0 {
+			t.Fatal(texts)
+		}
+		if got := warnings(r.logs.String()); got != run {
+			t.Fatalf("after %d runs, %d warnings:\n%s", run, got, r.logs)
+		}
+	}
+	// With the probe on, nothing is said of it.
+	r.w.public = r.stack.public.URL
+	r.logs.Reset()
+	onlyAlert(t, r.step(time.Minute), "health")
+	if got := warnings(r.logs.String()); got != 0 {
+		t.Fatalf("%d warnings with the probe on:\n%s", got, r.logs)
+	}
+
+	// The same through the command: its flag is optional, and its absence is
+	// said once per run.
+	stack := newWatchStack(t)
+	state := filepath.Join(t.TempDir(), "watch-state.json")
+	out, err := executeAMLWatch("--admin", stack.admin.URL, "--state", state)
+	if err != nil || warnings(out) != 1 {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if out, err = executeAMLWatch("--admin", stack.admin.URL, "--public-url", stack.public.URL, "--state", state); err != nil || warnings(out) != 0 {
+		t.Fatalf("%v\n%s", err, out)
+	}
+}
+
+// Delivery is at-least-once whatever the alert and however long the webhook is
+// down: an alert that never went out and then cleared owes a resolution, which
+// says so and is tried every run, with no cap on the tries and no age after
+// which it is given up, until the webhook takes it. The state keeps one entry
+// for the alert all along.
+func TestWatchOwedResolutionsAreRetriedWithoutCap(t *testing.T) {
+	r := newWatchRig(t)
+	r.step(0)
+	r.stack.configure(func(s *watchStack) {
+		s.hookCode = http.StatusInternalServerError
+		s.healthCode = http.StatusBadGateway
+	})
+	if _, err := r.stepErr(time.Minute); err == nil { // the alert, which does not go out
+		t.Fatal("no error")
+	}
+	r.stack.configure(func(s *watchStack) { s.healthCode = 0 })
+	// Three days of a webhook that is down, a run an hour.
+	for hour := 1; hour <= 72; hour++ {
+		before := r.stack.attempts()
+		texts, err := r.stepErr(time.Hour)
+		want := fmt.Sprintf("[mnemon-aml] RESOLVED health on aml-test (after %s, alert not delivered)\nwas: GET %s/health answered 502\n", (time.Duration(hour) * time.Hour).String(), r.stack.public.URL)
+		if err == nil || len(texts) != 1 || r.stack.attempts() != before+1 || !strings.HasPrefix(texts[0], want) {
+			t.Fatalf("hour %d: %q %v (want %q)", hour, texts, err, want)
+		}
+		if got := r.firing(); len(got) != 1 || got["health"] {
+			t.Fatalf("hour %d: the state has %v", hour, got)
+		}
+	}
+	// The webhook takes it.
+	r.stack.configure(func(s *watchStack) { s.hookCode = 0 })
+	message := onlyAlert(t, r.step(time.Hour), "health")
+	if !strings.HasPrefix(message, "[mnemon-aml] RESOLVED health on aml-test (after 73h0m0s, alert not delivered)\nwas: GET ") {
+		t.Fatal(message)
+	}
+	if got := r.firing(); len(got) != 0 {
+		t.Fatal(got)
+	}
+	if texts := r.step(time.Hour); len(texts) != 0 {
+		t.Fatal("said twice:", texts)
+	}
+}
+
+// An alert that fires again while its resolution is owed is one alert: the
+// resolution is not sent for the earlier episode, the alert goes out as the
+// new alert nobody has heard of, and the alert has one state entry throughout.
+func TestWatchAnAlertThatFiresAgainWhileItsResolutionIsOwed(t *testing.T) {
+	r := newWatchRig(t)
+	r.step(0)
+	r.stack.configure(func(s *watchStack) { s.hookCode, s.healthCode = http.StatusInternalServerError, http.StatusBadGateway })
+	if _, err := r.stepErr(time.Minute); err == nil {
+		t.Fatal("no error")
+	}
+	r.stack.configure(func(s *watchStack) { s.healthCode = 0 })
+	texts, err := r.stepErr(time.Minute) // the resolution is owed
+	if err == nil || len(texts) != 1 || !strings.Contains(texts[0], "RESOLVED health") {
+		t.Fatalf("%q %v", texts, err)
+	}
+	r.stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	texts, err = r.stepErr(time.Minute) // it fires again, to the same webhook
+	if err == nil || len(texts) != 1 || !strings.HasPrefix(texts[0], "[mnemon-aml] ALERT health on aml-test\n") || strings.Contains(texts[0], "still firing") {
+		t.Fatalf("%q %v", texts, err)
+	}
+	if got := r.firing(); len(got) != 1 || got["health"] {
+		t.Fatal(got)
+	}
+	r.stack.configure(func(s *watchStack) { s.hookCode = 0 })
+	if message := onlyAlert(t, r.step(time.Minute), "health"); !strings.HasPrefix(message, "[mnemon-aml] ALERT health on aml-test\n") {
+		t.Fatal(message)
+	}
+	// Then it ends, and the resolution is the ordinary one: this alert was
+	// delivered.
+	r.stack.configure(func(s *watchStack) { s.healthCode = 0 })
+	if message := onlyAlert(t, r.step(time.Minute), "health"); !strings.HasPrefix(message, "[mnemon-aml] RESOLVED health on aml-test (after 4m0s)\n") {
+		t.Fatal(message)
+	}
+}
+
+// Only one aml-watch run works at a time: a run that finds the lock of the
+// state held by another does nothing, and exits 0.
+func TestWatchOverlappingRunDoesNothing(t *testing.T) {
+	stack := newWatchStack(t)
+	state := filepath.Join(t.TempDir(), "state", "watch-state.json")
+	t.Setenv("AML_ALERT_WEBHOOK", stack.webhookURL())
+	t.Setenv("AML_ALERT_KIND", "feishu")
+	args := []string{"--admin", stack.admin.URL, "--public-url", stack.public.URL, "--state", state}
+
+	// A first run, which says the public side is down, and leaves the state
+	// and the lock file.
+	stack.configure(func(s *watchStack) { s.healthCode = http.StatusBadGateway })
+	if out, err := executeAMLWatch(args...); err != nil || strings.Contains(out, "holds the lock") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if got := stack.take(t); len(got) != 1 || !strings.Contains(got[0], "ALERT health") {
+		t.Fatal(got)
+	}
+	// Now there is plenty for a run to do: health is back, and a Search degraded.
+	stack.configure(func(s *watchStack) { s.healthCode = 0 })
+	stack.set(func(s *aml.AdminStatus) { s.Degraded = 1 })
+	before, err := os.ReadFile(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The test is the other run.
+	held := flock.New(state + ".lock")
+	if locked, err := held.TryLock(); !locked || err != nil {
+		t.Fatal(locked, err)
+	}
+	released := false
+	release := func() {
+		if !released {
+			released = true
+			if err := held.Unlock(); err != nil { // before t.TempDir's cleanup: Windows will not remove an open file
+				t.Error(err)
+			}
+		}
+	}
+	defer release()
+	attempts := stack.attempts()
+	out, err := executeAMLWatch(args...)
+	if err != nil {
+		t.Fatalf("a run that found the lock held failed: %v\n%s", err, out)
+	}
+	if lines := strings.Count(out, "another aml-watch run holds the lock"); lines != 1 || strings.Count(out, "\n") != 1 || !strings.Contains(out, "level=WARN") || !strings.Contains(out, state+".lock") {
+		t.Fatalf("it should say once that another run holds the lock:\n%s", out)
+	}
+	if got := stack.attempts(); got != attempts {
+		t.Fatal("a run that did not hold the lock posted", got-attempts)
+	}
+	if after, err := os.ReadFile(state); err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("a run that did not hold the lock saved the state: %v\n%s\n%s", err, before, after)
+	}
+	entries, err := os.ReadDir(filepath.Dir(state))
+	if err != nil || len(entries) != 2 { // the state and the lock; no temporary file
+		t.Fatal(entries, err)
+	}
+
+	// Once the other run is over the next one does its work, which the skipped
+	// run left whole, and gives the lock back.
+	release()
+	if out, err = executeAMLWatch(args...); err != nil || strings.Contains(out, "holds the lock") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if got := stack.take(t); len(got) != 2 || !strings.Contains(got[0], "ALERT degraded-search") || !strings.Contains(got[1], "RESOLVED health") {
+		t.Fatalf("%q", got)
+	}
+	if locked, err := held.TryLock(); !locked || err != nil {
+		t.Fatal("the run kept the lock:", locked, err)
+	}
+	held.Unlock()
+}
+
+// A run that is refused for its settings touches nothing, the lock file
+// included.
+func TestWatchRefusedRunLeavesNoLockFile(t *testing.T) {
+	r := newWatchRig(t)
+	r.w.kind = "slack"
+	if _, err := r.stepErr(0); err == nil {
+		t.Fatal("no error")
+	}
+	for _, path := range []string{r.state, r.state + ".lock", filepath.Dir(r.state)} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Errorf("%s: %v", path, err)
+		}
+	}
+}
+
+// An http webhook is for this host: a loopback address or localhost, in any
+// case. Everything else must be https, and nothing is echoed when it is not.
+func TestWatchWebhookSchemeRules(t *testing.T) {
+	for webhook, ok := range map[string]bool{
+		"https://hooks.example.com/hook/" + watchToken:     true,
+		"https://open.feishu.cn/open-apis/bot/v2/hook/abc": true,
+		"http://127.0.0.1:8080/hook/" + watchToken:         true,
+		"http://[::1]:8080/hook/" + watchToken:             true,
+		"http://localhost:8080/hook/" + watchToken:         true,
+		"http://LOCALHOST:8080/hook/" + watchToken:         true,
+		"http://LocalHost/hook/" + watchToken:              true,
+		"https://localhost.example.com/hook/" + watchToken: true,
+		"http://hooks.example.com/hook/" + watchToken:      false,
+		"http://localhost.example.com/hook/" + watchToken:  false,
+		"http://notlocalhost/hook/" + watchToken:           false,
+		"http://localhost.evil.com:80/hook/" + watchToken:  false,
+		"http://127.0.0.1.example.com/hook/" + watchToken:  false,
+		"ftp://localhost/hook/" + watchToken:               false,
+		"localhost:8080/hook/" + watchToken:                false,
+		"//localhost/hook/" + watchToken:                   false,
+		"https:///hook/" + watchToken:                      false,
+		"hooks.example.com/hook/" + watchToken:             false,
+		"https://hooks.example.com/hook/%zz" + watchToken:  false,
+	} {
+		w := &watcher{watchSettings: watchSettings{webhook: webhook, kind: "feishu"}}
+		err := w.checkDelivery()
+		if (err == nil) != ok {
+			t.Errorf("%q: %v, want accepted %v", webhook, err, ok)
+		}
+		if err != nil && (strings.Contains(err.Error(), watchToken) || !strings.Contains(err.Error(), "AML_ALERT_WEBHOOK must be an https URL")) {
+			t.Errorf("%q: %v", webhook, err)
 		}
 	}
 }

@@ -23,6 +23,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gofrs/flock"
 	"github.com/mnemon-dev/mnemon/internal/aml"
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
 	"github.com/spf13/cobra"
@@ -31,14 +32,16 @@ import (
 // aml-watch is the alert watcher of an aml-serve: a one-shot command that a
 // systemd timer runs every minute. One run
 //
-//  1. reads the admin listener's /ready and /admin/status and the public
+//  1. takes the exclusive lock <state>.lock (see below);
+//  2. reads the admin listener's /ready and /admin/status and the public
 //     listener's /health, each within 5 seconds;
-//  2. applies the rules below to what it read and to the state the last run
+//  3. applies the rules below to what it read and to the state the last run
 //     left (counters, when they last rose, when a condition began);
-//  3. posts one text message per alert that fires, per firing alert that is
+//  4. posts one text message per alert that fires, per firing alert that is
 //     due again, and per alert that clears, to the webhook in AML_ALERT_WEBHOOK
-//     (AML_ALERT_KIND: feishu or wecom), each within 10 seconds; and
-//  4. saves the state, atomically (a temporary file in the state's directory,
+//     (AML_ALERT_KIND: feishu or wecom), each within 10 seconds, each starting
+//     with the tag [mnemon-aml] (watchTag); and
+//  5. saves the state, atomically (a temporary file in the state's directory,
 //     renamed over it; mode 0600), whether or not a post failed.
 //
 // The webhook's URL is a secret (its path is a bearer token): it is never
@@ -48,9 +51,21 @@ import (
 // went out is recorded as sent, and not sent again as a new alert (unless the
 // state cannot be saved: then the run exits non-zero and the next run says it
 // again); one that did not go out stays unsent in the state, the next run
-// sends it, and the run exits non-zero. Without a webhook the alerts are
-// logged instead and the run exits zero, so that the timer can run before the
-// webhook is configured.
+// sends it, and the run exits non-zero. Delivery is at-least-once, for every
+// alert: an alert that never went out and then clears owes its resolution all
+// the same, which says "alert not delivered" and is tried every run until the
+// webhook takes it, with no cap on the tries and no age after which it is
+// given up; the state keeps one entry per alert name. Without a webhook the
+// alerts and their resolutions are logged instead (and kept, to be posted once
+// there is a webhook) and the run exits zero, so that the timer can run before
+// the webhook is configured.
+//
+// One run at a time: a run takes an exclusive, non-blocking lock on
+// <state>.lock (gofrs/flock; the file is left in place). If another run holds
+// it, the run logs one line saying so, posts and saves nothing, and exits 0;
+// two overlapping runs would post twice and the last to save would win. A lock
+// that cannot be opened for another reason does not stop the run, which goes
+// on without it, and says so.
 //
 // Rules, each an alert of the name shown (a name with a colon is per kind of
 // model provider, or account):
@@ -71,7 +86,8 @@ import (
 //	add-outran               an Add waited out its window for consolidation
 //	restart                  the server started at another time than at the last run
 //	ready                    /ready did not answer 200, or /admin/status could not be read
-//	health                   the public /health did not answer 200
+//	health                   the public /health did not answer 200 (not probed when
+//	                         --public-url is empty: every run then logs a warning)
 //
 // The counters of the status count from the server's start, so a restart
 // starts them at zero: after one, whatever they count is new. The first run
@@ -110,6 +126,12 @@ const (
 	// WeCom's 2,048 bytes whatever the characters.
 	watchMessageBytes = 999
 
+	// watchTag starts every message, of every kind. A Feishu bot protected by
+	// a keyword takes only the texts that contain it and answers the others
+	// 200 with a code, which is a failed delivery; the runbook has the
+	// operator register the keyword mnemon-aml, so no text may lack it.
+	watchTag = "[mnemon-aml]"
+
 	watchReadTimeout = 5 * time.Second
 	watchHookTimeout = 10 * time.Second
 	// watchRunLimit bounds a run: what it has not sent by then is left to
@@ -132,15 +154,16 @@ func newAMLWatchCommand() *cobra.Command {
 		Long: `Check a running aml-serve once: read its admin listener's /ready and /admin/status and its
 public /health, apply the alert rules, and post a text message for each alert that fires, each
 firing alert that is due again (every 30 minutes) and each alert that clears, to the webhook named
-by the environment variable AML_ALERT_WEBHOOK, in the payload of AML_ALERT_KIND (feishu or wecom).
-Run it every minute with a systemd timer. The webhook URL is a secret and is never printed. With no
-webhook the alerts are logged only. The state between runs is the file --state.`,
+by the environment variable AML_ALERT_WEBHOOK, in the payload of AML_ALERT_KIND (feishu or wecom);
+every text starts with [mnemon-aml], the keyword to register on a Feishu bot. Run it every minute
+with a systemd timer. The webhook URL is a secret and is never printed. With no webhook the alerts
+are logged only. The state between runs is the file --state; one run at a time holds <state>.lock.`,
 		Args: cobra.NoArgs,
 		RunE: runAMLWatch,
 	}
 	flags := command.Flags()
 	flags.String("admin", "http://127.0.0.1:8091", "URL of aml-serve's admin listener (--admin-listen)")
-	flags.String("public-url", "", "URL of the public listener as clients reach it, such as https://memory.example.com, whose /health is checked; empty to skip that check")
+	flags.String("public-url", "", "URL of the public listener as clients reach it, such as https://memory.example.com, whose /health is checked; empty to skip that check (every run then logs a warning)")
 	flags.String("state", "", "Absolute path of the state file kept between runs, such as /var/lib/mnemon-aml/watch-state.json (required)")
 	return command
 }
@@ -245,6 +268,11 @@ func (w *watcher) run(ctx context.Context) error {
 	if err := w.checkDelivery(); err != nil {
 		return err
 	}
+	unlock, otherRun := w.lockRun()
+	if otherRun {
+		return nil
+	}
+	defer unlock()
 	ctx, cancel := context.WithTimeout(ctx, watchRunLimit)
 	defer cancel()
 	now := w.now().UTC()
@@ -266,6 +294,38 @@ func (w *watcher) run(ctx context.Context) error {
 	return errors.Join(deliveryErr, saveWatchState(w.state, next))
 }
 
+// lockRun takes the exclusive, non-blocking lock on <state>.lock for the run,
+// so that two runs (the timer's and an operator's, say) do not overlap: they
+// would post the same messages twice, and the last to save would win. If
+// another run holds it, otherRun is true: the run has said so and does
+// nothing (no post, no save) and exits 0. A lock that cannot be opened at all
+// (a read-only directory) does not stop the run: delivery matters more than
+// the lock, so the run goes on without it, and says so. unlock gives the lock
+// back, closing its file.
+func (w *watcher) lockRun() (unlock func(), otherRun bool) {
+	path := w.state + ".lock"
+	noLock := func() {}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		w.log.Warn("aml-watch: could not take the run lock; going on without it", "lock", path, "error", err)
+		return noLock, false
+	}
+	lock := flock.New(path)
+	locked, err := lock.TryLock()
+	switch {
+	case err != nil:
+		w.log.Warn("aml-watch: could not take the run lock; going on without it", "lock", path, "error", err)
+		return noLock, false
+	case !locked:
+		w.log.Warn("aml-watch: another aml-watch run holds the lock; this run does nothing", "lock", path)
+		return noLock, true
+	}
+	return func() {
+		if err := lock.Unlock(); err != nil {
+			w.log.Warn("aml-watch: could not give the run lock back", "lock", path, "error", err)
+		}
+	}, false
+}
+
 // checkDelivery checks the webhook and its kind; without a webhook there is
 // nothing to check.
 func (w *watcher) checkDelivery() error {
@@ -278,12 +338,17 @@ func (w *watcher) checkDelivery() error {
 	// The error never repeats the value: its path is a secret.
 	u, err := url.Parse(w.webhook)
 	if err != nil || u.Host == "" || !(u.Scheme == "https" || u.Scheme == "http" && watchLoopbackHost(u.Hostname())) {
-		return errors.New("AML_ALERT_WEBHOOK must be an https URL (http only to a loopback address)")
+		return errors.New("AML_ALERT_WEBHOOK must be an https URL (http only to localhost or a loopback address)")
 	}
 	return nil
 }
 
+// watchLoopbackHost reports whether host is this machine: localhost, in any
+// case, or a loopback IP address.
 func watchLoopbackHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
 }
@@ -307,6 +372,10 @@ func (w *watcher) observe(ctx context.Context) watchObservation {
 	obs.status, obs.statusErr = w.readStatus(ctx)
 	if w.public != "" {
 		obs.health = w.probeHealth(ctx)
+	} else {
+		// The probe through the public URL is the only check of the path
+		// clients take (DNS, TLS, the proxy): a forgotten flag leaves a trace.
+		w.log.Warn("aml-watch: the public health probe is off because --public-url is empty")
 	}
 	return obs
 }
@@ -710,7 +779,11 @@ type watchMessage struct {
 // planAlerts decides, from the alerts that fire now (with their values), the
 // ones the status could not speak for (frozen) and the alerts of the last
 // run, which messages to post and what the alerts' state is if they are all
-// delivered. The messages are in the order of the alerts' names.
+// delivered. The messages are in the order of the alerts' names. An alert that
+// fires and was not firing is a new alert; one that fires and whose message
+// has not gone out (the state has no time it was sent) is new again; one that
+// went out is said again 30 minutes after its last message; one that stopped
+// owes a resolution, until the webhook takes it.
 func planAlerts(now time.Time, host string, firing map[string]string, frozen map[string]bool, prev map[string]watchAlert) (map[string]watchAlert, []watchMessage) {
 	names := map[string]bool{}
 	for name := range firing {
@@ -721,7 +794,7 @@ func planAlerts(now time.Time, host string, firing map[string]string, frozen map
 	}
 	next, messages := map[string]watchAlert{}, []watchMessage{}
 	say := func(name string, event watchEvent, alert watchAlert, value string) {
-		messages = append(messages, watchMessage{name, event, watchText(event, name, host, now.Sub(alert.Since), value, now)})
+		messages = append(messages, watchMessage{name, event, watchText(event, name, host, watchNote(event, alert, now), value, now)})
 	}
 	for _, name := range slices.Sorted(maps.Keys(names)) {
 		old, wasFiring := prev[name]
@@ -740,9 +813,12 @@ func planAlerts(now time.Time, host string, firing map[string]string, frozen map
 			} else if now.Sub(old.LastSent) >= watchRepeat {
 				say(name, watchAgain, alert, value)
 			}
-		case old.LastSent.IsZero():
-			// It never reached anybody, so nobody is told it is over.
 		default:
+			// It stopped firing. Its resolution is owed, also when the alert
+			// itself never reached the webhook (the message then says so), and
+			// the alert stays in the state, one entry, until the webhook has
+			// taken the resolution: delivery is at-least-once, with no cap on
+			// the tries and no age after which a message is given up.
 			next[name] = old
 			say(name, watchResolved, old, "was: "+old.Value)
 		}
@@ -750,16 +826,34 @@ func planAlerts(now time.Time, host string, firing map[string]string, frozen map
 	return next, messages
 }
 
-// watchText is the text of a message: the alert, the host and how long it has
-// fired; the value that fired it; and the time in UTC. The value is cut to
-// keep the message under watchMessageBytes.
-func watchText(event watchEvent, alert, host string, firedFor time.Duration, value string, now time.Time) string {
-	header := fmt.Sprintf("ALERT %s on %s", alert, host)
+// watchNote is what a header says in brackets: nothing for a new alert; for
+// one said again, how long it has fired; for a resolution, how long it fired
+// and, if the alert itself never reached the webhook, that it did not.
+func watchNote(event watchEvent, alert watchAlert, now time.Time) string {
+	fired := now.Sub(alert.Since).Round(time.Second)
 	switch event {
 	case watchAgain:
-		header += fmt.Sprintf(" (still firing after %s)", firedFor.Round(time.Second))
+		return fmt.Sprintf("still firing after %s", fired)
 	case watchResolved:
-		header = fmt.Sprintf("RESOLVED %s on %s (after %s)", alert, host, firedFor.Round(time.Second))
+		if alert.LastSent.IsZero() {
+			return fmt.Sprintf("after %s, alert not delivered", fired)
+		}
+		return fmt.Sprintf("after %s", fired)
+	}
+	return ""
+}
+
+// watchText is the text of a message: the tag, the alert, the host and a note
+// (watchNote: how long it has fired); the value that fired it; and the time in
+// UTC. The value is cut to keep the message under watchMessageBytes.
+func watchText(event watchEvent, alert, host, note, value string, now time.Time) string {
+	verb := "ALERT"
+	if event == watchResolved {
+		verb = "RESOLVED"
+	}
+	header := fmt.Sprintf("%s %s %s on %s", watchTag, verb, alert, host)
+	if note != "" {
+		header += " (" + note + ")"
 	}
 	footer := now.UTC().Format("2006-01-02 15:04:05") + " UTC"
 	value = strings.Join(strings.Fields(value), " ")
@@ -785,14 +879,12 @@ func watchTruncate(s string, limit int) string {
 
 // ---- delivery ----
 
-// How a message ended up: delivered; unsent (kept for the next run); or
-// dropped (there was nowhere to post it and nothing to keep).
+// How a message ended up: delivered, or unsent (kept for the next run).
 type watchOutcome int
 
 const (
 	watchDelivered watchOutcome = iota
 	watchUnsent
-	watchDropped
 )
 
 // deliver posts the messages in order, or logs them when there is no webhook.
@@ -841,17 +933,14 @@ func countOutcome(outcomes []watchOutcome, want watchOutcome) int {
 	return n
 }
 
-// logUnposted logs the messages there is no webhook to post. An alert is kept
-// unsent, to be posted once there is a webhook; a resolution is dropped,
-// since nobody was told the alert fired.
+// logUnposted logs the messages there is no webhook to post, and keeps them
+// all unsent, resolutions too: once there is a webhook they are posted (a
+// resolution of an alert that never went out says so).
 func (w *watcher) logUnposted(messages []watchMessage) []watchOutcome {
 	outcomes := make([]watchOutcome, len(messages))
 	for i, m := range messages {
 		w.log.Warn("aml-watch: AML_ALERT_WEBHOOK is empty: not posting", "alert", m.alert, "event", m.event, "message", m.text)
 		outcomes[i] = watchUnsent
-		if m.event == watchResolved {
-			outcomes[i] = watchDropped
-		}
 	}
 	return outcomes
 }
@@ -861,14 +950,16 @@ func (w *watcher) logUnposted(messages []watchMessage) []watchOutcome {
 // ends the alert, and what could not be posted stays as planned.
 func settleAlerts(alerts map[string]watchAlert, messages []watchMessage, outcomes []watchOutcome, now time.Time) {
 	for i, m := range messages {
-		alert := alerts[m.alert]
-		switch {
-		case outcomes[i] == watchDropped || outcomes[i] == watchDelivered && m.event == watchResolved:
-			delete(alerts, m.alert)
-		case outcomes[i] == watchDelivered:
-			alert.LastSent = now
-			alerts[m.alert] = alert
+		if outcomes[i] != watchDelivered {
+			continue
 		}
+		if m.event == watchResolved {
+			delete(alerts, m.alert)
+			continue
+		}
+		alert := alerts[m.alert]
+		alert.LastSent = now
+		alerts[m.alert] = alert
 	}
 }
 
