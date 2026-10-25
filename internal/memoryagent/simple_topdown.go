@@ -26,8 +26,12 @@ import (
 const topDownLimit = simplePageSize
 
 // topDown is the records top-down recall adds to pooled: at most
-// topDownLimit, none of pooled, in rank order.
+// topDownLimit, none of pooled, in rank order; none for an agent without an
+// overlay (as the server's config check builds one).
 func (r *simpleRun) topDown(ctx context.Context, pooled []string) ([]string, error) {
+	if r.agent.overlay == nil {
+		return nil, nil
+	}
 	state, _, err := r.agent.overlay.loadTimelines(ctx, r.req.Scope)
 	if err != nil {
 		return nil, err

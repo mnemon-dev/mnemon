@@ -66,4 +66,14 @@ func TestTopDownNeedsATimelinesConsolidation(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "view.topDown requires") {
 		t.Fatal("topDown accepted without a consolidation:", err)
 	}
+	// The server checks a config with an agent that has no overlay: that
+	// agent is valid, and its reads recall nothing top-down.
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return layeredReply(prompt), nil }}
+	a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{TopDown: true}, Consolidation: &ConsolidationConfig{Mode: "layered"}}, Models{Planner: replies("", "", ""), Consolidator: model, Judge: topicJudge()}, nil)
+	if err != nil {
+		t.Fatal("topDown refused an agent without an overlay:", err)
+	}
+	if got, err := testRun(a, user("anything")).topDown(context.Background(), nil); err != nil || got != nil {
+		t.Fatal(got, err)
+	}
 }

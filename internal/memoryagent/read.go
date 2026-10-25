@@ -413,8 +413,8 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	if _, ok := models.Judge.(Chooser); config.Consolidation.Neutral() && !ok {
 		return nil, errors.New("neutral consolidation requires a decision model that answers choice questions")
 	}
-	if config.View != nil && config.View.TopDown && (!config.Consolidation.Timelines() || overlay == nil) {
-		return nil, errors.New("view.topDown requires a timelines consolidation and its overlay")
+	if config.View != nil && config.View.TopDown && !config.Consolidation.Timelines() {
+		return nil, errors.New("view.topDown requires a timelines consolidation")
 	}
 	if config.Consolidation != nil && len(config.Consolidation.EdgeKinds) > 0 && models.Judge == nil {
 		return nil, errors.New("edgeKinds requires a decision model")
