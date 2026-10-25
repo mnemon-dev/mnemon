@@ -97,6 +97,11 @@ type InspectConfig struct {
 	// given (the instance's, with the debug budget); nil builds its
 	// providers. Tests inject scripted models.
 	Models func(memoryagent.Config) (memoryagent.Models, error)
+	// ProviderKeysFile is the instance's provider key file (aml-serve's,
+	// byok.go), which the service reads, never writes: at its start, with
+	// the start's rules, and again before each full search. Absolute; "" for
+	// the host's keys alone.
+	ProviderKeysFile string
 }
 
 // Inspector is the inspect service. Its methods are safe for concurrent use.
@@ -132,6 +137,12 @@ type Inspector struct {
 	// guarded by rowsMu.
 	rowsMu sync.Mutex
 	rows   map[string]keptStoreRow
+
+	// keys are the full searches' key source: the account's keys (the key
+	// file, read again before each full search) over the host's.
+	// keysFailing says the last read failed, and was logged.
+	keys        *memoryagent.ProviderKeys
+	keysFailing atomic.Bool
 }
 
 // NewInspector checks the configuration, opens the debug budget, builds the
@@ -140,7 +151,8 @@ func NewInspector(config InspectConfig) (*Inspector, error) {
 	if err := checkInspectConfig(&config); err != nil {
 		return nil, err
 	}
-	i := &Inspector{config: config, log: config.Logger, slots: make(chan struct{}, config.MaxConcurrent), fullCost: map[string]float64{}}
+	i := &Inspector{config: config, log: config.Logger, slots: make(chan struct{}, config.MaxConcurrent), fullCost: map[string]float64{},
+		keys: memoryagent.NewProviderKeys(config.MemoryConfig)}
 	if i.log == nil {
 		i.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
@@ -157,6 +169,9 @@ func NewInspector(config InspectConfig) (*Inspector, error) {
 	i.full = config.DebugBudgetFile != "" && slices.ContainsFunc(slices.Collect(maps.Values(i.caps)), func(cap float64) bool { return cap > 0 })
 	for _, kind := range i.readKinds() {
 		i.full = i.full && i.caps[kind] > 0
+	}
+	if err := loadKeyFile(config.ProviderKeysFile, i.keys); err != nil {
+		return nil, err
 	}
 	if err := i.openModels(); err != nil {
 		return nil, err
@@ -180,6 +195,8 @@ func checkInspectConfig(config *InspectConfig) error {
 		return fmt.Errorf("the inspect token must hold at least %d bytes", MinAdminTokenLength)
 	case config.MaxConcurrent < 0:
 		return errors.New("max concurrent must not be negative")
+	case config.ProviderKeysFile != "" && !filepath.IsAbs(config.ProviderKeysFile):
+		return errors.New("the provider key file must be an absolute path")
 	case config.MemoryConfig.Strategy != "simple":
 		return fmt.Errorf("the inspect service traces the simple strategy's read path, not strategy %q", config.MemoryConfig.Strategy)
 	case config.MemoryConfig.Embedding != nil:
@@ -308,7 +325,7 @@ func (i *Inspector) openModels() error {
 	debug := i.config.MemoryConfig
 	debug.BudgetFile, debug.Budgets, debug.ModelCache, debug.Consolidator = i.config.DebugBudgetFile, i.caps, "", nil
 	if i.full && i.config.Models == nil {
-		models, budget, _, err := memoryagent.OpenModels(debug)
+		models, budget, _, err := memoryagent.OpenModelsWith(debug, i.keys)
 		if err != nil {
 			return err
 		}
@@ -581,7 +598,12 @@ func invalid(w http.ResponseWriter, field string) {
 // and a full search's model calls with it. On failure it has answered 413
 // too_large or 400 invalid (body).
 func decodeBody(w http.ResponseWriter, r *http.Request, fields *map[string]json.RawMessage) bool {
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, inspectBody))
+	return decodeBodyWithin(w, r, fields, inspectBody)
+}
+
+// decodeBodyWithin is decodeBody for a body of at most limit bytes.
+func decodeBodyWithin(w http.ResponseWriter, r *http.Request, fields *map[string]json.RawMessage, limit int64) bool {
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	err := decoder.Decode(fields)
 	if err == nil {
 		err = readEnd(decoder)

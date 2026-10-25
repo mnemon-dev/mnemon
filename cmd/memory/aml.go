@@ -43,6 +43,7 @@ func newAMLServeCommand() *cobra.Command {
 	flags.String("log-format", "text", "Log format: text or json")
 	flags.Int("max-open-stores", 64, "Most user stores kept open at once")
 	flags.Duration("search-timeout", 10*time.Minute, "Longest memory read of a Search before it answers the raw ranking (1m to 18m)")
+	flags.String("provider-keys-file", "", "Absolute path of the account's provider key file, outside the data root: its DeepSeek and JEV keys are sent in place of the host's, and PUT and DELETE /admin/v1/provider-keys replace and revert them; a missing file holds none; empty for the host's keys alone")
 	return command
 }
 
@@ -50,7 +51,7 @@ func newAMLServeCommand() *cobra.Command {
 // variable --admin-token-env names holds, "" without the flag.
 type amlServeOptions struct {
 	listen, adminListen, dataRoot, memoryConfig, keyEnv, logFormat string
-	adminToken                                                     string
+	adminToken, providerKeysFile                                   string
 	consolidation                                                  aml.ConsolidationMode
 	workers, maxOpenStores, maxAdds, maxSearches                   int
 	searchTimeout                                                  time.Duration
@@ -72,6 +73,7 @@ func amlServeFlags(cmd *cobra.Command) (amlServeOptions, error) {
 	o.maxAdds, _ = flags.GetInt("max-concurrent-adds")
 	o.maxSearches, _ = flags.GetInt("max-concurrent-searches")
 	o.searchTimeout, _ = flags.GetDuration("search-timeout")
+	o.providerKeysFile, _ = flags.GetString("provider-keys-file")
 	var err error
 	if o.consolidation, err = amlConsolidation(cmd); err != nil {
 		return o, err
@@ -95,6 +97,8 @@ func amlServeFlags(cmd *cobra.Command) (amlServeOptions, error) {
 		return o, errors.New("--max-concurrent-searches must not be negative")
 	case o.logFormat != "text" && o.logFormat != "json":
 		return o, fmt.Errorf("--log-format must be text or json, not %q", o.logFormat)
+	case o.providerKeysFile != "" && !filepath.IsAbs(o.providerKeysFile):
+		return o, errors.New("--provider-keys-file must be an absolute path")
 	}
 	tokenEnv, _ := flags.GetString("admin-token-env")
 	if tokenEnv != "" && tokenEnv == o.keyEnv {
@@ -276,7 +280,7 @@ func runAMLServe(cmd *cobra.Command, _ []string) error {
 		Consolidation: options.consolidation, ConsolidationWorkers: options.workers,
 		MaxOpenStores: options.maxOpenStores, SearchTimeout: options.searchTimeout,
 		MaxConcurrentAdds: options.maxAdds, MaxConcurrentSearches: options.maxSearches,
-		Logger: log, AdminToken: options.adminToken, Version: version,
+		Logger: log, AdminToken: options.adminToken, Version: version, ProviderKeysFile: options.providerKeysFile,
 	})
 	if err != nil {
 		return err

@@ -9,9 +9,16 @@
 //     "usage":{"prompt_tokens":…,"completion_tokens":…}}.
 //   - POST /v1/systemone is JEV's decision API: {"model":…,"answers":{key:
 //     {"type":"noul","noul":p}},"usage":{"input_tokens":…,"output_tokens":…}}.
+//   - GET /models (DeepSeek's) and GET /v1/models (JEV's) are the lists of
+//     models the engine checks an account's key with (ruling R98): its base
+//     URL with /models, DeepSeek's base being the endpoint without
+//     /chat/completions and JEV's without /systemone. They answer
+//     {"object":"list","data":[{"id":…,"object":"model",…}]} at once.
 //
 // A request needs "Authorization: Bearer <anything>", as the real APIs do;
-// the credential is never logged or kept. GET /health answers 200.
+// the credential is never logged or kept, only counted by its fingerprint
+// (the first 12 hex digits of its SHA-256, as the engine shows a key). GET
+// /health answers 200.
 //
 // Each kind answers after its latency (-deepseek-latency, -jev-latency). The
 // drill changes how a kind behaves at run time through a control endpoint
@@ -25,11 +32,19 @@
 //     of the replies malformed as "malformed" says (invalid-json, empty,
 //     truncated, wrong-schema or mixed; see malform); and "stallRate" of the
 //     replies that send their headers and half their body, then hang until
-//     the client gives up or "stallFor" passes (15m by default).
+//     the client gives up or "stallFor" passes (15m by default). The list of
+//     models has faults of its own, which no other fault touches:
+//     "modelsStatus" (300–599) is the status it answers, as an error, and
+//     "modelsFault" makes it "hang" until the client gives up or "stallFor"
+//     passes, or "close" the connection without an answer.
 //   - DELETE /_fault ends every profile; GET /_fault shows them.
 //   - GET /_stats counts what each kind answered: statuses, and the slowed
 //     replies (a profile's latency), spikes, malformed replies and stalls
-//     among them.
+//     among them; the lists' answers as "models:<status>", "models:hang" and
+//     "models:close".
+//   - GET /_keys counts the requests each kind received by the fingerprint of
+//     their credential, the lists' ("models") apart from the calls'
+//     ("calls"): {"deepseek":{"models":{fp:n},"calls":{fp:n}},"jev":{…}}.
 //
 // An error answers {"error":{"message":…}} with the status's text, except a
 // 402, which says "Insufficient Balance" as DeepSeek's does.
@@ -44,6 +59,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -55,6 +72,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -118,8 +136,12 @@ type fault struct {
 	malformed     string
 	stallRate     float64
 	stallFor      time.Duration
-	until         time.Time // zero: until cleared
-	shown         profile   // as it was set, for GET /_fault
+	// modelsStatus is the status the list of models answers, 0 for its list;
+	// modelsFault makes it hang or close the connection instead.
+	modelsStatus int
+	modelsFault  string
+	until        time.Time // zero: until cleared
+	shown        profile   // as it was set, for GET /_fault
 }
 
 // profile is a fault as POST /_fault takes it.
@@ -135,8 +157,16 @@ type profile struct {
 	Malformed     string  `json:"malformed,omitempty"`
 	StallRate     float64 `json:"stallRate,omitempty"`
 	StallFor      string  `json:"stallFor,omitempty"`
+	ModelsStatus  int     `json:"modelsStatus,omitempty"`
+	ModelsFault   string  `json:"modelsFault,omitempty"`
 	Seconds       float64 `json:"seconds,omitempty"`
 }
+
+// The faults of the list of models (profile.ModelsFault).
+const (
+	modelsHang  = "hang"
+	modelsClose = "close"
+)
 
 // The ways a reply can be malformed (malform).
 var malformations = []string{"invalid-json", "empty", "truncated", "wrong-schema"}
@@ -144,7 +174,8 @@ var malformations = []string{"invalid-json", "empty", "truncated", "wrong-schema
 // parse checks a profile and makes its fault, from now.
 func (p profile) parse(now time.Time) (fault, error) {
 	f := fault{spikeRate: p.SpikeRate, errorRate: p.ErrorRate, errorStatus: p.ErrorStatus, retryAfter: p.RetryAfter,
-		malformedRate: p.MalformedRate, malformed: p.Malformed, stallRate: p.StallRate, stallFor: defaultStall, shown: p}
+		malformedRate: p.MalformedRate, malformed: p.Malformed, stallRate: p.StallRate, stallFor: defaultStall,
+		modelsStatus: p.ModelsStatus, modelsFault: p.ModelsFault, shown: p}
 	duration := func(text, name string, into *time.Duration) error {
 		if text == "" {
 			return nil
@@ -180,6 +211,10 @@ func (p profile) parse(now time.Time) (fault, error) {
 		return fault{}, fmt.Errorf("malformed must be one of %s or mixed", strings.Join(malformations, ", "))
 	case strings.ContainsAny(p.RetryAfter, "\r\n"):
 		return fault{}, fmt.Errorf("retryAfter must be one header value")
+	case p.ModelsStatus != 0 && (p.ModelsStatus < 300 || p.ModelsStatus > 599):
+		return fault{}, fmt.Errorf("modelsStatus must be 300–599")
+	case p.ModelsFault != "" && p.ModelsFault != modelsHang && p.ModelsFault != modelsClose:
+		return fault{}, fmt.Errorf("modelsFault must be hang or close")
 	case p.Seconds < 0 || p.Seconds > 86400:
 		return fault{}, fmt.Errorf("seconds must be in [0, 86400]")
 	}
@@ -199,11 +234,18 @@ type server struct {
 	draws    *rand.Rand
 	faults   map[string]fault
 	answered map[string]map[string]int64
+	// keys counts the requests of each kind by route ("models" or "calls")
+	// and by their credential's fingerprint.
+	keys map[string]map[string]map[string]int64
 }
 
 func newServer(latency map[string]time.Duration, seed uint64, now func() time.Time) *server {
+	keys := map[string]map[string]map[string]int64{}
+	for _, kind := range []string{kindDeepSeek, kindJEV} {
+		keys[kind] = map[string]map[string]int64{"models": {}, "calls": {}}
+	}
 	return &server{latency: latency, now: now, draws: rand.New(rand.NewPCG(seed, seed^0x9e3779b97f4a7c15)),
-		faults: map[string]fault{}, answered: map[string]map[string]int64{kindDeepSeek: {}, kindJEV: {}}}
+		faults: map[string]fault{}, answered: map[string]map[string]int64{kindDeepSeek: {}, kindJEV: {}}, keys: keys}
 }
 
 func (s *server) routes() http.Handler {
@@ -211,6 +253,8 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /chat/completions", s.provider(kindDeepSeek, completion))
 	mux.HandleFunc("POST /v1/chat/completions", s.provider(kindDeepSeek, completion))
 	mux.HandleFunc("POST /v1/systemone", s.provider(kindJEV, decision))
+	mux.HandleFunc("GET /models", s.models(kindDeepSeek, "deepseek-flash"))
+	mux.HandleFunc("GET /v1/models", s.models(kindJEV, "jev-1.13.0", "jev-1.14.0"))
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -218,6 +262,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("DELETE /_fault", loopbackOnly(s.clearFaults))
 	mux.HandleFunc("GET /_fault", loopbackOnly(s.showFaults))
 	mux.HandleFunc("GET /_stats", loopbackOnly(s.stats))
+	mux.HandleFunc("GET /_keys", loopbackOnly(s.keysSeen))
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { writeError(w, http.StatusNotFound, "not found") })
 	return mux
 }
@@ -291,6 +336,73 @@ func (s *server) count(kind, outcome string) {
 	s.mu.Unlock()
 }
 
+// credential is a request's Bearer credential, "" without one.
+func credential(r *http.Request) string {
+	scheme, value, _ := strings.Cut(r.Header.Get("Authorization"), " ")
+	if !strings.EqualFold(scheme, "Bearer") {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+// saw counts a request of kind to route by its credential's fingerprint,
+// keeping nothing of the credential itself.
+func (s *server) saw(kind, route, key string) {
+	sum := sha256.Sum256([]byte(key))
+	s.mu.Lock()
+	s.keys[kind][route][hex.EncodeToString(sum[:])[:12]]++
+	s.mu.Unlock()
+}
+
+// modelsFaultOf is the active fault of kind's list of models: the status to
+// answer (0 for the list), the fault (hang, close or none) and how long a
+// hang lasts. It draws nothing, so the calls' sequence of draws is the same
+// with or without checks.
+func (s *server) modelsFaultOf(kind string) (status int, fault string, hang time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f, ok := s.faults[kind]
+	if !ok || !f.until.IsZero() && !s.now().Before(f.until) {
+		return 0, "", 0
+	}
+	return f.modelsStatus, f.modelsFault, f.stallFor
+}
+
+// models serves one kind's list of models, the engine's key check: the
+// credential is checked, then the kind's models fault, if any, answers.
+func (s *server) models(kind string, ids ...string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		key := credential(r)
+		if key == "" {
+			s.count(kind, "models:401")
+			writeJSON(w, http.StatusUnauthorized, errorBody("missing API key"))
+			return
+		}
+		s.saw(kind, "models", key)
+		status, fault, hang := s.modelsFaultOf(kind)
+		switch {
+		case fault == modelsHang:
+			s.count(kind, "models:hang")
+			sleep(r.Context(), hang)
+			panic(http.ErrAbortHandler)
+		case fault == modelsClose:
+			// The server closes the connection without writing anything.
+			s.count(kind, "models:close")
+			panic(http.ErrAbortHandler)
+		case status != 0:
+			s.count(kind, "models:"+strconv.Itoa(status))
+			writeJSON(w, status, errorBody(errorText(status)))
+			return
+		}
+		data := []any{}
+		for _, id := range ids {
+			data = append(data, map[string]string{"id": id, "object": "model", "owned_by": "fakeprovider"})
+		}
+		s.count(kind, "models:200")
+		writeJSON(w, http.StatusOK, map[string]any{"object": "list", "data": data})
+	}
+}
+
 // requestError is a request the fake refuses with 400, as the real API
 // refuses a malformed one.
 type requestError string
@@ -308,11 +420,13 @@ func (s *server) provider(kind string, build func(body []byte) (reply, error)) h
 			writeJSON(w, http.StatusBadRequest, errorBody("unreadable or oversized request body"))
 			return
 		}
-		if scheme, credential, _ := strings.Cut(r.Header.Get("Authorization"), " "); !strings.EqualFold(scheme, "Bearer") || strings.TrimSpace(credential) == "" {
+		key := credential(r)
+		if key == "" {
 			s.count(kind, "401")
 			writeJSON(w, http.StatusUnauthorized, errorBody("missing API key"))
 			return
 		}
+		s.saw(kind, "calls", key)
 		p := s.draw(kind)
 		if p.status != 0 {
 			s.count(kind, fmt.Sprint(p.status))
@@ -494,6 +608,24 @@ func (s *server) stats(w http.ResponseWriter, _ *http.Request) {
 		out[kind] = map[string]int64{}
 		for outcome, n := range outcomes {
 			out[kind][outcome] = n
+		}
+	}
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, out)
+}
+
+// keysSeen is GET /_keys: the requests of each kind by route and by their
+// credential's fingerprint.
+func (s *server) keysSeen(w http.ResponseWriter, _ *http.Request) {
+	s.mu.Lock()
+	out := map[string]map[string]map[string]int64{}
+	for kind, routes := range s.keys {
+		out[kind] = map[string]map[string]int64{}
+		for route, counts := range routes {
+			out[kind][route] = map[string]int64{}
+			for fingerprint, n := range counts {
+				out[kind][route][fingerprint] = n
+			}
 		}
 	}
 	s.mu.Unlock()

@@ -10,6 +10,8 @@
 #   - /admin/status: a lag bound (background consolidation) and every
 #     budget's spent and held below 80% of its cap, printing the numbers;
 #   - no store of smoke-user, the runbook's smoke-test user, in the data root;
+#   - only once the console has set the account's own provider keys (the
+#     key file exists): the key file the service user's, mode 0600;
 #   - only while its inspect service is on (inspect.env): inspect.env root's,
 #     mode 0600, holding every name it needs, and the inspect listener's
 #     /healthz answering 200 with its token;
@@ -146,6 +148,12 @@ owner_mode() {
 # owner_uid: root, or under --root the user running the tests.
 owner_uid() {
 	if [ -n "$ROOT" ]; then id -u; else printf 0; fi
+}
+
+# service_uid: the uid of the service user, mnemon, who owns the instance's
+# state; under --root the user running the tests.
+service_uid() {
+	if [ -n "$ROOT" ]; then id -u; else id -u mnemon 2>/dev/null || printf 'unknown'; fi
 }
 
 # answered CODE: what an HTTP status from curl says.
@@ -296,6 +304,20 @@ check_smoke_user() {
 	key=$(printf '%s' smoke-user | sha256_hex | cut -c 1-32)
 	[ ! -e "$ROOT$STATE/$NAME/data/users/$key" ] ||
 		fail "the data root holds the store of smoke-user (store ${key:0:8}), the runbook's smoke-test user: printf 'smoke-user\\n' | mnemon-instance delete-user $NAME"
+}
+
+# check_state_file FILE: only when FILE, a private file of the instance's
+# state that aml-serve writes, exists: it is the service user's, mode 0600.
+# Nothing it holds is read.
+check_state_file() {
+	local file=$1 owner mode
+	[ -e "$ROOT$file" ] || return 0
+	checking
+	read -r owner mode <<EOF
+$(owner_mode "$ROOT$file")
+EOF
+	[ "$owner" = "$(service_uid)" ] || fail "$file is owned by uid $owner, not by mnemon"
+	[ "$mode" = 600 ] || fail "$file has mode $mode, not 0600"
 }
 
 # inspect_on: the instance's inspect service is on.
@@ -489,6 +511,7 @@ main() {
 	check_ready
 	check_status
 	check_smoke_user
+	check_state_file "$STATE/$NAME/provider-keys.json"
 	check_inspect
 	if [ "$SYSTEMD" = 1 ]; then
 		check_units

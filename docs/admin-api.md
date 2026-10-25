@@ -6,8 +6,10 @@ instance on a listener of its own. The public listener (`--listen`, the Add/Sear
 memory cloud console read this listener; the deployment is in the
 [AML runbook](aml-adapter.md).
 
-The admin listener is plain HTTP. Its routes read: the one thing a request makes is `/ready`'s
-probe of the data root, a file it creates there and removes; none touches a user's records.
+The admin listener is plain HTTP. Its routes read, but for the pair that replaces and reverts
+the account's own provider keys (`/admin/v1/provider-keys`, below): the one other thing a
+request makes is `/ready`'s probe of the data root, a file it creates there and removes; none
+touches a user's records.
 
 ## Where it listens, and who may read it
 
@@ -108,11 +110,16 @@ and works as it always did; `mnemon_aml_admin_auth_failures_total` stays 0.
 | `GET /ready` | readiness: 200, or 503 with the reasons |
 | `GET /admin/status` | the status the watcher reads, as JSON |
 | `GET /admin/v1/stores` | the store overview, as JSON |
+| `PUT /admin/v1/provider-keys` | the account's own provider keys: checked, written, swapped in |
+| `DELETE /admin/v1/provider-keys?kind=` | back to the host's keys |
 | `/debug/pprof/` and below | Go's profiler |
 | anything else | 404 `{"error":"not found"}` |
 
-The first four are for GET. Any other method on them is answered by the 404 route. The answers
-of `/ready`, `/admin/status` and (when it succeeds) `/admin/v1/stores` are `Cache-Control: no-store`.
+`/metrics`, `/ready`, `/admin/status` and `/admin/v1/stores` are for GET, and
+`/admin/v1/provider-keys` is for PUT and DELETE only (write-only: no route answers the keys).
+Any other method on them is answered by the 404 route. The answers of `/ready`,
+`/admin/status`, `/admin/v1/provider-keys` and (when it succeeds) `/admin/v1/stores` are
+`Cache-Control: no-store`.
 
 ### `GET /metrics`
 
@@ -168,6 +175,7 @@ counts only.
 | `budgets` | each paid account that has been used: `kind`, `cap`, `spent`, `held`; always an array |
 | `openStores` | user stores open now |
 | `version` | the product version string of the build (`dev` for a build made without one) |
+| `providerKeys` | by key kind the configuration's models use (`deepseek`, `jev`): `{"source","fingerprint"}`. `source` is `account` (the key file's key), `host` (the environment's) or `none` (neither: the variable is empty, and the kind's calls fail); `fingerprint` is the key's (below), `""` with none. Never a key. An empty object when the configuration has neither kind |
 
 ### `GET /admin/v1/stores`
 
@@ -229,6 +237,115 @@ deadline or its client does), so a console that polls cannot make a storm of dir
 answer is 500 `{"error":"the store scan failed"}` (503 when it was interrupted), nothing is kept,
 and the server logs the failure once, naming a store by its 8-digit prefix, until a scan goes well
 again.
+
+### `PUT /admin/v1/provider-keys`
+
+The account's own DeepSeek and JEV keys (BYOK, ruling R98): the console's 设置 → 模型服务 API key
+sends them here (through its `PUT /api/instances/:id/provider-keys`). For each kind, the account's
+key, when it has one, is sent in place of the host's.
+
+```json
+{"deepseek": "sk-…", "jev": "…"}
+```
+
+- The body is a JSON object of at most 4 KiB (else `413 {"error":"too_large"}`); not an object,
+  empty, or followed by more than white space: `400 {"error":"invalid","field":"body"}`.
+- At least one of `deepseek` and `jev`, each a string of 8 to 512 printable ASCII characters
+  without spaces; one that is not: `400 {"error":"invalid","field":"<kind>"}`.
+- Another field is `400 {"error":"invalid","field":"<name>"}`. A field whose name is not a plain
+  name (1 to 32 letters, digits and `_`, starting with a letter) is named `body` instead: what
+  stands there may be a key in the wrong place.
+- A kind the configuration has no model of: `409 {"error":"unknown_kind","kind":"<kind>"}`.
+- Without `--provider-keys-file`: `409 {"error":"no_key_file"}`. The keys cannot change at run
+  time without a file to keep them in.
+
+What it does, in order:
+
+1. **Checks every key given before any is applied,** DeepSeek's first, with one request to its
+   provider: `GET {base}/models` with `Authorization: Bearer <key>`, where `{base}` is the model's
+   endpoint without its route (`https://api.deepseek.com`, `https://api.typesafe.ai/v1`; a
+   model's `testEndpoint` likewise), through the provider's own transport (HTTP/1.1). It is not an
+   attempt of the resilience layer: no retry, breaker, bulkhead, metric or rejection count sees
+   it, and it spends no budget. When that route answers 404 or 405, one minimal call of the
+   model of that kind takes its place: a chat completion of `max_tokens` 1 (for JEV, whose API
+   decides rather than completes, a decision of one question), likewise outside every budget;
+   its few tokens are the provider's to bill, and `checked` says `completion`. A kind's check,
+   its fallback included, has 10 seconds.
+   - a 2xx: the key is good;
+   - 401, 402 (an empty balance) or 403: `400 {"error":"key_rejected","kind":"<kind>","status":<status>}`;
+   - anything else (a timeout, a broken connection, a 5xx, a 429, a redirect):
+     `502 {"error":"key_check_unavailable","kind":"<kind>"}`.
+
+   The first kind that fails answers; a kind after it is not checked.
+2. **Writes and swaps,** only when every key given passed: the keys given are merged into the
+   key file, over the other kind's account key if it has one (which stays); the file is written
+   atomically; the keys in memory are swapped. A key replaced applies to the model calls that
+   start once the reply is sent; calls in flight finish, retries included, with the key they
+   started with. No restart. A write that fails changes nothing and answers
+   `500 {"error":"internal"}` (the server logs why).
+3. **Logs one INFO line,** naming the kinds given: `provider keys replaced: deepseek
+   0123456789ab, jev ba9876543210`. A key's **fingerprint** is the first 12 hex digits of its
+   SHA-256. A refusal by the provider is a WARN line, `provider keys not replaced: the deepseek
+   key was rejected (HTTP 401)`, or `…: the jev key: the key could not be checked: HTTP 503`.
+
+The reply is `200`, every configured kind's status, and how each key given was checked:
+
+```json
+{"providerKeys": {"deepseek": {"source": "account", "fingerprint": "0123456789ab"},
+                  "jev": {"source": "host", "fingerprint": "ba9876543210"}},
+ "checked": {"deepseek": "models", "jev": "completion"}}
+```
+
+No error changes anything: neither the file nor the keys in memory. The key itself never
+appears in a log, an error, a metric or a reply, of this route or any other; only its
+fingerprint does.
+
+### `DELETE /admin/v1/provider-keys?kind=deepseek|jev|all`
+
+Reverts the account's keys of a kind, or of every kind (`all`), to the host's: they leave the key
+file, which is removed when no key is left, and the kinds' calls send the host's keys at once
+(those in flight keep theirs). Reverting a kind that has no account key changes nothing, and
+answers the same. The reply is `200 {"providerKeys": {…}}`, the shape above, and one INFO line is
+logged: `provider keys reverted to the host's: deepseek, jev`.
+
+- A missing, empty, unknown or repeated `kind`, or a query string that does not parse:
+  `400 {"error":"invalid","field":"kind"}`.
+- A kind the configuration has no model of: `409 {"error":"unknown_kind","kind":"<kind>"}`.
+- Without `--provider-keys-file`: `409 {"error":"no_key_file"}`.
+
+### The key file
+
+`--provider-keys-file PATH` names it: in the memory cloud
+`/var/lib/mnemon-aml/<n>/provider-keys.json`, in aml-serve's StateDirectory, beside the data root
+(`…/data`) and never in it, so that a snapshot of the data root never holds a key. aml-serve
+refuses a path inside its data root. Its format:
+
+```json
+{"version":1,"keys":{"deepseek":"<key>","jev":"<key>"},"updatedAt":"<RFC 3339>"}
+```
+
+Either key may be absent. aml-serve writes it atomically (a temporary file in the same
+directory, fsync, rename, then the directory's fsync), mode 0600, as the service user. A missing
+file means the host's keys only. A start is refused, with an error that names the file and never
+its content, when the file:
+
+- is not a regular file (a directory, a symbolic link);
+- may be read or written by its group or others (POSIX; not checked on Windows, R89);
+- is not owned by the process's user (POSIX);
+- is larger than 64 KiB, or malformed: not JSON, another `version`, another field, no `keys`, a
+  key that is not 8 to 512 printable ASCII characters without spaces, an `updatedAt` that is not
+  an RFC 3339 time;
+- names a kind other than `deepseek` and `jev`, or one the configuration has no model of.
+
+A write that a crash cut short leaves a temporary file beside it (`.provider-keys.json.tmp-…`),
+never a partial key file; the next start of aml-serve, the file's one writer, removes it and logs
+`removed what an interrupted write of the provider key file left: …`.
+
+`aml-inspect --provider-keys-file PATH` reads the same file, never writes it: at its start, by
+the same rules, and again before each full search, so a key the console replaces reaches the
+console's full searches without a restart. A read that fails then keeps the keys it has, and is
+logged once (a WARN line naming the file) until a read succeeds again. Lexical searches need no
+key.
 
 ### `/debug/pprof/`
 

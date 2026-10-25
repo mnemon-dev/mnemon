@@ -113,6 +113,12 @@ type ServerConfig struct {
 	AdminToken string
 	// Version is the product version /admin/status reports.
 	Version string
+	// ProviderKeysFile is the account's provider key file (byok.go): its
+	// keys are sent in place of the host's, kind by kind, and the admin
+	// listener's PUT and DELETE /admin/v1/provider-keys replace and revert
+	// them. Absolute and outside the data root; "" for the host's keys alone
+	// and no such routes. A missing file holds no key.
+	ProviderKeysFile string
 }
 
 // MinAdminTokenLength is the fewest bytes an admin token (ServerConfig) holds.
@@ -153,6 +159,13 @@ type Server struct {
 	// adminKey is the digest of the admin token, nil without one: the admin
 	// handler then asks nothing of a request.
 	adminKey *[sha256.Size]byte
+	// keys are the providers' key source: the account's keys (the key file)
+	// over the host's. keysWriter admits one change of the key file at a
+	// time (writeKeys), and keyCheckTimeout bounds the check of one key
+	// (memoryagent.KeyCheckTimeout; tests shorten it).
+	keys            *memoryagent.ProviderKeys
+	keysWriter      chan struct{}
+	keyCheckTimeout time.Duration
 	// stores scans the data root for the store overview and the store gauges.
 	stores *storeScanner
 	// freeDisk is the free bytes of the disk holding a directory, which
@@ -213,6 +226,12 @@ func NewServer(config ServerConfig) (*Server, error) {
 		return nil, err
 	}
 	config.Consolidation = mode
+	if config.ProviderKeysFile != "" {
+		if err := checkStateFile(keyFileWhat, config.ProviderKeysFile, config.DataRoot); err != nil {
+			return nil, err
+		}
+		config.ProviderKeysFile = filepath.Clean(config.ProviderKeysFile)
+	}
 	if config.ConsolidationWorkers == 0 {
 		config.ConsolidationWorkers = defaultConsolidationWorkers
 	}
@@ -224,7 +243,8 @@ func NewServer(config ServerConfig) (*Server, error) {
 		timelines: consolidation.Timelines(), mode: mode,
 		addGate: newGate(config.MaxConcurrentAdds), searchGate: newGate(config.MaxConcurrentSearches), admitWait: admissionWait,
 		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout, heartbeatEvery: heartbeatEvery, heartbeatTicker: newTicker,
-		metrics: newMetrics(time.Now), started: time.Now().UTC(), freeDisk: freeDiskBytes}
+		metrics: newMetrics(time.Now), started: time.Now().UTC(), freeDisk: freeDiskBytes,
+		keys: memoryagent.NewProviderKeys(config.MemoryConfig), keysWriter: make(chan struct{}, 1), keyCheckTimeout: memoryagent.KeyCheckTimeout}
 	if s.log == nil {
 		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
@@ -234,10 +254,21 @@ func NewServer(config ServerConfig) (*Server, error) {
 		s.adminKey = &digest
 	}
 	s.stores = newStoreScanner(config.DataRoot, time.Now, s.scanLog)
+	// The account's keys, before the models that send them: a start refuses
+	// a key file that breaks a rule. aml-serve is the file's one writer, so
+	// what a write a crash interrupted left beside it is removed first.
+	if config.ProviderKeysFile != "" {
+		if removed := removeInterrupted(config.ProviderKeysFile); len(removed) > 0 {
+			s.logf(context.Background(), slog.LevelWarn, "removed what an interrupted write of %s left: %s", keyFileWhat, strings.Join(removed, ", "))
+		}
+	}
+	if err := loadKeyFile(config.ProviderKeysFile, s.keys); err != nil {
+		return nil, err
+	}
 	if config.Models != nil {
 		s.models, err = config.Models(config.MemoryConfig)
 	} else {
-		s.models, s.budget, s.cache, err = memoryagent.OpenModels(config.MemoryConfig)
+		s.models, s.budget, s.cache, err = memoryagent.OpenModelsWith(config.MemoryConfig, s.keys)
 	}
 	if err != nil {
 		return nil, err

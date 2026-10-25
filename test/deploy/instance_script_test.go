@@ -764,7 +764,7 @@ func TestInstanceScriptLifecycle(t *testing.T) {
 		t.Helper()
 		rows := map[string][]string{}
 		lines := strings.Split(strings.TrimSuffix(h.ok("", "list"), "\n"), "\n")
-		if header := strings.Fields(lines[0]); !slices.Equal(header, []string{"NAME", "LAYOUT", "SLOT", "DATA", "ADMIN", "STATUS", "INSPECT", "PUBLIC", "URL"}) {
+		if header := strings.Fields(lines[0]); !slices.Equal(header, []string{"NAME", "LAYOUT", "SLOT", "DATA", "ADMIN", "STATUS", "INSPECT", "KEYS", "PUBLIC", "URL"}) {
 			t.Fatalf("list header %q", header)
 		}
 		for _, line := range lines[1:] {
@@ -774,8 +774,8 @@ func TestInstanceScriptLifecycle(t *testing.T) {
 		return rows
 	}
 	if got, want := listed(), map[string][]string{
-		"beta-alice": {"shared", "0", "127.0.0.1:8100", "10.77.0.3:8101", "active", "off", "https://beta.example.com/i/beta-alice"},
-		"beta-bob":   {"shared", "1", "127.0.0.1:8110", "10.77.0.3:8111", "active", "off", "https://beta.example.com/i/beta-bob"},
+		"beta-alice": {"shared", "0", "127.0.0.1:8100", "10.77.0.3:8101", "active", "off", "host", "https://beta.example.com/i/beta-alice"},
+		"beta-bob":   {"shared", "1", "127.0.0.1:8110", "10.77.0.3:8111", "active", "off", "host", "https://beta.example.com/i/beta-bob"},
 	}; !reflect.DeepEqual(got, want) {
 		t.Errorf("list\n got %q\nwant %q", got, want)
 	}
@@ -888,6 +888,49 @@ func TestInstanceScriptLifecycle(t *testing.T) {
 		if line != want[i] && !strings.HasPrefix(line, want[i]+":") {
 			t.Errorf("journal line %d is %q, want %q", i, line, want[i])
 		}
+	}
+	h.checkNoSecrets()
+}
+
+// listColumn is the column named header of every row of list, by instance.
+func (h *host) listColumn(header string) map[string]string {
+	h.t.Helper()
+	lines := strings.Split(strings.TrimSuffix(h.ok("", "list"), "\n"), "\n")
+	column := slices.Index(strings.Fields(lines[0]), header)
+	if column < 0 {
+		h.t.Fatalf("list has no %s column: %q", header, lines[0])
+	}
+	values := map[string]string{}
+	for _, line := range lines[1:] {
+		fields := strings.Fields(line)
+		values[fields[0]] = fields[column]
+	}
+	return values
+}
+
+// list's KEYS column names the kinds of an instance's own provider keys
+// (ruling R98), read from the key file's names, never a key; delete removes
+// the file with the instance's state.
+func TestInstanceScriptListShowsKeyKindsOnly(t *testing.T) {
+	h := newHost(t, "Caddyfile.shared")
+	for _, name := range []string{"beta-alice", "beta-bob", "beta-carol", "beta-dave"} {
+		h.ok("", "new", name, "--layout", "shared", "--public-url", "https://beta.example.com/i/"+name, "--admin-ip", "10.77.0.3", "--host-name", "beta-1")
+	}
+	deepseek, jev := "sk-account-"+randomHex(t), "ts-account-"+randomHex(t)
+	h.secrets["planted DeepSeek account key"], h.secrets["planted JEV account key"] = deepseek, jev
+	keyFile := func(name, content string) {
+		writeFile(t, h.path("/var/lib/mnemon-aml/"+name+"/provider-keys.json"), content, 0o600)
+	}
+	keyFile("beta-alice", `{"version":1,"keys":{"jev":"`+jev+`","deepseek":"`+deepseek+`"},"updatedAt":"2026-10-25T08:00:00Z"}`)
+	keyFile("beta-bob", `{"version":1,"keys":{"jev":"`+jev+`"},"updatedAt":"2026-10-25T08:00:00Z"}`)
+	keyFile("beta-carol", `{"version":1,"keys":{"deepseek":"`+deepseek)
+	want := map[string]string{"beta-alice": "account:deepseek,jev", "beta-bob": "account:jev", "beta-carol": "invalid", "beta-dave": "host"}
+	if got := h.listColumn("KEYS"); !reflect.DeepEqual(got, want) {
+		t.Errorf("KEYS %v, want %v", got, want)
+	}
+	out := h.ok("beta-alice\n", "delete", "beta-alice")
+	if h.exists("/var/lib/mnemon-aml/beta-alice/provider-keys.json") || !strings.Contains(out, "removed /var/lib/mnemon-aml/beta-alice\n") {
+		t.Errorf("delete left the key file:\n%s", out)
 	}
 	h.checkNoSecrets()
 }

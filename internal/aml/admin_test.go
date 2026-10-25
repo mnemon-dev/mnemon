@@ -382,7 +382,7 @@ func TestAdminStatusFieldsAreStable(t *testing.T) {
 		slices.Sort(out)
 		return out
 	}
-	want := []string{"addOutran", "adds", "breakerTrips", "breakers", "budgets", "degraded", "dropped", "lagBound", "linkFallbacks", "openStores", "partial", "partialLast10m", "queue", "rejectedByKind", "searches", "searchesLast10m", "startedAt", "version"}
+	want := []string{"addOutran", "adds", "breakerTrips", "breakers", "budgets", "degraded", "dropped", "lagBound", "linkFallbacks", "openStores", "partial", "partialLast10m", "providerKeys", "queue", "rejectedByKind", "searches", "searchesLast10m", "startedAt", "version"}
 	if got := keys(fields); !slices.Equal(got, want) {
 		t.Fatalf("fields %v, want %v", got, want)
 	}
@@ -394,9 +394,10 @@ func TestAdminStatusFieldsAreStable(t *testing.T) {
 		t.Fatalf("queue fields %v, want %v", got, want)
 	}
 	// No provider or paid account: empty, not null. No consolidation lag
-	// bound without background consolidation.
-	if string(fields["breakers"]) != "{}" || string(fields["breakerTrips"]) != "{}" || string(fields["rejectedByKind"]) != "{}" || string(fields["budgets"]) != "[]" || string(fields["lagBound"]) != "0" {
-		t.Fatal(string(fields["breakers"]), string(fields["breakerTrips"]), string(fields["rejectedByKind"]), string(fields["budgets"]), string(fields["lagBound"]))
+	// bound without background consolidation. No model of a key kind
+	// (DeepSeek or JEV) in the configuration: no providerKeys entry.
+	if string(fields["breakers"]) != "{}" || string(fields["breakerTrips"]) != "{}" || string(fields["rejectedByKind"]) != "{}" || string(fields["budgets"]) != "[]" || string(fields["lagBound"]) != "0" || string(fields["providerKeys"]) != "{}" {
+		t.Fatal(string(fields["breakers"]), string(fields["breakerTrips"]), string(fields["rejectedByKind"]), string(fields["budgets"]), string(fields["lagBound"]), string(fields["providerKeys"]))
 	}
 	var started time.Time
 	if err := json.Unmarshal(fields["startedAt"], &started); err != nil || started.Before(before) || started.After(time.Now()) {
@@ -405,6 +406,20 @@ func TestAdminStatusFieldsAreStable(t *testing.T) {
 	// It names the moment the server was made, whenever it is asked.
 	if again := h.adminStatus(t); !again.StartedAt.Equal(started) {
 		t.Fatal(again.StartedAt, started)
+	}
+	// Each entry of providerKeys is a source and a fingerprint, and a kind
+	// without any key says so.
+	h = newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Planner = &memoryagent.ModelConfig{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "STATUS_TEST_DEEPSEEK"}
+		config.MemoryConfig.Judge = &memoryagent.ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "STATUS_TEST_JEV"}
+	})
+	t.Setenv("STATUS_TEST_DEEPSEEK", "host-deepseek-key-0001")
+	t.Setenv("STATUS_TEST_JEV", "")
+	if err := json.Unmarshal(h.adminCall("GET", "/admin/status").Body.Bytes(), &fields); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(fields["providerKeys"]), `{"deepseek":{"source":"host","fingerprint":"`+memoryagent.Fingerprint("host-deepseek-key-0001")+`"},"jev":{"source":"none","fingerprint":""}}`; got != want {
+		t.Fatalf("providerKeys %s, want %s", got, want)
 	}
 }
 

@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -600,9 +599,12 @@ func (r flightResult[T]) outcome() string {
 // category). An invalid reply, one parse or check refuses, is retried once
 // within the class's attempts (R61), and comes back with its error. A 429
 // that names no wait is retried patiently, apart from them (R67, R71). When
-// the caller's context ended, the error wraps its error.
+// the caller's context ended, the error wraps its error. The call takes its
+// credential as it starts and sends it in every attempt: a key replaced
+// meanwhile (ProviderKeys.SetAccount) applies to the calls that start after.
 func send[T meteredReply](ctx context.Context, p *Provider, body []byte, amount float64, parse func([]byte) (T, error), check func(T) error) (T, []byte, error) {
-	c := &modelCall[T]{ctx: ctx, p: p, policy: &p.policies[callClass(ctx)], body: body, hash: reference("request", string(body)).Hash, amount: amount, parse: parse, check: check}
+	c := &modelCall[T]{ctx: ctx, p: p, policy: &p.policies[callClass(ctx)], body: body, hash: reference("request", string(body)).Hash, amount: amount, parse: parse, check: check,
+		credential: p.credential()}
 	// stop ends a call at its class's attempts, its throttled retries being
 	// none of them; the policy's own bound is the two together.
 	retry := retrypolicy.NewBuilder[flightResult[T]]().
@@ -628,6 +630,8 @@ type modelCall[T meteredReply] struct {
 	amount float64
 	parse  func([]byte) (T, error)
 	check  func(T) error // nil: a reply that parses is valid
+	// credential is the key every attempt sends, taken as the call began.
+	credential string
 
 	attempts int
 	last     flightResult[T] // the last attempt's
@@ -779,7 +783,7 @@ func (c *modelCall[T]) try(ctx context.Context) flightResult[T] {
 // breaker's permit. A step that refuses undoes the ones before it.
 func (c *modelCall[T]) admit(ctx context.Context) (*flight[T], error) {
 	p, policy := c.p, c.policy
-	request, err := p.newRequest(ctx, c.body)
+	request, err := p.newRequest(ctx, c.body, c.credential)
 	if err != nil {
 		return nil, err
 	}
@@ -1177,20 +1181,20 @@ func tracesConnections(rt http.RoundTripper) bool {
 	return ok
 }
 
-// newRequest is an attempt's request of body, with the credential, on ctx
-// without its cancellation (the attempt cuts it, see wait).
-func (p *Provider) newRequest(ctx context.Context, body []byte) (*http.Request, error) {
+// newRequest is an attempt's request of body, with credential, the key its
+// call took (send), on ctx without its cancellation (the attempt cuts it, see
+// wait). A model that names a key variable sends no request without a key.
+func (p *Provider) newRequest(ctx context.Context, body []byte, credential string) (*http.Request, error) {
 	request, err := http.NewRequestWithContext(context.WithoutCancel(ctx), http.MethodPost, p.endpoint, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("Content-Type", "application/json")
 	if p.config.KeyEnv != "" {
-		key := os.Getenv(p.config.KeyEnv)
-		if key == "" {
+		if credential == "" {
 			return nil, errors.New("model credential is unavailable")
 		}
-		request.Header.Set("Authorization", "Bearer "+key)
+		request.Header.Set("Authorization", "Bearer "+credential)
 	}
 	return request, nil
 }

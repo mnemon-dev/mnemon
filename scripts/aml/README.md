@@ -10,7 +10,7 @@ replay (`parity/`, below). The bash scripts need bash (3.2 or later), Go, curl, 
 | `final.sh` | The final verification run in one command (below) |
 | `drill.sh` | The fault drill: each scenario against a steady Add and Search workload, judged both ways |
 | `load.sh` | The load test: Adds, Searches or both at rising rates, and the knee of each, locally or against a base URL |
-| `fakeprovider/` | The fake DeepSeek and JEV: deterministic replies, and faults set at run time through a loopback-only `POST /_fault` |
+| `fakeprovider/` | The fake DeepSeek and JEV: deterministic replies, the lists of models the engine checks an account's key with (`GET /models`, `GET /v1/models`), faults set at run time through a loopback-only `POST /_fault` (the lists' apart: `modelsStatus`, `modelsFault`), and `GET /_keys`, the requests by their key's fingerprint, never a key |
 | `parity/` | The parity replay (Python 3.9 or later, not bash): the same requests to the baseline build and to the build under test, every response body compared byte for byte, the new side served from the model cache with 0 paid calls. Recording the baseline is the one paid step, made once (it spends up to CNY 15 and USD 5); the README beside it says how |
 | `lib.sh`, `scenario.jq`, `poisson.jq`, `knee.jq` | What the scripts share (sourced), the drill's criteria for one run of a scenario, the Poisson quantile its bounds use, and the knee rule (jq programs) |
 

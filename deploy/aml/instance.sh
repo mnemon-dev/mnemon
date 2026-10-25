@@ -12,7 +12,10 @@
 #   /etc/mnemon-aml/<n>/watch.env          watcher environment: alert bot, public URL, admin token
 #   /etc/mnemon-aml/<n>/inspect.env        inspect environment, while it is on: listener, caps, token, provider keys
 #   /etc/mnemon-aml/<n>/memory-config.json the shipped configuration with this instance's caps
-#   /var/lib/mnemon-aml/<n>/               data root (data/) and model budget file
+#   /var/lib/mnemon-aml/<n>/               data root (data/), model budget file and, once the
+#                                          console has set them, the account's own provider keys
+#                                          (provider-keys.json: aml-serve writes it, list reads its
+#                                          key names only)
 #   /var/lib/mnemon-aml-watch/<n>/         the watcher's state
 #   /var/lib/mnemon-aml-inspect/<n>/       the inspect service's debug budget, while it is on
 #   /etc/systemd/system/aml-serve@<n>.service.d/limits.conf   MemoryMax= and CPUQuota=
@@ -125,7 +128,9 @@ The engine instances of this host, one per account. Run as root.
                     in a command) and remove that user's store, stopping and
                     starting the instance around it.
   list              Name, layout, slot, addresses, status, whether inspect is
-                    on, and public URL of every instance. No secrets.
+                    on, where its provider keys come from (KEYS: host, or
+                    account:<kinds> once the console has set the account's
+                    own), and public URL of every instance. No secrets.
   inspect enable <n> [--debug-deepseek-cap CNY] [--debug-jev-cap USD]
       Turn on the inspect service of <n> (the console's read-only 检索 tab):
       write inspect.env, start aml-inspect@<n>, wait for its /healthz, and
@@ -959,15 +964,35 @@ cmd_delete_user() {
 	[ "$ready" = 1 ] || die "delete-user $name: the store is removed, but the instance is not ready"
 }
 
+# key_kinds NAME: where instance NAME's provider keys come from, read from
+# its key file's key names alone, never their values: host (no file, or no
+# key in it), account:<kinds> (deepseek, jev, comma-separated), or invalid (a
+# file that is not the format, or names another kind, which is not shown:
+# what stands there may be a key pasted in the wrong place).
+key_kinds() {
+	local file="$ROOT$STATE/$1/provider-keys.json" kinds
+	if [ ! -e "$file" ]; then
+		printf host
+		return 0
+	fi
+	if ! kinds=$(jq -r '.keys | if type == "object" and (keys | all(. == "deepseek" or . == "jev")) then keys | join(",") else error("not a key file") end' "$file" 2>/dev/null); then
+		printf invalid
+	elif [ -z "$kinds" ]; then
+		printf host
+	else
+		printf 'account:%s' "$kinds"
+	fi
+}
+
 cmd_list() {
 	[ $# -eq 0 ] || usage_error "list takes no arguments"
 	if [ -z "$ROOT" ] && [ "$(id -u)" != 0 ]; then
 		die "run as root: the environment files are root's"
 	fi
-	need grep tail
-	local env dir inspect format='%-31s  %-9s  %4s  %-15s  %-21s  %-9s  %-7s  %s\n'
+	need grep tail jq
+	local env dir inspect format='%-31s  %-9s  %4s  %-15s  %-21s  %-9s  %-7s  %-20s  %s\n'
 	# shellcheck disable=SC2059
-	printf "$format" NAME LAYOUT SLOT DATA ADMIN STATUS INSPECT 'PUBLIC URL'
+	printf "$format" NAME LAYOUT SLOT DATA ADMIN STATUS INSPECT KEYS 'PUBLIC URL'
 	for env in "$ROOT$ETC"/*/env; do
 		[ -f "$env" ] || continue
 		dir=${env%/env}
@@ -976,7 +1001,7 @@ cmd_list() {
 		# shellcheck disable=SC2059
 		printf "$format" "${dir##*/}" "$(env_get "$env" AML_LAYOUT)" "$(env_get "$env" AML_SLOT)" \
 			"$(env_get "$env" AML_LISTEN)" "$(env_get "$env" AML_ADMIN_LISTEN)" "$(env_get "$env" AML_STATUS)" \
-			"$inspect" "$(env_get "$dir/watch.env" AML_PUBLIC_URL)"
+			"$inspect" "$(key_kinds "${dir##*/}")" "$(env_get "$dir/watch.env" AML_PUBLIC_URL)"
 	done
 }
 

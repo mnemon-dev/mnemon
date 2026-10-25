@@ -42,6 +42,7 @@ func newAMLInspectCommand() *cobra.Command {
 	flags.String("debug-caps", "", "The debug budget's caps by kind, such as deepseek=5,jev=1 (DeepSeek in CNY, JEV in USD); full searches are refused while none is set")
 	flags.Int("max-concurrent", 2, "Most requests reading stores at once; past it a request answers 503 with Retry-After")
 	flags.String("log-format", "text", "Log format: text or json")
+	flags.String("provider-keys-file", "", "Absolute path of the instance's provider key file (aml-serve's --provider-keys-file), read at the start and before each full search, never written: its DeepSeek and JEV keys are sent in place of the host's; empty for the host's keys alone")
 	return command
 }
 
@@ -49,6 +50,7 @@ func newAMLInspectCommand() *cobra.Command {
 // variable --token-env names holds, "" without the flag.
 type amlInspectOptions struct {
 	dataRoot, memoryConfig, listen, logFormat, debugBudget, token string
+	providerKeysFile                                              string
 	caps                                                          map[string]float64
 	maxConcurrent                                                 int
 }
@@ -65,6 +67,7 @@ func amlInspectFlags(cmd *cobra.Command) (amlInspectOptions, error) {
 	o.logFormat, _ = flags.GetString("log-format")
 	o.debugBudget, _ = flags.GetString("debug-budget-file")
 	o.maxConcurrent, _ = flags.GetInt("max-concurrent")
+	o.providerKeysFile, _ = flags.GetString("provider-keys-file")
 	caps, _ := flags.GetString("debug-caps")
 	switch {
 	case !filepath.IsAbs(o.dataRoot):
@@ -77,6 +80,8 @@ func amlInspectFlags(cmd *cobra.Command) (amlInspectOptions, error) {
 		return o, errors.New("--debug-budget-file must be an absolute path")
 	case caps != "" && o.debugBudget == "":
 		return o, errors.New("--debug-caps needs --debug-budget-file")
+	case o.providerKeysFile != "" && !filepath.IsAbs(o.providerKeysFile):
+		return o, errors.New("--provider-keys-file must be an absolute path")
 	}
 	var err error
 	if o.caps, err = debugCaps(caps); err != nil {
@@ -168,7 +173,7 @@ func runAMLInspect(cmd *cobra.Command, _ []string) error {
 	inspector, err := aml.NewInspector(aml.InspectConfig{
 		DataRoot: options.dataRoot, MemoryConfig: config, Token: options.token,
 		DebugBudgetFile: options.debugBudget, DebugCaps: options.caps, MaxConcurrent: options.maxConcurrent,
-		Logger: log, Version: version,
+		Logger: log, Version: version, ProviderKeysFile: options.providerKeysFile,
 	})
 	if err != nil {
 		return err

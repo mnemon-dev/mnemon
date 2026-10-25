@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -54,6 +53,9 @@ type Provider struct {
 	config   ModelConfig
 	endpoint string
 	budget   *Budget
+	// keys is where a call reads its credential (keys.go): the account's key
+	// of the kind over the host's; nil for the host's alone.
+	keys *ProviderKeys
 	// client sends this provider's requests over a connection pool of its own
 	// (newTransport), shared with no other provider. Its timeout is the
 	// requests' hard timeout.
@@ -148,7 +150,15 @@ func isLoopbackHost(host string) bool {
 	return host == "127.0.0.1" || host == "localhost" || host == "::1"
 }
 
+// NewProvider is the provider of config, billed to budget, whose credential
+// is the host's: the variable config.KeyEnv names.
 func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
+	return newProvider(config, budget, nil)
+}
+
+// newProvider is NewProvider whose credential comes from keys (nil for the
+// host's): a paid model needs one there when it is made.
+func newProvider(config ModelConfig, budget *Budget, keys *ProviderKeys) (*Provider, error) {
 	timeout := defaultModelTimeout
 	if config.TimeoutSeconds != 0 {
 		if config.TimeoutSeconds < 1 || config.TimeoutSeconds > 1800 {
@@ -159,7 +169,7 @@ func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
 	if err := checkResilience(config, timeout); err != nil {
 		return nil, err
 	}
-	p := &Provider{config: config, budget: budget, client: &http.Client{Timeout: timeout, Transport: newTransport(providerConns), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
+	p := &Provider{config: config, budget: budget, keys: keys, client: &http.Client{Timeout: timeout, Transport: newTransport(providerConns), CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		policies: classPolicies(config, timeout), breaker: newBreaker(), retries: &retryBudget{}}
 	if len(config.Model) == 0 || len(config.Model) > 120 {
 		return nil, errors.New("model name is required")
@@ -214,11 +224,15 @@ func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
 	if config.TestEndpoint != "" {
 		p.endpoint = config.TestEndpoint
 	}
-	if config.Kind != "local" && (budget == nil || config.KeyEnv == "" || os.Getenv(config.KeyEnv) == "") {
-		return nil, errors.New("paid model requires a budget and a nonempty credential environment variable")
+	if config.Kind != "local" && (budget == nil || config.KeyEnv == "" || p.credential() == "") {
+		return nil, errors.New("paid model requires a budget and a nonempty credential environment variable (or an account key)")
 	}
 	return p, nil
 }
+
+// credential is the key the provider's calls send now: the account's key of
+// its kind, else the host's (keys.go); "" with neither.
+func (p *Provider) credential() string { return p.keys.credential(p.config.Kind, p.config.KeyEnv) }
 
 const (
 	// maxRequestBytes bounds a completion request body. A fold of a full

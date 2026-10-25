@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -395,5 +396,159 @@ func TestFakeProviderBuildsForTheEvaluationHost(t *testing.T) {
 	}
 	if deps := strings.Fields(string(out)); len(deps) != 1 || deps[0] != "github.com/mnemon-dev/mnemon/scripts/aml/fakeprovider" {
 		t.Errorf("the fake provider depends on %v, want the standard library only", deps)
+	}
+}
+
+// get sends GET path with key as the bearer credential ("" for none) and
+// timeout as the client's, and returns the status and the body, or the
+// client's error.
+func (f *fakeProvider) get(t *testing.T, path, key string, timeout time.Duration) (int, []byte, error) {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodGet, f.base+path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if key != "" {
+		request.Header.Set("Authorization", "Bearer "+key)
+	}
+	response, err := (&http.Client{Timeout: timeout}).Do(request)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer response.Body.Close()
+	raw, err := io.ReadAll(response.Body)
+	return response.StatusCode, raw, err
+}
+
+// TestFakeProviderModels: the fake answers the engine's key check (GET
+// {base}/models, ruling R98) as the providers do, and can be told, per
+// kind, to refuse it, to have no such route, to fail, to hang or to close
+// the connection; it counts each answer and the keys it saw, by their
+// fingerprints only.
+func TestFakeProviderModels(t *testing.T) {
+	fake := startFakeProvider(t, 0)
+	deepseek, jev, budget := fake.providers(t)
+	ctx := context.Background()
+	set := func(profile string) {
+		t.Helper()
+		if status, _, raw := fake.post(t, http.MethodPost, "/_fault", "", profile); status != http.StatusOK {
+			t.Fatalf("set the fault %s: %d %s", profile, status, raw)
+		}
+	}
+
+	// The lists, DeepSeek's at /models and JEV's at /v1/models, as each
+	// kind's base URL has it.
+	for path, model := range map[string]string{"/models": `"id":"deepseek-flash"`, "/v1/models": `"id":"jev-1.13.0"`} {
+		status, raw, err := fake.get(t, path, "candidate-key-0001", 5*time.Second)
+		if err != nil || status != http.StatusOK || !bytes.Contains(raw, []byte(model)) || !bytes.Contains(raw, []byte(`"object":"list"`)) {
+			t.Errorf("GET %s: %d %s %v", path, status, raw, err)
+		}
+		if status, _, _ := fake.get(t, path, "", 5*time.Second); status != http.StatusUnauthorized {
+			t.Errorf("GET %s without a key answered %d, want 401", path, status)
+		}
+	}
+	// The engine's check passes against it, by the list.
+	if check, err := deepseek.CheckKey(ctx, "candidate-key-0001"); err != nil || check.Via != "models" {
+		t.Fatalf("the DeepSeek check: %+v %v", check, err)
+	}
+
+	// Per kind: a refused key, an empty balance, no list (the check then
+	// makes one minimal call, which the fake answers), a failure.
+	set(`{"kind":"deepseek","modelsStatus":401}`)
+	if status, _, _ := fake.get(t, "/models", "k1-000000", 5*time.Second); status != http.StatusUnauthorized {
+		t.Errorf("DeepSeek's list answered %d, want 401", status)
+	}
+	if status, _, _ := fake.get(t, "/v1/models", "k1-000000", 5*time.Second); status != http.StatusOK {
+		t.Errorf("JEV's list answered %d during a DeepSeek fault", status)
+	}
+	if _, _, err := deepseek.CompleteWith(ctx, plannerSystem, cuePrompt, 400); err != nil {
+		t.Errorf("a DeepSeek call during a fault of its list: %v", err)
+	}
+	if _, err := deepseek.CheckKey(ctx, "candidate-key-0001"); !errors.Is(err, memoryagent.ErrKeyRejected) {
+		t.Errorf("the check of a refused key: %v", err)
+	}
+	set(`{"kind":"deepseek","modelsStatus":402}`)
+	if status, raw, _ := fake.get(t, "/models", "k1-000000", 5*time.Second); status != http.StatusPaymentRequired || !bytes.Contains(raw, []byte("Insufficient Balance")) {
+		t.Errorf("an empty balance answered %d %s", status, raw)
+	}
+	set(`{"kind":"jev","modelsStatus":404}`)
+	if check, err := jev.CheckKey(ctx, "candidate-key-0001"); err != nil || check.Via != "completion" || check.Status != http.StatusOK {
+		t.Errorf("the JEV check without a list: %+v %v", check, err)
+	}
+	set(`{"kind":"deepseek","modelsStatus":404}`)
+	if check, err := deepseek.CheckKey(ctx, "candidate-key-0001"); err != nil || check.Via != "completion" {
+		t.Errorf("the DeepSeek check without a list: %+v %v", check, err)
+	}
+	set(`{"kind":"deepseek","modelsStatus":500}`)
+	if _, err := deepseek.CheckKey(ctx, "candidate-key-0001"); !errors.Is(err, memoryagent.ErrKeyCheckUnavailable) {
+		t.Errorf("the check of a failing list: %v", err)
+	}
+
+	// A hang lasts until the client leaves (or stallFor); a close breaks the
+	// connection off without an answer.
+	set(`{"kind":"deepseek","modelsFault":"hang","stallFor":"5s"}`)
+	start := time.Now()
+	if _, _, err := fake.get(t, "/models", "k1-000000", 300*time.Millisecond); err == nil || time.Since(start) > 3*time.Second {
+		t.Errorf("a hanging list answered after %v: %v", time.Since(start), err)
+	}
+	set(`{"kind":"jev","modelsFault":"close"}`)
+	if status, _, err := fake.get(t, "/v1/models", "k1-000000", 5*time.Second); err == nil {
+		t.Errorf("a closed connection answered %d", status)
+	}
+	if _, err := jev.CheckKey(ctx, "candidate-key-0001"); !errors.Is(err, memoryagent.ErrKeyCheckUnavailable) {
+		t.Errorf("the check over a closed connection: %v", err)
+	}
+	for _, bad := range []string{`{"kind":"jev","modelsStatus":99}`, `{"kind":"jev","modelsStatus":600}`, `{"kind":"jev","modelsFault":"explode"}`} {
+		if status, _, _ := fake.post(t, http.MethodPost, "/_fault", "", bad); status != http.StatusBadRequest {
+			t.Errorf("the profile %s answered %d, want 400", bad, status)
+		}
+	}
+	if status, _, raw := fake.post(t, http.MethodDelete, "/_fault", "", ""); status != http.StatusOK {
+		t.Fatal(status, string(raw))
+	}
+
+	// What it answered, as the stats count it, and the keys it saw, by
+	// fingerprint and route, never the keys.
+	_, _, raw := fake.post(t, http.MethodGet, "/_stats", "", "")
+	var stats map[string]map[string]int
+	if err := json.Unmarshal(raw, &stats); err != nil {
+		t.Fatal(err, string(raw))
+	}
+	for kind, outcomes := range map[string]map[string]int{
+		"deepseek": {"models:401": 3, "models:402": 1, "models:404": 1, "models:500": 1, "models:hang": 1},
+		"jev":      {"models:404": 1},
+	} {
+		for outcome, n := range outcomes {
+			if stats[kind][outcome] != n {
+				t.Errorf("stats[%s][%s] = %d, want %d (stats %v)", kind, outcome, stats[kind][outcome], n, stats)
+			}
+		}
+	}
+	// net/http sends a GET again, once, when a connection it had used before
+	// is closed without an answer: two clients, up to four requests.
+	if n := stats["jev"]["models:close"]; n < 2 || n > 4 {
+		t.Errorf("stats[jev][models:close] = %d, want 2 to 4", n)
+	}
+	_, _, raw = fake.post(t, http.MethodGet, "/_keys", "", "")
+	if strings.Contains(string(raw), "candidate-key-0001") || strings.Contains(string(raw), "k1-000000") {
+		t.Fatalf("/_keys shows a key: %s", raw)
+	}
+	var keys map[string]map[string]map[string]int
+	if err := json.Unmarshal(raw, &keys); err != nil {
+		t.Fatal(err, string(raw))
+	}
+	if keys["deepseek"]["models"][memoryagent.Fingerprint("candidate-key-0001")] < 4 || keys["jev"]["calls"][memoryagent.Fingerprint("candidate-key-0001")] != 1 ||
+		keys["deepseek"]["calls"][memoryagent.Fingerprint("fake-provider-test-key")] < 1 {
+		t.Errorf("/_keys = %s", raw)
+	}
+	// The checks are free: nothing was reserved for them.
+	accounts, err := budget.Accounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, account := range accounts {
+		if account.Kind == "jev" && account.Spent != 0 {
+			t.Errorf("the checks spent from the JEV account: %+v", account)
+		}
 	}
 }

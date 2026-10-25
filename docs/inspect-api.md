@@ -343,7 +343,9 @@ neither, is `field` `key`); an unknown store is `404 store_not_found`.
     byte-identical to that `data` for the same store, `query` and `top_k` (`options` are not
     searched, as there).
   - **full** runs the read path `/search` runs, with the instance's configuration and models,
-    billed to the **debug budget**. It does not first fold the pending records as `/search`
+    billed to the **debug budget**. Its models send the instance's provider keys: the account's
+    own, read from the instance's key file (`--provider-keys-file`) again before each full
+    search, over the host's ([Admin API](admin-api.md), "The key file"). It does not first fold the pending records as `/search`
     does (stage `pending`): its `result` is what `/search` answers once nothing is pending.
 - `usage` is the models' use: `calls` (int), `tokens.input` and `tokens.output` (ints, as the
   providers metered them) and `cost` by kind. It counts what the calls' replies metered; the debug

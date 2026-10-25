@@ -31,11 +31,12 @@ Group=mnemon
 # GOMEMLIMIT and the provider keys. Mode 0600, root's: systemd reads it
 # before it drops to User=mnemon.
 EnvironmentFile=/etc/mnemon-aml/%i/inspect.env
-ExecStart=/usr/local/bin/mnemon memory-agent aml-inspect --listen ${AML_INSPECT_LISTEN} --token-env MNEMON_INSPECT_TOKEN --data-root /var/lib/mnemon-aml/%i/data --memory-config /etc/mnemon-aml/%i/memory-config.json --debug-budget-file /var/lib/mnemon-aml-inspect/%i/debug-budget.db --debug-caps ${AML_INSPECT_DEBUG_CAPS} --max-concurrent 2 --log-format json
+ExecStart=/usr/local/bin/mnemon memory-agent aml-inspect --listen ${AML_INSPECT_LISTEN} --token-env MNEMON_INSPECT_TOKEN --data-root /var/lib/mnemon-aml/%i/data --memory-config /etc/mnemon-aml/%i/memory-config.json --debug-budget-file /var/lib/mnemon-aml-inspect/%i/debug-budget.db --debug-caps ${AML_INSPECT_DEBUG_CAPS} --max-concurrent 2 --log-format json --provider-keys-file /var/lib/mnemon-aml/%i/provider-keys.json
 
-# Read only: the instance's data root and its budget file. SQLite reads a
-# store aml-serve holds through its -wal and -shm, read only, and one it
-# does not by its main file alone (records.OpenReader).
+# Read only: the instance's data root, its budget file and the account's
+# provider key file, which aml-serve writes and full searches read. SQLite
+# reads a store aml-serve holds through its -wal and -shm, read only, and one
+# it does not by its main file alone (records.OpenReader).
 ReadOnlyPaths=/var/lib/mnemon-aml/%i
 # The debug budget file.
 StateDirectory=mnemon-aml-inspect/%i

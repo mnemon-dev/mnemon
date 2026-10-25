@@ -106,6 +106,52 @@ func TestConsolidateFlagValues(t *testing.T) {
 	}
 }
 
+// --provider-keys-file names the account's key file (ruling R98), which
+// aml-serve reads at its start and writes for the admin listener, and
+// aml-inspect reads: an absolute path, or none.
+func TestProviderKeysFileFlag(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "provider-keys.json")
+	if options, err := amlFlags(t, "--provider-keys-file", file); err != nil || options.providerKeysFile != file {
+		t.Fatal(options.providerKeysFile, err)
+	}
+	if options, err := amlFlags(t); err != nil || options.providerKeysFile != "" {
+		t.Fatal(options.providerKeysFile, err)
+	}
+	if _, err := amlFlags(t, "--provider-keys-file", "provider-keys.json"); err == nil || err.Error() != "--provider-keys-file must be an absolute path" {
+		t.Fatal(err)
+	}
+	if options, err := inspectFlags(t, "--provider-keys-file", file); err != nil || options.providerKeysFile != file {
+		t.Fatal(options.providerKeysFile, err)
+	}
+	if _, err := inspectFlags(t, "--provider-keys-file", "provider-keys.json"); err == nil || err.Error() != "--provider-keys-file must be an absolute path" {
+		t.Fatal(err)
+	}
+	// A key file the start refuses stops aml-serve, naming the file and
+	// nothing it holds.
+	dir := t.TempDir()
+	t.Setenv("AML_TEST_KEY", "k")
+	t.Setenv("DEEPSEEK_API_KEY", "test-deepseek")
+	t.Setenv("TYPESAFE_API_KEY", "test-typesafe")
+	config, err := readMemoryConfig(deployFile(t, "memory-config.industrial.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.BudgetFile = filepath.Join(dir, "model-budget.db")
+	raw, _ := json.Marshal(config)
+	configPath := filepath.Join(dir, "memory-config.json")
+	if err := os.WriteFile(configPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const planted = "sk-planted-in-the-file-0001"
+	if err := os.WriteFile(file, []byte(`{"version":1,"keys":{"deepseek":"`+planted+`"},"extra":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = executeAMLServe("--data-root", filepath.Join(dir, "data"), "--memory-config", configPath, "--auth-key-env", "AML_TEST_KEY", "--provider-keys-file", file)
+	if err == nil || !strings.Contains(err.Error(), file) || strings.Contains(err.Error(), planted) {
+		t.Fatal(err)
+	}
+}
+
 // The E1 cases of a listener's address, which aml-serve's --admin-listen
 // (TestAdminListenRules) and aml-inspect's --listen (TestInspectAuthAndListen)
 // both follow: loopback addresses need no token, private ones need it, and
@@ -545,10 +591,16 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 		"max-concurrent-adds":     "16",
 		"max-concurrent-searches": "16",
 		"log-format":              "json",
+		"provider-keys-file":      "/var/lib/mnemon-aml/eval/provider-keys.json",
 	} {
 		if f := command.Flags().Lookup(flag); !f.Changed || f.Value.String() != want {
 			t.Errorf("aml-serve@.service passes --%s %q, want %q", flag, f.Value.String(), want)
 		}
+	}
+	// The key file is in the instance's state, beside the data root and never
+	// in it, so that a snapshot of the data never holds a key.
+	if keys, data := command.Flags().Lookup("provider-keys-file").Value.String(), command.Flags().Lookup("data-root").Value.String(); path.Dir(keys) != path.Dir(data) || strings.HasPrefix(keys, data+"/") {
+		t.Errorf("--provider-keys-file %s is not beside --data-root %s", keys, data)
 	}
 	if command.Flags().Changed("consolidate-on-add") {
 		t.Error("aml-serve@.service passes --consolidate-on-add")
@@ -707,18 +759,24 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 		t.Fatal("aml-inspect@.service passes arguments that are not flags:", rest)
 	}
 	for flag, want := range map[string]string{
-		"listen":            "10.0.0.5:8092",
-		"token-env":         "MNEMON_INSPECT_TOKEN",
-		"data-root":         "/var/lib/mnemon-aml/eval/data",
-		"memory-config":     "/etc/mnemon-aml/eval/memory-config.json",
-		"debug-budget-file": "/var/lib/mnemon-aml-inspect/eval/debug-budget.db",
-		"debug-caps":        "deepseek=5,jev=1",
-		"max-concurrent":    "2",
-		"log-format":        "json",
+		"listen":             "10.0.0.5:8092",
+		"token-env":          "MNEMON_INSPECT_TOKEN",
+		"data-root":          "/var/lib/mnemon-aml/eval/data",
+		"memory-config":      "/etc/mnemon-aml/eval/memory-config.json",
+		"debug-budget-file":  "/var/lib/mnemon-aml-inspect/eval/debug-budget.db",
+		"debug-caps":         "deepseek=5,jev=1",
+		"max-concurrent":     "2",
+		"log-format":         "json",
+		"provider-keys-file": "/var/lib/mnemon-aml/eval/provider-keys.json",
 	} {
 		if f := command.Flags().Lookup(flag); !f.Changed || f.Value.String() != want {
 			t.Errorf("aml-inspect@.service passes --%s %q, want %q", flag, f.Value.String(), want)
 		}
+	}
+	// It reads the instance's key file under the instance's state, which the
+	// unit mounts read only.
+	if keys := command.Flags().Lookup("provider-keys-file").Value.String(); !strings.HasPrefix(keys, strings.ReplaceAll(inspect.get(t, "Service", "ReadOnlyPaths"), "%i", instance)+"/") {
+		t.Errorf("--provider-keys-file %s is not under ReadOnlyPaths=", keys)
 	}
 	// The units run on Linux: on Windows their paths are not absolute (R89),
 	// so there the flags are parsed but not checked.

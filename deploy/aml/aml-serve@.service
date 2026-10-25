@@ -6,7 +6,9 @@
 # Everything per instance comes from %i, the instance name:
 #   /etc/mnemon-aml/%i/env                 addresses, flag values and secrets (below)
 #   /etc/mnemon-aml/%i/memory-config.json  the shipped configuration with the instance's caps
-#   /var/lib/mnemon-aml/%i/                the data root (data/) and the model budget file
+#   /var/lib/mnemon-aml/%i/                the data root (data/), the model budget file and,
+#                                          once the console sets them, the account's own provider
+#                                          keys (provider-keys.json, mode 0600, written by aml-serve)
 #   aml-serve@%i.service.d/limits.conf     MemoryMax= and CPUQuota=, the instance's limits
 # so this file, ExecStart included, is the same for every instance. One
 # aml-serve holds a data root at a time (<data-root>/.aml-serve.lock).
@@ -45,7 +47,7 @@ Group=mnemon
 # AML_WORKERS. Mode 0600, root's: systemd reads it before it drops to
 # User=mnemon.
 EnvironmentFile=/etc/mnemon-aml/%i/env
-ExecStart=/usr/local/bin/mnemon memory-agent aml-serve --listen ${AML_LISTEN} --admin-listen ${AML_ADMIN_LISTEN} --admin-token-env MNEMON_ADMIN_TOKEN --auth-key-env AML_API_KEY --data-root /var/lib/mnemon-aml/%i/data --memory-config /etc/mnemon-aml/%i/memory-config.json --consolidate background --consolidation-workers ${AML_WORKERS} --max-open-stores ${AML_MAX_OPEN_STORES} --max-concurrent-adds ${AML_MAX_ADDS} --max-concurrent-searches ${AML_MAX_SEARCHES} --log-format json
+ExecStart=/usr/local/bin/mnemon memory-agent aml-serve --listen ${AML_LISTEN} --admin-listen ${AML_ADMIN_LISTEN} --admin-token-env MNEMON_ADMIN_TOKEN --auth-key-env AML_API_KEY --data-root /var/lib/mnemon-aml/%i/data --memory-config /etc/mnemon-aml/%i/memory-config.json --consolidate background --consolidation-workers ${AML_WORKERS} --max-open-stores ${AML_MAX_OPEN_STORES} --max-concurrent-adds ${AML_MAX_ADDS} --max-concurrent-searches ${AML_MAX_SEARCHES} --log-format json --provider-keys-file /var/lib/mnemon-aml/%i/provider-keys.json
 # Every open user store holds SQLite files and a reader pool.
 LimitNOFILE=65536
 

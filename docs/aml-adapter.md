@@ -103,7 +103,7 @@ words, and every subcommand refuses them.
 | Engine env (root:root 0600) | `/etc/mnemon-aml/<n>/env`: the record (`AML_LAYOUT`, `AML_SLOT`, `AML_STATUS`), `AML_LISTEN`, `AML_ADMIN_LISTEN`, the flag values `AML_MAX_ADDS`, `AML_MAX_SEARCHES`, `AML_MAX_OPEN_STORES`, `AML_WORKERS`, `GOMEMLIMIT` (80% of `MemoryMax=`), and the secrets `AML_API_KEY`, `MNEMON_ADMIN_TOKEN` and the provider keys the configuration names |
 | Engine config (root:mnemon 0640) | `/etc/mnemon-aml/<n>/memory-config.json`: the shipped BM25-only configuration with this instance's caps and budget file |
 | Watcher env (root:root 0600) | `/etc/mnemon-aml/<n>/watch.env`: `AML_ALERT_WEBHOOK`, `AML_ALERT_KIND`, `AML_PUBLIC_URL`, `AML_ADMIN_LISTEN` (the engine's value), `MNEMON_ADMIN_TOKEN`; never a provider key or the API key |
-| State (mnemon 0700) | `/var/lib/mnemon-aml/<n>/` (`StateDirectory=mnemon-aml/%i`): `data/`, the data root, and `model-budget.db`, the budget file |
+| State (mnemon 0700) | `/var/lib/mnemon-aml/<n>/` (`StateDirectory=mnemon-aml/%i`): `data/`, the data root, `model-budget.db`, the budget file, and, once the console has set them, `provider-keys.json`, the account's own provider keys (mnemon 0600; "An account's own provider keys") |
 | Watcher state (mnemon 0700) | `/var/lib/mnemon-aml-watch/<n>/state.json` (`StateDirectory=mnemon-aml-watch/%i`) |
 | Inspect env (root:root 0600), while inspect is on | `/etc/mnemon-aml/<n>/inspect.env`: `AML_INSPECT_LISTEN`, `AML_INSPECT_DEBUG_CAPS`, `GOMEMLIMIT`, and the secrets `MNEMON_INSPECT_TOKEN` and the provider keys ("Inspect (检索)") |
 | Inspect state (mnemon 0700), while inspect is on | `/var/lib/mnemon-aml-inspect/<n>/debug-budget.db` (`StateDirectory=mnemon-aml-inspect/%i`) |
@@ -402,13 +402,16 @@ mnemon-instance list
 ```
 
 ```
-NAME                             LAYOUT     SLOT  DATA             ADMIN                  STATUS     INSPECT  PUBLIC URL
-beta-alice                       shared        0  127.0.0.1:8100   10.77.0.3:8101         active     off      https://beta.example.com/i/beta-alice
+NAME                             LAYOUT     SLOT  DATA             ADMIN                  STATUS     INSPECT  KEYS                  PUBLIC URL
+beta-alice                       shared        0  127.0.0.1:8100   10.77.0.3:8101         active     off      account:deepseek      https://beta.example.com/i/beta-alice
 ```
 
 It reads the env files and prints no secret. The status is the record's, not systemd's:
 `systemctl status aml-serve@<n>` shows the process. `INSPECT` says whether the instance's
-inspect service is on (its `inspect.env` exists; "Inspect (检索)").
+inspect service is on (its `inspect.env` exists; "Inspect (检索)"). `KEYS` says where the
+instance's provider keys come from: `host`, or `account:<kinds>` once the console has set the
+account's own ("An account's own provider keys"), read from the key file's key names alone, never
+its keys; `invalid` for a key file that is not the format.
 
 ### `suspend` and `resume`
 
@@ -458,10 +461,10 @@ without a restart; it applies when the instance resumes.
 with an editor, `systemctl restart aml-serve@<n>`, then set the token in the console
 (`PATCH /api/instances/<id>`, or its edit form).
 
-**Moving an account to its own provider keys** is manual too: replace the two lines
-`DEEPSEEK_API_KEY=` and `TYPESAFE_API_KEY=` in `/etc/mnemon-aml/<n>/env` with the account's
-keys, with an editor, and `systemctl restart aml-serve@<n>`. The instance's keys live only in
-its own env file; `host.env` is only where `new` copies them from.
+**Moving an account to its own provider keys** is no longer an edit of its env: the console
+sets them at run time, and they win over the env's ("An account's own provider keys", below). The
+env's `DEEPSEEK_API_KEY=` and `TYPESAFE_API_KEY=` stay the host's keys, which a kind without an
+account key uses; `host.env` is only where `new` copies them from.
 
 **Changing caps or limits** of an existing instance: `budgets` in
 `/etc/mnemon-aml/<n>/memory-config.json` (restart; the spent amounts are kept), `MemoryMax=` or
@@ -500,6 +503,83 @@ directory, starts the instance and waits for `/ready`. It logs and prints only t
 first 8 hex digits. A suspended instance stays stopped. (The smoke test pipes in `smoke-user`,
 the runbook's own test id, not a person's.)
 
+## An account's own provider keys
+
+An account may bring its own DeepSeek and JEV keys (ruling R98). For each kind, the account's key
+wins when it has one; otherwise the instance sends the host's, `DEEPSEEK_API_KEY` and
+`TYPESAFE_API_KEY` of its env (which `new` copied from `host.env`). The evaluation instance is
+not special: its keys may be set too.
+
+The account's keys live in one file per instance, the **key file**,
+`/var/lib/mnemon-aml/<n>/provider-keys.json`: beside the data root `…/data`, never in it, so that a
+snapshot of the data root never holds a key (a snapshot of the host's disk does, as it holds the
+env files). It is the service user's (`mnemon`), mode 0600, and aml-serve writes it atomically;
+`aml-serve@.service` and `aml-inspect@.service` pass it as `--provider-keys-file`. aml-serve
+reads it at its start and writes it for the console; aml-inspect only reads it, at its start and
+before each full search. Its format and rules are in [Admin API](admin-api.md) ("The key file").
+
+**From the console.** 设置 → 模型服务 API key shows each kind's source (「主机的 key」 or
+「账户自带的 key」) and fingerprint, and takes a new key in a write-only field. Saving sends the
+filled fields to `PUT /admin/v1/provider-keys` through the console. The engine checks every key
+with its provider first, with one free `GET …/models` (or, where a provider has no such route, a
+call of `max_tokens` 1), 10 s at most each, and applies them only when every one passed: it writes
+the key file and swaps the keys in. Model calls that start after the reply use them; calls in
+flight finish with theirs. No restart. 「恢复使用主机的 key」 reverts a kind
+(`DELETE /admin/v1/provider-keys?kind=`). A refusal changes nothing:
+
+| Answer | Meaning |
+| --- | --- |
+| `400 key_rejected`, `status` 401 or 403 | the provider refused the key: wrong, expired or revoked |
+| `400 key_rejected`, `status` 402 | the key's account has no balance (DeepSeek: `Insufficient Balance`) |
+| `502 key_check_unavailable` | the provider said nothing about the key (a 5xx, a 429, no answer within 10 s, a broken connection): try again later |
+| `409 unknown_kind` | the instance's configuration has no model of that kind |
+| `409 no_key_file` | aml-serve runs without `--provider-keys-file` (not the kit's unit) |
+
+The journal of `aml-serve@<n>` has one line for each change, `provider keys replaced: deepseek
+<fingerprint>` or `provider keys reverted to the host's: <kinds>`, and a warning for each key a
+provider refused. The fingerprint is the first 12 hex digits of the key's SHA-256; the key itself
+is never in a log, an error, a metric or a reply. `/admin/status` shows each kind's source and
+fingerprint (`providerKeys`), `mnemon-instance list` shows `KEYS`, and `mnemon-preflight` checks
+the key file's mode and owner when it exists.
+
+**The routes, by hand** (on the host, without the console; never put a key on a command line):
+
+```sh
+n=beta-alice
+admin_write() { # admin_write METHOD PATH: METHOD PATH on $n's admin listener, with its token; the body on standard input
+  curl -sS -X "$1" -H 'Content-Type: application/json' --data-binary @- \
+    --config <(grep -E '^MNEMON_ADMIN_TOKEN=' "/etc/mnemon-aml/$n/env" | sed 's/^MNEMON_ADMIN_TOKEN=/header = "Authorization: Bearer /; s/$/"/') \
+    "http://$(grep -E '^AML_ADMIN_LISTEN=' "/etc/mnemon-aml/$n/env" | cut -d= -f2-)$2"
+}
+IFS= read -rs -p 'DeepSeek key: ' key && echo && printf '{"deepseek":"%s"}' "$key" | admin_write PUT /admin/v1/provider-keys; key=
+admin_write DELETE '/admin/v1/provider-keys?kind=deepseek' </dev/null
+```
+
+**The manual way** (no admin listener, or the engine down): write the file as the service user
+with mode 0600, then restart. aml-serve checks no key at its start, so check the keys first.
+
+```sh
+n=beta-alice
+install -o mnemon -g mnemon -m 0600 /dev/null /var/lib/mnemon-aml/$n/provider-keys.json.new
+# with an editor, never on a command line:
+#   {"version":1,"keys":{"deepseek":"<key>","jev":"<key>"},"updatedAt":"2026-10-25T08:00:00Z"}
+mv /var/lib/mnemon-aml/$n/provider-keys.json.new /var/lib/mnemon-aml/$n/provider-keys.json
+systemctl restart aml-serve@$n
+mnemon-preflight $n
+```
+
+A start refuses a key file that its group or others may read, that another user owns, that is
+malformed, or that names a kind the configuration has no model of, with a line in
+`journalctl -u aml-serve@<n>` that names the file and never its content; fix it (or remove it)
+and start again.
+
+**What reverts the keys to the host's:** the console's 「恢复使用主机的 key」 (or the `DELETE`
+route), at once; removing the key file, or a kind from it, then restarting; `mnemon-instance
+delete <n>`, which removes the file with the instance's state; and a restore of
+`/var/lib/mnemon-aml/<n>/` from a backup older than the keys. A restart, an upgrade and
+`rotate-key` keep the account's keys, and a new key in `host.env` or the env changes nothing for
+a kind that has an account key.
+
 ## Preflight
 
 ```sh
@@ -530,6 +610,9 @@ reads the env files with `grep` (never sourcing them), and checks:
 - `/admin/status` shows a `lagBound` above 0 (background consolidation), and every budget's
   spent and held below 80% of its cap; it prints those numbers and the version;
 - the data root holds no store of `smoke-user`;
+- only once the console has set the account's own provider keys: the key file,
+  `/var/lib/mnemon-aml/<n>/provider-keys.json`, is the service user's (`mnemon`), mode 0600 (one
+  more check);
 - only while the inspect service is on: `inspect.env` is root's with mode 0600 and holds
   `AML_INSPECT_LISTEN`, `AML_INSPECT_DEBUG_CAPS`, `MNEMON_INSPECT_TOKEN` and the provider keys,
   and `/healthz` on the inspect listener answers 200 with the inspect token (two more checks);
@@ -719,7 +802,10 @@ admin /metrics | grep '^mnemon_aml_'
   `searchesLast10m`, `queue` (`queued`, `running`, `backingOff`, `held`, `oldestQueued` in
   nanoseconds, `maxBacklog` in characters), `lagBound`, `breakers`, `breakerTrips` and
   `rejectedByKind` (requests refused with 401, 402 or 403) by provider kind, `budgets` (always an
-  array of `kind`, `cap`, `spent`, `held`), `openStores` and `version`.
+  array of `kind`, `cap`, `spent`, `held`), `openStores`, `version` and `providerKeys` (each key
+  kind's `source`, `account`, `host` or `none`, and the key's `fingerprint`, never the key).
+- **`PUT` and `DELETE /admin/v1/provider-keys`** set and revert the account's own provider keys
+  ("An account's own provider keys"): write-only, no route answers a key.
 - **`/admin/v1/stores`** is the console's store overview: each store by its 8-digit prefix, its
   bytes, last change, whether it is open and its backlog. No user id and no content.
 - **`/debug/pprof/`** is Go's profiler, behind the token like every admin route.
@@ -781,8 +867,9 @@ operator decides otherwise after checking the submission's rules.
   `/var/lib/mnemon-aml/<n>` read only (`ReadOnlyPaths=`): a write could not happen anyway.
 - It never folds or consolidates. A Search folds what is pending before it reads; a full
   search of the inspect service does not, and its trace names the pending records instead.
-- Its full searches call the instance's models with the instance's configuration, billed to
-  a **debug budget** of their own, `/var/lib/mnemon-aml-inspect/<n>/debug-budget.db`, under
+- Its full searches call the instance's models with the instance's configuration and keys
+  (the account's own, read from the key file again before each full search, over the host's:
+  "An account's own provider keys"), billed to a **debug budget** of their own, `/var/lib/mnemon-aml-inspect/<n>/debug-budget.db`, under
   its caps (`AML_INSPECT_DEBUG_CAPS`; DeepSeek in CNY, JEV in USD). The instance's budget file
   is never opened, the model cache is off, and the service has no metrics. Lexical searches,
   the default, call no model and cost nothing: they are the raw ranking aml-serve answers a
@@ -1157,7 +1244,7 @@ scratch instance first if continuous replication is needed.
 | **413** | The body is over 30 MiB (the platform splits at 20 messages or 2,000 words, so this means a client bug). |
 | **502** or **504** from Caddy | The instance is down for longer than Caddy's 30 s of dialing (`systemctl status aml-serve@<n>`), a dedicated instance is suspended, or a proxy timeout is below the platform's 31 minutes: compare the timeouts with `deploy/aml/Caddyfile.dedicated` or the snippet. |
 | `degraded search …` in the log | The planner, JEV or a budget failed for that question, or the read ran past `--search-timeout`. The platform still got a 200 with the raw ranking. Read the error after the colon: `model HTTP 401` or `model HTTP 403` (a wrong, expired or revoked key) and `model HTTP 402` (an empty balance; DeepSeek says `Insufficient Balance`), which also page as `provider-rejected:<kind>` (below); `model HTTP 429` (the provider's rate limit outlasted the call's retries: up to its `Retry-After`, or without one (or with one of 0, an invalid value or a past date) a jittered floor of at most 2, 4, 8 and 16 s, down by up to a quarter, or the class's backoff when that is longer, as after earlier 5xx retries; 30 s in all per model call; a Search makes many calls, so under a long storm it can wait longer in all, up to its `--search-timeout` for the read and up to its own 10-minute flush window for the flush, and no wait is planned past them); `the provider's retry budget is spent` (the provider's retries, patient ones included, used up their budget: 20% of a minute's calls, and always 5 retries starting in any second; a retry is taken from the budget when it starts, after its wait); `model endpoint unreachable` (network or DNS; nothing was sent), `request failed` (network, after sending), `attempt timed out` (an attempt waited past its timeout: 45 s for the planner, 20 s for JEV, 180 s for a flush's extraction), `the reply stopped sending` (a reply sent nothing for 60 s after its headers came), `context deadline exceeded` (the timeout), `spending cap reached` (below). |
-| `provider-rejected:<kind>` alert | The provider refuses the instance's requests: 401 or 403, a wrong, expired or revoked key; 402, an empty balance (DeepSeek: `Insufficient Balance`). They are not retried: Searches degrade or partially degrade, and consolidation backs off with its batches pending (no record is dropped). Check the account's balance in the provider's console and top it up: the next call goes through, with no restart. For a new key, put it into `DEEPSEEK_API_KEY=` or `TYPESAFE_API_KEY=` of `/etc/mnemon-aml/<n>/env` (and of `/etc/mnemon-aml/host.env`, which `new` copies from) with an editor, then `systemctl restart aml-serve@<n>`. `mnemon_aml_model_attempts_total{outcome="rejected"}` shows the call classes affected; the alert resolves once no new rejection has been seen for 10 minutes. |
+| `provider-rejected:<kind>` alert | The provider refuses the instance's requests: 401 or 403, a wrong, expired or revoked key; 402, an empty balance (DeepSeek: `Insufficient Balance`). They are not retried: Searches degrade or partially degrade, and consolidation backs off with its batches pending (no record is dropped). Check the account's balance in the provider's console and top it up: the next call goes through, with no restart. For a new key of the account, set it in the console (设置 → 模型服务 API key): it is checked and applied without a restart ("An account's own provider keys"). For a new host key, put it into `DEEPSEEK_API_KEY=` or `TYPESAFE_API_KEY=` of `/etc/mnemon-aml/<n>/env` (and of `/etc/mnemon-aml/host.env`, which `new` copies from) with an editor, then `systemctl restart aml-serve@<n>`; it does nothing for a kind that has an account key. `mnemon_aml_model_attempts_total{outcome="rejected"}` shows the call classes affected; the alert resolves once no new rejection has been seen for 10 minutes. |
 | `model spending cap reached, including unresolved reservations` | A budget is exhausted. Searches degrade to the raw ranking. A spent DeepSeek budget stops consolidation (a spent budget never drops records from the index). A spent JEV budget does not: layered consolidation goes on, but links without JEV. Raise `budgets` in `/etc/mnemon-aml/<n>/memory-config.json` and `systemctl restart aml-serve@<n>`; spent amounts are kept and the new cap applies at once. Check `spent` and `held` first (`mnemon-preflight <n>`): reservations held by calls in flight count against the cap. Those a previous process left held (a crash) are settled at the next start (`settled N budget reservations a previous process left held` in the journal), so a restart clears them; there is nothing to raise the cap by. |
 | Empty or poor plans, many degraded searches with a DeepSeek planner | The planner has `thinking` on. Remove it (`deepseek-flash` without thinking). |
 | `model credential is unavailable` or a startup error naming a credential environment variable | A `keyEnv` variable is empty or absent in `/etc/mnemon-aml/<n>/env`. |
@@ -1205,4 +1292,5 @@ mnemon-preflight <n>              # prints the version the instance now runs
 
 A data root written by one build is read by the next. A new template or script is installed
 as in "Install once per host", followed by `systemctl daemon-reload` and a restart of each
-instance.
+instance. Install the binary before templates that pass a new flag: the templates that pass
+`--provider-keys-file` need a binary that has it, and an older one refuses to start.

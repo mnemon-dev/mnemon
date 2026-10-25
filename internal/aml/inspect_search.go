@@ -130,6 +130,10 @@ func (i *Inspector) serveSearch(w http.ResponseWriter, r *http.Request) {
 		inspectError(w, http.StatusConflict, "full_disabled")
 		return
 	}
+	if q.full {
+		// aml-serve may have replaced or reverted the account's keys.
+		i.reloadKeys()
+	}
 	var answer searchOutcome
 	err := i.readFrom(q.key, func(s *readStore) error {
 		var err error

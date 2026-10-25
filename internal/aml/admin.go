@@ -71,29 +71,34 @@ const (
 //	                 (/ready says so)
 //	openStores       user stores open now
 //	version          the product version of the build (ServerConfig.Version)
+//	providerKeys     by key kind the configuration uses (deepseek, jev): where its key comes from,
+//	                 "account" (the key file), "host" (the environment) or "none", and the key's
+//	                 fingerprint, the first 12 hex digits of its SHA-256 ("" with none); never a key
 type AdminStatus struct {
-	StartedAt       time.Time                   `json:"startedAt"`
-	Adds            int64                       `json:"adds"`
-	Searches        int64                       `json:"searches"`
-	Degraded        int64                       `json:"degraded"`
-	Partial         int64                       `json:"partial"`
-	Dropped         int64                       `json:"dropped"`
-	LinkFallbacks   int64                       `json:"linkFallbacks"`
-	AddOutran       int64                       `json:"addOutran"`
-	PartialLast10m  int64                       `json:"partialLast10m"`
-	SearchesLast10m int64                       `json:"searchesLast10m"`
-	Queue           SchedulerStatus             `json:"queue"`
-	LagBound        int64                       `json:"lagBound"`
-	Breakers        map[string]string           `json:"breakers"`
-	BreakerTrips    map[string]int64            `json:"breakerTrips"`
-	RejectedByKind  map[string]int64            `json:"rejectedByKind"`
-	Budgets         []memoryagent.BudgetAccount `json:"budgets"`
-	OpenStores      int                         `json:"openStores"`
-	Version         string                      `json:"version"`
+	StartedAt       time.Time                        `json:"startedAt"`
+	Adds            int64                            `json:"adds"`
+	Searches        int64                            `json:"searches"`
+	Degraded        int64                            `json:"degraded"`
+	Partial         int64                            `json:"partial"`
+	Dropped         int64                            `json:"dropped"`
+	LinkFallbacks   int64                            `json:"linkFallbacks"`
+	AddOutran       int64                            `json:"addOutran"`
+	PartialLast10m  int64                            `json:"partialLast10m"`
+	SearchesLast10m int64                            `json:"searchesLast10m"`
+	Queue           SchedulerStatus                  `json:"queue"`
+	LagBound        int64                            `json:"lagBound"`
+	Breakers        map[string]string                `json:"breakers"`
+	BreakerTrips    map[string]int64                 `json:"breakerTrips"`
+	RejectedByKind  map[string]int64                 `json:"rejectedByKind"`
+	Budgets         []memoryagent.BudgetAccount      `json:"budgets"`
+	OpenStores      int                              `json:"openStores"`
+	Version         string                           `json:"version"`
+	ProviderKeys    map[string]memoryagent.KeyStatus `json:"providerKeys"`
 }
 
 // AdminHandler serves the operator's endpoints: GET /metrics (Prometheus),
-// GET /ready, GET /admin/status, GET /admin/v1/stores and /debug/pprof/. With
+// GET /ready, GET /admin/status, GET /admin/v1/stores, PUT and DELETE
+// /admin/v1/provider-keys (byok.go) and /debug/pprof/. With
 // an admin token every request, an unknown path included, must carry it as
 // `Authorization: Bearer <token>` (requireAdminToken); without one the handler
 // has no authentication, and must be served on a loopback address only. Never
@@ -108,6 +113,8 @@ func (s *Server) adminRoutes() http.Handler {
 	mux.HandleFunc("GET /ready", s.serveReady)
 	mux.HandleFunc("GET /admin/status", s.serveStatus)
 	mux.HandleFunc("GET /admin/v1/stores", s.serveStores)
+	mux.HandleFunc("PUT /admin/v1/provider-keys", s.replaceProviderKeys)
+	mux.HandleFunc("DELETE /admin/v1/provider-keys", s.revertProviderKeys)
 	// The profiler's handlers are registered here by name. Importing
 	// net/http/pprof also registers them on http.DefaultServeMux, a side
 	// effect that is inert: no server of the process serves the default mux.
@@ -206,6 +213,7 @@ func (s *Server) status(ctx context.Context) AdminStatus {
 		Budgets:         accounts,
 		OpenStores:      s.users.open(),
 		Version:         s.config.Version,
+		ProviderKeys:    s.keys.Status(),
 	}
 }
 

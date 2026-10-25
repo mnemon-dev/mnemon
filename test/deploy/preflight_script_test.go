@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -168,6 +169,33 @@ func TestPreflightScript(t *testing.T) {
 	for label, secret := range h.secrets {
 		if strings.Contains(out, secret) || strings.Contains(string(arguments), secret) {
 			t.Errorf("the preflight printed the %s or passed it to curl", label)
+		}
+	}
+}
+
+// The account's provider key file, once the console has set a key: the
+// preflight checks its mode (and owner) when it exists, and prints nothing
+// it holds.
+func TestPreflightChecksTheKeyFile(t *testing.T) {
+	p := newPreflightRig(t)
+	h := p.h
+	const keys = "/var/lib/mnemon-aml/beta-alice/provider-keys.json"
+	h.secrets["planted account key"] = "sk-account-" + randomHex(t)
+	writeFile(t, h.path(keys), `{"version":1,"keys":{"deepseek":"`+h.secrets["planted account key"]+`"},"updatedAt":"2026-10-25T08:00:00Z"}`, 0o600)
+	out, ok := preflight(t, h, p.caBundle, p.record, "beta-alice")
+	if !ok || !strings.Contains(out, "mnemon-preflight beta-alice: all 9 checks passed") {
+		t.Fatalf("the preflight of a private key file:\n%s", out)
+	}
+	if err := os.Chmod(h.path(keys), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, ok = preflight(t, h, p.caBundle, p.record, "beta-alice")
+	if ok || !slices.Equal(fails(out), []string{"FAIL " + keys + " has mode 644, not 0600"}) {
+		t.Fatalf("the preflight of a key file others may read:\n%s", out)
+	}
+	for label, secret := range h.secrets {
+		if strings.Contains(out, secret) {
+			t.Errorf("the preflight printed the %s", label)
 		}
 	}
 }

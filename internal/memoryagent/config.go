@@ -27,8 +27,16 @@ func Open(store *records.Store, directory string, config Config, readonly bool) 
 // (nil without one) and the model cache they share (Config.ModelCache, nil
 // without one). The caller owns the budget and the cache: it closes them
 // after the models' last call. Agents opened with OpenWithModels can share
-// them.
+// them. The models send the host's keys (OpenModelsWith).
 func OpenModels(config Config) (Models, *Budget, *ModelCache, error) {
+	return OpenModelsWith(config, nil)
+}
+
+// OpenModelsWith is OpenModels whose providers read their credentials from
+// keys: for each key kind the account's key over the host's, read per call
+// (keys.go); nil for the host's alone. A paid model needs a key, either one,
+// when it is made.
+func OpenModelsWith(config Config, keys *ProviderKeys) (Models, *Budget, *ModelCache, error) {
 	var budget *Budget
 	var cache *ModelCache
 	var err error
@@ -57,7 +65,7 @@ func OpenModels(config Config) (Models, *Budget, *ModelCache, error) {
 		if model.config == nil {
 			continue
 		}
-		provider, err := NewProvider(*model.config, budget)
+		provider, err := newProvider(*model.config, budget, keys)
 		if err != nil {
 			closeModelFiles(budget, cache)
 			return Models{}, nil, nil, err
