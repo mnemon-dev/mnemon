@@ -171,6 +171,15 @@ type ViewConfig struct {
 	// words search of the records, after the cue searches' mix
 	// (simple_topdown.go). It needs a timelines consolidation.
 	TopDown bool `json:"topDown,omitempty"`
+	// LayerRecall has the timelines layer show what the question's words
+	// find in the consolidation and JEV calls needed, each topic with only
+	// its needed events (layer_recall.go), not what the composed records
+	// light. It needs a timelines consolidation.
+	LayerRecall bool `json:"layerRecall,omitempty"`
+	// RoundRecall replaces the simple read's plan, loop and shortlist with
+	// rounds of planned searches, judged until 100 records are selected or a
+	// round selects none, with no call or page budget (simple_rounds.go).
+	RoundRecall bool `json:"roundRecall,omitempty"`
 }
 
 // ExpandConfig sets the evidence expansion of a simple read. Kinds names the
@@ -325,6 +334,10 @@ type ReadStats struct {
 	ExpandSeeds int `json:"expandSeeds,omitempty"`
 	// TopDown counts the records view.topDown pooled.
 	TopDown int `json:"topDown,omitempty"`
+	// LayerRecalled counts the consolidated items view.layerRecall kept.
+	LayerRecalled int `json:"layerRecalled,omitempty"`
+	// RecallRounds counts the rounds of a view.roundRecall read.
+	RecallRounds int `json:"recallRounds,omitempty"`
 	// LayerInsights counts the insights the View's layer shows
 	// (consolidation.insights); absent at zero.
 	LayerInsights int `json:"layerInsights,omitempty"`
@@ -415,6 +428,9 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	}
 	if config.View != nil && config.View.TopDown && !config.Consolidation.Timelines() {
 		return nil, errors.New("view.topDown requires a timelines consolidation")
+	}
+	if config.View != nil && config.View.LayerRecall && !config.Consolidation.Timelines() {
+		return nil, errors.New("view.layerRecall requires a timelines consolidation")
 	}
 	if config.Consolidation != nil && len(config.Consolidation.EdgeKinds) > 0 && models.Judge == nil {
 		return nil, errors.New("edgeKinds requires a decision model")

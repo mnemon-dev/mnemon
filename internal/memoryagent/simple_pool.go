@@ -46,7 +46,7 @@ func (s *cueSearch) page() []string {
 // search has nothing to read.
 func (r *simpleRun) search(ctx context.Context, c cue) (*cueSearch, error) {
 	s := &cueSearch{Cue: c}
-	if r.pageReads >= simplePageBudget {
+	if !r.unlimited && r.pageReads >= simplePageBudget {
 		s.Exhausted = true
 		r.searches = append(r.searches, s)
 		return s, nil
@@ -90,7 +90,7 @@ func (r *simpleRun) next(s *cueSearch) []string {
 	if s.Exhausted {
 		return nil
 	}
-	if r.pageReads >= simplePageBudget {
+	if !r.unlimited && r.pageReads >= simplePageBudget {
 		s.Exhausted = true
 		return nil
 	}

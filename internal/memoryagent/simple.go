@@ -56,7 +56,9 @@ type simpleRun struct {
 	// trace records the read for the inspect service (trace.go); nil, the
 	// read records nothing.
 	trace *ReadTrace
-	mu    sync.Mutex // guards stats during concurrent model calls
+	// unlimited lifts the page and decision budgets (view.roundRecall).
+	unlimited bool
+	mu        sync.Mutex // guards stats during concurrent model calls
 }
 
 // simpleItem is one pooled record and what the models said about it.
@@ -98,6 +100,11 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		r.dialogue = append(r.dialogue, message)
 	}
 	r.dialogue = append(r.dialogue, Message{Role: "user", Text: req.Question})
+	// With view.roundRecall rounds of planned searches replace the plan,
+	// loop and shortlist (simple_rounds.go).
+	if a.config.View.RoundRecall {
+		return r.readRounds(ctx)
+	}
 	cues, err := r.plan(ctx)
 	if err != nil {
 		return View{}, err
@@ -170,8 +177,13 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	view, err := r.compose(ctx, stop, scored)
 	if err == nil && a.layerOn() {
 		// In timelines mode the consolidated layer goes before the records
-		// (timelines_layer.go).
-		view, err = r.layer(ctx, view)
+		// (timelines_layer.go); with view.layerRecall it is the one the
+		// question recalls (layer_recall.go).
+		if a.config.View.LayerRecall {
+			view, err = r.layerRecalled(ctx, view)
+		} else {
+			view, err = r.layer(ctx, view)
+		}
 	}
 	if err != nil {
 		return View{}, err
