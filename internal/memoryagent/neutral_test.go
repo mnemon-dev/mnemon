@@ -150,6 +150,36 @@ func TestNeutralReadsEveryRecordWholeAndAlike(t *testing.T) {
 	}
 }
 
+func TestLayeredEvenReadingReadsWholeUnderTheLayeredPrompt(t *testing.T) {
+	s, dir := agentStore(t)
+	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return layeredReply(prompt), nil }}
+	a, _ := layeredAgent(t, s, dir, ConsolidationConfig{EvenReading: true}, model, topicJudge())
+	spec := a.extractionFold()
+	if spec.system == layeredSystem || strings.Contains(spec.system, "cut short") || !strings.Contains(spec.system, "Put each event in a thread") || !spec.entities || spec.notes {
+		t.Fatalf("evenReading fold %+v", spec)
+	}
+	if spec.system != strings.Replace(layeredSystem, " (assistant messages are cut short)", "", 1) {
+		t.Fatal("evenReading changed more of the layered prompt than the cut")
+	}
+	continuation := "Conversation beam-1-s1 on 2024/03/15 (Fri) 00:00:\nso we can tailor this schedule further?"
+	if _, body, ok := a.recordReader(240)("Original record", continuation); !ok || body != "so we can tailor this schedule further?" {
+		t.Fatal("evenReading did not read a continuation")
+	}
+	plain, _ := layeredAgent(t, s, dir, ConsolidationConfig{}, model, topicJudge())
+	if plain.extractionFold().system != layeredSystem {
+		t.Fatal("plain layered mode lost its prompt")
+	}
+	if _, _, ok := plain.recordReader(240)("Original record", continuation); ok {
+		t.Fatal("plain layered mode read a continuation")
+	}
+	for _, mode := range []string{"timelines", "neutral"} {
+		c := ConsolidationConfig{Mode: mode, EvenReading: true}
+		if err := c.normalize(); err == nil || !strings.Contains(err.Error(), "evenReading requires") {
+			t.Fatal(mode, "accepted evenReading:", err)
+		}
+	}
+}
+
 func TestNeutralModeNeedsAChoosingJudge(t *testing.T) {
 	s, dir := agentStore(t)
 	overlay, err := OpenOverlay(filepath.Join(dir, "memory-index.db"), false)

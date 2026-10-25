@@ -100,6 +100,16 @@ type ConsolidationConfig struct {
 	// user's new records per request, which earlier record each depends on
 	// (oneshot_links.go); view.links uses the answers.
 	OneShotLinks bool `json:"oneShotLinks,omitempty"`
+	// EvenReading (layered mode) reads every record whole and alike, as
+	// neutral mode always does (evenReadable), and its extraction prompt no
+	// longer says assistant messages are cut short (layeredEvenFold).
+	EvenReading bool `json:"evenReading,omitempty"`
+}
+
+// readsEvenly reports whether the mode reads every record whole and alike:
+// neutral mode, or layered mode with EvenReading.
+func (c *ConsolidationConfig) readsEvenly() bool {
+	return c != nil && (c.Mode == consolidationNeutral || c.EvenReading)
 }
 
 // Timelines reports whether the mode keeps a timelines state ("timelines",
@@ -505,6 +515,9 @@ func (e *ExpandConfig) normalize() error {
 func (c *ConsolidationConfig) normalize() error {
 	if c.Insights && c.Mode != consolidationLayered {
 		return errors.New("consolidation insights requires consolidation mode \"layered\"")
+	}
+	if c.EvenReading && c.Mode != consolidationLayered {
+		return errors.New("evenReading requires consolidation mode \"layered\" (neutral mode always reads evenly)")
 	}
 	switch c.Mode {
 	case "":

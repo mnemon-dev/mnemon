@@ -48,9 +48,10 @@ func evenReadable(title, content string) (header, body string, ok bool) {
 }
 
 // recordReader is how the agent's consolidation reads a record:
-// evenReadable in neutral mode, else readable with its assistant cut.
+// evenReadable in neutral mode and with evenReading, else readable with its
+// assistant cut.
 func (a *Agent) recordReader(assistantChars int) func(title, content string) (string, string, bool) {
-	if a.config.Consolidation.Neutral() {
+	if a.config.Consolidation.readsEvenly() {
 		return evenReadable
 	}
 	return func(title, content string) (string, string, bool) { return readable(title, content, assistantChars) }
