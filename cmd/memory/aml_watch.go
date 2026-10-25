@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"maps"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -862,11 +863,13 @@ func (e *evaluation) partial(st *aml.AdminStatus) {
 
 // budgets: an account above watchBudgetUsed of its cap, spent and held
 // together (as /ready counts), or holding more than watchBudgetHeld of it in
-// reservations. A cap of zero has no share.
+// reservations. A cap of zero has no share, nor has an unlimited one (R100),
+// which the status spells null (decoded as 0) with "unlimited": neither is
+// ever divided by.
 func (e *evaluation) budgets(accounts []memoryagent.BudgetAccount) {
 	number := func(v float64) string { return strconv.FormatFloat(v, 'f', -1, 64) }
 	for _, a := range accounts {
-		if a.Cap <= 0 {
+		if a.Unlimited || !(a.Cap > 0) || math.IsInf(a.Cap, 0) {
 			continue
 		}
 		if used := (a.Spent + a.Held) / a.Cap; used > watchBudgetUsed {

@@ -764,7 +764,7 @@ func TestInstanceScriptLifecycle(t *testing.T) {
 		t.Helper()
 		rows := map[string][]string{}
 		lines := strings.Split(strings.TrimSuffix(h.ok("", "list"), "\n"), "\n")
-		if header := strings.Fields(lines[0]); !slices.Equal(header, []string{"NAME", "LAYOUT", "SLOT", "DATA", "ADMIN", "STATUS", "INSPECT", "KEYS", "PUBLIC", "URL"}) {
+		if header := strings.Fields(lines[0]); !slices.Equal(header, []string{"NAME", "LAYOUT", "SLOT", "DATA", "ADMIN", "STATUS", "INSPECT", "KEYS", "CAPS", "PUBLIC", "URL"}) {
 			t.Fatalf("list header %q", header)
 		}
 		for _, line := range lines[1:] {
@@ -774,8 +774,8 @@ func TestInstanceScriptLifecycle(t *testing.T) {
 		return rows
 	}
 	if got, want := listed(), map[string][]string{
-		"beta-alice": {"shared", "0", "127.0.0.1:8100", "10.77.0.3:8101", "active", "off", "host", "https://beta.example.com/i/beta-alice"},
-		"beta-bob":   {"shared", "1", "127.0.0.1:8110", "10.77.0.3:8111", "active", "off", "host", "https://beta.example.com/i/beta-bob"},
+		"beta-alice": {"shared", "0", "127.0.0.1:8100", "10.77.0.3:8101", "active", "off", "host", "30/3", "https://beta.example.com/i/beta-alice"},
+		"beta-bob":   {"shared", "1", "127.0.0.1:8110", "10.77.0.3:8111", "active", "off", "host", "30/3", "https://beta.example.com/i/beta-bob"},
 	}; !reflect.DeepEqual(got, want) {
 		t.Errorf("list\n got %q\nwant %q", got, want)
 	}
@@ -931,6 +931,33 @@ func TestInstanceScriptListShowsKeyKindsOnly(t *testing.T) {
 	out := h.ok("beta-alice\n", "delete", "beta-alice")
 	if h.exists("/var/lib/mnemon-aml/beta-alice/provider-keys.json") || !strings.Contains(out, "removed /var/lib/mnemon-aml/beta-alice\n") {
 		t.Errorf("delete left the key file:\n%s", out)
+	}
+	h.checkNoSecrets()
+}
+
+// list's CAPS column is each instance's DeepSeek and JEV caps (rulings R99,
+// R100): the configuration's, or the settings file's, marked *, ∞ for an
+// unlimited one; delete removes the settings file with the instance's state.
+func TestInstanceScriptListShowsCaps(t *testing.T) {
+	h := newHost(t, "Caddyfile.shared")
+	for _, name := range []string{"beta-alice", "beta-bob", "beta-carol", "beta-dave"} {
+		h.ok("", "new", name, "--layout", "shared", "--public-url", "https://beta.example.com/i/"+name, "--admin-ip", "10.77.0.3", "--host-name", "beta-1")
+	}
+	h.ok("", "new", "beta-erin", "--layout", "shared", "--public-url", "https://beta.example.com/i/beta-erin", "--admin-ip", "10.77.0.3", "--host-name", "beta-1",
+		"--deepseek-cap", "2.5", "--jev-cap", "0.5")
+	settings := func(name, content string) {
+		writeFile(t, h.path("/var/lib/mnemon-aml/"+name+"/settings.json"), content, 0o600)
+	}
+	settings("beta-alice", `{"version":1,"budgets":{"deepseek":800},"updatedAt":"2026-10-25T08:00:00Z"}`)
+	settings("beta-bob", `{"version":1,"budgets":{"jev":null,"deepseek":null},"updatedAt":"2026-10-25T08:00:00Z"}`)
+	settings("beta-carol", `{"version":1,"budgets":`)
+	want := map[string]string{"beta-alice": "800*/3", "beta-bob": "∞*/∞*", "beta-carol": "invalid", "beta-dave": "30/3", "beta-erin": "2.5/0.5"}
+	if got := h.listColumn("CAPS"); !reflect.DeepEqual(got, want) {
+		t.Errorf("CAPS %v, want %v", got, want)
+	}
+	h.ok("beta-alice\n", "delete", "beta-alice")
+	if h.exists("/var/lib/mnemon-aml/beta-alice/settings.json") {
+		t.Error("delete left the settings file")
 	}
 	h.checkNoSecrets()
 }

@@ -152,6 +152,54 @@ func TestProviderKeysFileFlag(t *testing.T) {
 	}
 }
 
+// --settings-file names the file of the caps that change at run time
+// (ruling R99): aml-serve's budgets, and aml-inspect's own debug caps, which
+// need its debug budget. An absolute path, or none.
+func TestSettingsFileFlag(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "settings.json")
+	if options, err := amlFlags(t, "--settings-file", file); err != nil || options.settingsFile != file {
+		t.Fatal(options.settingsFile, err)
+	}
+	if options, err := amlFlags(t); err != nil || options.settingsFile != "" {
+		t.Fatal(options.settingsFile, err)
+	}
+	if _, err := amlFlags(t, "--settings-file", "settings.json"); err == nil || err.Error() != "--settings-file must be an absolute path" {
+		t.Fatal(err)
+	}
+	debug := filepath.Join(t.TempDir(), "debug-budget.db")
+	if options, err := inspectFlags(t, "--debug-budget-file", debug, "--settings-file", file); err != nil || options.settingsFile != file {
+		t.Fatal(options.settingsFile, err)
+	}
+	if _, err := inspectFlags(t, "--debug-budget-file", debug, "--settings-file", "settings.json"); err == nil || err.Error() != "--settings-file must be an absolute path" {
+		t.Fatal(err)
+	}
+	if _, err := inspectFlags(t, "--settings-file", file); err == nil || err.Error() != "--settings-file needs --debug-budget-file" {
+		t.Fatal(err)
+	}
+	// A settings file the start refuses stops aml-serve, naming the file.
+	dir := t.TempDir()
+	t.Setenv("AML_TEST_KEY", "k")
+	t.Setenv("DEEPSEEK_API_KEY", "test-deepseek")
+	t.Setenv("TYPESAFE_API_KEY", "test-typesafe")
+	config, err := readMemoryConfig(deployFile(t, "memory-config.industrial.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.BudgetFile = filepath.Join(dir, "model-budget.db")
+	raw, _ := json.Marshal(config)
+	configPath := filepath.Join(dir, "memory-config.json")
+	if err := os.WriteFile(configPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, []byte(`{"version":1,"budgets":{"deepseek":0}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err = executeAMLServe("--data-root", filepath.Join(dir, "data"), "--memory-config", configPath, "--auth-key-env", "AML_TEST_KEY", "--settings-file", file)
+	if err == nil || !strings.Contains(err.Error(), file) {
+		t.Fatal(err)
+	}
+}
+
 // The E1 cases of a listener's address, which aml-serve's --admin-listen
 // (TestAdminListenRules) and aml-inspect's --listen (TestInspectAuthAndListen)
 // both follow: loopback addresses need no token, private ones need it, and
@@ -592,6 +640,7 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 		"max-concurrent-searches": "16",
 		"log-format":              "json",
 		"provider-keys-file":      "/var/lib/mnemon-aml/eval/provider-keys.json",
+		"settings-file":           "/var/lib/mnemon-aml/eval/settings.json",
 	} {
 		if f := command.Flags().Lookup(flag); !f.Changed || f.Value.String() != want {
 			t.Errorf("aml-serve@.service passes --%s %q, want %q", flag, f.Value.String(), want)
@@ -601,6 +650,9 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 	// in it, so that a snapshot of the data never holds a key.
 	if keys, data := command.Flags().Lookup("provider-keys-file").Value.String(), command.Flags().Lookup("data-root").Value.String(); path.Dir(keys) != path.Dir(data) || strings.HasPrefix(keys, data+"/") {
 		t.Errorf("--provider-keys-file %s is not beside --data-root %s", keys, data)
+	}
+	if settings, data := command.Flags().Lookup("settings-file").Value.String(), command.Flags().Lookup("data-root").Value.String(); path.Dir(settings) != path.Dir(data) {
+		t.Errorf("--settings-file %s is not beside --data-root %s", settings, data)
 	}
 	if command.Flags().Changed("consolidate-on-add") {
 		t.Error("aml-serve@.service passes --consolidate-on-add")
@@ -768,15 +820,21 @@ func TestServiceUnitFlagsParse(t *testing.T) {
 		"max-concurrent":     "2",
 		"log-format":         "json",
 		"provider-keys-file": "/var/lib/mnemon-aml/eval/provider-keys.json",
+		"settings-file":      "/var/lib/mnemon-aml-inspect/eval/settings.json",
 	} {
 		if f := command.Flags().Lookup(flag); !f.Changed || f.Value.String() != want {
 			t.Errorf("aml-inspect@.service passes --%s %q, want %q", flag, f.Value.String(), want)
 		}
 	}
 	// It reads the instance's key file under the instance's state, which the
-	// unit mounts read only.
+	// unit mounts read only; its own settings file, which it writes, is in
+	// its own state, beside its debug budget.
 	if keys := command.Flags().Lookup("provider-keys-file").Value.String(); !strings.HasPrefix(keys, strings.ReplaceAll(inspect.get(t, "Service", "ReadOnlyPaths"), "%i", instance)+"/") {
 		t.Errorf("--provider-keys-file %s is not under ReadOnlyPaths=", keys)
+	}
+	if settings, debug := command.Flags().Lookup("settings-file").Value.String(), command.Flags().Lookup("debug-budget-file").Value.String(); path.Dir(settings) != path.Dir(debug) ||
+		path.Dir(settings) != "/var/lib/"+strings.ReplaceAll(inspect.get(t, "Service", "StateDirectory"), "%i", instance) {
+		t.Errorf("--settings-file %s is not in the service's state directory", settings)
 	}
 	// The units run on Linux: on Windows their paths are not absolute (R89),
 	// so there the flags are parsed but not checked.

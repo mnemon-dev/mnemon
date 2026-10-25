@@ -102,6 +102,12 @@ type InspectConfig struct {
 	// the start's rules, and again before each full search. Absolute; "" for
 	// the host's keys alone.
 	ProviderKeysFile string
+	// SettingsFile is the service's own settings file (inspect_caps.go): its
+	// debug caps replace DebugCaps, kind by kind (null for unlimited), and
+	// PUT and DELETE /v1/debug-caps set and revert them. Absolute, outside
+	// the data root, with a debug budget file; "" for DebugCaps alone and no
+	// such routes. A missing file holds no cap.
+	SettingsFile string
 }
 
 // Inspector is the inspect service. Its methods are safe for concurrent use.
@@ -111,9 +117,16 @@ type Inspector struct {
 	models   memoryagent.Models
 	// budget is the debug budget; nil without a debug budget file.
 	budget *memoryagent.Budget
-	// caps are the debug budget's caps of every paid kind (0 for unset).
-	caps map[string]float64
-	// full says full searches may run.
+	// flagCaps are DebugCaps for every paid kind (0 for unset); capsNow the
+	// caps of the moment, the settings file's (fileCaps) over the flag's,
+	// memoryagent.Unlimited for an unlimited one; capsWriter admits one
+	// change of the file at a time (writeDebugCaps).
+	flagCaps   map[string]float64
+	capsNow    atomic.Pointer[map[string]float64]
+	fileCaps   atomic.Pointer[map[string]float64]
+	capsWriter chan struct{}
+	// full says the full searches' models were built at the start: full
+	// searches run while the caps of the moment let them (fullOn).
 	full bool
 	// maxItems is the View's record bound, the default top_k.
 	maxItems int
@@ -152,7 +165,7 @@ func NewInspector(config InspectConfig) (*Inspector, error) {
 		return nil, err
 	}
 	i := &Inspector{config: config, log: config.Logger, slots: make(chan struct{}, config.MaxConcurrent), fullCost: map[string]float64{},
-		keys: memoryagent.NewProviderKeys(config.MemoryConfig)}
+		keys: memoryagent.NewProviderKeys(config.MemoryConfig), capsWriter: make(chan struct{}, 1)}
 	if i.log == nil {
 		i.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
@@ -160,16 +173,29 @@ func NewInspector(config InspectConfig) (*Inspector, error) {
 		digest := sha256.Sum256([]byte(config.Token))
 		i.tokenKey = &digest
 	}
-	i.caps = map[string]float64{}
+	i.flagCaps = map[string]float64{}
 	for kind := range paidKinds {
-		i.caps[kind] = config.DebugCaps[kind]
+		i.flagCaps[kind] = config.DebugCaps[kind]
 	}
+	// The settings file's caps over the flag's; the service is the file's
+	// one writer.
+	file := map[string]float64{}
+	if config.SettingsFile != "" {
+		if removed := removeInterrupted(config.SettingsFile); len(removed) > 0 {
+			i.log.Warn(fmt.Sprintf("removed what an interrupted write of %s left: %s", debugSettingsWhat, strings.Join(removed, ", ")))
+		}
+		var err error
+		if file, err = readDebugCapsFile(config.SettingsFile); err != nil {
+			return nil, err
+		}
+	}
+	caps := maps.Clone(i.flagCaps)
+	maps.Copy(caps, file)
+	i.capsNow.Store(&caps)
+	i.fileCaps.Store(&file)
 	// Full searches need the debug budget, a cap, and a cap for every paid
-	// kind the read calls.
-	i.full = config.DebugBudgetFile != "" && slices.ContainsFunc(slices.Collect(maps.Values(i.caps)), func(cap float64) bool { return cap > 0 })
-	for _, kind := range i.readKinds() {
-		i.full = i.full && i.caps[kind] > 0
-	}
+	// kind the read calls; an unlimited cap is one.
+	i.full = config.DebugBudgetFile != "" && fullCaps(caps, i.readKinds())
 	if err := loadKeyFile(config.ProviderKeysFile, i.keys); err != nil {
 		return nil, err
 	}
@@ -219,6 +245,15 @@ func checkInspectConfig(config *InspectConfig) error {
 		if math.IsNaN(cap) || math.IsInf(cap, 0) || cap < 0 {
 			return fmt.Errorf("the debug cap of %s must be a finite amount of at least 0", kind)
 		}
+	}
+	if config.SettingsFile != "" {
+		if config.DebugBudgetFile == "" {
+			return fmt.Errorf("%s %s needs a debug budget file: its caps are the debug budget's", debugSettingsWhat, config.SettingsFile)
+		}
+		if err := checkStateFile(debugSettingsWhat, config.SettingsFile, config.DataRoot, "the service never writes in the data root"); err != nil {
+			return err
+		}
+		config.SettingsFile = filepath.Clean(config.SettingsFile)
 	}
 	if config.DebugBudgetFile == "" {
 		if len(config.DebugCaps) > 0 {
@@ -320,10 +355,25 @@ func (i *Inspector) readKinds() []string {
 
 // openModels opens the debug budget and builds the models full searches
 // call, billed to it; without full mode the models refuse every call
-// (lexical searches make none).
+// (lexical searches make none). A budget file is opened with finite caps:
+// the unlimited ones are set once it is open.
 func (i *Inspector) openModels() error {
+	if err := i.openModelsOf(finiteCaps(i.debugCaps())); err != nil {
+		return err
+	}
+	if i.budget != nil {
+		if err := i.budget.SetCaps(i.debugCaps()); err != nil {
+			i.closeModels(context.Background())
+			return err
+		}
+	}
+	return nil
+}
+
+// openModelsOf is openModels with the debug budget's caps at its opening.
+func (i *Inspector) openModelsOf(caps map[string]float64) error {
 	debug := i.config.MemoryConfig
-	debug.BudgetFile, debug.Budgets, debug.ModelCache, debug.Consolidator = i.config.DebugBudgetFile, i.caps, "", nil
+	debug.BudgetFile, debug.Budgets, debug.ModelCache, debug.Consolidator = i.config.DebugBudgetFile, caps, "", nil
 	if i.full && i.config.Models == nil {
 		models, budget, _, err := memoryagent.OpenModelsWith(debug, i.keys)
 		if err != nil {
@@ -333,7 +383,7 @@ func (i *Inspector) openModels() error {
 		return nil
 	}
 	if i.config.DebugBudgetFile != "" {
-		budget, err := memoryagent.OpenBudgetWithCaps(i.config.DebugBudgetFile, i.caps)
+		budget, err := memoryagent.OpenBudgetWithCaps(i.config.DebugBudgetFile, caps)
 		if err != nil {
 			return err
 		}
@@ -489,6 +539,8 @@ func (i *Inspector) routes() http.Handler {
 	route("/v1/stores/{key}/memory/{section}/{id}", http.MethodGet, true, i.serveMemoryItem)
 	route("/v1/stores/{key}/memory/{section}/{$}", http.MethodGet, true, i.serveMemoryItem)
 	route("/v1/search", http.MethodPost, true, i.serveSearch)
+	// PUT and DELETE (inspect_caps.go); it reads no store.
+	mux.HandleFunc("/v1/debug-caps", i.serveDebugCaps)
 	notFound := func(w http.ResponseWriter, _ *http.Request) { inspectError(w, http.StatusNotFound, "not_found") }
 	// Not a route: without it, ServeMux would redirect it to its {$}.
 	mux.HandleFunc("/v1/stores/{key}/memory/{section}", notFound)
@@ -644,14 +696,8 @@ type usageByKind struct {
 type inspectInfo struct {
 	Version     string          `json:"version"`
 	Modes       map[string]bool `json:"modes"`
-	DebugBudget struct {
-		Currency  map[string]string `json:"currency"`
-		Caps      usageByKind       `json:"caps"`
-		Spent     usageByKind       `json:"spent"`
-		Held      usageByKind       `json:"held"`
-		Remaining usageByKind       `json:"remaining"`
-	} `json:"debugBudget"`
-	Recent struct {
+	DebugBudget debugBudget     `json:"debugBudget"`
+	Recent      struct {
 		FullSearches int         `json:"fullSearches"`
 		AvgCost      usageByKind `json:"avgCost"`
 	} `json:"recent"`
@@ -660,18 +706,14 @@ type inspectInfo struct {
 
 func (i *Inspector) serveInfo(w http.ResponseWriter, r *http.Request) {
 	var info inspectInfo
-	info.Version, info.Modes = i.config.Version, map[string]bool{"lexical": true, "full": i.full}
-	info.DebugBudget.Currency = map[string]string{"deepseek": paidKinds["deepseek"], "jev": paidKinds["jev"]}
-	info.DebugBudget.Caps = usageByKind{i.caps["deepseek"], i.caps["jev"]}
+	info.Version, info.Modes = i.config.Version, map[string]bool{"lexical": true, "full": i.fullOn()}
 	spent, held, err := i.debugAccounts(r.Context())
 	if err != nil {
 		i.log.Warn(fmt.Sprintf("the debug budget does not answer: %v", err))
 		inspectError(w, http.StatusInternalServerError, "internal")
 		return
 	}
-	info.DebugBudget.Spent = usageByKind{spent["deepseek"], spent["jev"]}
-	info.DebugBudget.Held = usageByKind{held["deepseek"], held["jev"]}
-	info.DebugBudget.Remaining = usageByKind{i.remaining("deepseek", spent, held), i.remaining("jev", spent, held)}
+	info.DebugBudget = i.debugBudgetOf(spent, held)
 	i.mu.Lock()
 	info.Recent.FullSearches = i.fullSearches
 	if i.fullSearches > 0 {
@@ -707,9 +749,14 @@ func (i *Inspector) debugAccounts(ctx context.Context) (spent, held map[string]f
 	return spent, held, nil
 }
 
-// remaining is a kind's cap less what is spent and held, at least 0.
+// remaining is a kind's cap less what is spent and held, at least 0; all of
+// an unlimited cap is left (+Inf).
 func (i *Inspector) remaining(kind string, spent, held map[string]float64) float64 {
-	return max(0, i.caps[kind]-spent[kind]-held[kind])
+	cap := i.debugCaps()[kind]
+	if math.IsInf(cap, 1) {
+		return cap
+	}
+	return max(0, cap-spent[kind]-held[kind])
 }
 
 // topKDefault is a search's top_k when it gives none: /search's, the View's

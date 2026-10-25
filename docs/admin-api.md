@@ -6,10 +6,10 @@ instance on a listener of its own. The public listener (`--listen`, the Add/Sear
 memory cloud console read this listener; the deployment is in the
 [AML runbook](aml-adapter.md).
 
-The admin listener is plain HTTP. Its routes read, but for the pair that replaces and reverts
-the account's own provider keys (`/admin/v1/provider-keys`, below): the one other thing a
-request makes is `/ready`'s probe of the data root, a file it creates there and removes; none
-touches a user's records.
+The admin listener is plain HTTP. Its routes read, but for the two pairs that set and revert
+the account's own provider keys (`/admin/v1/provider-keys`) and the budget caps
+(`/admin/v1/budgets`), below: the one other thing a request makes is `/ready`'s probe of the
+data root, a file it creates there and removes; none touches a user's records.
 
 ## Where it listens, and who may read it
 
@@ -112,14 +112,16 @@ and works as it always did; `mnemon_aml_admin_auth_failures_total` stays 0.
 | `GET /admin/v1/stores` | the store overview, as JSON |
 | `PUT /admin/v1/provider-keys` | the account's own provider keys: checked, written, swapped in |
 | `DELETE /admin/v1/provider-keys?kind=` | back to the host's keys |
+| `PUT /admin/v1/budgets` | budget caps at run time, a cap or unlimited per kind |
+| `DELETE /admin/v1/budgets?kind=` | back to the configuration's caps |
 | `/debug/pprof/` and below | Go's profiler |
 | anything else | 404 `{"error":"not found"}` |
 
 `/metrics`, `/ready`, `/admin/status` and `/admin/v1/stores` are for GET, and
-`/admin/v1/provider-keys` is for PUT and DELETE only (write-only: no route answers the keys).
-Any other method on them is answered by the 404 route. The answers of `/ready`,
-`/admin/status`, `/admin/v1/provider-keys` and (when it succeeds) `/admin/v1/stores` are
-`Cache-Control: no-store`.
+`/admin/v1/provider-keys` and `/admin/v1/budgets` for PUT and DELETE only (the keys are
+write-only: no route answers them; the caps are in `/admin/status`). Any other method on them is
+answered by the 404 route. The answers of `/ready`, `/admin/status`, `/admin/v1/provider-keys`,
+`/admin/v1/budgets` and (when it succeeds) `/admin/v1/stores` are `Cache-Control: no-store`.
 
 ### `GET /metrics`
 
@@ -150,7 +152,8 @@ whose scan takes longer is not measured here. They carry no store or user label.
 
 200 with `{"ready":true}`. Otherwise 503 with `{"ready":false,"reasons":["…"]}`, every reason
 given: the data root is not writable, its disk has less than 1 GiB free, a provider's circuit
-breaker is open, or a paid account has spent and held more than 95% of its cap.
+breaker is open, or a paid account has spent and held more than 95% of its cap (an unlimited
+cap has no share, and is never a reason).
 
 ### `GET /admin/status`
 
@@ -172,7 +175,7 @@ counts only.
 | `lagBound` | the backlog, in characters, above which an Add waits (0 unless `--consolidate background`) |
 | `breakers`, `breakerTrips` | by provider kind, the breaker's state, and how many times it has opened |
 | `rejectedByKind` | by provider kind, the requests the provider rejected with 401, 402 or 403 (a wrong or revoked key, an empty balance); it only grows, from 0 for every kind the models have. The watcher's `provider-rejected:<kind>` alert reads it |
-| `budgets` | each paid account that has been used: `kind`, `cap`, `spent`, `held`; always an array |
+| `budgets` | each paid account that has been used: `kind`, `cap`, `spent`, `held`, `source` (`config`, or `settings` for a cap set at run time) and `unlimited` (`cap` is then `null`); always an array |
 | `openStores` | user stores open now |
 | `version` | the product version string of the build (`dev` for a build made without one) |
 | `providerKeys` | by key kind the configuration's models use (`deepseek`, `jev`): `{"source","fingerprint"}`. `source` is `account` (the key file's key), `host` (the environment's) or `none` (neither: the variable is empty, and the kind's calls fail); `fingerprint` is the key's (below), `""` with none. Never a key. An empty object when the configuration has neither kind |
@@ -346,6 +349,75 @@ the same rules, and again before each full search, so a key the console replaces
 console's full searches without a restart. A read that fails then keeps the keys it has, and is
 logged once (a WARN line naming the file) until a read succeeds again. Lexical searches need no
 key.
+
+### `PUT /admin/v1/budgets`
+
+The instance's budget caps at run time (rulings R99 and R100): the console's 设置 → 预算上限
+sends them here (through its `PUT /api/instances/:id/budgets`). A cap set here replaces the
+configuration's (`budgets` of `memory-config.json`) for its kind, at once and across restarts.
+
+```json
+{"deepseek": 800, "jev": null}
+```
+
+- The body is a JSON object of at most 4 KiB (else `413 {"error":"too_large"}`); not an object,
+  empty, or followed by more than white space: `400 {"error":"invalid","field":"body"}`.
+- At least one of `deepseek` (CNY) and `jev` (USD), each a number above 0 and at most 100,000, or
+  `null` for **unlimited**; any other value: `400 {"error":"invalid","field":"<kind>"}`.
+- Another field: `400 {"error":"invalid","field":"<name>"}` (a name that is not a plain one is
+  `body`, as for the provider keys).
+- A kind the configuration has no model of: `409 {"error":"unknown_kind","kind":"<kind>"}`.
+- Without `--settings-file`: `409 {"error":"no_settings_file"}`.
+
+The caps given are merged into the settings file (the other kind keeps its own), the file is
+written atomically, and the budget enforces them for every reservation made from then on. A
+reservation already held keeps its own amount and settles as it would have. A cap below what is
+already spent is taken: the kind's paid calls then stop before any request, as at a cap reached
+(`model spending cap reached`), and the reply says `"over": true` for it. An **unlimited** cap
+refuses no reservation for a cap, a Background one included; its spend is still metered: every
+call still reserves and settles, and `spent` and `held` are counted in the budget file. One INFO
+line is logged, naming each kind given with its old and new caps: `budget caps set: deepseek
+600→800 CNY, jev 60→unlimited USD`.
+
+The reply is `200`, every kind whose cap can change (each kind the configuration has a model of),
+with `spent` and `held` as the budget file had them just before:
+
+```json
+{"budgets": {"deepseek": {"cap": 800, "currency": "CNY", "spent": 0.0031, "held": 0, "source": "settings", "over": false, "unlimited": false},
+             "jev": {"cap": null, "currency": "USD", "spent": 0.0001, "held": 0, "source": "settings", "over": false, "unlimited": true}}}
+```
+
+`source` is `settings` for a cap of the settings file, else `config`. `over` is `spent > cap`,
+always `false` while the cap is unlimited. A budget file that does not answer, or a write that
+fails, changes nothing and answers `500 {"error":"internal"}`.
+
+### `DELETE /admin/v1/budgets?kind=deepseek|jev|all`
+
+Puts the kind, or every kind (`all`), back on the configuration's cap: it leaves the settings
+file, which is removed once it holds no cap. The reply is the one above. One INFO line:
+`budget caps reverted to the configuration's: deepseek 800→600 CNY`. A missing, empty, unknown
+or repeated `kind`, or a query string that does not parse, is
+`400 {"error":"invalid","field":"kind"}`; a kind the configuration has no model of `409
+unknown_kind`; without `--settings-file`, `409 no_settings_file`.
+
+### The settings file
+
+`--settings-file PATH` names it: in the memory cloud `/var/lib/mnemon-aml/<n>/settings.json`,
+beside the key file and outside the data root (aml-serve refuses a path inside it). Its format:
+
+```json
+{"version":1,"budgets":{"deepseek":800,"jev":null},"updatedAt":"<RFC 3339>"}
+```
+
+Either kind may be absent, and `null` is unlimited. A missing file means the configuration's
+caps. It is written as the key file is (atomically, mode 0600, the service user's), and a start
+is refused by the key file's rules: a file that is not a regular one, that its group or others
+may read or write, that another user owns, that is larger than 64 KiB or malformed (another
+`version` or field, no `budgets`, a cap that is neither above 0 and at most 100,000 nor `null`, an
+`updatedAt` that is not an RFC 3339 time), or that names a kind other than `deepseek` and `jev`, or
+one the configuration has no model of. The error names the file. Caps are no secret: they are
+answered and logged in full. The amounts spent and held stay in the budget file whatever the cap;
+`mnemon_aml_budget_cap{account}` is `+Inf` for an unlimited one.
 
 ### `/debug/pprof/`
 

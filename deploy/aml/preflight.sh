@@ -10,8 +10,10 @@
 #   - /admin/status: a lag bound (background consolidation) and every
 #     budget's spent and held below 80% of its cap, printing the numbers;
 #   - no store of smoke-user, the runbook's smoke-test user, in the data root;
-#   - only once the console has set the account's own provider keys (the
-#     key file exists): the key file the service user's, mode 0600;
+#   - only once the console has set the account's own provider keys or
+#     budget caps (the key file or the settings file exists): each the
+#     service user's, mode 0600; and, while inspect is on, the inspect
+#     service's own settings file likewise;
 #   - only while its inspect service is on (inspect.env): inspect.env root's,
 #     mode 0600, holding every name it needs, and the inspect listener's
 #     /healthz answering 200 with its token;
@@ -38,6 +40,7 @@ export LC_ALL=C
 readonly PROG=mnemon-preflight
 readonly ETC=/etc/mnemon-aml
 readonly STATE=/var/lib/mnemon-aml
+readonly INSPECT_STATE=/var/lib/mnemon-aml-inspect
 readonly UNITS=/etc/systemd/system
 readonly CADDYFILE=/etc/caddy/Caddyfile
 # The hub of the WireGuard overlay: the ops host, where the console runs.
@@ -282,15 +285,22 @@ check_status() {
 	if ! [[ $lag =~ ^[0-9]+$ ]] || [ "$lag" -eq 0 ]; then
 		fail "lagBound is $lag: aml-serve@$NAME does not run --consolidate background"
 	fi
+	# An unlimited cap (null, "unlimited": true) has no share: it is never
+	# divided by.
 	budgets=$(jq -r --argjson ceiling "$BUDGET_CEILING" '(.budgets // [])[] |
-		[.kind, .spent, .held, .cap,
-		 (if .cap > 0 then ((.spent + .held) / .cap * 1000 | floor) / 10 else 0 end),
-		 (.cap > 0 and (.spent + .held) / .cap >= $ceiling)] | map(tostring) | join(" ")' "$BODY") || budgets=
+		((.unlimited // false) or .cap == null) as $unlimited |
+		[.kind, .spent, .held, (if $unlimited then "unlimited" else .cap end),
+		 (if ($unlimited | not) and .cap > 0 then ((.spent + .held) / .cap * 1000 | floor) / 10 else 0 end),
+		 (($unlimited | not) and .cap > 0 and (.spent + .held) / .cap >= $ceiling)] | map(tostring) | join(" ")' "$BODY") || budgets=
 	if [ -z "$budgets" ]; then
 		info "budgets: no paid account used yet"
 		return 0
 	fi
 	while read -r kind spent held cap percent over; do
+		if [ "$cap" = unlimited ]; then
+			info "budget $kind: spent $spent + held $held, no cap (unlimited)"
+			continue
+		fi
 		info "budget $kind: spent $spent + held $held of cap $cap ($percent%)"
 		[ "$over" != true ] || fail "budget $kind: spent and held are $percent% of the cap, not below 80%"
 	done <<EOF
@@ -512,6 +522,8 @@ main() {
 	check_status
 	check_smoke_user
 	check_state_file "$STATE/$NAME/provider-keys.json"
+	check_state_file "$STATE/$NAME/settings.json"
+	! inspect_on || check_state_file "$INSPECT_STATE/$NAME/settings.json"
 	check_inspect
 	if [ "$SYSTEMD" = 1 ]; then
 		check_units

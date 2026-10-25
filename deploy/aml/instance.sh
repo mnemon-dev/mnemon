@@ -15,9 +15,10 @@
 #   /var/lib/mnemon-aml/<n>/               data root (data/), model budget file and, once the
 #                                          console has set them, the account's own provider keys
 #                                          (provider-keys.json: aml-serve writes it, list reads its
-#                                          key names only)
+#                                          key names only) and budget caps (settings.json)
 #   /var/lib/mnemon-aml-watch/<n>/         the watcher's state
-#   /var/lib/mnemon-aml-inspect/<n>/       the inspect service's debug budget, while it is on
+#   /var/lib/mnemon-aml-inspect/<n>/       the inspect service's debug budget and settings file
+#                                          (its debug caps set at run time), while it is on
 #   /etc/systemd/system/aml-serve@<n>.service.d/limits.conf   MemoryMax= and CPUQuota=
 #   /etc/caddy/mnemon-instances/<n>.caddy  the route, on a shared host
 #
@@ -130,7 +131,9 @@ The engine instances of this host, one per account. Run as root.
   list              Name, layout, slot, addresses, status, whether inspect is
                     on, where its provider keys come from (KEYS: host, or
                     account:<kinds> once the console has set the account's
-                    own), and public URL of every instance. No secrets.
+                    own), its DeepSeek/JEV caps (CAPS: * for one set at run
+                    time, ∞ for unlimited), and public URL of every
+                    instance. No secrets.
   inspect enable <n> [--debug-deepseek-cap CNY] [--debug-jev-cap USD]
       Turn on the inspect service of <n> (the console's read-only 检索 tab):
       write inspect.env, start aml-inspect@<n>, wait for its /healthz, and
@@ -984,15 +987,33 @@ key_kinds() {
 	fi
 }
 
+# caps_of NAME: instance NAME's DeepSeek and JEV caps, as DEEPSEEK/JEV: the
+# configuration's, or the settings file's (budget caps set at run time),
+# marked *, with ∞ for an unlimited one; invalid for a settings file that is
+# not the format; - for a cap neither has.
+caps_of() {
+	local config="$ROOT$ETC/$1/memory-config.json" settings="$ROOT$STATE/$1/settings.json" caps
+	if [ -e "$settings" ]; then
+		caps=$(jq -r --slurpfile config "$config" '
+			def cap($kind): if (.budgets | has($kind)) then (if .budgets[$kind] == null then "∞*" else (.budgets[$kind] | tostring) + "*" end)
+				else ($config[0].budgets[$kind] // "-" | tostring) end;
+			if (.budgets | type) == "object" and (.budgets | keys | all(. == "deepseek" or . == "jev")) then cap("deepseek") + "/" + cap("jev")
+			else error("not a settings file") end' "$settings" 2>/dev/null) || caps=invalid
+	else
+		caps=$(jq -r '(.budgets.deepseek // "-" | tostring) + "/" + (.budgets.jev // "-" | tostring)' "$config" 2>/dev/null) || caps=-
+	fi
+	printf '%s' "$caps"
+}
+
 cmd_list() {
 	[ $# -eq 0 ] || usage_error "list takes no arguments"
 	if [ -z "$ROOT" ] && [ "$(id -u)" != 0 ]; then
 		die "run as root: the environment files are root's"
 	fi
 	need grep tail jq
-	local env dir inspect format='%-31s  %-9s  %4s  %-15s  %-21s  %-9s  %-7s  %-20s  %s\n'
+	local env dir inspect format='%-31s  %-9s  %4s  %-15s  %-21s  %-9s  %-7s  %-20s  %-13s  %s\n'
 	# shellcheck disable=SC2059
-	printf "$format" NAME LAYOUT SLOT DATA ADMIN STATUS INSPECT KEYS 'PUBLIC URL'
+	printf "$format" NAME LAYOUT SLOT DATA ADMIN STATUS INSPECT KEYS CAPS 'PUBLIC URL'
 	for env in "$ROOT$ETC"/*/env; do
 		[ -f "$env" ] || continue
 		dir=${env%/env}
@@ -1001,7 +1022,7 @@ cmd_list() {
 		# shellcheck disable=SC2059
 		printf "$format" "${dir##*/}" "$(env_get "$env" AML_LAYOUT)" "$(env_get "$env" AML_SLOT)" \
 			"$(env_get "$env" AML_LISTEN)" "$(env_get "$env" AML_ADMIN_LISTEN)" "$(env_get "$env" AML_STATUS)" \
-			"$inspect" "$(key_kinds "${dir##*/}")" "$(env_get "$dir/watch.env" AML_PUBLIC_URL)"
+			"$inspect" "$(key_kinds "${dir##*/}")" "$(caps_of "${dir##*/}")" "$(env_get "$dir/watch.env" AML_PUBLIC_URL)"
 	done
 }
 

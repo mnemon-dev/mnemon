@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -1272,6 +1273,21 @@ func TestWatchRules(t *testing.T) {
 		{"a cap of zero has no share", func(s *aml.AdminStatus) {
 			s.Budgets = []memoryagent.BudgetAccount{{Kind: "openai", Cap: 0, Spent: 5, Held: 1}}
 		}, "", ""},
+		// An unlimited cap (R100) has no share either, however much is spent
+		// and held; and the rules never divide by it, as the status spells it
+		// (null) or as the server holds it (+Inf).
+		{"an unlimited cap has no share", func(s *aml.AdminStatus) {
+			s.Budgets = []memoryagent.BudgetAccount{{Kind: "deepseek", Cap: math.Inf(1), Unlimited: true, Spent: 1e9, Held: 1e8}}
+		}, "", ""},
+		{"an unlimited cap that a status spells null", func(s *aml.AdminStatus) {
+			s.Budgets = []memoryagent.BudgetAccount{{Kind: "jev", Unlimited: true, Spent: 5, Held: 3}}
+		}, "", ""},
+		{"an unlimited cap whose server says so with a cap", func(s *aml.AdminStatus) {
+			s.Budgets = []memoryagent.BudgetAccount{{Kind: "jev", Cap: 1, Unlimited: true, Spent: 5, Held: 3}}
+		}, "", ""},
+		{"an unlimited cap beside a capped one", func(s *aml.AdminStatus) {
+			s.Budgets = []memoryagent.BudgetAccount{{Kind: "deepseek", Unlimited: true, Spent: 1e9}, {Kind: "jev", Cap: 1000, Spent: 801}}
+		}, "budget-high:jev", "80.1%"},
 
 		{"oldest queued 15m", func(s *aml.AdminStatus) { s.Queue.OldestQueued = 15 * time.Minute }, "", ""},
 		{"oldest queued past 15m", func(s *aml.AdminStatus) { s.Queue.OldestQueued = 15*time.Minute + time.Nanosecond }, "backlog-age", "15m0s"},

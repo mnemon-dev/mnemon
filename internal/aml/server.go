@@ -119,6 +119,13 @@ type ServerConfig struct {
 	// them. Absolute and outside the data root; "" for the host's keys alone
 	// and no such routes. A missing file holds no key.
 	ProviderKeysFile string
+	// SettingsFile is the instance's settings file (budgets.go): its budget
+	// caps replace the configuration's, kind by kind (null for unlimited),
+	// and the admin listener's PUT and DELETE /admin/v1/budgets set and
+	// revert them. Absolute and outside the data root; "" for the
+	// configuration's caps alone and no such routes. A missing file holds no
+	// cap.
+	SettingsFile string
 }
 
 // MinAdminTokenLength is the fewest bytes an admin token (ServerConfig) holds.
@@ -166,6 +173,13 @@ type Server struct {
 	keys            *memoryagent.ProviderKeys
 	keysWriter      chan struct{}
 	keyCheckTimeout time.Duration
+	// configCaps are the configuration's budget caps (the budget's as it
+	// opened) and settingsCaps the settings file's, which the budget
+	// enforces over them; capsWriter admits one change of the file at a
+	// time (writeCaps).
+	configCaps   map[string]float64
+	settingsCaps atomic.Pointer[map[string]float64]
+	capsWriter   chan struct{}
 	// stores scans the data root for the store overview and the store gauges.
 	stores *storeScanner
 	// freeDisk is the free bytes of the disk holding a directory, which
@@ -227,10 +241,16 @@ func NewServer(config ServerConfig) (*Server, error) {
 	}
 	config.Consolidation = mode
 	if config.ProviderKeysFile != "" {
-		if err := checkStateFile(keyFileWhat, config.ProviderKeysFile, config.DataRoot); err != nil {
+		if err := checkStateFile(keyFileWhat, config.ProviderKeysFile, config.DataRoot, "a snapshot of the data root must never hold a key"); err != nil {
 			return nil, err
 		}
 		config.ProviderKeysFile = filepath.Clean(config.ProviderKeysFile)
+	}
+	if config.SettingsFile != "" {
+		if err := checkStateFile(settingsWhat, config.SettingsFile, config.DataRoot, "it is the instance's, beside the key file, and the data root holds the users' stores"); err != nil {
+			return nil, err
+		}
+		config.SettingsFile = filepath.Clean(config.SettingsFile)
 	}
 	if config.ConsolidationWorkers == 0 {
 		config.ConsolidationWorkers = defaultConsolidationWorkers
@@ -244,7 +264,8 @@ func NewServer(config ServerConfig) (*Server, error) {
 		addGate: newGate(config.MaxConcurrentAdds), searchGate: newGate(config.MaxConcurrentSearches), admitWait: admissionWait,
 		addWindow: addWindow, flushWindow: flushWindow, searchTimeout: config.SearchTimeout, heartbeatEvery: heartbeatEvery, heartbeatTicker: newTicker,
 		metrics: newMetrics(time.Now), started: time.Now().UTC(), freeDisk: freeDiskBytes,
-		keys: memoryagent.NewProviderKeys(config.MemoryConfig), keysWriter: make(chan struct{}, 1), keyCheckTimeout: memoryagent.KeyCheckTimeout}
+		keys: memoryagent.NewProviderKeys(config.MemoryConfig), keysWriter: make(chan struct{}, 1), keyCheckTimeout: memoryagent.KeyCheckTimeout,
+		capsWriter: make(chan struct{}, 1)}
 	if s.log == nil {
 		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
@@ -265,6 +286,18 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if err := loadKeyFile(config.ProviderKeysFile, s.keys); err != nil {
 		return nil, err
 	}
+	// The settings file's caps, refused at the start as the key file is; the
+	// server is its one writer too.
+	settings := map[string]float64{}
+	if config.SettingsFile != "" {
+		if removed := removeInterrupted(config.SettingsFile); len(removed) > 0 {
+			s.logf(context.Background(), slog.LevelWarn, "removed what an interrupted write of %s left: %s", settingsWhat, strings.Join(removed, ", "))
+		}
+		if settings, err = readBudgetsFile(config.SettingsFile, s.keys.Uses); err != nil {
+			return nil, err
+		}
+	}
+	s.settingsCaps.Store(&settings)
 	if config.Models != nil {
 		s.models, err = config.Models(config.MemoryConfig)
 	} else {
@@ -272,6 +305,14 @@ func NewServer(config ServerConfig) (*Server, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+	// The budget enforces the settings file's caps over the configuration's.
+	if s.budget != nil {
+		s.configCaps = s.budget.Caps()
+		if err := s.budget.SetCaps(settings); err != nil {
+			s.closeModels(context.Background())
+			return nil, err
+		}
 	}
 	if s.maxItems, s.lagBound, err = s.probe(); err != nil {
 		s.closeModels(context.Background())
@@ -692,7 +733,11 @@ func (s *Server) statusLine(ctx context.Context) string {
 	}
 	parts := []string{}
 	for _, account := range accounts {
-		parts = append(parts, fmt.Sprintf("%s spent %.4f held %.4f cap %g", account.Kind, account.Spent, account.Held, account.Cap))
+		cap := fmt.Sprintf("%g", account.Cap)
+		if account.Unlimited {
+			cap = "unlimited"
+		}
+		parts = append(parts, fmt.Sprintf("%s spent %.4f held %.4f cap %s", account.Kind, account.Spent, account.Held, cap))
 	}
 	if len(parts) > 0 {
 		line += "; budget " + strings.Join(parts, ", ")

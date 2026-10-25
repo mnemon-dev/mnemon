@@ -83,9 +83,12 @@ never logged or answered.
 | `GET /v1/stores/{key}/memory?section&after&limit` | a page of a store's consolidated memory |
 | `GET /v1/stores/{key}/memory/{section}/{id}` | one memory item, by its section and id |
 | `POST /v1/search` | a retrieval: its result, trace and usage |
+| `PUT /v1/debug-caps` | the debug caps at run time |
+| `DELETE /v1/debug-caps?kind=` | back to `--debug-caps` |
 
 Any other path answers `404 {"error":"not_found"}`; another method on a route answers
-`405 {"error":"method_not_allowed"}` with an `Allow` header.
+`405 {"error":"method_not_allowed"}` with an `Allow` header (`PUT, DELETE` for
+`/v1/debug-caps`).
 
 ### `GET /healthz`
 
@@ -118,12 +121,12 @@ Any other path answers `404 {"error":"not_found"}`; another method on a route an
 | --- | --- |
 | `version` | the product version of the build |
 | `modes.lexical` | always `true` |
-| `modes.full` | `true` when full searches may run: a debug budget file is set, at least one cap is positive, and every paid model the read path calls (the planner's and the judge's kinds) has a positive cap; else `false`, and a full search answers `409 full_disabled` |
+| `modes.full` | `true` when full searches may run: a debug budget file is set, at least one cap is positive, and every paid model the read path calls (the planner's and the judge's kinds) has a positive cap (an unlimited cap is positive); else `false`, and a full search answers `409 full_disabled`. A service that started without full mode keeps it off until a restart; one that started with it turns it off and on as `PUT` and `DELETE /v1/debug-caps` change the caps |
 | `debugBudget.currency` | the currency of each kind: `deepseek` CNY, `jev` USD |
-| `debugBudget.caps` | the cap of each kind, from `--debug-caps`; 0 for a kind with none |
+| `debugBudget.caps` | the cap of each kind: the settings file's (`PUT /v1/debug-caps`), else `--debug-caps`'s; 0 for a kind with none; `null` when unlimited |
 | `debugBudget.spent` | what full searches of any run of this service have spent from the debug budget file, by kind; 0 without the file |
 | `debugBudget.held` | what calls in flight hold now, by kind |
-| `debugBudget.remaining` | `caps − spent − held`, never below 0, by kind |
+| `debugBudget.remaining` | `caps − spent − held`, never below 0, by kind; `null` when the cap is unlimited |
 | `recent.fullSearches` | full searches this process ran since it started (those refused before reading are not counted) |
 | `recent.avgCost` | their mean `usage.cost` by kind, 0 before the first; the console shows it as the estimate of a full search |
 | `limits` | the limits above |
@@ -376,6 +379,58 @@ A read in which a stage fell back answers 200 and names the stages in `degraded`
 closes its connection cancels its full search: the search's model calls stop, and it is not
 answered (the debug budget keeps what they cost).
 
+### `PUT /v1/debug-caps`
+
+The debug caps at run time (rulings R99 and R100), from the console's 检索 tab. A cap set here
+replaces `--debug-caps`'s for its kind, at once and across restarts.
+
+```json
+{"deepseek": 8, "jev": null}
+```
+
+- At least one of `deepseek` (CNY) and `jev` (USD), each a number above 0 and at most 1,000, or
+  `null` for **unlimited**: the debug budget then refuses no reservation of the kind for a cap,
+  and still meters its spend. Another value is `400 invalid` with the kind in `field`; another
+  field, or no field, `400 invalid` (`field` the name, or `body`).
+- The caps given are merged into the service's own settings file (below), written atomically,
+  and then enforced by the debug budget for every reservation made from then on; one already held
+  keeps its amount.
+- The answer is `200` and the `debugBudget` object of `/v1/info`, updated, as the body itself:
+
+  ```json
+  {"currency": {"deepseek": "CNY", "jev": "USD"}, "caps": {"deepseek": 8, "jev": null},
+   "spent": {"deepseek": 0.0123, "jev": 0.0004}, "held": {"deepseek": 0, "jev": 0},
+   "remaining": {"deepseek": 7.9877, "jev": null}}
+  ```
+
+- One INFO line in the service's log: `debug caps set: deepseek 5→8 CNY, jev 1→unlimited USD`.
+- Without `--settings-file`: `409 {"error":"no_settings_file"}`. A service that started without
+  full searches (no debug budget, or no cap for a kind the read calls): `409
+  {"error":"full_disabled"}`; its models are not built, so its caps cannot matter until a restart.
+
+### `DELETE /v1/debug-caps?kind=deepseek|jev|all`
+
+Puts the kind, or both (`all`), back on `--debug-caps`'s cap: it leaves the settings file, which is
+removed once it holds no cap. The answer is the one above; the log line `debug caps reverted to
+the flag's: deepseek 8→5 CNY`. A missing, empty, unknown or repeated `kind` is `400 invalid`
+(`field` `kind`); the `409`s are those of `PUT`.
+
+### The inspect settings file
+
+`--settings-file PATH`, which needs `--debug-budget-file`: in the memory cloud
+`/var/lib/mnemon-aml-inspect/<n>/settings.json`, in the service's own state beside its debug
+budget, never in the instance's data root (refused). Its format:
+
+```json
+{"version":1,"debugCaps":{"deepseek":8,"jev":null}}
+```
+
+It is the service user's, mode 0600, written atomically; a start refuses one that is not a
+regular file, that its group or others may read or write, that another user owns, that is
+malformed (another `version` or field, no `debugCaps`, a kind other than `deepseek` and `jev`, a
+cap that is neither above 0 and at most 1,000 nor `null`), naming the file. `inspect disable`
+removes it with the rest of the service's state.
+
 ## The trace
 
 Every stage has:
@@ -501,7 +556,7 @@ The View as `result` shows it, item by item.
 | Status | `error` | When |
 | --- | --- | --- |
 | 200 | | success |
-| 400 | `invalid` | a malformed field, named in `field`: `limit`, `after`, `key`, `section`, `id`, `user_id`, `query`, `options`, `top_k`, `mode`, `trace`, or `body` (not a JSON object, or more than white space after it) |
+| 400 | `invalid` | a malformed field, named in `field`: `limit`, `after`, `key`, `section`, `id`, `user_id`, `query`, `options`, `top_k`, `mode`, `trace`, `kind`, `deepseek`, `jev`, or `body` (not a JSON object, or more than white space after it) |
 | 401 | `unauthorized` | no bearer token, or another one |
 | 402 | `debug_budget_exhausted` | a full search the debug budget refused; partial `trace` and `usage` |
 | 404 | `store_not_found` | no store with that key |
@@ -509,7 +564,8 @@ The View as `result` shows it, item by item.
 | 404 | `item_not_found` | `/memory/{section}/{id}`: no item of that id in the section |
 | 404 | `not_found` | no such route |
 | 405 | `method_not_allowed` | another method on a route |
-| 409 | `full_disabled` | a full search while `modes.full` is false |
+| 409 | `full_disabled` | a full search while `modes.full` is false; `/v1/debug-caps` on a service that started without full searches |
+| 409 | `no_settings_file` | `/v1/debug-caps` on a service without `--settings-file` |
 | 413 | `too_large` | a body over 65,536 bytes |
 | 500 | `internal` | a failure retrying will not help (for example a damaged store); after a full search's read, with its `trace` and `usage` |
 | 502 | `provider_failed` | a full search whose read failed; `result` (the raw ranking), partial `trace` and `usage` |
@@ -534,7 +590,10 @@ by `Retry-After`) and then shows "store recovering" for that store instead of re
 - **No flush, no consolidation.** Pending records stay pending (stage `pending`).
 - **No instance budget, cache or metric.** Full searches reserve and settle in the debug budget
   file (`--debug-budget-file`, which must differ from the instance's `budgetFile`) under its caps
-  (`--debug-caps`); the model cache is off; the service has no metrics.
+  (`--debug-caps`, or its settings file's); the model cache is off; the service has no metrics.
+- **Its own state only.** The one thing it writes besides the debug budget is its settings file
+  (`PUT /v1/debug-caps`), beside the debug budget in its own state; never a file of the
+  instance's.
 - **Logs** carry the method, the route, the status, the time and the store's 8-digit prefix,
   never a key, a user id, a query, a looked-up id or any content; `/v1/resolve` logs no store
   at all.

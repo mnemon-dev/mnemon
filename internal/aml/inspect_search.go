@@ -126,7 +126,7 @@ func (i *Inspector) serveSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	noteStore(r, q.key)
-	if q.full && !i.full {
+	if q.full && !i.fullOn() {
 		inspectError(w, http.StatusConflict, "full_disabled")
 		return
 	}

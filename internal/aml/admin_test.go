@@ -435,8 +435,13 @@ func TestAdminStatusAccountFieldsAreStable(t *testing.T) {
 		got = append(got, key)
 	}
 	slices.Sort(got)
-	if want := []string{"cap", "held", "kind", "spent"}; !slices.Equal(got, want) {
+	if want := []string{"cap", "held", "kind", "source", "spent", "unlimited"}; !slices.Equal(got, want) {
 		t.Fatalf("account fields %v, want %v", got, want)
+	}
+	// Without a settings file every cap is the configuration's, and none is
+	// unlimited.
+	if string(status.Budgets[0]["source"]) != `"config"` || string(status.Budgets[0]["unlimited"]) != "false" || string(status.Budgets[0]["cap"]) != "1" {
+		t.Fatal(status.Budgets[0])
 	}
 }
 

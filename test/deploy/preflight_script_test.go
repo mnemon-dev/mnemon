@@ -200,6 +200,38 @@ func TestPreflightChecksTheKeyFile(t *testing.T) {
 	}
 }
 
+// The settings file of the caps set at run time (R99): the preflight checks
+// its mode (and owner) when it exists; and an unlimited cap (R100) is shown
+// as such, with no share of a cap measured, never an alert.
+func TestPreflightChecksTheSettingsFile(t *testing.T) {
+	p := newPreflightRig(t)
+	h := p.h
+	const settings = "/var/lib/mnemon-aml/beta-alice/settings.json"
+	writeFile(t, h.path(settings), `{"version":1,"budgets":{"jev":null},"updatedAt":"2026-10-25T08:00:00Z"}`, 0o600)
+	p.fake.set(http.StatusOK, `{"startedAt":"2026-10-24T08:00:00Z","lagBound":160000,"version":"aml-2",`+
+		`"budgets":[{"kind":"deepseek","cap":30,"spent":1.5,"held":0.25,"source":"config","unlimited":false},{"kind":"jev","cap":null,"spent":900,"held":5,"source":"settings","unlimited":true}]}`)
+	out, ok := preflight(t, h, p.caBundle, p.record, "beta-alice")
+	if !ok || !strings.Contains(out, "mnemon-preflight beta-alice: all 9 checks passed") ||
+		!strings.Contains(out, "budget jev: spent 900 + held 5, no cap (unlimited)") || !strings.Contains(out, "budget deepseek: spent 1.5 + held 0.25 of cap 30 (5.8%)") {
+		t.Fatalf("the preflight of a private settings file and an unlimited cap:\n%s", out)
+	}
+	if err := os.Chmod(h.path(settings), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	out, ok = preflight(t, h, p.caBundle, p.record, "beta-alice")
+	if ok || !slices.Equal(fails(out), []string{"FAIL " + settings + " has mode 640, not 0600"}) {
+		t.Fatalf("the preflight of a settings file its group may read:\n%s", out)
+	}
+	// Both files: one check each.
+	if err := os.Chmod(h.path(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, h.path("/var/lib/mnemon-aml/beta-alice/provider-keys.json"), `{"version":1,"keys":{}}`, 0o600)
+	if out, ok := preflight(t, h, p.caBundle, p.record, "beta-alice"); !ok || !strings.Contains(out, "all 10 checks passed") {
+		t.Fatalf("the preflight of both files:\n%s", out)
+	}
+}
+
 // preflightRig is an instance whose admin listener and public route are
 // fakes, ready for mnemon-preflight: its env files point at the fakes, the
 // fakes' certificate is curl's CA bundle, and curl runs behind a spy that

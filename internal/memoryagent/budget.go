@@ -3,6 +3,7 @@ package memoryagent
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"maps"
 	"math"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 
 	"github.com/google/uuid"
 	"github.com/mnemon-dev/mnemon/internal/records"
@@ -26,10 +28,14 @@ import (
 // came back, at the request's input estimate. Only a request still in flight
 // holds one, or one whose process ended before it did, which SettleHolds
 // settles at the estimate it recorded. It stores metering and request
-// hashes, never prompts or credentials.
+// hashes, never prompts or credentials. Its caps can change while it is open
+// (SetCaps): a reservation is checked against the caps of the moment it is
+// made.
 type Budget struct {
-	db   *sql.DB
-	caps map[string]float64
+	db *sql.DB
+	// caps are the caps this process enforces, by kind: a map never changed
+	// once stored, replaced whole (SetCaps).
+	caps atomic.Pointer[map[string]float64]
 }
 
 // ErrBudgetCap is the error of a reservation the account's cap refuses.
@@ -78,15 +84,10 @@ func OpenBudgetWithCaps(path string, caps map[string]float64) (*Budget, error) {
 	for kind, cap := range defaultCaps {
 		resolved[kind] = cap
 	}
-	for kind, cap := range caps {
-		if _, ok := defaultCaps[kind]; !ok {
-			return nil, errors.New("budget cap kind must be jev, deepseek or openai")
-		}
-		if math.IsNaN(cap) || math.IsInf(cap, 0) || cap < 0 {
-			return nil, errors.New("budget cap must be a finite nonnegative amount")
-		}
-		resolved[kind] = cap
+	if err := checkCaps(caps, false); err != nil {
+		return nil, err
 	}
+	maps.Copy(resolved, caps)
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("budget file must be an absolute path")
 	}
@@ -117,7 +118,62 @@ CREATE TABLE IF NOT EXISTS attempts(id TEXT PRIMARY KEY,kind TEXT NOT NULL,reque
 		db.Close()
 		return nil, err
 	}
-	return &Budget{db: db, caps: resolved}, nil
+	b := &Budget{db: db}
+	b.caps.Store(&resolved)
+	return b, nil
+}
+
+// checkCaps checks caps by kind: each kind a paid one, each cap a finite
+// nonnegative amount or, where unlimited is allowed, +Inf (Unlimited).
+func checkCaps(caps map[string]float64, unlimited bool) error {
+	for kind, cap := range caps {
+		if _, ok := defaultCaps[kind]; !ok {
+			return errors.New("budget cap kind must be jev, deepseek or openai")
+		}
+		if unlimited && math.IsInf(cap, 1) {
+			continue
+		}
+		if math.IsNaN(cap) || math.IsInf(cap, 0) || cap < 0 {
+			return errors.New("budget cap must be a finite nonnegative amount")
+		}
+	}
+	return nil
+}
+
+// Unlimited is the cap of an unlimited account (ruling R100): no reservation
+// of the kind is refused for a cap, while every call is still reserved,
+// settled and metered.
+var Unlimited = math.Inf(1)
+
+// unlimitedInFile is the cap an unlimited account's reservation records in
+// the budget file, whose caps are finite: the largest float64, which the
+// cap check compares with as with any cap, and admits.
+const unlimitedInFile = math.MaxFloat64
+
+// Caps are the caps this process enforces now, by paid kind (a copy).
+func (b *Budget) Caps() map[string]float64 { return maps.Clone(*b.caps.Load()) }
+
+// SetCaps replaces the caps of the kinds in caps, for every reservation made
+// once it has returned; the other kinds keep theirs. A reservation already
+// held keeps its own amount, and settles as it would have. A cap below what
+// is already spent and held refuses the kind's reservations, as a cap reached
+// does (ErrBudgetCap); Unlimited refuses none. A kind that is not paid, or a
+// cap that is neither a finite nonnegative amount nor Unlimited, is refused,
+// and nothing changes. The amounts spent are the file's and stay; only the
+// process's caps change (each reservation records its cap in the file, as at
+// the start).
+func (b *Budget) SetCaps(caps map[string]float64) error {
+	if err := checkCaps(caps, true); err != nil {
+		return err
+	}
+	for {
+		current := b.caps.Load()
+		next := maps.Clone(*current)
+		maps.Copy(next, caps)
+		if b.caps.CompareAndSwap(current, &next) {
+			return nil
+		}
+	}
 }
 
 // budgetDSN is the DSN of the budget file at path (records.SQLiteURI).
@@ -194,7 +250,7 @@ func (b *Budget) reserveWithin(ctx context.Context, kind, hash string, amount, s
 	// (output is free), DeepSeek <=48k bytes plus its default output limits,
 	// OpenAI a typical call (settle records larger metered calls at their
 	// real price). Larger completions pass the amount they could cost.
-	cap, ok := b.caps[kind]
+	cap, ok := (*b.caps.Load())[kind]
 	if !ok {
 		return "", errors.New("unknown paid model kind")
 	}
@@ -202,6 +258,9 @@ func (b *Budget) reserveWithin(ctx context.Context, kind, hash string, amount, s
 		return "", errors.New("invalid reservation amount")
 	}
 	reservation := max(reservations[kind], amount)
+	if math.IsInf(cap, 1) {
+		cap = unlimitedInFile
+	}
 	tx, err := b.db.BeginTx(ctx, nil)
 	if err != nil {
 		return "", err
@@ -387,29 +446,54 @@ func (b *Budget) SettleHolds(ctx context.Context) ([]HeldSettled, error) {
 }
 
 // BudgetAccount is one paid account of a budget file: the cap this process
-// enforces, what calls spent and what unresolved calls hold.
+// enforces now, what calls spent and what unresolved calls hold. Unlimited
+// says the cap is Unlimited (Cap is then +Inf, and its JSON null). Source
+// says where the cap comes from, for a server that can change it ("config"
+// or "settings", aml's /admin/status); Accounts leaves it empty.
 type BudgetAccount struct {
-	Kind  string  `json:"kind"`
-	Cap   float64 `json:"cap"`
-	Spent float64 `json:"spent"`
-	Held  float64 `json:"held"`
+	Kind      string  `json:"kind"`
+	Cap       float64 `json:"cap"`
+	Spent     float64 `json:"spent"`
+	Held      float64 `json:"held"`
+	Source    string  `json:"source,omitempty"`
+	Unlimited bool    `json:"unlimited"`
 }
 
-// Accounts reads the accounts calls have reserved on, by kind; it changes
-// nothing.
+// MarshalJSON writes the account with its fields in order, the cap null when
+// it is unlimited: JSON has no infinity. Decoded, a null cap stays 0, which
+// no share is measured against (Unlimited says why).
+func (a BudgetAccount) MarshalJSON() ([]byte, error) {
+	var cap *float64
+	if !a.Unlimited && !math.IsInf(a.Cap, 0) {
+		cap = &a.Cap
+	}
+	return json.Marshal(struct {
+		Kind      string   `json:"kind"`
+		Cap       *float64 `json:"cap"`
+		Spent     float64  `json:"spent"`
+		Held      float64  `json:"held"`
+		Source    string   `json:"source,omitempty"`
+		Unlimited bool     `json:"unlimited"`
+	}{a.Kind, cap, a.Spent, a.Held, a.Source, a.Unlimited || math.IsInf(a.Cap, 1)})
+}
+
+// Accounts reads the accounts calls have reserved on, by kind, with the caps
+// of the moment; it changes nothing.
 func (b *Budget) Accounts(ctx context.Context) ([]BudgetAccount, error) {
 	rows, err := b.db.QueryContext(ctx, `SELECT kind,spent,held FROM accounts ORDER BY kind`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+	caps := *b.caps.Load()
 	out := []BudgetAccount{}
 	for rows.Next() {
 		var account BudgetAccount
 		if err := rows.Scan(&account.Kind, &account.Spent, &account.Held); err != nil {
 			return nil, err
 		}
-		account.Cap = b.caps[account.Kind]
+		account.Cap = caps[account.Kind]
+		account.Unlimited = math.IsInf(account.Cap, 1)
 		out = append(out, account)
 	}
 	return out, rows.Err()

@@ -103,10 +103,10 @@ words, and every subcommand refuses them.
 | Engine env (root:root 0600) | `/etc/mnemon-aml/<n>/env`: the record (`AML_LAYOUT`, `AML_SLOT`, `AML_STATUS`), `AML_LISTEN`, `AML_ADMIN_LISTEN`, the flag values `AML_MAX_ADDS`, `AML_MAX_SEARCHES`, `AML_MAX_OPEN_STORES`, `AML_WORKERS`, `GOMEMLIMIT` (80% of `MemoryMax=`), and the secrets `AML_API_KEY`, `MNEMON_ADMIN_TOKEN` and the provider keys the configuration names |
 | Engine config (root:mnemon 0640) | `/etc/mnemon-aml/<n>/memory-config.json`: the shipped BM25-only configuration with this instance's caps and budget file |
 | Watcher env (root:root 0600) | `/etc/mnemon-aml/<n>/watch.env`: `AML_ALERT_WEBHOOK`, `AML_ALERT_KIND`, `AML_PUBLIC_URL`, `AML_ADMIN_LISTEN` (the engine's value), `MNEMON_ADMIN_TOKEN`; never a provider key or the API key |
-| State (mnemon 0700) | `/var/lib/mnemon-aml/<n>/` (`StateDirectory=mnemon-aml/%i`): `data/`, the data root, `model-budget.db`, the budget file, and, once the console has set them, `provider-keys.json`, the account's own provider keys (mnemon 0600; "An account's own provider keys") |
+| State (mnemon 0700) | `/var/lib/mnemon-aml/<n>/` (`StateDirectory=mnemon-aml/%i`): `data/`, the data root, `model-budget.db`, the budget file, and, once the console has set them, `provider-keys.json`, the account's own provider keys ("An account's own provider keys"), and `settings.json`, the budget caps set at run time ("Budget caps at runtime"), each mnemon 0600 |
 | Watcher state (mnemon 0700) | `/var/lib/mnemon-aml-watch/<n>/state.json` (`StateDirectory=mnemon-aml-watch/%i`) |
 | Inspect env (root:root 0600), while inspect is on | `/etc/mnemon-aml/<n>/inspect.env`: `AML_INSPECT_LISTEN`, `AML_INSPECT_DEBUG_CAPS`, `GOMEMLIMIT`, and the secrets `MNEMON_INSPECT_TOKEN` and the provider keys ("Inspect (检索)") |
-| Inspect state (mnemon 0700), while inspect is on | `/var/lib/mnemon-aml-inspect/<n>/debug-budget.db` (`StateDirectory=mnemon-aml-inspect/%i`) |
+| Inspect state (mnemon 0700), while inspect is on | `/var/lib/mnemon-aml-inspect/<n>/debug-budget.db` (`StateDirectory=mnemon-aml-inspect/%i`), and `settings.json`, its debug caps set at run time |
 | Units | `aml-serve@<n>.service`, `aml-watch@<n>.service` and `aml-watch@<n>.timer`; `aml-inspect@<n>.service` while inspect is on |
 | Limits | `/etc/systemd/system/aml-serve@<n>.service.d/limits.conf`: `MemoryMax=` and `CPUQuota=` only. The flag values live in the engine env, so the template's `ExecStart` is the same for every instance. |
 | Route | dedicated: the host's Caddyfile. Shared: `/etc/caddy/mnemon-instances/<n>.caddy` |
@@ -402,8 +402,8 @@ mnemon-instance list
 ```
 
 ```
-NAME                             LAYOUT     SLOT  DATA             ADMIN                  STATUS     INSPECT  KEYS                  PUBLIC URL
-beta-alice                       shared        0  127.0.0.1:8100   10.77.0.3:8101         active     off      account:deepseek      https://beta.example.com/i/beta-alice
+NAME                             LAYOUT     SLOT  DATA             ADMIN                  STATUS     INSPECT  KEYS                  CAPS           PUBLIC URL
+beta-alice                       shared        0  127.0.0.1:8100   10.77.0.3:8101         active     off      account:deepseek      800*/3         https://beta.example.com/i/beta-alice
 ```
 
 It reads the env files and prints no secret. The status is the record's, not systemd's:
@@ -411,7 +411,9 @@ It reads the env files and prints no secret. The status is the record's, not sys
 inspect service is on (its `inspect.env` exists; "Inspect (检索)"). `KEYS` says where the
 instance's provider keys come from: `host`, or `account:<kinds>` once the console has set the
 account's own ("An account's own provider keys"), read from the key file's key names alone, never
-its keys; `invalid` for a key file that is not the format.
+its keys; `invalid` for a key file that is not the format. `CAPS` is the DeepSeek and JEV caps,
+`DEEPSEEK/JEV`: the configuration's, or, marked `*`, the settings file's ("Budget caps at
+runtime"), `∞*` for an unlimited one; `invalid` for a settings file that is not the format.
 
 ### `suspend` and `resume`
 
@@ -466,8 +468,9 @@ sets them at run time, and they win over the env's ("An account's own provider k
 env's `DEEPSEEK_API_KEY=` and `TYPESAFE_API_KEY=` stay the host's keys, which a kind without an
 account key uses; `host.env` is only where `new` copies them from.
 
-**Changing caps or limits** of an existing instance: `budgets` in
-`/etc/mnemon-aml/<n>/memory-config.json` (restart; the spent amounts are kept), `MemoryMax=` or
+**Changing caps or limits** of an existing instance: the caps from the console, at run time
+("Budget caps at runtime"), or `budgets` in `/etc/mnemon-aml/<n>/memory-config.json` (restart; the
+spent amounts are kept; a cap of the settings file wins over it), `MemoryMax=` or
 `CPUQuota=` in `aml-serve@<n>.service.d/limits.conf` (`systemctl daemon-reload`, then restart;
 with a new `MemoryMax=`, set `GOMEMLIMIT` in the engine env to 80% of it, in whole MiB, as `new`
 does: `2G` gives `1638MiB`), or the flag values in the engine env (restart).
@@ -580,6 +583,47 @@ delete <n>`, which removes the file with the instance's state; and a restore of
 `rotate-key` keep the account's keys, and a new key in `host.env` or the env changes nothing for
 a kind that has an account key.
 
+## Budget caps at runtime
+
+An instance's DeepSeek (CNY) and JEV (USD) caps can change while it runs (rulings R99 and R100),
+from the console's 设置 → 预算上限. A cap set there replaces the configuration's (`budgets` of
+`/etc/mnemon-aml/<n>/memory-config.json`, which `new` writes: 600/60 on the evaluation host,
+30/3 for a beta instance by default) and is kept in the instance's **settings file**,
+`/var/lib/mnemon-aml/<n>/settings.json`, beside the key file, the service user's, mode 0600,
+written atomically by aml-serve (`aml-serve@.service` passes `--settings-file`). Its format and
+rules are in [Admin API](admin-api.md) ("The settings file").
+
+- **Set.** The console sends `PUT /admin/v1/budgets`, a number above 0 and at most 100,000 per
+  kind, or `null` for **unlimited**. The cap applies at once to the reservations made from then
+  on; one already held keeps its amount. No restart.
+- **Below what is spent.** Allowed, after a confirm in the console: the kind's paid calls then
+  stop, as at a cap reached (Searches degrade, a spent DeepSeek budget stops consolidation), and
+  the reply says `"over": true`.
+- **Unlimited.** No reservation of the kind is refused for a cap; its spend is still metered
+  (`spent` and `held`, in the budget file), and is bounded only by the provider account's own
+  balance. `/admin/status` shows `"cap": null, "unlimited": true`, the console 「无上限」, `list`
+  `∞*`; `/ready`, the watcher's `budget-high` and `budget-held` and `mnemon-preflight` measure no
+  share of it.
+- **Revert.** 「恢复默认上限」 sends `DELETE /admin/v1/budgets?kind=`: back to the
+  configuration's cap; the settings file goes once it holds no cap.
+- **What shows it.** `/admin/status`'s `budgets` (each with its `source`: `config` or `settings`),
+  `mnemon-instance list`'s `CAPS` (`800*/60`: `*` for a cap of the settings file), and the
+  journal of `aml-serve@<n>`: `budget caps set: deepseek 600→800 CNY` and `budget caps reverted
+  to the configuration's: …`. `mnemon-preflight` checks the settings file's mode and owner when
+  it exists.
+- **By hand**, with `admin_write` of "An account's own provider keys":
+  `printf '{"deepseek":800}' | admin_write PUT /admin/v1/budgets`, and
+  `admin_write DELETE '/admin/v1/budgets?kind=deepseek' </dev/null`. Or, with the engine
+  stopped, write the file as the service user, mode 0600 (as the key file), and start it.
+- **The inspect service's debug caps** change the same way, from the 检索 tab: `PUT` and
+  `DELETE /v1/debug-caps` on the inspect listener ([Inspect API](inspect-api.md)), kept in its
+  own `/var/lib/mnemon-aml-inspect/<n>/settings.json` (`aml-inspect@.service` passes
+  `--settings-file`), over `AML_INSPECT_DEBUG_CAPS`; `null` is unlimited there too.
+
+The concurrency limits, the memory and CPU limits, `--max-open-stores` and the consolidation
+workers are process flags and unit limits: changing one needs a restart, and stays a
+`mnemon-instance` operation ("Changing caps or limits").
+
 ## Preflight
 
 ```sh
@@ -610,9 +654,11 @@ reads the env files with `grep` (never sourcing them), and checks:
 - `/admin/status` shows a `lagBound` above 0 (background consolidation), and every budget's
   spent and held below 80% of its cap; it prints those numbers and the version;
 - the data root holds no store of `smoke-user`;
-- only once the console has set the account's own provider keys: the key file,
-  `/var/lib/mnemon-aml/<n>/provider-keys.json`, is the service user's (`mnemon`), mode 0600 (one
-  more check);
+- only once the console has set the account's own provider keys or budget caps: the key file,
+  `/var/lib/mnemon-aml/<n>/provider-keys.json`, and the settings file,
+  `/var/lib/mnemon-aml/<n>/settings.json`, are the service user's (`mnemon`), mode 0600 (one more
+  check each), and so is the inspect service's settings file while it is on; an unlimited cap is
+  printed as `no cap (unlimited)`, with no share measured;
 - only while the inspect service is on: `inspect.env` is root's with mode 0600 and holds
   `AML_INSPECT_LISTEN`, `AML_INSPECT_DEBUG_CAPS`, `MNEMON_INSPECT_TOKEN` and the provider keys,
   and `/healthz` on the inspect listener answers 200 with the inspect token (two more checks);
@@ -802,10 +848,13 @@ admin /metrics | grep '^mnemon_aml_'
   `searchesLast10m`, `queue` (`queued`, `running`, `backingOff`, `held`, `oldestQueued` in
   nanoseconds, `maxBacklog` in characters), `lagBound`, `breakers`, `breakerTrips` and
   `rejectedByKind` (requests refused with 401, 402 or 403) by provider kind, `budgets` (always an
-  array of `kind`, `cap`, `spent`, `held`), `openStores`, `version` and `providerKeys` (each key
-  kind's `source`, `account`, `host` or `none`, and the key's `fingerprint`, never the key).
+  array of `kind`, `cap` (`null` when unlimited), `spent`, `held`, `source` and `unlimited`),
+  `openStores`, `version` and `providerKeys` (each key kind's `source`, `account`, `host` or
+  `none`, and the key's `fingerprint`, never the key).
 - **`PUT` and `DELETE /admin/v1/provider-keys`** set and revert the account's own provider keys
   ("An account's own provider keys"): write-only, no route answers a key.
+- **`PUT` and `DELETE /admin/v1/budgets`** set and revert the budget caps at run time ("Budget
+  caps at runtime").
 - **`/admin/v1/stores`** is the console's store overview: each store by its 8-digit prefix, its
   bytes, last change, whether it is open and its backlog. No user id and no content.
 - **`/debug/pprof/`** is Go's profiler, behind the token like every admin route.
@@ -832,7 +881,7 @@ admin /metrics | grep '^mnemon_aml_'
 | `mnemon_aml_consolidation_max_backlog_characters` | the largest user backlog |
 | `mnemon_aml_consolidation_lag_bound_characters` | the lag bound it is measured against (0 unless background) |
 | `mnemon_aml_breaker_open{kind}` | 1 while a provider's breaker refuses calls |
-| `mnemon_aml_budget_spent`, `_held`, `_cap{account}` | each paid account, in its currency |
+| `mnemon_aml_budget_spent`, `_held`, `_cap{account}` | each paid account, in its currency; the cap is `+Inf` while it is unlimited |
 | `mnemon_aml_open_stores` | user stores open now |
 | `mnemon_aml_stores`, `mnemon_aml_store_bytes` | stores in the data root and their bytes, from a scan at most 60 s old; left out of a scrape whose scan failed |
 | `mnemon_aml_admin_auth_failures_total` | admin requests refused with 401 |
@@ -934,8 +983,9 @@ the inspect state with the instance; `list` shows `INSPECT on`; `mnemon-prefligh
 inspect only while it is on.
 
 **When a full search is refused.** `409 full_disabled`: the service has no debug caps.
-`402 debug_budget_exhausted`: the debug budget is spent; `GET /v1/info` shows what is left,
-and `inspect disable` then `inspect enable` with higher caps starts a new one.
+`402 debug_budget_exhausted`: the debug budget is spent; `GET /v1/info` shows what is left. Raise
+the caps from the console's 检索 tab (`PUT /v1/debug-caps`, at run time), or `inspect disable`
+then `inspect enable` with higher caps, which starts a new debug budget.
 `502 provider_failed`: the read failed (a provider, the breaker, the 10-minute bound); the
 answer carries the raw ranking `/search` would have given, and what the read did.
 `503 store_busy`: the store changed under the search (aml-serve opened it and wrote), SQLite was
@@ -1245,7 +1295,7 @@ scratch instance first if continuous replication is needed.
 | **502** or **504** from Caddy | The instance is down for longer than Caddy's 30 s of dialing (`systemctl status aml-serve@<n>`), a dedicated instance is suspended, or a proxy timeout is below the platform's 31 minutes: compare the timeouts with `deploy/aml/Caddyfile.dedicated` or the snippet. |
 | `degraded search …` in the log | The planner, JEV or a budget failed for that question, or the read ran past `--search-timeout`. The platform still got a 200 with the raw ranking. Read the error after the colon: `model HTTP 401` or `model HTTP 403` (a wrong, expired or revoked key) and `model HTTP 402` (an empty balance; DeepSeek says `Insufficient Balance`), which also page as `provider-rejected:<kind>` (below); `model HTTP 429` (the provider's rate limit outlasted the call's retries: up to its `Retry-After`, or without one (or with one of 0, an invalid value or a past date) a jittered floor of at most 2, 4, 8 and 16 s, down by up to a quarter, or the class's backoff when that is longer, as after earlier 5xx retries; 30 s in all per model call; a Search makes many calls, so under a long storm it can wait longer in all, up to its `--search-timeout` for the read and up to its own 10-minute flush window for the flush, and no wait is planned past them); `the provider's retry budget is spent` (the provider's retries, patient ones included, used up their budget: 20% of a minute's calls, and always 5 retries starting in any second; a retry is taken from the budget when it starts, after its wait); `model endpoint unreachable` (network or DNS; nothing was sent), `request failed` (network, after sending), `attempt timed out` (an attempt waited past its timeout: 45 s for the planner, 20 s for JEV, 180 s for a flush's extraction), `the reply stopped sending` (a reply sent nothing for 60 s after its headers came), `context deadline exceeded` (the timeout), `spending cap reached` (below). |
 | `provider-rejected:<kind>` alert | The provider refuses the instance's requests: 401 or 403, a wrong, expired or revoked key; 402, an empty balance (DeepSeek: `Insufficient Balance`). They are not retried: Searches degrade or partially degrade, and consolidation backs off with its batches pending (no record is dropped). Check the account's balance in the provider's console and top it up: the next call goes through, with no restart. For a new key of the account, set it in the console (设置 → 模型服务 API key): it is checked and applied without a restart ("An account's own provider keys"). For a new host key, put it into `DEEPSEEK_API_KEY=` or `TYPESAFE_API_KEY=` of `/etc/mnemon-aml/<n>/env` (and of `/etc/mnemon-aml/host.env`, which `new` copies from) with an editor, then `systemctl restart aml-serve@<n>`; it does nothing for a kind that has an account key. `mnemon_aml_model_attempts_total{outcome="rejected"}` shows the call classes affected; the alert resolves once no new rejection has been seen for 10 minutes. |
-| `model spending cap reached, including unresolved reservations` | A budget is exhausted. Searches degrade to the raw ranking. A spent DeepSeek budget stops consolidation (a spent budget never drops records from the index). A spent JEV budget does not: layered consolidation goes on, but links without JEV. Raise `budgets` in `/etc/mnemon-aml/<n>/memory-config.json` and `systemctl restart aml-serve@<n>`; spent amounts are kept and the new cap applies at once. Check `spent` and `held` first (`mnemon-preflight <n>`): reservations held by calls in flight count against the cap. Those a previous process left held (a crash) are settled at the next start (`settled N budget reservations a previous process left held` in the journal), so a restart clears them; there is nothing to raise the cap by. |
+| `model spending cap reached, including unresolved reservations` | A budget is exhausted. Searches degrade to the raw ranking. A spent DeepSeek budget stops consolidation (a spent budget never drops records from the index). A spent JEV budget does not: layered consolidation goes on, but links without JEV. Raise the cap from the console (设置 → 预算上限; "Budget caps at runtime"), which applies at once with no restart, or raise `budgets` in `/etc/mnemon-aml/<n>/memory-config.json` and `systemctl restart aml-serve@<n>` (a cap of the settings file wins over it); spent amounts are kept and the new cap applies at once. Check `spent` and `held` first (`mnemon-preflight <n>`): reservations held by calls in flight count against the cap. Those a previous process left held (a crash) are settled at the next start (`settled N budget reservations a previous process left held` in the journal), so a restart clears them; there is nothing to raise the cap by. |
 | Empty or poor plans, many degraded searches with a DeepSeek planner | The planner has `thinking` on. Remove it (`deepseek-flash` without thinking). |
 | `model credential is unavailable` or a startup error naming a credential environment variable | A `keyEnv` variable is empty or absent in `/etc/mnemon-aml/<n>/env`. |
 | `aml-serve@<n>` restarts in a loop | `journalctl -u aml-serve@<n> -n 50`: an unreadable config (`memory-config.json` must be readable by group `mnemon`), `aml-serve requires a nonempty API key in $AML_API_KEY`, `another aml-serve holds …/.aml-serve.lock`, or the public port in use. An admin address that cannot be bound is not one of them: the instance serves without it ("The admin listener is down" below). |

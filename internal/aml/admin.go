@@ -66,9 +66,10 @@ const (
 //	rejectedByKind   by provider kind, the requests the provider rejected with 401, 402 or 403 (a
 //	                 wrong or revoked key, an empty balance): it only grows, and has a key, 0 at
 //	                 first, for every kind the models have
-//	budgets          each paid account that has been used: kind, cap, spent and held; always an
-//	                 array, empty when none has been used and when the budget file cannot be read
-//	                 (/ready says so)
+//	budgets          each paid account that has been used: kind, cap (null when unlimited), spent,
+//	                 held, source ("config", or "settings" for a cap the settings file sets) and
+//	                 unlimited; always an array, empty when none has been used and when the budget
+//	                 file cannot be read (/ready says so)
 //	openStores       user stores open now
 //	version          the product version of the build (ServerConfig.Version)
 //	providerKeys     by key kind the configuration uses (deepseek, jev): where its key comes from,
@@ -98,7 +99,8 @@ type AdminStatus struct {
 
 // AdminHandler serves the operator's endpoints: GET /metrics (Prometheus),
 // GET /ready, GET /admin/status, GET /admin/v1/stores, PUT and DELETE
-// /admin/v1/provider-keys (byok.go) and /debug/pprof/. With
+// /admin/v1/provider-keys (byok.go) and /admin/v1/budgets (budgets.go), and
+// /debug/pprof/. With
 // an admin token every request, an unknown path included, must carry it as
 // `Authorization: Bearer <token>` (requireAdminToken); without one the handler
 // has no authentication, and must be served on a loopback address only. Never
@@ -115,6 +117,8 @@ func (s *Server) adminRoutes() http.Handler {
 	mux.HandleFunc("GET /admin/v1/stores", s.serveStores)
 	mux.HandleFunc("PUT /admin/v1/provider-keys", s.replaceProviderKeys)
 	mux.HandleFunc("DELETE /admin/v1/provider-keys", s.revertProviderKeys)
+	mux.HandleFunc("PUT /admin/v1/budgets", s.setBudgetCaps)
+	mux.HandleFunc("DELETE /admin/v1/budgets", s.revertBudgetCaps)
 	// The profiler's handlers are registered here by name. Importing
 	// net/http/pprof also registers them on http.DefaultServeMux, a side
 	// effect that is inert: no server of the process serves the default mux.
@@ -193,6 +197,9 @@ func (s *Server) status(ctx context.Context) AdminStatus {
 	accounts, err := s.Accounts(ctx)
 	if err != nil || accounts == nil {
 		accounts = []memoryagent.BudgetAccount{}
+	}
+	for i := range accounts {
+		accounts[i].Source = s.capSource(accounts[i].Kind)
 	}
 	return AdminStatus{
 		StartedAt:       s.started,
@@ -354,7 +361,8 @@ func probeWritable(dir string) error {
 func overBudget(accounts []memoryagent.BudgetAccount) []string {
 	reasons := []string{}
 	for _, account := range accounts {
-		if account.Cap <= 0 {
+		// An unlimited cap (R100) has no share to measure either.
+		if account.Cap <= 0 || account.Unlimited {
 			continue
 		}
 		if used := (account.Spent + account.Held) / account.Cap; used > readyBudgetCeiling {

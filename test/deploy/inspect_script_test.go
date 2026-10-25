@@ -115,14 +115,16 @@ func TestInstanceScriptInspect(t *testing.T) {
 		h.refused("", args...)
 	}
 
-	// disable removes the file and the state, and says what it removed.
+	// disable removes the file and the state, the service's settings file
+	// (its debug caps set at run time) with it, and says what it removed.
+	writeFile(t, h.path("/var/lib/mnemon-aml-inspect/beta-bob/settings.json"), `{"version":1,"debugCaps":{"jev":null}}`, 0o600)
 	out = h.ok("", "inspect", "disable", "beta-bob")
 	for _, want := range []string{"removed /etc/mnemon-aml/beta-bob/inspect.env\n", "removed /var/lib/mnemon-aml-inspect/beta-bob\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("disable did not say %q:\n%s", want, out)
 		}
 	}
-	if h.exists("/etc/mnemon-aml/beta-bob/inspect.env") || h.exists("/var/lib/mnemon-aml-inspect/beta-bob") || !h.exists("/etc/mnemon-aml/beta-bob/env") {
+	if h.exists("/etc/mnemon-aml/beta-bob/inspect.env") || h.exists("/var/lib/mnemon-aml-inspect/beta-bob/settings.json") || h.exists("/var/lib/mnemon-aml-inspect/beta-bob") || !h.exists("/etc/mnemon-aml/beta-bob/env") {
 		t.Fatal("disable left inspect's files, or took the instance's")
 	}
 	if stderr := h.refused("", "inspect", "disable", "beta-bob"); !strings.Contains(stderr, "not on") {

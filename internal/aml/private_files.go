@@ -211,10 +211,10 @@ func removeInterrupted(path string) []string {
 
 // checkStateFile checks the path of a private file of the instance's state:
 // absolute, and outside the data root, however a path spells it
-// (canonicalPath), so that a snapshot of the data root never holds it.
-func checkStateFile(what, path, dataRoot string) error {
+// (canonicalPath); why says why it must be outside.
+func checkStateFile(what, path, dataRoot, why string) error {
 	if !filepath.IsAbs(path) {
-		return fmt.Errorf("%s must be an absolute path", what)
+		return fmt.Errorf("%s %s must be an absolute path", what, path)
 	}
 	name, err := canonicalPath(filepath.Clean(path))
 	if err != nil {
@@ -225,7 +225,7 @@ func checkStateFile(what, path, dataRoot string) error {
 		return fmt.Errorf("the data root: %w", err)
 	}
 	if rel, err := filepath.Rel(root, name); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return fmt.Errorf("%s must be outside the data root: a snapshot of the data root must never hold it", what)
+		return fmt.Errorf("%s %s must be outside the data root: %s", what, path, why)
 	}
 	return nil
 }
