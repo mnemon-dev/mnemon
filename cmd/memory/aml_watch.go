@@ -99,6 +99,8 @@ import (
 //	                         for 15 minutes (the bound is read from the status)
 //	consolidation-dropped    a batch was dropped from the consolidation layer
 //	link-fallback            a batch was linked without JEV
+//	oneshot-links            a one-shot link window was refused by JEV, or a job's one-shot
+//	                         link step stopped on an error, since the last run
 //	add-outran               an Add waited out its window for consolidation
 //	restart                  the server started at another time than at the last run
 //	ready                    /ready did not answer 200, or /admin/status could not be read
@@ -110,7 +112,7 @@ import (
 // (no state file) takes the counters as they are and says nothing about them.
 //
 // An alert about something that happens (degraded-search, breaker-open,
-// provider-rejected, consolidation-dropped, link-fallback, add-outran and
+// provider-rejected, consolidation-dropped, link-fallback, oneshot-links, add-outran and
 // restart: the others are about how things are) is firing for 10 minutes
 // after the last run that saw it happen, so that a stream of events is one
 // alert, repeated every 30 minutes while it lasts and then resolved, not a
@@ -741,6 +743,7 @@ func (e *evaluation) status(st *aml.AdminStatus) {
 	e.counter("degraded-search", "degraded", watchNoun{"degraded Search", "degraded Searches"}, st.Degraded)
 	e.counter("consolidation-dropped", "dropped", watchNoun{"drop from the consolidation layer", "drops from the consolidation layer"}, st.Dropped)
 	e.counter("link-fallback", "linkFallbacks", watchNoun{"batch linked without JEV", "batches linked without JEV"}, st.LinkFallbacks)
+	e.counter("oneshot-links", "oneShotFailures", watchNoun{"one-shot link failure (a refused window or a stopped step)", "one-shot link failures (refused windows or stopped steps)"}, st.OneShotRefused+st.OneShotErrors)
 	e.counter("add-outran", "addOutran", watchNoun{"Add that waited out its window for consolidation", "Adds that waited out their window for consolidation"}, st.AddOutran)
 	e.breakers(st)
 	e.rejected(st)

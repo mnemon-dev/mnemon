@@ -132,7 +132,7 @@ type ViewConfig struct {
 	// and calling no model (oneshot_links.go), before view.order.
 	Links bool `json:"links,omitempty"`
 	// LoopLinks gives the simple loop a third step and ten rounds: each round
-	// also pools the records linked to, or right beside, what the last round
+	// first pools every record the one-shot links tie to what the last round
 	// found useful, for JEV to judge like any find (simple_loop.go).
 	LoopLinks bool `json:"loopLinks,omitempty"`
 }
@@ -283,8 +283,8 @@ type ReadStats struct {
 	ExpandShown int `json:"expandShown,omitempty"`
 	// LinksAppended counts the records view.links added to the View.
 	LinksAppended int `json:"linksAppended,omitempty"`
-	// LoopLinked counts the records view.loopLinks pooled from the links and
-	// the neighbours of useful finds.
+	// LoopLinked counts the records view.loopLinks pooled from the one-shot
+	// links of useful finds.
 	LoopLinked  int `json:"loopLinked,omitempty"`
 	ExpandSeeds int `json:"expandSeeds,omitempty"`
 	// LayerInsights counts the insights the View's layer shows

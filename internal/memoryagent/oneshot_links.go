@@ -25,8 +25,16 @@ import (
 // chose and those that chose it, nearest first) within linkedPerRecord and
 // linkedTotal UTF-16 units. The bounds are the offline test's
 // (runs/2026-10-25-beam-oneshot-jev, reports/beam-jev-links-and-chunking-2026-10-25.md).
+// oneShotJobWindows bounds a job's one-shot links, so that a large backlog (a
+// switch turned on over a full store) is linked over several jobs rather than
+// holding one: about 1,000 records a job. A variable for the tests.
+var oneShotJobWindows = 20
+
+// oneShotWindowSize is the most records a window asks about; a variable for
+// the tests.
+var oneShotWindowSize = 100
+
 const (
-	oneShotWindow      = 100
 	oneShotWindowText  = 60000
 	oneShotShown       = 2
 	oneShotFar         = 4
@@ -128,47 +136,61 @@ type oneShotUnit struct {
 	position int64
 }
 
+// oneShotOutcome is what a job's one-shot links did: the records asked, the
+// windows JEV refused for their own request (stored as asked, unlinked), and
+// whether records were left for a later job (oneShotJobWindows).
+type oneShotOutcome struct {
+	asked, refused int
+	more           bool
+}
+
 // linkRecords asks JEV about the scope's records not linked yet, a window
-// per request, and stores the answers; it returns how many records were
-// asked. An unavailable provider or a spent budget stops it with the rest
-// left for a later job; a window JEV refuses for its own request is stored
-// as asked with no link, so it is never asked again.
-func (a *Agent) linkRecords(ctx context.Context, scope records.Scope) (int, error) {
+// per request, at most oneShotJobWindows windows, and stores the answers. An
+// unavailable provider or a spent budget stops it with the rest left for a
+// later job; a window JEV refuses for its own request is stored as asked with
+// no link, so it is never asked again, and counted.
+func (a *Agent) linkRecords(ctx context.Context, scope records.Scope) (oneShotOutcome, error) {
+	var outcome oneShotOutcome
 	chooser, ok := a.models.Judge.(Chooser)
 	if !ok {
-		return 0, errors.New("one-shot links need a JEV decision model")
+		return outcome, errors.New("one-shot links need a JEV decision model")
 	}
 	watermark, err := a.overlay.linkWatermark(ctx, scope)
 	if err != nil {
-		return 0, err
+		return outcome, err
 	}
 	revision, heads, err := a.store.Heads(ctx, "", scope)
 	if err != nil {
-		return 0, err
+		return outcome, err
 	}
 	slices.SortFunc(heads, func(x, y records.Head) int { return cmp.Compare(x.Version, y.Version) })
 	first := slices.IndexFunc(heads, func(h records.Head) bool { return h.Version > watermark })
 	if first < 0 {
-		return 0, nil
+		return outcome, nil
 	}
 	units, err := a.oneShotUnits(ctx, revision, heads[max(0, first-oneShotShown):])
 	if err != nil {
-		return 0, err
+		return outcome, err
 	}
-	asked := 0
-	for start := slices.IndexFunc(units, func(u oneShotUnit) bool { return u.position > watermark }); start >= 0 && start < len(units); {
+	start := slices.IndexFunc(units, func(u oneShotUnit) bool { return u.position > watermark })
+	for windows := 0; start >= 0 && start < len(units); windows++ {
+		if windows == oneShotJobWindows {
+			outcome.more = true
+			break
+		}
 		end := start
-		for size := 0; end < len(units) && end-start < oneShotWindow && (end == start || size+jsLen(units[end].Text) <= oneShotWindowText); end++ {
+		for size := 0; end < len(units) && end-start < oneShotWindowSize && (end == start || size+jsLen(units[end].Text) <= oneShotWindowText); end++ {
 			size += jsLen(units[end].Text)
 		}
-		n, err := a.linkWindow(ctx, chooser, scope, units, start, end)
-		asked += n
+		asked, refused, err := a.linkWindow(ctx, chooser, scope, units, start, end)
+		outcome.asked, outcome.refused = outcome.asked+asked, outcome.refused+refused
 		if err != nil {
-			return asked, err
+			outcome.more = true
+			return outcome, err
 		}
 		start = end
 	}
-	return asked, nil
+	return outcome, nil
 }
 
 // oneShotUnits reads heads' records in order, each as a unit of the window
@@ -202,33 +224,36 @@ func (a *Agent) oneShotUnits(ctx context.Context, revision string, heads []recor
 }
 
 // linkWindow asks about units[start:end], the window, in one request (or
-// two halves when it is over JEV's bounds) and stores its answers.
-func (a *Agent) linkWindow(ctx context.Context, chooser Chooser, scope records.Scope, units []oneShotUnit, start, end int) (int, error) {
+// two halves when it is over JEV's bounds) and stores its answers; it returns
+// the records asked and the requests JEV refused for their own content.
+func (a *Agent) linkWindow(ctx context.Context, chooser Chooser, scope records.Scope, units []oneShotUnit, start, end int) (int, int, error) {
 	state, questions := oneShotRequest(units, start, end)
 	request, err := jevRequest(state, questions)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	if len(questions) > oneShotMaxQuestion || jsLen(request) > maxJEVRequest {
 		if end-start == 1 {
 			// A record over the bound alone is never truncated: it is asked
 			// no question and gets no link.
-			return 1, a.overlay.saveLinks(ctx, scope, units[start].position, nil)
+			return 1, 0, a.overlay.saveLinks(ctx, scope, units[start].position, nil)
 		}
 		mid := start + (end-start)/2
-		n, err := a.linkWindow(ctx, chooser, scope, units, start, mid)
+		n, refused, err := a.linkWindow(ctx, chooser, scope, units, start, mid)
 		if err != nil {
-			return n, err
+			return n, refused, err
 		}
-		m, err := a.linkWindow(ctx, chooser, scope, units, mid, end)
-		return n + m, err
+		m, more, err := a.linkWindow(ctx, chooser, scope, units, mid, end)
+		return n + m, refused + more, err
 	}
-	links := []recordLink{}
+	links, refused := []recordLink{}, 0
 	if len(questions) > 0 {
 		choices, _, err := chooser.Choose(ctx, state, questions)
 		switch {
 		case err != nil && (ctx.Err() != nil || errors.Is(err, ErrModelUnavailable) || errors.Is(err, ErrBudgetCap)):
-			return 0, err
+			return 0, 0, err
+		case err != nil:
+			refused = 1
 		case err == nil:
 			byID := map[string]oneShotUnit{}
 			for _, u := range units {
@@ -244,7 +269,7 @@ func (a *Agent) linkWindow(ctx context.Context, chooser Chooser, scope records.S
 			}
 		}
 	}
-	return end - start, a.overlay.saveLinks(ctx, scope, units[end-1].position, links)
+	return end - start, refused, a.overlay.saveLinks(ctx, scope, units[end-1].position, links)
 }
 
 // oneShotRequest is a window's decision request: the units it shows (the

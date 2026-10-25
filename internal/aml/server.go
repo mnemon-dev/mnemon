@@ -724,6 +724,9 @@ func (s *Server) PartialDegradedSearches() int64 { return s.metrics.partial.Load
 func (s *Server) statusLine(ctx context.Context) string {
 	m := s.metrics
 	line := fmt.Sprintf("status: adds %d, searches %d, degraded %d, partially degraded %d", m.adds.Load(), m.searches.Load(), m.degraded.Load(), m.partial.Load())
+	if c, v := s.config.MemoryConfig.Consolidation, s.config.MemoryConfig.View; c != nil && c.OneShotLinks || v != nil && v.LoopLinks {
+		line += fmt.Sprintf("; one-shot links asked %d, refused %d, errors %d, loop linked %d", m.oneShotAsked.Load(), m.oneShotRefused.Load(), m.oneShotErrors.Load(), m.loopLinked.Load())
+	}
 	if s.budget == nil {
 		return line
 	}
@@ -1179,6 +1182,12 @@ func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, la
 		for _, drop := range result.Drops {
 			s.logf(ctx, slog.LevelWarn, "consolidation dropped %d records (user %s): %s", drop.Records, user.key[:8], drop.Reason)
 		}
+		if result.LinkError != "" {
+			s.logf(ctx, slog.LevelWarn, "one-shot links stopped (user %s): %s", user.key[:8], result.LinkError)
+		}
+		if result.LinkRefused > 0 {
+			s.logf(ctx, slog.LevelWarn, "JEV refused %d one-shot link windows (user %s): their records have no links", result.LinkRefused, user.key[:8])
+		}
 		if result.LinkFallbacks > 0 {
 			s.logf(ctx, slog.LevelWarn, "consolidation linked %d batches without JEV (user %s): JEV failed or its budget is spent, so only keys of the same name were joined", result.LinkFallbacks, user.key[:8])
 		}
@@ -1277,6 +1286,7 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	}
 	view, err := s.read(ctx, user, memoryagent.ReadRequest{Question: req.question(), MaxItems: maxItems})
 	if err == nil {
+		s.metrics.loopLinked.Add(int64(view.Stats.LoopLinked))
 		if stages := view.Stats.Degraded; len(stages) > 0 {
 			n := s.metrics.searchPartlyDegraded(stages)
 			s.logf(ctx, slog.LevelWarn, "partially degraded search %d (user %s): %s", n, user.key[:8], strings.Join(stages, ", "))

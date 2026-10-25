@@ -88,9 +88,9 @@ func TestOneShotLinksAskEachRecordOnce(t *testing.T) {
 	for i, text := range texts {
 		seedNote(t, s, fmt.Sprintf("n%d", i), text)
 	}
-	asked, err := a.linkRecords(ctx, records.Scope{})
-	if err != nil || asked != 5 || len(judge.calls) != 1 {
-		t.Fatalf("asked %d, calls %d, err %v", asked, len(judge.calls), err)
+	out, err := a.linkRecords(ctx, records.Scope{})
+	if err != nil || out.asked != 5 || out.refused != 0 || out.more || len(judge.calls) != 1 {
+		t.Fatalf("outcome %+v, calls %d, err %v", out, len(judge.calls), err)
 	}
 	// One request for the window; the first record has nothing earlier to
 	// choose, every other one a choice among earlier units and none.
@@ -115,12 +115,12 @@ func TestOneShotLinksAskEachRecordOnce(t *testing.T) {
 	}
 	// Asked records are not asked again; a new one is asked with the two
 	// records before it shown as its options.
-	if asked, err := a.linkRecords(ctx, records.Scope{}); err != nil || asked != 0 || len(judge.calls) != 1 {
-		t.Fatalf("second run asked %d, calls %d, err %v", asked, len(judge.calls), err)
+	if out, err := a.linkRecords(ctx, records.Scope{}); err != nil || out.asked != 0 || len(judge.calls) != 1 {
+		t.Fatalf("second run %+v, calls %d, err %v", out, len(judge.calls), err)
 	}
 	seedNote(t, s, "n5", "the lake was calm for the kayak")
-	if asked, err := a.linkRecords(ctx, records.Scope{}); err != nil || asked != 1 || len(judge.calls) != 2 {
-		t.Fatalf("third run asked %d, calls %d, err %v", asked, len(judge.calls), err)
+	if out, err := a.linkRecords(ctx, records.Scope{}); err != nil || out.asked != 1 || len(judge.calls) != 2 {
+		t.Fatalf("third run %+v, calls %d, err %v", out, len(judge.calls), err)
 	}
 	if q, ok := judge.calls[1]["link_2"]; !ok || len(judge.calls[1]) != 1 || len(q.Criteria) != 3 {
 		t.Fatalf("the new record's question %v", judge.calls[1])
@@ -136,20 +136,20 @@ func TestOneShotLinksWaitWhileJEVIsUnavailable(t *testing.T) {
 	a, overlay, s := oneshotAgent(t, judge)
 	seedNote(t, s, "n0", "first note")
 	seedNote(t, s, "n1", "second note")
-	if asked, err := a.linkRecords(ctx, records.Scope{}); !errors.Is(err, ErrModelUnavailable) || asked != 0 {
-		t.Fatalf("asked %d, err %v", asked, err)
+	if out, err := a.linkRecords(ctx, records.Scope{}); !errors.Is(err, ErrModelUnavailable) || out.asked != 0 || !out.more {
+		t.Fatalf("outcome %+v, err %v", out, err)
 	}
 	if watermark, _ := overlay.linkWatermark(ctx, records.Scope{}); watermark != 0 {
 		t.Fatal("an unavailable JEV moved the watermark", watermark)
 	}
 	// A refusal of the request itself stores the window as asked, unlinked.
 	judge.err = errors.New("model HTTP 400")
-	if asked, err := a.linkRecords(ctx, records.Scope{}); err != nil || asked != 2 {
-		t.Fatalf("asked %d, err %v", asked, err)
+	if out, err := a.linkRecords(ctx, records.Scope{}); err != nil || out.asked != 2 || out.refused != 1 {
+		t.Fatalf("outcome %+v, err %v", out, err)
 	}
 	judge.err = nil
-	if asked, err := a.linkRecords(ctx, records.Scope{}); err != nil || asked != 0 || len(linkPairs(t, overlay, "n0", "n1")) != 0 {
-		t.Fatalf("a refused window was asked again: %d %v", asked, err)
+	if out, err := a.linkRecords(ctx, records.Scope{}); err != nil || out.asked != 0 || len(linkPairs(t, overlay, "n0", "n1")) != 0 {
+		t.Fatalf("a refused window was asked again: %+v %v", out, err)
 	}
 }
 
@@ -253,5 +253,72 @@ func TestLoopLinksPoolLinkedAndAdjacentRecordsOfUsefulFinds(t *testing.T) {
 	// A seed is expanded from once.
 	if again, err := r.linkedFresh(ctx, last, expanded); err != nil || len(again) != 0 {
 		t.Fatalf("expanded again: %v %v", again, err)
+	}
+}
+
+func TestOneShotLinksBoundAJobAndResumeNext(t *testing.T) {
+	ctx := context.Background()
+	judge := &oneshotJudge{pick: previousUnit}
+	a, _, s := oneshotAgent(t, judge)
+	for i := range 6 {
+		seedNote(t, s, fmt.Sprintf("n%d", i), fmt.Sprintf("note %d", i))
+	}
+	defer func(windows int) { oneShotJobWindows = windows }(oneShotJobWindows)
+	oneShotJobWindows = 1
+	// Windows of two records, one window a job: three jobs link six records.
+	defer func(window int) { oneShotWindowSize = window }(oneShotWindowSize)
+	oneShotWindowSize = 2
+	for job, want := range []oneShotOutcome{{asked: 2, more: true}, {asked: 2, more: true}, {asked: 2, more: false}} {
+		out, err := a.linkRecords(ctx, records.Scope{})
+		if err != nil || out != want {
+			t.Fatalf("job %d: outcome %+v, err %v", job, out, err)
+		}
+	}
+	if out, err := a.linkRecords(ctx, records.Scope{}); err != nil || out != (oneShotOutcome{}) || len(judge.calls) != 3 {
+		t.Fatalf("after the last job: %+v, calls %d, err %v", out, len(judge.calls), err)
+	}
+}
+
+// seedDatedNote is seedNote with a date, so that the notes of one day form a
+// session and have neighbours.
+func seedDatedNote(t *testing.T, s *records.Store, id, text string) {
+	t.Helper()
+	day := "2026-10-19"
+	v := recordValue{ID: id, Kind: "note", Title: "Note", Content: text, Scope: "global", Date: &day, State: "active", Version: 1, Signals: 1, CreatedAt: "2026-10-19T00:00:00Z", UpdatedAt: "2026-10-19T00:00:00Z", History: []any{}, Data: map[string]any{}}
+	if _, err := s.Put(context.Background(), records.PutRequest{Upsert: []records.Upsert{encodeRecord(v, text)}}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLoopLinksPullEveryLinkOfUsefulFindsAndNoPlainNeighbour(t *testing.T) {
+	ctx := context.Background()
+	// Only u5 depends on anything: on u1 (the kayak), far back.
+	judge := &oneshotJudge{pick: func(key string, options []string) string {
+		if key == "link_5" && slices.Contains(options, "u1") {
+			return "u1"
+		}
+		return "none"
+	}}
+	a, _, s := oneshotAgent(t, judge)
+	texts := []string{"a quiet morning", "the kayak trip is planned", "groceries for the week", "the car needs new tires", "a call with the bank", "the kayak paddle was bought"}
+	for i, text := range texts {
+		seedDatedNote(t, s, fmt.Sprintf("n%d", i), text)
+	}
+	if _, err := a.linkRecords(ctx, records.Scope{}); err != nil {
+		t.Fatal(err)
+	}
+	revision, _, err := s.Heads(ctx, "", records.Scope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &simpleRun{agent: a, revision: revision, order: []string{"n1"}, items: map[string]*simpleItem{"n1": {ID: "n1", HasScreen: true, Screen: 0.9}}}
+	got, err := r.linkedFresh(ctx, map[string]bool{"n1": true}, map[string]bool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// JEV's far link (n5 chose n1) and nothing else: n0 and n2 sit right
+	// beside n1, but nothing links them.
+	if !reflect.DeepEqual(got, []string{"n5"}) {
+		t.Fatalf("fresh %v", got)
 	}
 }

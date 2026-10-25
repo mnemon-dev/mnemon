@@ -803,7 +803,7 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	}
 	// The one-shot links come first: they read only the raw records, and
 	// when they cannot finish the job folds on and a later job asks the rest.
-	linked, linkErr := 0, error(nil)
+	linked, linkErr := oneShotOutcome{}, error(nil)
 	if settings.OneShotLinks {
 		linked, linkErr = a.linkRecords(ctx, req.Scope)
 	}
@@ -811,7 +811,7 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	if err != nil {
 		return ConsolidateResult{}, err
 	}
-	result := ConsolidateResult{Revision: revision, Visited: read, LinkedRecords: linked}
+	result := ConsolidateResult{Revision: revision, Visited: read, LinkedRecords: linked.asked, LinkRefused: linked.refused, LinksPending: linked.more}
 	if linkErr != nil {
 		result.LinkError = linkErr.Error()
 	}

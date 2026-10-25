@@ -67,6 +67,10 @@ type metrics struct {
 	// (RequestsInFlight), as the in_flight gauge does by route.
 	active                   atomic.Int64
 	linkFallbacks, addOutran atomic.Int64
+	// The one-shot links (consolidation.oneShotLinks): records asked, windows
+	// JEV refused for their own request, jobs whose step stopped on an error;
+	// and the records view.loopLinks pooled.
+	oneShotAsked, oneShotRefused, oneShotErrors, loopLinked atomic.Int64
 	// recent counts the Searches of the last ten minutes.
 	recent searchWindow
 
@@ -212,6 +216,11 @@ func (m *metrics) consolidated(result memoryagent.ConsolidateResult) {
 	m.batches[batchDeferred].Add(int64(result.Deferred))
 	m.batches[batchDropped].Add(int64(len(result.Drops)))
 	m.linkFallbacks.Add(int64(result.LinkFallbacks))
+	m.oneShotAsked.Add(int64(result.LinkedRecords))
+	m.oneShotRefused.Add(int64(result.LinkRefused))
+	if result.LinkError != "" {
+		m.oneShotErrors.Add(1)
+	}
 }
 
 // job counts a scheduler job that ended with outcome (jobOutcomes).
@@ -280,10 +289,14 @@ func newDesc(name, help string, labels ...string) *prometheus.Desc {
 }
 
 var (
-	degradedDesc      = newDesc("search_degraded_total", "Searches answered by the raw ranking because the memory read failed.")
-	linkFallbacksDesc = newDesc("consolidation_link_fallbacks_total", "Batches linked without JEV because JEV failed.")
-	addOutranDesc     = newDesc("add_outran_total", "Adds that waited out their window for consolidation and answered anyway.")
-	batchesDesc       = newDesc("consolidation_batches_total", "Batches of records by outcome: folded (taken off the pending records, those given up on included), deferred (left pending because linking failed) and dropped (drops: a batch, or half of a split one, the layer gave up on).", "outcome")
+	degradedDesc       = newDesc("search_degraded_total", "Searches answered by the raw ranking because the memory read failed.")
+	linkFallbacksDesc  = newDesc("consolidation_link_fallbacks_total", "Batches linked without JEV because JEV failed.")
+	addOutranDesc      = newDesc("add_outran_total", "Adds that waited out their window for consolidation and answered anyway.")
+	oneShotAskedDesc   = newDesc("oneshot_records_asked_total", "Records the one-shot links asked JEV about (consolidation.oneShotLinks).")
+	oneShotRefusedDesc = newDesc("oneshot_windows_refused_total", "One-shot link windows JEV refused for their own request: their records have no links.")
+	oneShotErrorsDesc  = newDesc("oneshot_link_errors_total", "Consolidation jobs whose one-shot link step stopped on an error, the rest left for a later job.")
+	loopLinkedDesc     = newDesc("search_loop_linked_total", "Records view.loopLinks pooled from the one-shot links of useful finds.")
+	batchesDesc        = newDesc("consolidation_batches_total", "Batches of records by outcome: folded (taken off the pending records, those given up on included), deferred (left pending because linking failed) and dropped (drops: a batch, or half of a split one, the layer gave up on).", "outcome")
 )
 
 // constMetric sends a series of desc to ch, unless it cannot be made: a
@@ -305,6 +318,10 @@ func (totalsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- linkFallbacksDesc
 	ch <- addOutranDesc
 	ch <- batchesDesc
+	ch <- oneShotAskedDesc
+	ch <- oneShotRefusedDesc
+	ch <- oneShotErrorsDesc
+	ch <- loopLinkedDesc
 }
 
 func (c totalsCollector) Collect(ch chan<- prometheus.Metric) {
@@ -314,6 +331,10 @@ func (c totalsCollector) Collect(ch chan<- prometheus.Metric) {
 	counter(degradedDesc, c.m.degraded.Load())
 	counter(linkFallbacksDesc, c.m.linkFallbacks.Load())
 	counter(addOutranDesc, c.m.addOutran.Load())
+	counter(oneShotAskedDesc, c.m.oneShotAsked.Load())
+	counter(oneShotRefusedDesc, c.m.oneShotRefused.Load())
+	counter(oneShotErrorsDesc, c.m.oneShotErrors.Load())
+	counter(loopLinkedDesc, c.m.loopLinked.Load())
 	for outcome, name := range batchOutcomeNames {
 		counter(batchesDesc, c.m.batches[outcome].Load(), name)
 	}
