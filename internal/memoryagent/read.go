@@ -51,7 +51,9 @@ type Config struct {
 	View *ViewConfig `json:"view,omitempty"`
 	// Consolidation selects the consolidation job: unset or mode "" is the
 	// memory-agent/v1 fold, "timelines" the reference system's (timelines.go),
-	// "layered" its extraction and JEV linking split in two (layered.go).
+	// "layered" its extraction and JEV linking split in two (layered.go), and
+	// "neutral" the layered job under a neutral prompt and neutral linking
+	// questions (neutral.go).
 	Consolidation *ConsolidationConfig `json:"consolidation,omitempty"`
 	// Consolidator is the timelines or layered folding model. Unset, the
 	// planner folds; either way every fold asks for at most 8192 output
@@ -62,6 +64,7 @@ type Config struct {
 const (
 	consolidationTimelines = "timelines"
 	consolidationLayered   = "layered"
+	consolidationNeutral   = "neutral"
 )
 
 // ConsolidationConfig sets the timelines or layered consolidation. Zero
@@ -99,11 +102,22 @@ type ConsolidationConfig struct {
 	OneShotLinks bool `json:"oneShotLinks,omitempty"`
 }
 
-// Timelines reports whether the mode keeps a timelines state ("timelines"
-// or "layered"): its jobs fold batches of pending records, and simple reads
-// add its layer.
+// Timelines reports whether the mode keeps a timelines state ("timelines",
+// "layered" or "neutral"): its jobs fold batches of pending records, and
+// simple reads add its layer.
 func (c *ConsolidationConfig) Timelines() bool {
-	return c != nil && (c.Mode == consolidationTimelines || c.Mode == consolidationLayered)
+	return c != nil && (c.Mode == consolidationTimelines || c.Layered())
+}
+
+// Layered reports whether the mode splits extraction from JEV linking
+// ("layered" or "neutral").
+func (c *ConsolidationConfig) Layered() bool {
+	return c != nil && (c.Mode == consolidationLayered || c.Mode == consolidationNeutral)
+}
+
+// Neutral reports whether the mode is "neutral".
+func (c *ConsolidationConfig) Neutral() bool {
+	return c != nil && c.Mode == consolidationNeutral
 }
 
 // ViewConfig bounds what a simple read returns. Zero fields take the
@@ -372,8 +386,11 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	if config.Consolidator != nil && !config.Consolidation.Timelines() {
 		return nil, errors.New("a consolidator model requires consolidation mode \"timelines\" or \"layered\"")
 	}
-	if config.Consolidation != nil && config.Consolidation.Mode == consolidationLayered && (models.Judge == nil || models.Consolidator == nil && models.Planner == nil) {
+	if config.Consolidation.Layered() && (models.Judge == nil || models.Consolidator == nil && models.Planner == nil) {
 		return nil, errors.New("layered consolidation requires a decision model and a completion model (consolidator or planner)")
+	}
+	if _, ok := models.Judge.(Chooser); config.Consolidation.Neutral() && !ok {
+		return nil, errors.New("neutral consolidation requires a decision model that answers choice questions")
 	}
 	if config.Consolidation != nil && len(config.Consolidation.EdgeKinds) > 0 && models.Judge == nil {
 		return nil, errors.New("edgeKinds requires a decision model")
@@ -499,7 +516,7 @@ func (c *ConsolidationConfig) normalize() error {
 		if c.LinkCandidates != 0 || c.Parallel != 0 {
 			return errors.New("linkCandidates and parallel require consolidation mode \"layered\"")
 		}
-	case consolidationLayered:
+	case consolidationLayered, consolidationNeutral:
 		if c.LinkCandidates == 0 {
 			c.LinkCandidates = 8
 		}

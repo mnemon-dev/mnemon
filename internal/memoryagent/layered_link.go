@@ -110,7 +110,8 @@ func (r *ConsolidateResult) addLinks(c linkCounts) {
 // contradict the stored key of the same name; do two entity names name the
 // same one (edges.go); does a kind of event edge join a new event and an
 // earlier one (event_edges.go); does a new insight state the same
-// conclusion as a stored one (insights.go).
+// conclusion as a stored one (insights.go); does a new note update an
+// earlier one of its group (neutral.go).
 const (
 	linkThread = iota
 	linkKey
@@ -121,6 +122,7 @@ const (
 	linkCausal
 	linkEntity
 	linkInsight
+	linkUpdate
 )
 
 // linkPair is a new item (an index into the new items) and a candidate (an
@@ -157,6 +159,9 @@ func latestText(key string, values []factValue) string {
 // (keepsPending; its linking rule read from state, whose head batch it is:
 // linkDue): then, and for a canceled job, the error is returned.
 func (l *linker) link(ctx context.Context, state *timelineState, batch timelineMemory, result *ConsolidateResult) (timelineMemory, linkCounts, error) {
+	if l.agent.config.Consolidation.Neutral() {
+		return l.linkNeutral(ctx, state, batch, result)
+	}
 	m := state.Memory
 	newThreads, newEvents := eventThreads(batch)
 	oldThreads, oldEvents := eventThreads(m)
@@ -442,6 +447,8 @@ func pairQuestions(p *linkPair, news, cands []linkItem, j int) map[string]Questi
 		return map[string]Question{k.key + strconv.Itoa(j): {Type: "noul", Instructions: k.question(n, c), Criteria: map[string]string{"true": k.yes, "false": k.no}}}
 	case linkInsight:
 		return map[string]Question{fmt.Sprintf("g%d", j): {Type: "noul", Instructions: sameInsightQuestion(n, c), Criteria: map[string]string{"true": sameInsightYes, "false": sameInsightNo}}}
+	case linkUpdate:
+		return map[string]Question{fmt.Sprintf("u%d", j): {Type: "noul", Instructions: updateQuestion(n, c), Criteria: map[string]string{"true": updateYes, "false": updateNo}}}
 	}
 	return map[string]Question{fmt.Sprintf("x%d", j): contradicts}
 }
@@ -524,6 +531,8 @@ func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*lin
 				p.same = answers[fmt.Sprintf("a%d", j)]
 			case linkInsight:
 				p.same = answers[fmt.Sprintf("g%d", j)]
+			case linkUpdate:
+				p.same = answers[fmt.Sprintf("u%d", j)]
 			default:
 				p.contradicts = answers[fmt.Sprintf("x%d", j)]
 			}

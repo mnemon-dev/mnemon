@@ -275,7 +275,13 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 		add("2-topics", text, items, nil)
 	}
 
-	eventLine := func(i int) string { return "\n- " + m.Events[i].Date + ": " + m.Events[i].Text }
+	eventLine := func(i int) string {
+		line := "\n- " + m.Events[i].Date + ": " + m.Events[i].Text
+		if m.Events[i].Updated {
+			line += " (later updated)"
+		}
+		return line
+	}
 	timelines, linked, items := "", []string{}, []string{}
 	size = 0
 	for _, id := range threadOrder {
@@ -446,6 +452,9 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 		valueScore[key] = scores[len(topics)+i]
 	}
 	threadOrder, valueOrder := layerOrder(topics, values, lit, threadScore, valueScore)
+	if r.agent.config.Consolidation.Neutral() {
+		threadOrder = neutralLayerOrder(topics, lit, threadScore, threadOrder)
+	}
 	blocks := composeLayer(m, threadOrder, valueOrder, lit)
 	joined := len(blocks)
 	if r.agent.insightsOn() {

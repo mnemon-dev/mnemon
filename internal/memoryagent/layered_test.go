@@ -74,7 +74,7 @@ func TestApplyReplyEntities(t *testing.T) {
 		`{"thread":"new: Demo","date":"2024/03/15","text":"No names.","records":["r0"]},{"thread":"new: Demo","text":"Bad names.","entities":"Acme"}],` +
 		`"facts":[{"key":"demo · day","value":"Friday","date":"2024/03/15","entities":["Acme"],"records":["r0"]}]}`
 	var layered timelineMemory
-	if err := applyReplyWith(&layered, batch, reply, true); err != nil {
+	if err := applyReplyWith(&layered, batch, reply, true, false); err != nil {
 		t.Fatal(err)
 	}
 	if got := layered.Events[0].Entities; !reflect.DeepEqual(got, []string{"Acme", "Bob"}) {
@@ -948,8 +948,8 @@ func TestExtractionRunHaltKeepsWhatRuns(t *testing.T) {
 
 func TestExtractionKey(t *testing.T) {
 	batch := []pendingRecord{{ID: "a", Header: "h", Text: "x"}, {ID: "b", Header: "h", Text: "y"}}
-	key := extractionKey(false, batch)
-	if extractionKey(false, slices.Clone(batch)) != key {
+	key := extractionKey(layeredFold.system, false, batch)
+	if extractionKey(layeredFold.system, false, slices.Clone(batch)) != key {
 		t.Fatal("the same batch has two keys")
 	}
 	changed := func(edit func(*pendingRecord)) []pendingRecord {
@@ -958,12 +958,12 @@ func TestExtractionKey(t *testing.T) {
 		return out
 	}
 	for name, other := range map[string]string{
-		"drop mode": extractionKey(true, batch),
-		"an id":     extractionKey(false, changed(func(r *pendingRecord) { r.ID = "c" })),
-		"a header":  extractionKey(false, changed(func(r *pendingRecord) { r.Header = "g" })),
-		"a text":    extractionKey(false, changed(func(r *pendingRecord) { r.Text = "z" })),
-		"the order": extractionKey(false, []pendingRecord{batch[1], batch[0]}),
-		"a record":  extractionKey(false, batch[:1]),
+		"drop mode": extractionKey(layeredFold.system, true, batch),
+		"an id":     extractionKey(layeredFold.system, false, changed(func(r *pendingRecord) { r.ID = "c" })),
+		"a header":  extractionKey(layeredFold.system, false, changed(func(r *pendingRecord) { r.Header = "g" })),
+		"a text":    extractionKey(layeredFold.system, false, changed(func(r *pendingRecord) { r.Text = "z" })),
+		"the order": extractionKey(layeredFold.system, false, []pendingRecord{batch[1], batch[0]}),
+		"a record":  extractionKey(layeredFold.system, false, batch[:1]),
 	} {
 		if other == key {
 			t.Fatal(name, "does not change the key")

@@ -325,11 +325,11 @@ var errExtractionPanic = errors.New("extraction panicked")
 // kept by (extractionKey), and a batch whose extraction the agent keeps
 // takes it, asking nothing; keys is nil otherwise.
 func (a *Agent) extractBatches(ctx context.Context, model Completer, head timelineState, batches [][]pendingRecord, parallel int) (run *extractionRun, keys []string) {
-	dropping := a.dropDue(head)
+	dropping, spec := a.dropDue(head), a.extractionFold()
 	if foldJobOf(ctx).defersLinks() {
 		keys = make([]string, len(batches))
 		for i, batch := range batches {
-			keys[i] = extractionKey(i == 0 && dropping, batch)
+			keys[i] = extractionKey(spec.system, i == 0 && dropping, batch)
 		}
 	}
 	return startExtractions(ctx, len(batches), parallel, func(ctx context.Context, i int, x *extraction) error {
@@ -341,10 +341,19 @@ func (a *Agent) extractBatches(ctx context.Context, model Completer, head timeli
 		}
 		x.state = timelineState{Memory: emptyTimelineState().Memory, ModelErrors: head.ModelErrors, FirstModelError: head.FirstModelError}
 		if i == 0 && dropping {
-			return a.foldDropping(ctx, model, layeredFold, &x.state, batches[i], &x.result)
+			return a.foldDropping(ctx, model, spec, &x.state, batches[i], &x.result)
 		}
-		return a.foldTimelines(ctx, model, layeredFold, &x.state, batches[i], true, &x.result)
+		return a.foldTimelines(ctx, model, spec, &x.state, batches[i], true, &x.result)
 	}), keys
+}
+
+// extractionFold is the L0 fold of the agent's mode: neutralFold in neutral
+// mode, else layeredFold.
+func (a *Agent) extractionFold() foldSpec {
+	if a.config.Consolidation.Neutral() {
+		return neutralFold
+	}
+	return layeredFold
 }
 
 // startExtractions starts n extractions, extract(ctx, i, out[i]) for batch
@@ -507,13 +516,13 @@ func (c *extractionCache) put(key string, x extraction) {
 
 // extractionKey is the digest a batch's L0 extraction is kept by: all it
 // depends on, the batch's records (ids, which its items cite, headers and
-// texts, in order) under layeredFold's prompt, and whether it runs in drop
-// mode (foldDropping). An agent has one consolidating model.
-func extractionKey(dropping bool, batch []pendingRecord) string {
+// texts, in order) under the fold's system prompt, and whether it runs in
+// drop mode (foldDropping). An agent has one consolidating model.
+func extractionKey(system string, dropping bool, batch []pendingRecord) string {
 	raw, _ := json.Marshal(struct {
 		System   string          `json:"system"`
 		Dropping bool            `json:"dropping"`
 		Records  []pendingRecord `json:"records"`
-	}{layeredFold.system, dropping, batch})
+	}{system, dropping, batch})
 	return reference("extraction", string(raw)).Hash
 }

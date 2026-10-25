@@ -62,6 +62,9 @@ type event struct {
 	Text     string   `json:"text"`
 	Records  []string `json:"records"`
 	Entities []string `json:"entities,omitempty"`
+	// Updated marks an event a later note of its thread updates or replaces
+	// (neutral mode, neutral.go).
+	Updated bool `json:"updated,omitempty"`
 }
 
 type factValue struct {
@@ -100,7 +103,8 @@ type timelineMemory struct {
 // count likewise the jobs (with DeferLinks) in which linking the head batch
 // failed for the linking request itself, for its linking rule (linkDue),
 // apart from its extraction's drop mode. Mode is the consolidation mode
-// of the job that last wrote the state: "" for timelines, or "layered".
+// of the job that last wrote the state: "" for timelines, "layered" or
+// "neutral".
 // EntityClusters (nativeEdges) holds the decided entity names: each name's
 // cluster, named by its first name; EventEdges (edgeKinds) JEV's decisions
 // about pairs of events (event_edges.go); EdgesMemory names the memory the
@@ -552,12 +556,14 @@ var batchRef = regexp.MustCompile(`^r?([0-9]+)$`)
 // that restates one already kept is skipped. Unlike the author, lists that are
 // not arrays and entries that are not objects add nothing instead of throwing.
 func applyReply(m *timelineMemory, batch []pendingRecord, reply string) error {
-	return applyReplyWith(m, batch, reply, false)
+	return applyReplyWith(m, batch, reply, false, false)
 }
 
 // applyReplyWith is applyReply; with entities, the "entities" an event or a
-// fact names are kept with it (layered extraction).
-func applyReplyWith(m *timelineMemory, batch []pendingRecord, reply string, entities bool) error {
+// fact names are kept with it (layered extraction). With notes, the reply's
+// "notes" are read instead, each an event of the thread its "group" titles,
+// and nothing else is (neutral extraction).
+func applyReplyWith(m *timelineMemory, batch []pendingRecord, reply string, entities, notes bool) error {
 	value, ok := parseTimelineReply(reply)
 	if !ok {
 		return errors.New("consolidation reply holds no JSON object")
@@ -592,13 +598,17 @@ func applyReplyWith(m *timelineMemory, batch []pendingRecord, reply string, enti
 		}
 		return out
 	}
-	for _, raw := range jsonList(value["events"]) {
+	events, labelKey := value["events"], "thread"
+	if notes {
+		events, labelKey = value["notes"], "group"
+	}
+	for _, raw := range jsonList(events) {
 		e := jsonObject(raw)
 		said := jsonText(e["text"])
 		if said == "" {
 			continue
 		}
-		label := jsonText(e["thread"])
+		label := jsonText(e[labelKey])
 		at := slices.IndexFunc(m.Threads, func(t thread) bool { return t.ID == label })
 		if at < 0 {
 			title := label
@@ -615,6 +625,9 @@ func applyReplyWith(m *timelineMemory, batch []pendingRecord, reply string, enti
 			}
 		}
 		m.Events = append(m.Events, event{Thread: m.Threads[at].ID, Date: jsonText(e["date"]), Text: said, Records: refs(e["records"]), Entities: names(e["entities"])})
+	}
+	if notes {
+		return nil
 	}
 	for _, raw := range jsonList(value["facts"]) {
 		f := jsonObject(raw)
@@ -762,7 +775,7 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	if a.store.ReadOnly() || a.overlay.readonly {
 		return ConsolidateResult{}, errors.New("consolidation is unavailable with readonly storage")
 	}
-	layered := settings.Mode == consolidationLayered
+	layered := settings.Layered()
 	if layered && a.models.Judge == nil {
 		return ConsolidateResult{}, errors.New("layered consolidation requires a decision model")
 	}
@@ -799,7 +812,7 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	}
 	state.Mode = ""
 	if layered {
-		state.Mode = consolidationLayered
+		state.Mode = settings.Mode
 	}
 	// The one-shot links come first: they read only the raw records, and
 	// when they cannot finish the job folds on and a later job asks the rest.
@@ -1074,11 +1087,13 @@ func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *
 
 // foldSpec is what a fold sends the consolidating model: its system prompt
 // and the user message for a batch, or a part of one, given the memory so
-// far; entities keeps the entity names the replies give (applyReplyWith).
+// far; entities keeps the entity names the replies give, and notes reads
+// the replies' notes (applyReplyWith).
 type foldSpec struct {
 	system   string
 	prompt   func(m timelineMemory, batch []pendingRecord) string
 	entities bool
+	notes    bool
 }
 
 // timelinesFold is the author's fold: the index so far, then the batch.
@@ -1108,7 +1123,7 @@ func (a *Agent) foldTimelines(ctx context.Context, model Completer, spec foldSpe
 		if err != nil {
 			return err
 		}
-		if applyReplyWith(&state.Memory, batch, reply, spec.entities) == nil {
+		if applyReplyWith(&state.Memory, batch, reply, spec.entities, spec.notes) == nil {
 			state.Batches++
 			return nil
 		}
