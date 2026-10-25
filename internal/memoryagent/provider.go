@@ -592,42 +592,80 @@ func (p *Provider) Decide(ctx context.Context, state any, questions map[string]Q
 		entry.record(ctx)
 		return answers, usage, nil
 	}
-	// The request is measured as the author measures it, then sent with the
-	// model first: {"model":…,"state":…,"questions":…}.
-	request, err := jevRequest(state, questions)
-	if err != nil {
-		return nil, Usage{}, errors.New("JEV request contains invalid JSON")
-	}
-	if jsLen(request) > maxJEVRequest {
-		return nil, Usage{}, fmt.Errorf("%w: JEV request exceeds %d UTF-16 code units", ErrRequestTooLarge, maxJEVRequest)
-	}
-	model, _ := stringifyJSON(p.config.Model)
-	encoded := []byte(`{"model":` + model + `,` + request[1:])
-	// A recorded reply answers as a completion's does (completion).
-	entry := p.entry(encoded)
-	if raw, ok := entry.recorded(ctx); ok {
-		if reply, err := p.parseDecision(raw); err == nil {
-			reply.usage.Cached = 1
-			answers, err := reply.probabilities(questions)
-			return answers, reply.usage, err
-		}
-	}
-	// A live reply whose answers fail is invalid, retried once (R61).
-	check := func(r decisionReply) error {
+	reply, err := p.jevDecision(ctx, state, questions, func(r decisionReply) error {
 		_, err := r.probabilities(questions)
 		return err
-	}
-	reply, raw, err := send(ctx, p, encoded, 0, p.parseDecision, check)
+	})
 	if err != nil {
 		return nil, reply.usage, err
 	}
 	answers, err := reply.probabilities(questions)
+	return answers, reply.usage, err
+}
+
+// Choice is JEV's answer to a choice question: the chosen option (one of
+// the question's criteria keys) and the probability JEV gives it.
+type Choice struct {
+	Option string
+	P      float64
+}
+
+// Chooser is a decision model that answers choice questions (Question.Type
+// "choice", the options its criteria keys); the JEV provider is one.
+type Chooser interface {
+	Choose(context.Context, any, map[string]Question) (map[string]Choice, Usage, error)
+}
+
+// Choose asks JEV choice questions in one request, under the same bounds,
+// budget, retries and replay as Decide.
+func (p *Provider) Choose(ctx context.Context, state any, questions map[string]Question) (map[string]Choice, Usage, error) {
+	if p.config.Kind != "jev" {
+		return nil, Usage{}, errors.New("choice questions require a JEV model")
+	}
+	if len(questions) < 1 || len(questions) > p.MaxQuestions() {
+		return nil, Usage{}, fmt.Errorf("decision requires 1–%d questions", p.MaxQuestions())
+	}
+	reply, err := p.jevDecision(ctx, state, questions, func(r decisionReply) error {
+		_, err := r.choices(questions)
+		return err
+	})
 	if err != nil {
-		return answers, reply.usage, err
+		return nil, reply.usage, err
+	}
+	choices, err := reply.choices(questions)
+	return choices, reply.usage, err
+}
+
+// jevDecision sends a JEV decision request and returns the reply whose
+// answers pass check. The request is measured as the author measures it,
+// then sent with the model first: {"model":…,"state":…,"questions":…}. A
+// recorded reply answers as a completion's does (completion), its answers
+// read by the caller; a live reply whose answers fail check is invalid,
+// retried once (R61).
+func (p *Provider) jevDecision(ctx context.Context, state any, questions map[string]Question, check func(decisionReply) error) (decisionReply, error) {
+	request, err := jevRequest(state, questions)
+	if err != nil {
+		return decisionReply{}, errors.New("JEV request contains invalid JSON")
+	}
+	if jsLen(request) > maxJEVRequest {
+		return decisionReply{}, fmt.Errorf("%w: JEV request exceeds %d UTF-16 code units", ErrRequestTooLarge, maxJEVRequest)
+	}
+	model, _ := stringifyJSON(p.config.Model)
+	encoded := []byte(`{"model":` + model + `,` + request[1:])
+	entry := p.entry(encoded)
+	if raw, ok := entry.recorded(ctx); ok {
+		if reply, err := p.parseDecision(raw); err == nil {
+			reply.usage.Cached = 1
+			return reply, nil
+		}
+	}
+	reply, raw, err := send(ctx, p, encoded, 0, p.parseDecision, check)
+	if err != nil {
+		return reply, err
 	}
 	entry.reply = raw
 	entry.record(ctx)
-	return answers, reply.usage, nil
+	return reply, nil
 }
 
 // decisionAnswers reads a completer's answers to questions: a JSON object
@@ -658,6 +696,9 @@ type decisionReply struct {
 type jevAnswer struct {
 	Type string
 	Noul *float64
+	// Choice and Probabilities answer a choice question.
+	Choice        string
+	Probabilities map[string]float64
 }
 
 // errInvalidJEV is the error of a JEV reply that does not parse, names
@@ -704,6 +745,30 @@ func (r decisionReply) probabilities(questions map[string]Question) (map[string]
 		answers[key] = *answer.Noul
 	}
 	return answers, validateAnswers(answers, questions)
+}
+
+// choices are the reply's answers to choice questions: every question's
+// chosen option, one of its criteria keys, with its probability.
+func (r decisionReply) choices(questions map[string]Question) (map[string]Choice, error) {
+	if len(r.answers) != len(questions) {
+		return nil, errors.New("decision answer cardinality mismatch")
+	}
+	out := map[string]Choice{}
+	for key, question := range questions {
+		answer, ok := r.answers[key]
+		if !ok || answer.Type != "choice" {
+			return nil, errors.New("JEV answer must be a choice")
+		}
+		if _, ok := question.Criteria[answer.Choice]; !ok {
+			return nil, errors.New("JEV choice is not one of the options")
+		}
+		p := answer.Probabilities[answer.Choice]
+		if math.IsNaN(p) || p < 0 || p > 1 {
+			return nil, errors.New("invalid choice probability")
+		}
+		out[key] = Choice{Option: answer.Choice, P: p}
+	}
+	return out, nil
 }
 
 func validateAnswers(answers map[string]float64, questions map[string]Question) error {

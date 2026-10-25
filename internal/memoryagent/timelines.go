@@ -801,11 +801,20 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	if layered {
 		state.Mode = consolidationLayered
 	}
+	// The one-shot links come first: they read only the raw records, and
+	// when they cannot finish the job folds on and a later job asks the rest.
+	linked, linkErr := 0, error(nil)
+	if settings.OneShotLinks {
+		linked, linkErr = a.linkRecords(ctx, req.Scope)
+	}
 	revision, read, unread, err := a.readNewRecords(ctx, req.Scope, &state, settings.AssistantCharacters, settings.MaxBatches*settings.BatchCharacters)
 	if err != nil {
 		return ConsolidateResult{}, err
 	}
-	result := ConsolidateResult{Revision: revision, Visited: read}
+	result := ConsolidateResult{Revision: revision, Visited: read, LinkedRecords: linked}
+	if linkErr != nil {
+		result.LinkError = linkErr.Error()
+	}
 	before := memorySize(state.Memory)
 	// When every record was read and nothing new found, the author's
 	// caughtUp holds: fold the short rest too (N:1108). When the bound

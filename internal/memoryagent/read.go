@@ -93,6 +93,10 @@ type ConsolidationConfig struct {
 	NativeEdges         bool     `json:"nativeEdges,omitempty"`
 	EdgeKinds           []string `json:"edgeKinds,omitempty"`
 	Insights            bool     `json:"insights,omitempty"`
+	// OneShotLinks has every timelines job first ask JEV, a window of the
+	// user's new records per request, which earlier record each depends on
+	// (oneshot_links.go); view.links uses the answers.
+	OneShotLinks bool `json:"oneShotLinks,omitempty"`
 }
 
 // Timelines reports whether the mode keeps a timelines state ("timelines"
@@ -123,6 +127,10 @@ type ViewConfig struct {
 	// Order "time" lists the View's records in time order once the View is
 	// composed (simple_order.go); "" keeps the rank order.
 	Order string `json:"order,omitempty"`
+	// Links appends to the composed View the records the one-shot links
+	// (consolidation.oneShotLinks) tie to its records, within fixed bounds
+	// and calling no model (oneshot_links.go), before view.order.
+	Links bool `json:"links,omitempty"`
 }
 
 // ExpandConfig sets the evidence expansion of a simple read. Kinds names the
@@ -269,7 +277,9 @@ type ReadStats struct {
 	// View shows (after the timelines layer); ExpandSeeds the records it
 	// expanded from.
 	ExpandShown int `json:"expandShown,omitempty"`
-	ExpandSeeds int `json:"expandSeeds,omitempty"`
+	// LinksAppended counts the records view.links added to the View.
+	LinksAppended int `json:"linksAppended,omitempty"`
+	ExpandSeeds   int `json:"expandSeeds,omitempty"`
 	// LayerInsights counts the insights the View's layer shows
 	// (consolidation.insights); absent at zero.
 	LayerInsights int `json:"layerInsights,omitempty"`
@@ -357,6 +367,9 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	}
 	if config.Consolidation != nil && len(config.Consolidation.EdgeKinds) > 0 && models.Judge == nil {
 		return nil, errors.New("edgeKinds requires a decision model")
+	}
+	if config.Consolidation != nil && config.Consolidation.OneShotLinks && (!config.Consolidation.Timelines() || models.Judge == nil) {
+		return nil, errors.New("oneShotLinks requires consolidation mode \"timelines\" or \"layered\" and a decision model")
 	}
 	// Config and its nested pointers belong to this service, never its caller.
 	raw, _ := json.Marshal(config)
