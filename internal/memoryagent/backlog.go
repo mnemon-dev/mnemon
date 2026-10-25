@@ -57,7 +57,7 @@ func (a *Agent) Backlog(ctx context.Context, scope records.Scope) (Backlog, erro
 			if json.Unmarshal([]byte(raw), &value) != nil {
 				continue
 			}
-			if header, body, ok := readable(value.Title, value.Content, settings.AssistantCharacters); ok {
+			if header, body, ok := a.recordReader(settings.AssistantCharacters)(value.Title, value.Content); ok {
 				backlog.Characters += int64(jsLen(header) + jsLen(body))
 			}
 		}

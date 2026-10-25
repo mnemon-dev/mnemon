@@ -1049,7 +1049,7 @@ func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *
 	for _, record := range state.Pending {
 		size += jsLen(record.Header) + jsLen(record.Text)
 	}
-	read := 0
+	read, reader := 0, a.recordReader(assistantChars)
 	for start := 0; start < len(fresh); start += 500 {
 		part := fresh[start:min(start+500, len(fresh))]
 		ids := make([]string, len(part))
@@ -1069,7 +1069,7 @@ func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *
 		}
 		for _, head := range part {
 			if value, ok := values[head.ID]; ok {
-				if header, body, ok := readable(value.Title, value.Content, assistantChars); ok {
+				if header, body, ok := reader(value.Title, value.Content); ok {
 					units := jsLen(header) + jsLen(body)
 					if len(state.Pending) > 0 && size+units > bound {
 						return revision, read, len(fresh) - read, nil

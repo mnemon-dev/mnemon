@@ -120,6 +120,36 @@ func TestNeutralModeExtractsUnderTheNeutralPrompt(t *testing.T) {
 	}
 }
 
+func TestNeutralReadsEveryRecordWholeAndAlike(t *testing.T) {
+	heading := "Conversation beam-1-s1 on 2024/03/15 (Fri) 00:00:\n"
+	continuation := heading + "so we can tailor this schedule further?"
+	longAnswer := heading + "assistant: " + strings.Repeat("step ", 100)
+	// The layered reader passes a continuation over and cuts an answer.
+	if _, _, ok := readable("Original record", continuation, 240); ok {
+		t.Fatal("readable read a continuation")
+	}
+	if _, body, _ := readable("Original record", longAnswer, 240); !strings.HasSuffix(body, " …") {
+		t.Fatal("readable did not cut a long answer")
+	}
+	a := neutralAgent(t, &neutralJudge{})
+	read := a.recordReader(240)
+	if header, body, ok := read("Original record", continuation); !ok || header != "2024/03/15 (session beam-1-s1)" || body != "so we can tailor this schedule further?" {
+		t.Fatalf("neutral read %q %q %v", header, body, ok)
+	}
+	if _, body, ok := read("Original record", longAnswer); !ok || body != longAnswer[len(heading):] {
+		t.Fatal("neutral mode cut a long answer")
+	}
+	if header, body, ok := read("A note", "plain text, no heading"); !ok || header != "A note" || body != "plain text, no heading" {
+		t.Fatal("neutral read of a record without a heading", header, body)
+	}
+	if _, _, ok := read("Empty", heading+"  \n"); ok {
+		t.Fatal("neutral mode read an empty record")
+	}
+	if strings.Contains(neutralSystem, "cut short") {
+		t.Fatal("the neutral prompt says assistant messages are cut")
+	}
+}
+
 func TestNeutralModeNeedsAChoosingJudge(t *testing.T) {
 	s, dir := agentStore(t)
 	overlay, err := OpenOverlay(filepath.Join(dir, "memory-index.db"), false)

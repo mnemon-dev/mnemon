@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -19,12 +20,41 @@ import (
 // new note and each of the latest notes of its group before it, whether the
 // new note updates or replaces what that note says (one yes/no question per
 // pair, true at 0.5); every note one updates is marked, never removed. The
-// code compares no scores. Batching, deferral, storage and the read layer
-// are the layered mode's.
+// code compares no scores. Every record is read whole and alike
+// (evenReadable): no rule by role keeps one, cuts one or passes one over.
+// Batching, deferral, storage and the read layer are the layered mode's.
 
 // neutralSystem is the neutral L0 prompt, frozen.
-const neutralSystem = `You keep a memory of a long conversation between a user and an assistant. The conversation arrives in batches of records, in order; each record shows its id, the session date and the text (assistant messages are cut short). For each batch, write down what a reader may need to remember later from these records, as notes. Put notes that belong together in a group with a short title of your own. Give each note its date and the ids of the records it comes from. Use only what the records say. Dates are the session dates shown with the records. Reply with JSON only, in this form:
+const neutralSystem = `You keep a memory of a long conversation between a user and an assistant. The conversation arrives in batches of records, in order; each record shows its id, the session date and the text. For each batch, write down what a reader may need to remember later from these records, as notes. Put notes that belong together in a group with a short title of your own. Give each note its date and the ids of the records it comes from. Use only what the records say. Dates are the session dates shown with the records. Reply with JSON only, in this form:
 {"notes":[{"group":"<short title>","date":"YYYY/MM/DD","text":"...","records":["r12"]}]}`
+
+// evenReadable is how neutral mode reads a record: whole, like every other,
+// with no rule by role. A leading session heading becomes the header, as
+// readable has it, so that the record shows its date; otherwise the title
+// does. Only an empty record is not read.
+func evenReadable(title, content string) (header, body string, ok bool) {
+	session := authorSessionHeading.FindStringSubmatch(content)
+	if session == nil {
+		session = sessionHeading.FindStringSubmatch(content)
+	}
+	header, body = jsSlice(title, 0, 40), content
+	if session != nil {
+		header, body = session[2]+" (session "+session[1]+")", content[len(session[0]):]
+	}
+	if strings.TrimFunc(body, isJSSpace) == "" {
+		return "", "", false
+	}
+	return header, body, true
+}
+
+// recordReader is how the agent's consolidation reads a record:
+// evenReadable in neutral mode, else readable with its assistant cut.
+func (a *Agent) recordReader(assistantChars int) func(title, content string) (string, string, bool) {
+	if a.config.Consolidation.Neutral() {
+		return evenReadable
+	}
+	return func(title, content string) (string, string, bool) { return readable(title, content, assistantChars) }
+}
 
 // neutralFold is the neutral L0: the batch alone, under neutralSystem, its
 // notes read as events.
