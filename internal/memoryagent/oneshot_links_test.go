@@ -221,41 +221,6 @@ func TestChooseReadsJEVChoices(t *testing.T) {
 	}
 }
 
-func TestLoopLinksPoolLinkedAndAdjacentRecordsOfUsefulFinds(t *testing.T) {
-	ctx := context.Background()
-	a, _, s := oneshotAgent(t, &oneshotJudge{pick: previousUnit})
-	for i := range 5 {
-		seedNote(t, s, fmt.Sprintf("n%d", i), fmt.Sprintf("note %d", i))
-	}
-	if _, err := a.linkRecords(ctx, records.Scope{}); err != nil {
-		t.Fatal(err)
-	}
-	revision, _, err := s.Heads(ctx, "", records.Scope{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// n2 was screened useful and n4 was not; n1 is pooled already.
-	r := &simpleRun{agent: a, revision: revision, order: []string{"n1", "n2", "n4"}, items: map[string]*simpleItem{
-		"n1": {ID: "n1", HasScreen: true, Screen: 0.1},
-		"n2": {ID: "n2", HasScreen: true, Screen: 0.9},
-		"n4": {ID: "n4", HasScreen: true, Screen: 0.2},
-	}}
-	last, expanded := map[string]bool{"n1": true, "n2": true, "n4": true}, map[string]bool{}
-	got, err := r.linkedFresh(ctx, last, expanded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// From n2 only: n3 chose it (n1, its own choice, is pooled). Nothing from
-	// n4, which JEV did not find useful.
-	if !slices.Contains(got, "n3") || slices.Contains(got, "n1") || slices.Contains(got, "n5") || !expanded["n2"] || expanded["n4"] {
-		t.Fatalf("fresh %v, expanded %v", got, expanded)
-	}
-	// A seed is expanded from once.
-	if again, err := r.linkedFresh(ctx, last, expanded); err != nil || len(again) != 0 {
-		t.Fatalf("expanded again: %v %v", again, err)
-	}
-}
-
 func TestOneShotLinksBoundAJobAndResumeNext(t *testing.T) {
 	ctx := context.Background()
 	judge := &oneshotJudge{pick: previousUnit}
@@ -287,38 +252,5 @@ func seedDatedNote(t *testing.T, s *records.Store, id, text string) {
 	v := recordValue{ID: id, Kind: "note", Title: "Note", Content: text, Scope: "global", Date: &day, State: "active", Version: 1, Signals: 1, CreatedAt: "2026-10-19T00:00:00Z", UpdatedAt: "2026-10-19T00:00:00Z", History: []any{}, Data: map[string]any{}}
 	if _, err := s.Put(context.Background(), records.PutRequest{Upsert: []records.Upsert{encodeRecord(v, text)}}); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestLoopLinksPullEveryLinkOfUsefulFindsAndNoPlainNeighbour(t *testing.T) {
-	ctx := context.Background()
-	// Only u5 depends on anything: on u1 (the kayak), far back.
-	judge := &oneshotJudge{pick: func(key string, options []string) string {
-		if key == "link_5" && slices.Contains(options, "u1") {
-			return "u1"
-		}
-		return "none"
-	}}
-	a, _, s := oneshotAgent(t, judge)
-	texts := []string{"a quiet morning", "the kayak trip is planned", "groceries for the week", "the car needs new tires", "a call with the bank", "the kayak paddle was bought"}
-	for i, text := range texts {
-		seedDatedNote(t, s, fmt.Sprintf("n%d", i), text)
-	}
-	if _, err := a.linkRecords(ctx, records.Scope{}); err != nil {
-		t.Fatal(err)
-	}
-	revision, _, err := s.Heads(ctx, "", records.Scope{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	r := &simpleRun{agent: a, revision: revision, order: []string{"n1"}, items: map[string]*simpleItem{"n1": {ID: "n1", HasScreen: true, Screen: 0.9}}}
-	got, err := r.linkedFresh(ctx, map[string]bool{"n1": true}, map[string]bool{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// JEV's far link (n5 chose n1) and nothing else: n0 and n2 sit right
-	// beside n1, but nothing links them.
-	if !reflect.DeepEqual(got, []string{"n5"}) {
-		t.Fatalf("fresh %v", got)
 	}
 }

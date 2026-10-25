@@ -295,7 +295,7 @@ var (
 	oneShotAskedDesc   = newDesc("oneshot_records_asked_total", "Records the one-shot links asked JEV about (consolidation.oneShotLinks).")
 	oneShotRefusedDesc = newDesc("oneshot_windows_refused_total", "One-shot link windows JEV refused for their own request: their records have no links.")
 	oneShotErrorsDesc  = newDesc("oneshot_link_errors_total", "Consolidation jobs whose one-shot link step stopped on an error, the rest left for a later job.")
-	loopLinkedDesc     = newDesc("search_loop_linked_total", "Records view.loopLinks pooled from the one-shot links of useful finds.")
+	loopLinkedDesc     = newDesc("search_loop_linked_total", "Records view.loopLinks pooled from the consolidation links of useful finds.")
 	batchesDesc        = newDesc("consolidation_batches_total", "Batches of records by outcome: folded (taken off the pending records, those given up on included), deferred (left pending because linking failed) and dropped (drops: a batch, or half of a split one, the layer gave up on).", "outcome")
 )
 

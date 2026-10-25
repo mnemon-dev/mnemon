@@ -1,7 +1,6 @@
 package memoryagent
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"slices"
@@ -21,16 +20,11 @@ import (
 //     (no new yes, no lead among what the round read) the planner words a new
 //     search, and a need both failed for is given up.
 //
-// With view.loopLinks the loop has ten rounds, and each round first pools, for
-// JEV to screen and table like any find, every record the one-shot links tie
-// to the items the last round found useful (screened yes, or a yes for a
-// need), either way. The loop still ends when no need is open.
+// With view.loopLinks the read runs the linked loop instead (simple_linked.go).
 
 const (
 	simpleRounds = 3  // the author's `loop`
 	simpleTabled = 16 // the author's judged-View maxItems
-	// loopLinkedRounds bounds view.loopLinks: ten rounds.
-	loopLinkedRounds = 10
 )
 
 // Loop stop reasons; a spent budget ends the loop with the reason it had.
@@ -110,68 +104,6 @@ func (r *simpleRun) viewable(ids []string) []*simpleItem {
 	return out
 }
 
-// useful reports whether JEV found item id useful: screened yes, or a yes for
-// a need.
-func (r *simpleRun) useful(id string) bool {
-	item := r.items[id]
-	if item == nil {
-		return false
-	}
-	if item.HasScreen && item.Screen >= 0.5 {
-		return true
-	}
-	return slices.ContainsFunc(item.Row, func(p float64) bool { return p >= 0.5 })
-}
-
-// linkedFresh is view.loopLinks' step, the first of a round: from the items
-// of last JEV found useful and the loop has not expanded from, in pool order,
-// every record the one-shot links tie to them, either way, not pooled yet,
-// nearest first. The links are JEV's, so the code only follows them: no plain
-// neighbour, no cap but the loop's rounds and the read's JEV budget, and each
-// item expanded from once. It calls no model; links it cannot read are no
-// candidates.
-func (r *simpleRun) linkedFresh(ctx context.Context, last, expanded map[string]bool) ([]string, error) {
-	seeds, index := []string{}, map[string]int{}
-	for _, id := range r.order {
-		if last[id] && !expanded[id] && r.useful(id) {
-			expanded[id], index[id] = true, len(seeds)
-			seeds = append(seeds, id)
-		}
-	}
-	if len(seeds) == 0 || r.agent.overlay == nil {
-		return nil, nil
-	}
-	links, err := r.agent.overlay.linksOf(ctx, r.req.Scope, seeds)
-	if err != nil {
-		return nil, ctx.Err()
-	}
-	type near struct {
-		id             string
-		distance, seed int64
-	}
-	candidates := []near{}
-	for _, l := range links {
-		d := max(l.Position-l.TargetPosition, l.TargetPosition-l.Position)
-		if i, ok := index[l.ID]; ok {
-			candidates = append(candidates, near{l.Target, d, int64(i)})
-		}
-		if i, ok := index[l.Target]; ok {
-			candidates = append(candidates, near{l.ID, d, int64(i)})
-		}
-	}
-	slices.SortFunc(candidates, func(a, b near) int {
-		return cmp.Or(cmp.Compare(a.distance, b.distance), cmp.Compare(a.seed, b.seed), cmp.Compare(a.id, b.id))
-	})
-	out, taken := []string{}, map[string]bool{}
-	for _, c := range candidates {
-		if !taken[c.id] && r.items[c.id] == nil {
-			taken[c.id] = true
-			out = append(out, c.id)
-		}
-	}
-	return out, nil
-}
-
 // screened is the ids JEV has screened, in pool order.
 func (r *simpleRun) screened() []string {
 	return slices.DeleteFunc(slices.Clone(r.order), func(id string) bool { return !r.items[id].HasScreen })
@@ -183,6 +115,9 @@ func (r *simpleRun) screened() []string {
 // had (rounds); spent page reads read nothing, as in the author. New finds
 // are pooled, screened (their Screen set) and tabled like the first round's.
 func (r *simpleRun) loop(ctx context.Context) (string, error) {
+	if r.agent.config.View != nil && r.agent.config.View.LoopLinks {
+		return r.linkedLoop(ctx)
+	}
 	stop := stopRounds
 	ended := func(err error) (string, error) {
 		if errors.Is(err, errCallBudget) {
@@ -224,11 +159,7 @@ func (r *simpleRun) loop(ctx context.Context) (string, error) {
 	for _, id := range r.screened() {
 		last[id] = true
 	}
-	rounds, linked, expanded := simpleRounds, r.agent.config.View != nil && r.agent.config.View.LoopLinks, map[string]bool{}
-	if linked {
-		rounds = loopLinkedRounds
-	}
-	for round := 1; round <= rounds; round++ {
+	for round := 1; round <= simpleRounds; round++ {
 		steps, pages, lost := make([]string, len(needs)), []int{}, []Need{}
 		addPage := func(at int) {
 			if !slices.Contains(pages, at) {
@@ -335,16 +266,6 @@ func (r *simpleRun) loop(ctx context.Context) (string, error) {
 				locate(first+j, page)
 				addFresh(page)
 			}
-		}
-		if linked {
-			near, err := r.linkedFresh(ctx, last, expanded)
-			if err != nil {
-				return "", err
-			}
-			addFresh(near)
-			r.mu.Lock()
-			r.stats.LoopLinked += len(near)
-			r.mu.Unlock()
 		}
 		if _, err := r.admit(ctx, fresh); err != nil {
 			return "", err
