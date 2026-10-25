@@ -21,9 +21,9 @@ import (
 // only windows, bounds and stores. The options are the two records written
 // just before it and up to oneShotFar earlier records of the window that
 // BM25 finds closest to its text. A Search with view.links then appends, in
-// pure engineering, every record linked to the View's records (the one each
-// chose and those that chose it, nearest first) until the View is full: its
-// items (the read's MaxItems) and its characters.
+// pure engineering, the records the links reach from the View's records (the
+// one each chose and those that chose it, nearest first), hop by hop, until
+// the View is full: its items (the read's MaxItems) and its characters.
 // oneShotJobWindows bounds a job's one-shot links, so that a large backlog (a
 // switch turned on over a full store) is linked over several jobs rather than
 // holding one: about 1,000 records a job. A variable for the tests.
@@ -313,59 +313,55 @@ func oneShotRequest(units []oneShotUnit, start, end int) (any, map[string]Questi
 	return map[string]any{"instructions": oneShotNote, "units": shown}, questions
 }
 
-// appendLinked adds to the View every record linked to its records (the one
-// each chose and those that chose it), in the View's order and for each
-// record nearest in write order first, whole, until the View holds the
-// read's MaxItems; a record past the View's characters is skipped. It calls
-// no model; a failure to read the links leaves the View as it is.
+// appendLinked adds to the View, whole, every record the one-shot links
+// reach from its records (the one each chose and those that chose it), hop
+// by hop: first the records linked to the View's own, in the View's order
+// and for each record nearest in write order first, then those linked to
+// the records just added, until the View holds the read's MaxItems or no
+// link leads further; a record past the View's characters is skipped. It
+// calls no model; a failure to read the links ends the append with what it
+// added.
 func (r *simpleRun) appendLinked(ctx context.Context, view View) (View, error) {
-	ids := make([]string, len(view.Records))
-	in := map[string]bool{}
-	size := 0
-	for i, record := range view.Records {
-		ids[i], in[record.ID] = record.ID, true
-		size += jsLen(record.Text)
+	if r.agent.overlay == nil {
+		return view, nil
 	}
-	links, err := r.agent.overlay.linksOf(ctx, r.req.Scope, ids)
-	if err != nil || len(links) == 0 {
-		return view, ctx.Err()
+	in, size, frontier := map[string]bool{}, 0, []string{}
+	for _, record := range view.Records {
+		in[record.ID], size, frontier = true, size+jsLen(record.Text), append(frontier, record.ID)
 	}
-	type near struct {
-		id       string
-		distance int64
-	}
-	nearby := map[string][]near{}
-	wanted := []string{}
-	for _, l := range links {
-		d := max(l.Position-l.TargetPosition, l.TargetPosition-l.Position)
-		nearby[l.ID] = append(nearby[l.ID], near{l.Target, d})
-		nearby[l.Target] = append(nearby[l.Target], near{l.ID, d})
-		for _, id := range []string{l.ID, l.Target} {
-			if !in[id] && !slices.Contains(wanted, id) {
-				wanted = append(wanted, id)
-			}
-		}
-	}
-	found := map[string]Evidence{}
-	for start := 0; start < len(wanted); start += 200 {
-		batch, err := evidence(ctx, r.agent.store, r.revision, r.req.Scope, wanted[start:min(start+200, len(wanted))])
+	maxItems, maxChars := r.req.MaxItems, r.agent.config.View.MaxCharacters
+	full := func() bool { return maxItems > 0 && len(view.Records) >= maxItems }
+	for len(frontier) > 0 && !full() {
+		near, err := r.oneShotNeighbours(ctx, frontier)
 		if err != nil {
 			return view, ctx.Err()
 		}
-		for _, value := range batch {
-			found[value.ID] = value
+		wanted, seen := []string{}, map[string]bool{}
+		for _, id := range frontier {
+			for _, other := range near[id] {
+				if !in[other] && !seen[other] {
+					seen[other] = true
+					wanted = append(wanted, other)
+				}
+			}
 		}
-	}
-	maxItems, maxChars := r.req.MaxItems, r.agent.config.View.MaxCharacters
-	for _, id := range ids {
-		list := nearby[id]
-		slices.SortFunc(list, func(x, y near) int { return cmp.Or(cmp.Compare(x.distance, y.distance), cmp.Compare(x.id, y.id)) })
-		for _, n := range list {
-			value, ok := found[n.id]
-			if !ok || in[n.id] {
+		found := map[string]Evidence{}
+		for start := 0; start < len(wanted); start += 200 {
+			batch, err := evidence(ctx, r.agent.store, r.revision, r.req.Scope, wanted[start:min(start+200, len(wanted))])
+			if err != nil {
+				return view, ctx.Err()
+			}
+			for _, value := range batch {
+				found[value.ID] = value
+			}
+		}
+		frontier = nil
+		for _, id := range wanted {
+			value, ok := found[id]
+			if !ok {
 				continue
 			}
-			if maxItems > 0 && len(view.Records) >= maxItems {
+			if full() {
 				return view, nil
 			}
 			units := jsLen(value.Text)
@@ -374,9 +370,9 @@ func (r *simpleRun) appendLinked(ctx context.Context, view View) (View, error) {
 			}
 			value.Score = 0
 			view.Records = append(view.Records, value)
-			in[n.id] = true
-			size += units
+			in[id], size = true, size+units
 			view.Stats.LinksAppended++
+			frontier = append(frontier, id)
 		}
 	}
 	return view, nil

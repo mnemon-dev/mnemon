@@ -188,7 +188,7 @@ func TestViewLinksAppendLinkedRecordsOnce(t *testing.T) {
 	}
 }
 
-func TestViewLinksAppendEveryLinkedRecordUntilTheViewIsFull(t *testing.T) {
+func TestViewLinksAppendHopByHopUntilTheViewIsFull(t *testing.T) {
 	ctx := context.Background()
 	a, _, s := oneshotAgent(t, &oneshotJudge{pick: previousUnit})
 	// n0 is longer than any per-record bound the append once had.
@@ -204,15 +204,17 @@ func TestViewLinksAppendEveryLinkedRecordUntilTheViewIsFull(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.config.View = &ViewConfig{MaxItems: 100, Links: true}
-	shown, err := evidence(ctx, s, revision, records.Scope{}, []string{"n1", "n2"})
+	shown, err := evidence(ctx, s, revision, records.Scope{}, []string{"n2"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The read's MaxItems bounds the View, the linked records included.
+	// n1 chose n0, n2 chose n1 and n3 chose n2: n1 and n3 are one hop from
+	// n2, n0 two. The read's MaxItems bounds the View, the linked records
+	// included.
 	for _, c := range []struct {
 		maxItems int
 		want     []string
-	}{{100, []string{"n1", "n2", "n0", "n3"}}, {3, []string{"n1", "n2", "n0"}}} {
+	}{{100, []string{"n2", "n1", "n3", "n0"}}, {3, []string{"n2", "n1", "n3"}}} {
 		r := &simpleRun{agent: a, revision: revision, req: ReadRequest{MaxItems: c.maxItems}}
 		view, err := r.appendLinked(ctx, View{Records: slices.Clone(shown)})
 		if err != nil {
@@ -222,7 +224,7 @@ func TestViewLinksAppendEveryLinkedRecordUntilTheViewIsFull(t *testing.T) {
 		for _, record := range view.Records {
 			ids = append(ids, record.ID)
 		}
-		if !slices.Equal(ids, c.want) || view.Stats.LinksAppended != len(c.want)-2 {
+		if !slices.Equal(ids, c.want) || view.Stats.LinksAppended != len(c.want)-1 {
 			t.Fatalf("max %d: view %v, appended %d", c.maxItems, ids, view.Stats.LinksAppended)
 		}
 	}
