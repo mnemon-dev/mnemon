@@ -128,8 +128,8 @@ type ViewConfig struct {
 	// composed (simple_order.go); "" keeps the rank order.
 	Order string `json:"order,omitempty"`
 	// Links appends to the composed View the records the one-shot links
-	// (consolidation.oneShotLinks) tie to its records, within fixed bounds
-	// and calling no model (oneshot_links.go), before view.order.
+	// (consolidation.oneShotLinks) tie to its records, every one until the
+	// View is full, calling no model (oneshot_links.go), before view.order.
 	Links bool `json:"links,omitempty"`
 	// LoopLinks runs the linked loop instead of the simple loop: up to ten
 	// rounds of judging what is new, then new searches for the needs still

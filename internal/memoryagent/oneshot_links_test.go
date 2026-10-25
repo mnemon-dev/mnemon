@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -184,6 +185,46 @@ func TestViewLinksAppendLinkedRecordsOnce(t *testing.T) {
 	// not added again.
 	if !reflect.DeepEqual(ids, []string{"n1", "n2", "n0", "n3"}) || view.Stats.LinksAppended != 2 {
 		t.Fatalf("view %v, appended %d", ids, view.Stats.LinksAppended)
+	}
+}
+
+func TestViewLinksAppendEveryLinkedRecordUntilTheViewIsFull(t *testing.T) {
+	ctx := context.Background()
+	a, _, s := oneshotAgent(t, &oneshotJudge{pick: previousUnit})
+	// n0 is longer than any per-record bound the append once had.
+	seedNote(t, s, "n0", strings.Repeat("long note ", 150))
+	for i := 1; i < 4; i++ {
+		seedNote(t, s, fmt.Sprintf("n%d", i), fmt.Sprintf("note %d", i))
+	}
+	if _, err := a.linkRecords(ctx, records.Scope{}); err != nil {
+		t.Fatal(err)
+	}
+	revision, _, err := s.Heads(ctx, "", records.Scope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.config.View = &ViewConfig{MaxItems: 100, Links: true}
+	shown, err := evidence(ctx, s, revision, records.Scope{}, []string{"n1", "n2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The read's MaxItems bounds the View, the linked records included.
+	for _, c := range []struct {
+		maxItems int
+		want     []string
+	}{{100, []string{"n1", "n2", "n0", "n3"}}, {3, []string{"n1", "n2", "n0"}}} {
+		r := &simpleRun{agent: a, revision: revision, req: ReadRequest{MaxItems: c.maxItems}}
+		view, err := r.appendLinked(ctx, View{Records: slices.Clone(shown)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := []string{}
+		for _, record := range view.Records {
+			ids = append(ids, record.ID)
+		}
+		if !slices.Equal(ids, c.want) || view.Stats.LinksAppended != len(c.want)-2 {
+			t.Fatalf("max %d: view %v, appended %d", c.maxItems, ids, view.Stats.LinksAppended)
+		}
 	}
 }
 
