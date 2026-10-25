@@ -162,6 +162,10 @@ type ViewConfig struct {
 	// consolidation links with consolidation.nativeEdges, the one-shot links
 	// with consolidation.oneShotLinks (simple_linked.go).
 	LoopLinks bool `json:"loopLinks,omitempty"`
+	// LayerNeededOnly has the timelines layer show only the topics and values
+	// JEV calls needed (≥ 0.5), not then the lit ones it calls not needed
+	// (timelines_layer.go).
+	LayerNeededOnly bool `json:"layerNeededOnly,omitempty"`
 }
 
 // ExpandConfig sets the evidence expansion of a simple read. Kinds names the

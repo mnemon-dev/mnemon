@@ -168,6 +168,13 @@ func layerOrder(topics, values []string, lit litSets, threadScore, valueScore ma
 	return append(yes(topics, threadScore), litThreads...), append(yes(values, valueScore), below(lit.Values, valueScore)...)
 }
 
+// neededOnly is order without the items JEV calls not needed (below 0.5),
+// in order (view.layerNeededOnly): the lit topics and values layerOrder
+// adds after JEV's yes are left out.
+func neededOnly(order []string, score map[string]float64) []string {
+	return slices.DeleteFunc(slices.Clone(order), func(id string) bool { return score[id] < 0.5 })
+}
+
 // layerCandidates is what JEV judges for the layer (N:1151-1152): the lit
 // threads, then the near ones (indexes into threadIDs), each once; the lit
 // values, then the near ones (indexes into keys), each once.
@@ -454,6 +461,9 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 	threadOrder, valueOrder := layerOrder(topics, values, lit, threadScore, valueScore)
 	if r.agent.config.Consolidation.Neutral() {
 		threadOrder = neutralLayerOrder(topics, lit, threadScore, threadOrder)
+	}
+	if r.agent.config.View.LayerNeededOnly {
+		threadOrder, valueOrder = neededOnly(threadOrder, threadScore), neededOnly(valueOrder, valueScore)
 	}
 	blocks := composeLayer(m, threadOrder, valueOrder, lit)
 	joined := len(blocks)

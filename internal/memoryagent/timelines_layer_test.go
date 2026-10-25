@@ -118,6 +118,13 @@ func TestLayerOrder(t *testing.T) {
 	if !slices.Equal(vals, []string{"k3", "k2", "k1"}) {
 		t.Fatal(vals)
 	}
+	// view.layerNeededOnly keeps JEV's yes alone, in order.
+	if got := neededOnly(threads, threadScore); !slices.Equal(got, []string{"T5", "T1", "T7"}) {
+		t.Fatal("needed-only threads", got)
+	}
+	if got := neededOnly(vals, valueScore); !slices.Equal(got, []string{"k3", "k2"}) {
+		t.Fatal("needed-only values", got)
+	}
 }
 
 func TestComposeLayerBudgets(t *testing.T) {
