@@ -16,12 +16,15 @@ import (
 // loopLinkedRounds rounds, or when the read's JEV calls are down to the
 // reserve the judgement, the layer and the expansions after the loop need.
 // Otherwise it pools, for the next round, the first page of new searches the
-// planner words for the needs still open, and every record the consolidation
-// links tie to what this round found useful (records.Store.Links: the derived
-// metadata nativeEdges writes from the consolidated threads and value
-// updates). A rewrite that fails ends the loop, not the read. There is no
-// paging and no plain neighbour: new searches and the model's links stand in
-// for them, and each record is judged and followed once.
+// planner words for the needs still open, and every record the links tie to
+// what this round found useful: the consolidation links with
+// consolidation.nativeEdges (records.Store.Links: the derived metadata it
+// writes from the consolidated threads and value updates), and the one-shot
+// links with consolidation.oneShotLinks (oneshot_links.go); each source only
+// with the switch that keeps it current. A rewrite that fails ends the loop,
+// not the read. There is no paging and no plain neighbour: new searches and
+// the models' links stand in for them, and each record is judged and
+// followed once.
 
 const (
 	loopLinkedRounds = 10
@@ -175,29 +178,76 @@ func (r *simpleRun) useful(id string) bool {
 	return slices.ContainsFunc(item.Row, func(p float64) bool { return p >= 0.5 })
 }
 
-// linkedFresh is the records the consolidation links tie to useful's items
-// the loop has not followed yet, in their order and each one's strongest link
-// first, not pooled yet. An item is marked followed once its links were read;
-// links it cannot read are no candidates. It calls no model.
+// linkedFresh is the records the links tie to useful's items the loop has
+// not followed yet, not pooled yet: for each item in useful's order, its
+// consolidation links strongest first, then its one-shot links nearest in
+// write order first, each source only with its switch. An item is marked
+// followed once its links were read; links it cannot read are no
+// candidates. It calls no model.
 func (r *simpleRun) linkedFresh(ctx context.Context, useful []string, expanded map[string]bool) ([]string, error) {
 	seeds := slices.DeleteFunc(slices.Clone(useful), func(id string) bool { return expanded[id] })
-	if len(seeds) == 0 {
+	settings := r.agent.config.Consolidation
+	if len(seeds) == 0 || settings == nil {
 		return nil, nil
 	}
-	links, err := r.agent.store.Links(ctx, r.revision, r.req.Scope, seeds)
-	if err != nil {
-		return nil, ctx.Err()
+	links := map[string][]records.Link{}
+	if settings.NativeEdges {
+		var err error
+		if links, err = r.agent.store.Links(ctx, r.revision, r.req.Scope, seeds); err != nil {
+			return nil, ctx.Err()
+		}
+	}
+	shots := map[string][]string{}
+	if settings.OneShotLinks && r.agent.overlay != nil {
+		var err error
+		if shots, err = r.oneShotNeighbours(ctx, seeds); err != nil {
+			return nil, ctx.Err()
+		}
 	}
 	out, taken := []string{}, map[string]bool{}
+	add := func(id string) {
+		if !taken[id] && r.items[id] == nil {
+			taken[id] = true
+			out = append(out, id)
+		}
+	}
 	for _, id := range seeds {
 		expanded[id] = true
 		list := slices.Clone(links[id])
 		slices.SortStableFunc(list, func(a, b records.Link) int { return cmp.Compare(b.Weight, a.Weight) })
 		for _, l := range list {
-			if !taken[l.ID] && r.items[l.ID] == nil {
-				taken[l.ID] = true
-				out = append(out, l.ID)
-			}
+			add(l.ID)
+		}
+		for _, other := range shots[id] {
+			add(other)
+		}
+	}
+	return out, nil
+}
+
+// oneShotNeighbours is, for each of ids, the records a one-shot link joins
+// it with, either way, nearest in write order first.
+func (r *simpleRun) oneShotNeighbours(ctx context.Context, ids []string) (map[string][]string, error) {
+	links, err := r.agent.overlay.linksOf(ctx, r.req.Scope, ids)
+	if err != nil {
+		return nil, err
+	}
+	type near struct {
+		id       string
+		distance int64
+	}
+	ends := map[string][]near{}
+	for _, l := range links {
+		d := max(l.Position-l.TargetPosition, l.TargetPosition-l.Position)
+		ends[l.ID] = append(ends[l.ID], near{l.Target, d})
+		ends[l.Target] = append(ends[l.Target], near{l.ID, d})
+	}
+	out := map[string][]string{}
+	for _, id := range ids {
+		list := ends[id]
+		slices.SortFunc(list, func(a, b near) int { return cmp.Or(cmp.Compare(a.distance, b.distance), cmp.Compare(a.id, b.id)) })
+		for _, n := range list {
+			out[id] = append(out[id], n.id)
 		}
 	}
 	return out, nil

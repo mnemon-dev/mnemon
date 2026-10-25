@@ -3,6 +3,7 @@ package memoryagent
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -22,11 +23,13 @@ func linkNotes(t *testing.T, s *records.Store, pairs map[string]string) {
 	}
 }
 
-// linkedRun is a pooled and screened run of the linked loop over cue.
+// linkedRun is a pooled and screened run of the linked loop over cue, which
+// follows the consolidation links (linkNotes).
 func linkedRun(t *testing.T, s *records.Store, planner Completer, judge Decider, needs []Need, c cue) *simpleRun {
 	t.Helper()
 	a := judgedAgent(t, s, planner, judge)
 	a.config.View = &ViewConfig{MaxItems: 100, LoopLinks: true}
+	a.config.Consolidation = &ConsolidationConfig{NativeEdges: true}
 	r, pool := poolRun(t, a, needs, c)
 	revision, _, err := s.Heads(context.Background(), "", records.Scope{})
 	if err != nil {
@@ -71,6 +74,35 @@ func TestLinkedFreshFollowsConsolidationLinksOnce(t *testing.T) {
 	}
 	if again, err := r.linkedFresh(context.Background(), []string{"clue"}, expanded); err != nil || len(again) != 0 {
 		t.Fatal("followed twice", again, err)
+	}
+}
+
+func TestLinkedFreshFollowsEachSourceOnlyWithItsSwitch(t *testing.T) {
+	s, dir := agentStore(t)
+	seedNote(t, s, "clue", "codename clue")
+	seedNote(t, s, "answer", "it is ORBIT")
+	seedNote(t, s, "near", "a note")
+	linkNotes(t, s, map[string]string{"clue": "near"})
+	overlay, err := OpenOverlay(filepath.Join(dir, "memory-index.db"), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { overlay.Close() })
+	// The answer chose the clue: a one-shot link, followed either way.
+	if err := overlay.saveLinks(context.Background(), records.Scope{}, 3, []recordLink{{ID: "answer", Position: 3, Target: "clue", TargetPosition: 1, P: 0.9}}); err != nil {
+		t.Fatal(err)
+	}
+	r := linkedRun(t, s, replies("", "", ""), clueJudge(), twoNeeds, cue{"codename", "search"})
+	r.agent.overlay = overlay
+	for _, c := range []struct {
+		native, shot bool
+		want         []string
+	}{{true, false, []string{"near"}}, {false, true, []string{"answer"}}, {true, true, []string{"near", "answer"}}, {false, false, nil}} {
+		r.agent.config.Consolidation = &ConsolidationConfig{NativeEdges: c.native, OneShotLinks: c.shot}
+		got, err := r.linkedFresh(context.Background(), []string{"clue"}, map[string]bool{})
+		if err != nil || !slices.Equal(got, c.want) {
+			t.Fatal(c.native, c.shot, got, err)
+		}
 	}
 }
 

@@ -133,8 +133,9 @@ type ViewConfig struct {
 	Links bool `json:"links,omitempty"`
 	// LoopLinks runs the linked loop instead of the simple loop: up to ten
 	// rounds of judging what is new, then new searches for the needs still
-	// open and every record the consolidation links tie to what JEV found
-	// useful (simple_linked.go).
+	// open and every record the links tie to what JEV found useful: the
+	// consolidation links with consolidation.nativeEdges, the one-shot links
+	// with consolidation.oneShotLinks (simple_linked.go).
 	LoopLinks bool `json:"loopLinks,omitempty"`
 }
 
