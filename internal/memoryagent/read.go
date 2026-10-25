@@ -166,6 +166,11 @@ type ViewConfig struct {
 	// JEV calls needed (≥ 0.5), not then the lit ones it calls not needed
 	// (timelines_layer.go).
 	LayerNeededOnly bool `json:"layerNeededOnly,omitempty"`
+	// TopDown has the pool also take the records cited by the consolidated
+	// topics and values the question's words find, ranked by the question's
+	// words search of the records, after the cue searches' mix
+	// (simple_topdown.go). It needs a timelines consolidation.
+	TopDown bool `json:"topDown,omitempty"`
 }
 
 // ExpandConfig sets the evidence expansion of a simple read. Kinds names the
@@ -318,6 +323,8 @@ type ReadStats struct {
 	// consolidation links of useful finds.
 	LoopLinked  int `json:"loopLinked,omitempty"`
 	ExpandSeeds int `json:"expandSeeds,omitempty"`
+	// TopDown counts the records view.topDown pooled.
+	TopDown int `json:"topDown,omitempty"`
 	// LayerInsights counts the insights the View's layer shows
 	// (consolidation.insights); absent at zero.
 	LayerInsights int `json:"layerInsights,omitempty"`
@@ -405,6 +412,9 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	}
 	if _, ok := models.Judge.(Chooser); config.Consolidation.Neutral() && !ok {
 		return nil, errors.New("neutral consolidation requires a decision model that answers choice questions")
+	}
+	if config.View != nil && config.View.TopDown && (!config.Consolidation.Timelines() || overlay == nil) {
+		return nil, errors.New("view.topDown requires a timelines consolidation and its overlay")
 	}
 	if config.Consolidation != nil && len(config.Consolidation.EdgeKinds) > 0 && models.Judge == nil {
 		return nil, errors.New("edgeKinds requires a decision model")
