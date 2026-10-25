@@ -131,6 +131,10 @@ type ViewConfig struct {
 	// (consolidation.oneShotLinks) tie to its records, within fixed bounds
 	// and calling no model (oneshot_links.go), before view.order.
 	Links bool `json:"links,omitempty"`
+	// LoopLinks gives the simple loop a third step and ten rounds: each round
+	// also pools the records linked to, or right beside, what the last round
+	// found useful, for JEV to judge like any find (simple_loop.go).
+	LoopLinks bool `json:"loopLinks,omitempty"`
 }
 
 // ExpandConfig sets the evidence expansion of a simple read. Kinds names the
@@ -279,7 +283,10 @@ type ReadStats struct {
 	ExpandShown int `json:"expandShown,omitempty"`
 	// LinksAppended counts the records view.links added to the View.
 	LinksAppended int `json:"linksAppended,omitempty"`
-	ExpandSeeds   int `json:"expandSeeds,omitempty"`
+	// LoopLinked counts the records view.loopLinks pooled from the links and
+	// the neighbours of useful finds.
+	LoopLinked  int `json:"loopLinked,omitempty"`
+	ExpandSeeds int `json:"expandSeeds,omitempty"`
 	// LayerInsights counts the insights the View's layer shows
 	// (consolidation.insights); absent at zero.
 	LayerInsights int `json:"layerInsights,omitempty"`

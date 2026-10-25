@@ -220,3 +220,38 @@ func TestChooseReadsJEVChoices(t *testing.T) {
 		t.Fatalf("an unknown option was accepted: sent %d, err %v", sent.Load(), err)
 	}
 }
+
+func TestLoopLinksPoolLinkedAndAdjacentRecordsOfUsefulFinds(t *testing.T) {
+	ctx := context.Background()
+	a, _, s := oneshotAgent(t, &oneshotJudge{pick: previousUnit})
+	for i := range 5 {
+		seedNote(t, s, fmt.Sprintf("n%d", i), fmt.Sprintf("note %d", i))
+	}
+	if _, err := a.linkRecords(ctx, records.Scope{}); err != nil {
+		t.Fatal(err)
+	}
+	revision, _, err := s.Heads(ctx, "", records.Scope{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// n2 was screened useful and n4 was not; n1 is pooled already.
+	r := &simpleRun{agent: a, revision: revision, order: []string{"n1", "n2", "n4"}, items: map[string]*simpleItem{
+		"n1": {ID: "n1", HasScreen: true, Screen: 0.1},
+		"n2": {ID: "n2", HasScreen: true, Screen: 0.9},
+		"n4": {ID: "n4", HasScreen: true, Screen: 0.2},
+	}}
+	last, expanded := map[string]bool{"n1": true, "n2": true, "n4": true}, map[string]bool{}
+	got, err := r.linkedFresh(ctx, last, expanded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// From n2 only: n3 chose it (n1, its own choice, is pooled). Nothing from
+	// n4, which JEV did not find useful.
+	if !slices.Contains(got, "n3") || slices.Contains(got, "n1") || slices.Contains(got, "n5") || !expanded["n2"] || expanded["n4"] {
+		t.Fatalf("fresh %v, expanded %v", got, expanded)
+	}
+	// A seed is expanded from once.
+	if again, err := r.linkedFresh(ctx, last, expanded); err != nil || len(again) != 0 {
+		t.Fatalf("expanded again: %v %v", again, err)
+	}
+}
