@@ -1,0 +1,16 @@
+# Runs aml-watch@%i.service, the alert watcher of instance %i, every minute.
+# Install once per host as /etc/systemd/system/aml-watch@.timer;
+# `mnemon-instance new <n>` enables aml-watch@<n>.timer. See
+# docs/aml-adapter.md ("Alerts").
+[Unit]
+Description=Run the Mnemon AML alert watcher of instance %i every minute
+
+[Timer]
+# OnBootSec also starts the cycle when the timer is enabled after boot: a
+# time already past fires at once, and OnUnitActiveSec follows each run.
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

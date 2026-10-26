@@ -198,8 +198,8 @@ func assertCommandHelpSeparation(t *testing.T, root string) {
 	t.Helper()
 	mnemon := commandHelp(t, root)
 	wantMnemon := []string{
-		"agency", "completion", "embed", "forget", "gc", "help", "import", "link", "log",
-		"recall", "receipt", "related", "remember", "search", "setup", "show", "status",
+		"agency", "completion", "embed", "forget", "gc", "help", "import", "link", "log", "memory-agent",
+		"recall", "receipt", "records", "related", "remember", "search", "serve", "setup", "show", "status",
 		"store", "update", "viz", "web",
 	}
 	if got := cobraTopLevelCommands(mnemon); !slices.Equal(got, wantMnemon) {

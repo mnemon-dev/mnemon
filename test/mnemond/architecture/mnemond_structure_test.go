@@ -68,11 +68,18 @@ func assertNativeMemoryDoesNotImportAgency(t *testing.T, root string) {
 func assertMnemondPackageGraph(t *testing.T, root string) {
 	t.Helper()
 	want := map[string][]string{
+		"internal/records":              {"internal/localrpc", "internal/retrieval"},
+		"internal/localrpc":             {},
+		"internal/retrieval":            {},
 		"internal/memory/embed":         {},
 		"internal/memory/internal/topk": {},
 		"internal/memory/model":         {},
+		"internal/memory/service":       {"internal/memory/graph", "internal/memory/search", "internal/memory/store"},
+		"internal/memoryagent":          {"internal/records", "internal/retrieval"},
+		"internal/aml":                  {"internal/memoryagent", "internal/records"},
 		"internal/memory/importdraft":   {"internal/memory/model"},
 		"internal/memory/store":         {"internal/memory/embed", "internal/memory/model"},
+		// Keep native CLI helpers independent from the frozen AML retrieval primitives.
 		"internal/memory/search": {
 			"internal/memory/embed", "internal/memory/internal/topk", "internal/memory/model", "internal/memory/store",
 		},
@@ -96,7 +103,7 @@ func assertMnemondPackageGraph(t *testing.T, root string) {
 		"cmd/memory": {
 			"internal/memory/embed", "internal/memory/graph", "internal/memory/importdraft",
 			"internal/memory/model", "internal/memory/search", "internal/memory/setup",
-			"internal/memory/setup/assets", "internal/memory/store", "internal/memory/web", "web",
+			"internal/memory/setup/assets", "internal/memory/store", "internal/memory/web", "internal/records", "internal/memory/service", "internal/memoryagent", "internal/aml", "internal/localrpc", "web",
 		},
 		"web": {},
 	}
