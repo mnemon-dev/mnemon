@@ -51,9 +51,7 @@ type Config struct {
 	View *ViewConfig `json:"view,omitempty"`
 	// Consolidation selects the consolidation job: unset or mode "" is the
 	// memory-agent/v1 fold, "timelines" the reference system's (timelines.go),
-	// "layered" its extraction and JEV linking split in two (layered.go), and
-	// "neutral" the layered job under a neutral prompt and neutral linking
-	// questions (neutral.go).
+	// "layered" its extraction and JEV linking split in two (layered.go).
 	Consolidation *ConsolidationConfig `json:"consolidation,omitempty"`
 	// Consolidator is the timelines or layered folding model. Unset, the
 	// planner folds; either way every fold asks for at most 8192 output
@@ -64,7 +62,6 @@ type Config struct {
 const (
 	consolidationTimelines = "timelines"
 	consolidationLayered   = "layered"
-	consolidationNeutral   = "neutral"
 )
 
 // ConsolidationConfig sets the timelines or layered consolidation. Zero
@@ -80,34 +77,29 @@ type ConsolidationConfig struct {
 	MaxBatches          int    `json:"maxBatches,omitempty"`
 	LinkCandidates      int    `json:"linkCandidates,omitempty"`
 	Parallel            int    `json:"parallel,omitempty"`
-	// EvenReading (layered mode) reads every record whole and alike, as
-	// neutral mode always does (evenReadable), and its extraction prompt no
-	// longer says assistant messages are cut short (layeredEvenFold).
+	// EvenReading (layered mode) reads every record whole and alike
+	// (evenReadable), and its extraction prompt no longer says assistant
+	// messages are cut short (layeredEvenFold).
 	EvenReading bool `json:"evenReading,omitempty"`
 }
 
 // readsEvenly reports whether the mode reads every record whole and alike:
-// neutral mode, or layered mode with EvenReading.
+// layered mode with EvenReading.
 func (c *ConsolidationConfig) readsEvenly() bool {
-	return c != nil && (c.Mode == consolidationNeutral || c.EvenReading)
+	return c != nil && c.EvenReading
 }
 
-// Timelines reports whether the mode keeps a timelines state ("timelines",
-// "layered" or "neutral"): its jobs fold batches of pending records, and
-// simple reads add its layer.
+// Timelines reports whether the mode keeps a timelines state ("timelines"
+// or "layered"): its jobs fold batches of pending records, and simple reads
+// add its layer.
 func (c *ConsolidationConfig) Timelines() bool {
 	return c != nil && (c.Mode == consolidationTimelines || c.Layered())
 }
 
 // Layered reports whether the mode splits extraction from JEV linking
-// ("layered" or "neutral").
+// ("layered").
 func (c *ConsolidationConfig) Layered() bool {
-	return c != nil && (c.Mode == consolidationLayered || c.Mode == consolidationNeutral)
-}
-
-// Neutral reports whether the mode is "neutral".
-func (c *ConsolidationConfig) Neutral() bool {
-	return c != nil && c.Mode == consolidationNeutral
+	return c != nil && c.Mode == consolidationLayered
 }
 
 // ViewConfig bounds what a simple read returns. Zero fields take the
@@ -248,9 +240,6 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	if config.Consolidation.Layered() && (models.Judge == nil || models.Consolidator == nil && models.Planner == nil) {
 		return nil, errors.New("layered consolidation requires a decision model and a completion model (consolidator or planner)")
 	}
-	if _, ok := models.Judge.(Chooser); config.Consolidation.Neutral() && !ok {
-		return nil, errors.New("neutral consolidation requires a decision model that answers choice questions")
-	}
 	// Config and its nested pointers belong to this service, never its caller.
 	raw, _ := json.Marshal(config)
 	var own Config
@@ -297,7 +286,7 @@ func (v *ViewConfig) normalize() error {
 // bounds. Mode "" is the v1 fold, which takes no settings.
 func (c *ConsolidationConfig) normalize() error {
 	if c.EvenReading && c.Mode != consolidationLayered {
-		return errors.New("evenReading requires consolidation mode \"layered\" (neutral mode always reads evenly)")
+		return errors.New("evenReading requires consolidation mode \"layered\"")
 	}
 	switch c.Mode {
 	case "":
@@ -309,7 +298,7 @@ func (c *ConsolidationConfig) normalize() error {
 		if c.LinkCandidates != 0 || c.Parallel != 0 {
 			return errors.New("linkCandidates and parallel require consolidation mode \"layered\"")
 		}
-	case consolidationLayered, consolidationNeutral:
+	case consolidationLayered:
 		if c.LinkCandidates == 0 {
 			c.LinkCandidates = 8
 		}

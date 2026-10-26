@@ -62,9 +62,6 @@ type event struct {
 	Text     string   `json:"text"`
 	Records  []string `json:"records"`
 	Entities []string `json:"entities,omitempty"`
-	// Updated marks an event a later note of its thread updates or replaces
-	// (neutral mode, neutral.go).
-	Updated bool `json:"updated,omitempty"`
 }
 
 type factValue struct {
@@ -101,12 +98,13 @@ type timelineMemory struct {
 // count likewise the jobs (with DeferLinks) in which linking the head batch
 // failed for the linking request itself, for its linking rule (linkDue),
 // apart from its extraction's drop mode. Mode is the consolidation mode
-// of the job that last wrote the state: "" for timelines, "layered" or
-// "neutral". A stored state's fields beyond these, in the state or in its
-// memory, such as those the deleted native edges and the deleted L2
-// consolidation wrote, are ignored when it loads (loadTimelines decodes it
-// with plain json.Unmarshal, which must stay lenient) and dropped when it
-// is next saved.
+// of the job that last wrote the state: "" for timelines, or "layered" (a
+// state a deleted mode saved keeps that mode's name until a job saves it).
+// A stored state's fields beyond these, in the state or in its memory,
+// such as those the deleted native edges and the deleted L2 consolidation
+// wrote and the "updated" marks of a deleted mode's events, are ignored
+// when it loads (loadTimelines decodes it with plain json.Unmarshal, which
+// must stay lenient) and dropped when it is next saved.
 type timelineState struct {
 	Format          string          `json:"format"`
 	Mode            string          `json:"mode,omitempty"`
@@ -212,6 +210,34 @@ func readable(title, content string, assistantChars int) (header, body string, o
 func isDataLine(line string) bool {
 	t := strings.TrimFunc(line, isJSSpace)
 	return len(t) >= 2 && t[0] == '{' && t[len(t)-1] == '}' && !strings.ContainsAny(t, "\r\n  ")
+}
+
+// evenReadable is how evenReading reads a record: whole, like every other,
+// with no rule by role. A leading session heading becomes the header, as
+// readable has it, so that the record shows its date; otherwise the title
+// does. Only an empty record is not read.
+func evenReadable(title, content string) (header, body string, ok bool) {
+	session := authorSessionHeading.FindStringSubmatch(content)
+	if session == nil {
+		session = sessionHeading.FindStringSubmatch(content)
+	}
+	header, body = jsSlice(title, 0, 40), content
+	if session != nil {
+		header, body = session[2]+" (session "+session[1]+")", content[len(session[0]):]
+	}
+	if strings.TrimFunc(body, isJSSpace) == "" {
+		return "", "", false
+	}
+	return header, body, true
+}
+
+// recordReader is how the agent's consolidation reads a record:
+// evenReadable with evenReading, else readable with its assistant cut.
+func (a *Agent) recordReader(assistantChars int) func(title, content string) (string, string, bool) {
+	if a.config.Consolidation.readsEvenly() {
+		return evenReadable
+	}
+	return func(title, content string) (string, string, bool) { return readable(title, content, assistantChars) }
 }
 
 // nextBatch is the records until their text reaches chars UTF-16 units, or,
@@ -548,14 +574,12 @@ var batchRef = regexp.MustCompile(`^r?([0-9]+)$`)
 // that restates one already kept is skipped. Unlike the author, lists that are
 // not arrays and entries that are not objects add nothing instead of throwing.
 func applyReply(m *timelineMemory, batch []pendingRecord, reply string) error {
-	return applyReplyWith(m, batch, reply, false, false)
+	return applyReplyWith(m, batch, reply, false)
 }
 
 // applyReplyWith is applyReply; with entities, the "entities" an event or a
-// fact names are kept with it (layered extraction). With notes, the reply's
-// "notes" are read instead, each an event of the thread its "group" titles,
-// and nothing else is (neutral extraction).
-func applyReplyWith(m *timelineMemory, batch []pendingRecord, reply string, entities, notes bool) error {
+// fact names are kept with it (layered extraction).
+func applyReplyWith(m *timelineMemory, batch []pendingRecord, reply string, entities bool) error {
 	value, ok := parseTimelineReply(reply)
 	if !ok {
 		return errors.New("consolidation reply holds no JSON object")
@@ -590,17 +614,13 @@ func applyReplyWith(m *timelineMemory, batch []pendingRecord, reply string, enti
 		}
 		return out
 	}
-	events, labelKey := value["events"], "thread"
-	if notes {
-		events, labelKey = value["notes"], "group"
-	}
-	for _, raw := range jsonList(events) {
+	for _, raw := range jsonList(value["events"]) {
 		e := jsonObject(raw)
 		said := jsonText(e["text"])
 		if said == "" {
 			continue
 		}
-		label := jsonText(e[labelKey])
+		label := jsonText(e["thread"])
 		at := slices.IndexFunc(m.Threads, func(t thread) bool { return t.ID == label })
 		if at < 0 {
 			title := label
@@ -617,9 +637,6 @@ func applyReplyWith(m *timelineMemory, batch []pendingRecord, reply string, enti
 			}
 		}
 		m.Events = append(m.Events, event{Thread: m.Threads[at].ID, Date: jsonText(e["date"]), Text: said, Records: refs(e["records"]), Entities: names(e["entities"])})
-	}
-	if notes {
-		return nil
 	}
 	for _, raw := range jsonList(value["facts"]) {
 		f := jsonObject(raw)
@@ -1030,13 +1047,11 @@ func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *
 
 // foldSpec is what a fold sends the consolidating model: its system prompt
 // and the user message for a batch, or a part of one, given the memory so
-// far; entities keeps the entity names the replies give, and notes reads
-// the replies' notes (applyReplyWith).
+// far; entities keeps the entity names the replies give (applyReplyWith).
 type foldSpec struct {
 	system   string
 	prompt   func(m timelineMemory, batch []pendingRecord) string
 	entities bool
-	notes    bool
 }
 
 // timelinesFold is the author's fold: the index so far, then the batch.
@@ -1066,7 +1081,7 @@ func (a *Agent) foldTimelines(ctx context.Context, model Completer, spec foldSpe
 		if err != nil {
 			return err
 		}
-		if applyReplyWith(&state.Memory, batch, reply, spec.entities, spec.notes) == nil {
+		if applyReplyWith(&state.Memory, batch, reply, spec.entities) == nil {
 			state.Batches++
 			return nil
 		}

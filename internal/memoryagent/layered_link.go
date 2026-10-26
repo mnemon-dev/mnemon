@@ -60,13 +60,10 @@ const (
 )
 
 // linkItem is a thread or a key as JEV reads it: a new one, n1, n2, …, or a
-// stored one, by thread id or K<i> (the i-th key of M, from 1). A note
-// (neutral.go) is an item with its date and its group's title.
+// stored one, by thread id or K<i> (the i-th key of M, from 1).
 type linkItem struct {
-	ID     string `json:"id"`
-	Date   string `json:"date,omitempty"`
-	Thread string `json:"thread,omitempty"`
-	Text   string `json:"text"`
+	ID   string `json:"id"`
+	Text string `json:"text"`
 }
 
 // linkState is a linking call's state: the new items and the candidates its
@@ -103,13 +100,11 @@ func (r *ConsolidateResult) addLinks(c linkCounts) {
 
 // The kinds of pair: does a new thread continue a stored one; is a new key
 // a stored one, and does its value contradict it; does a new key's value
-// contradict the stored key of the same name; does a new note update an
-// earlier one of its group (neutral.go).
+// contradict the stored key of the same name.
 const (
 	linkThread = iota
 	linkKey
 	linkExact
-	linkUpdate
 )
 
 // linkPair is a new item (an index into the new items) and a candidate (an
@@ -144,9 +139,6 @@ func latestText(key string, values []factValue) string {
 // (keepsPending; its linking rule read from state, whose head batch it is:
 // linkDue): then, and for a canceled job, the error is returned.
 func (l *linker) link(ctx context.Context, state *timelineState, batch timelineMemory, result *ConsolidateResult) (timelineMemory, linkCounts, error) {
-	if l.agent.config.Consolidation.Neutral() {
-		return l.linkNeutral(ctx, state, batch, result)
-	}
 	m := state.Memory
 	newThreads, newEvents := eventThreads(batch)
 	oldThreads, oldEvents := eventThreads(m)
@@ -396,8 +388,8 @@ func (l *linker) embed(ctx context.Context, texts []string, store bool) ([][]flo
 
 // linkRequest is one packed linking call: its state, its questions and the
 // pairs they ask about, in order (pair j asks t<j>, or i<j> and x<j>, or
-// x<j>, or u<j>), and the request's size so far, as JEV's client measures
-// it, plus at most one unit per list item.
+// x<j>), and the request's size so far, as JEV's client measures it, plus
+// at most one unit per list item.
 type linkRequest struct {
 	state     linkState
 	questions map[string]Question
@@ -416,8 +408,6 @@ func pairQuestions(p *linkPair, news, cands []linkItem, j int) map[string]Questi
 		return map[string]Question{fmt.Sprintf("t%d", j): {Type: "noul", Instructions: continuesQuestion(n, c), Criteria: map[string]string{"true": continuesYes, "false": continuesNo}}}
 	case linkKey:
 		return map[string]Question{fmt.Sprintf("i%d", j): {Type: "noul", Instructions: sameKeyQuestion(n, c), Criteria: map[string]string{"true": sameKeyYes, "false": sameKeyNo}}, fmt.Sprintf("x%d", j): contradicts}
-	case linkUpdate:
-		return map[string]Question{fmt.Sprintf("u%d", j): {Type: "noul", Instructions: updateQuestion(n, c), Criteria: map[string]string{"true": updateYes, "false": updateNo}}}
 	}
 	return map[string]Question{fmt.Sprintf("x%d", j): contradicts}
 }
@@ -496,8 +486,6 @@ func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*lin
 				p.same = answers[fmt.Sprintf("t%d", j)]
 			case linkKey:
 				p.same, p.contradicts = answers[fmt.Sprintf("i%d", j)], answers[fmt.Sprintf("x%d", j)]
-			case linkUpdate:
-				p.same = answers[fmt.Sprintf("u%d", j)]
 			default:
 				p.contradicts = answers[fmt.Sprintf("x%d", j)]
 			}

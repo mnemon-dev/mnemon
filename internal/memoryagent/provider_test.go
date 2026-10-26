@@ -97,40 +97,6 @@ func TestJEVRequiresMeteringAndTypedPresentAnswers(t *testing.T) {
 	}
 }
 
-func TestChooseReadsJEVChoices(t *testing.T) {
-	budget, err := OpenBudget(filepath.Join(t.TempDir(), "budget.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer budget.Close()
-	t.Setenv("UNIT_JEV_CHOICE", "test-only-placeholder")
-	p, err := NewProvider(ModelConfig{Kind: "jev", Model: "jev-1.13.0", KeyEnv: "UNIT_JEV_CHOICE"}, budget)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var sent atomic.Int32
-	reply := `{"model":"jev-1.13.0","answers":{"q":{"type":"choice","choice":"u1","confidence":0.8,"probabilities":{"u1":0.8,"none":0.2}}},"usage":{"input_tokens":40,"output_tokens":3}}`
-	p.client.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
-		sent.Add(1)
-		raw, _ := io.ReadAll(req.Body)
-		var body struct{ Questions map[string]Question }
-		if json.Unmarshal(raw, &body) != nil || body.Questions["q"].Type != "choice" {
-			t.Error("the request did not carry the choice question")
-		}
-		return mockResponse(reply), nil
-	})
-	questions := map[string]Question{"q": {Type: "choice", Instructions: "Which one?", Criteria: map[string]string{"u1": "it depends on u1", "none": "it stands alone"}}}
-	choices, usage, err := p.Choose(context.Background(), map[string]any{"units": []string{"u1"}}, questions)
-	if err != nil || choices["q"] != (Choice{Option: "u1", P: 0.8}) || usage.InputTokens != 40 || sent.Load() != 1 {
-		t.Fatalf("choices %v, usage %+v, sent %d, err %v", choices, usage, sent.Load(), err)
-	}
-	// A choice outside the options is an invalid reply, retried once.
-	reply = `{"model":"jev-1.13.0","answers":{"q":{"type":"choice","choice":"u9","probabilities":{"u9":1}}},"usage":{"input_tokens":40,"output_tokens":3}}`
-	if _, _, err := p.Choose(context.Background(), map[string]any{}, questions); err == nil || sent.Load() != 3 {
-		t.Fatalf("an unknown option was accepted: sent %d, err %v", sent.Load(), err)
-	}
-}
-
 func TestBudgetAtomicCapAcrossOwners(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "budget.db")
 	caps := map[string]float64{"jev": 0.02}

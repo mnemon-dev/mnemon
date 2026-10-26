@@ -347,13 +347,10 @@ func (a *Agent) extractBatches(ctx context.Context, model Completer, head timeli
 	}), keys
 }
 
-// extractionFold is the L0 fold of the agent's mode: neutralFold in neutral
-// mode, layeredEvenFold with evenReading, else layeredFold.
+// extractionFold is the L0 fold of the agent's mode: layeredEvenFold with
+// evenReading, else layeredFold.
 func (a *Agent) extractionFold() foldSpec {
-	switch {
-	case a.config.Consolidation.Neutral():
-		return neutralFold
-	case a.config.Consolidation.readsEvenly():
+	if a.config.Consolidation.readsEvenly() {
 		return layeredEvenFold
 	}
 	return layeredFold
