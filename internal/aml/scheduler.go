@@ -379,6 +379,31 @@ func (s *scheduler) Status() SchedulerStatus {
 	return status
 }
 
+// StateOf is the user's consolidation as the store overview shows it:
+// "queued", "running", "backing-off" (after failed jobs; failures says how
+// many in a row), "held" (idle, held by a Search's flush), or "" for idle.
+func (s *scheduler) StateOf(key string) (state string, failures int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := s.users[key]
+	if u == nil {
+		return "", 0
+	}
+	switch u.state {
+	case userQueued:
+		state = "queued"
+	case userRunning:
+		state = "running"
+	case userBackingOff:
+		state = "backing-off"
+	default:
+		if u.holds > 0 {
+			state = "held"
+		}
+	}
+	return state, u.failures
+}
+
 // Backlog is the characters the scheduler estimates the user has pending: the
 // measure of the user's last job plus what Adds have written since. It has no
 // estimate (known false) for a user whose job has not ended with a measure yet,

@@ -182,11 +182,13 @@ var (
 // is. Other records are read whole, up to 2000 units, under the first 40
 // units of their title. A last line that is a JSON object is the author's
 // data line and is not read.
-func readable(reading RoleReading, title, content string, data map[string]any) (header, body string, ok bool) {
+//
+// tally, when given, adds what the reading read and passed over of each role.
+func readable(reading RoleReading, title, content string, data map[string]any, tally map[string]ReadUnits) (header, body string, ok bool) {
 	if owners := chunkLines(data); owners != nil {
 		heading, rest, found := strings.Cut(content, "\n")
 		if lines := strings.Split(rest, "\n"); found && len(lines) == len(owners) {
-			body, ok = readLines(reading, lines, owners)
+			body, ok = readLines(reading, lines, owners, tally)
 			if !ok {
 				return "", "", false
 			}
@@ -245,26 +247,34 @@ func chunkLines(data map[string]any) []lineOwner {
 // lines[i] is: the lines it reads, an excerpted message's last line cut with
 // " …", joined by newlines; !ok when it reads none. The "role: " prefix of a
 // message's first line does not count against the excerpt.
-func readLines(reading RoleReading, lines []string, owners []lineOwner) (string, bool) {
+func readLines(reading RoleReading, lines []string, owners []lineOwner, tally map[string]ReadUnits) (string, bool) {
 	var kept []string
 	for i, line := range lines {
-		owner := owners[i]
+		owner, units, read := owners[i], jsLen(line), 0
 		switch reading.modeOf(owner.role) {
 		case ReadFull:
-			kept = append(kept, line)
+			kept, read = append(kept, line), units
 		case ReadExcerpt:
 			room := reading.Excerpt - owner.offset
 			if room <= 0 {
-				continue
+				break
 			}
 			prefix := ""
 			if owner.offset == 0 && strings.HasPrefix(line, owner.role+": ") {
 				prefix, line = owner.role+": ", line[len(owner.role)+2:]
 			}
+			read = jsLen(prefix) + min(jsLen(line), room)
 			if jsLen(line) > room {
 				line = jsSlice(line, 0, room) + " …"
 			}
 			kept = append(kept, prefix+line)
+		}
+		if tally != nil {
+			bucket := reading.Bucket(owner.role)
+			counted := tally[bucket]
+			counted.Read += read
+			counted.Skipped += units - read
+			tally[bucket] = counted
 		}
 	}
 	return strings.Join(kept, "\n"), len(kept) > 0
@@ -855,12 +865,15 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	if layered {
 		state.Mode = settings.Mode
 	}
-	reading := a.roleReading()
-	revision, read, unread, err := a.readNewRecords(ctx, req.Scope, &state, reading, settings.MaxBatches*settings.BatchCharacters)
+	reading, tally := a.roleReading(), map[string]ReadUnits{}
+	revision, read, unread, err := a.readNewRecords(ctx, req.Scope, &state, reading, settings.MaxBatches*settings.BatchCharacters, tally)
 	if err != nil {
 		return ConsolidateResult{}, err
 	}
 	result := ConsolidateResult{Revision: revision, Visited: read}
+	if len(tally) > 0 {
+		result.Reading = tally
+	}
 	before := memorySize(state.Memory)
 	// When every record was read and nothing new found, the author's
 	// caughtUp holds: fold the short rest too (N:1108). When the bound
@@ -1041,7 +1054,7 @@ func (a *Agent) lockTimelines(ctx context.Context, scope records.Scope) (func(),
 // a job after the pending records drain. A record longer than bound is read
 // when nothing is pending, so none can block. It returns the revision read,
 // the number of records read and the number left unread.
-func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *timelineState, reading RoleReading, bound int) (string, int, int, error) {
+func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *timelineState, reading RoleReading, bound int, tally map[string]ReadUnits) (string, int, int, error) {
 	revision, heads, err := a.store.Heads(ctx, "", scope)
 	if err != nil {
 		return "", 0, 0, err
@@ -1077,7 +1090,7 @@ func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *
 		}
 		for _, head := range part {
 			if value, ok := values[head.ID]; ok {
-				if header, body, ok := readable(reading, value.Title, value.Content, value.Data); ok {
+				if header, body, ok := readable(reading, value.Title, value.Content, value.Data, tally); ok {
 					units := jsLen(header) + jsLen(body)
 					if len(state.Pending) > 0 && size+units > bound {
 						return revision, read, len(fresh) - read, nil

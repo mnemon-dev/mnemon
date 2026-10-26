@@ -13,6 +13,11 @@ type Usage struct {
 	OutputTokens int     `json:"outputTokens"`
 	USD          float64 `json:"usd,omitempty"`
 	CNY          float64 `json:"cny,omitempty"`
+	// CacheHitTokens are the input tokens DeepSeek served from its context
+	// cache (prompt_cache_hit_tokens), billed at a lower price. CNY prices
+	// every input token as a miss, which a budget errs safe by; this tells
+	// how far the bill is below it.
+	CacheHitTokens int `json:"cacheHitTokens,omitempty"`
 	// Cached counts the calls the model cache answered (Config.ModelCache):
 	// their tokens and prices are the recorded reply's, reported as the live
 	// call reported them, but nothing was sent, reserved or spent.
@@ -77,6 +82,10 @@ type AttemptEvent struct {
 	Duration             time.Duration
 	Status               int
 	Retried              bool
+	// Usage is what the attempt was settled at: its reply's metering, or its
+	// input estimate when it brought back none; zero when nothing was
+	// reserved or it got no reply.
+	Usage Usage
 }
 
 // The outcomes of an attempt (AttemptEvent.Outcome), which metrics label

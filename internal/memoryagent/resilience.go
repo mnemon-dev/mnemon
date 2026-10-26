@@ -551,6 +551,8 @@ type flightResult[T meteredReply] struct {
 	raw    []byte
 	status int // the HTTP status answered, 0 without an answer
 	err    error
+	// usage is what the attempt was settled at (AttemptEvent.Usage).
+	usage Usage
 	// retry: a retry may not meet the failure (a transport failure, a
 	// timeout, a status retryableStatus lists, a first invalid reply).
 	retry bool
@@ -671,7 +673,7 @@ func (c *modelCall[T]) attempt(exec failsafe.Execution[flightResult[T]]) (flight
 	if outcome == OutcomeRejected {
 		c.p.rejected.Add(1)
 	}
-	c.report(outcome, c.attempts, time.Since(start), res.status)
+	c.report(outcome, c.attempts, time.Since(start), res.status, res.usage)
 	return res, res.err
 }
 
@@ -681,13 +683,13 @@ func (c *modelCall[T]) attempt(exec failsafe.Execution[flightResult[T]]) (flight
 func (c *modelCall[T]) spent() (flightResult[T], error) {
 	c.last.err = fmt.Errorf("%w; the provider's retry budget is spent", c.last.err)
 	c.last.retry = false
-	c.report(OutcomeBudget, c.attempts+1, 0, 0)
+	c.report(OutcomeBudget, c.attempts+1, 0, 0, Usage{})
 	return c.last, c.last.err
 }
 
 // report shows an attempt to the provider's observer.
-func (c *modelCall[T]) report(outcome string, attempt int, took time.Duration, status int) {
-	c.p.observe(AttemptEvent{Kind: c.p.config.Kind, Class: c.policy.class.String(), Outcome: outcome, Attempt: attempt, Duration: took, Status: status, Retried: attempt > 1})
+func (c *modelCall[T]) report(outcome string, attempt int, took time.Duration, status int, usage Usage) {
+	c.p.observe(AttemptEvent{Kind: c.p.config.Kind, Class: c.policy.class.String(), Outcome: outcome, Attempt: attempt, Duration: took, Status: status, Retried: attempt > 1, Usage: usage})
 }
 
 // stop decides, after an attempt a retry may pass, whether the call stops
@@ -991,6 +993,7 @@ func (f *flight[T]) meter(p *Provider, raw []byte) flightResult[T] {
 	reply, err := f.parse(raw)
 	res := flightResult[T]{status: http.StatusOK, reply: reply, raw: raw}
 	if usage, ok := reply.metered(); ok {
+		res.usage = usage
 		settleErr := f.settle(p, usage)
 		if settleErr == nil {
 			if err != nil {
@@ -1016,6 +1019,9 @@ func (f *flight[T]) meter(p *Provider, raw []byte) flightResult[T] {
 		err = errNoMetering
 	}
 	res.err, res.invalid, res.raw = f.settleEstimate(p, err), true, nil
+	if f.resolved {
+		res.usage = f.estimate
+	}
 	return res
 }
 

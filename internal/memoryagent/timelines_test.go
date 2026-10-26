@@ -51,7 +51,7 @@ func TestReadableCases(t *testing.T) {
 		{"conversation without a date is another record", "Original record", "Conversation s-1:\nuser: hi", "Original record", "Conversation s-1:\nuser: hi", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			header, body, ok := readable(reading, tc.title, tc.content, nil)
+			header, body, ok := readable(reading, tc.title, tc.content, nil, nil)
 			if header != tc.header || body != tc.body || ok != tc.ok {
 				t.Fatalf("readable = (%q, %q, %v), want (%q, %q, %v)", header, body, ok, tc.header, tc.body, tc.ok)
 			}
@@ -98,14 +98,23 @@ func TestReadableByMessage(t *testing.T) {
 			"assistant: abcdefghijklmnop\nmore", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			header, body, ok := readable(tc.reading, "Original record", tc.content, tc.data)
+			header, body, ok := readable(tc.reading, "Original record", tc.content, tc.data, nil)
 			if body != tc.body || ok != tc.ok || ok && header != "2024/03/16 (session s-1)" {
 				t.Fatalf("readable = (%q, %q, %v), want body %q, %v", header, body, ok, tc.body, tc.ok)
 			}
 		})
 	}
-	if header, body, ok := readable(reading, "Original record", "Conversation s-1:\nuser: hi", owned("user", 0)); !ok || header != "Conversation s-1" || body != "user: hi" {
+	if header, body, ok := readable(reading, "Original record", "Conversation s-1:\nuser: hi", owned("user", 0), nil); !ok || header != "Conversation s-1" || body != "user: hi" {
 		t.Fatalf("an undated chunk with lines: (%q, %q, %v)", header, body, ok)
+	}
+	// A tally counts, by role, what was read and passed over: the user line
+	// whole (8 units), the assistant's prefix and first 10 units of 27, the
+	// ignored tool line (17) and the Caroline line, counted as other.
+	tally := map[string]ReadUnits{}
+	readable(reading, "Original record", heading+"user: hi\nassistant: abcdefghijklmnop\ntool: result rows\nCaroline: hey", owned("user", 0, "assistant", 0, "tool", 0, "Caroline", 0), tally)
+	want := map[string]ReadUnits{"user": {Read: 8}, "assistant": {Read: 21, Skipped: 6}, "tool": {Skipped: 17}, "other": {Read: 13}}
+	if !reflect.DeepEqual(tally, want) {
+		t.Fatalf("tally %v, want %v", tally, want)
 	}
 }
 

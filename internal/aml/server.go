@@ -185,6 +185,8 @@ type Server struct {
 	// agents' consolidation reads by (MemoryConfig.ReadOverride) while set.
 	configRead   memoryagent.RoleReading
 	settingsRead atomic.Pointer[memoryagent.RoleReading]
+	// events keeps the latest WARN and ERROR lines (GET /admin/v1/events).
+	events *eventRing
 	// stores scans the data root for the store overview and the store gauges.
 	stores *storeScanner
 	// freeDisk is the free bytes of the disk holding a directory, which
@@ -274,7 +276,8 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if s.log == nil {
 		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
-	s.log = slog.New(contextHandler{s.log.Handler()})
+	s.events = &eventRing{}
+	s.log = slog.New(contextHandler{eventsHandler{s.log.Handler(), s.events}})
 	if config.AdminToken != "" {
 		digest := sha256.Sum256([]byte(config.AdminToken))
 		s.adminKey = &digest
@@ -911,9 +914,12 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	}
 	release := sync.OnceFunc(func() { s.users.release(user) })
 	defer release()
+	byRole := s.messageRoles(parts)
+	nameRoles(ctx, byRole)
 	if !s.writeParts(ctx, w, user, parts, deadline) {
 		return
 	}
+	s.metrics.added(byRole)
 	if s.sched != nil {
 		// Stored and told to the scheduler: the wait needs the scheduler, not
 		// the store.
@@ -922,6 +928,22 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	}
 	s.metrics.adds.Add(1)
 	writeJSON(w, http.StatusOK, done)
+}
+
+// messageRoles counts the messages of an Add's parts by role, under the
+// bucket names of the role reading consolidation reads by.
+func (s *Server) messageRoles(parts []addPart) map[string]int {
+	reading := s.configRead
+	if read := s.settingsRead.Load(); read != nil {
+		reading = *read
+	}
+	byRole := map[string]int{}
+	for _, part := range parts {
+		for _, message := range part.conversation.Messages {
+			byRole[reading.Bucket(message.Role)]++
+		}
+	}
+	return byRole
 }
 
 // writeParts writes an Add's parts under the user's write lock and embeds
@@ -1138,7 +1160,11 @@ func (s *Server) flushHeld(ctx context.Context, user *userEntry) {
 func (s *Server) flush(ctx context.Context, user *userEntry) {
 	ctx, cancel := context.WithTimeout(memoryagent.WithCallClass(ctx, memoryagent.Flush), s.flushWindow)
 	defer cancel()
+	started := time.Now()
 	outcome := s.consolidate(ctx, user, false, "flush", nil)
+	if outcome.folded > 0 {
+		s.metrics.flushSeconds.Observe(time.Since(started).Seconds())
+	}
 	if outcome.unfinished && s.sched != nil {
 		s.sched.Notify(ctx, user.key, 0)
 	}
@@ -1306,6 +1332,7 @@ func (s *Server) read(ctx context.Context, user *userEntry, req memoryagent.Read
 func (s *Server) answer(w http.ResponseWriter, items []SearchItem) {
 	scoreByPosition(items)
 	s.metrics.searchAnswered()
+	s.metrics.delivered(items)
 	writeJSON(w, http.StatusOK, SearchResponse{Data: items})
 }
 

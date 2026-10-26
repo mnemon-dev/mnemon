@@ -84,6 +84,21 @@ func readMode(mode string) bool {
 	return mode == ReadFull || mode == ReadExcerpt || mode == ReadIgnore
 }
 
+// Bucket is the name a role's messages are counted under: the role in lower
+// case when it is user, assistant, system or tool or the reading names it,
+// else "other", so that the names stay few whatever roles arrive.
+func (p RoleReading) Bucket(role string) string {
+	key := strings.ToLower(strings.TrimFunc(role, isJSSpace))
+	switch key {
+	case "user", "assistant", "system", "tool":
+		return key
+	}
+	if _, named := p.Roles[key]; named {
+		return key
+	}
+	return "other"
+}
+
 // modeOf is how the policy reads a message of role.
 func (p RoleReading) modeOf(role string) string {
 	if mode, ok := p.Roles[strings.ToLower(strings.TrimFunc(role, isJSSpace))]; ok {

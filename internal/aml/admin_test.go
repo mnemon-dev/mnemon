@@ -382,7 +382,7 @@ func TestAdminStatusFieldsAreStable(t *testing.T) {
 		slices.Sort(out)
 		return out
 	}
-	want := []string{"addOutran", "adds", "breakerTrips", "breakers", "budgets", "degraded", "dropped", "lagBound", "linkFallbacks", "openStores", "partial", "partialLast10m", "providerKeys", "queue", "rejectedByKind", "searches", "searchesLast10m", "startedAt", "version"}
+	want := []string{"addOutran", "adds", "breakerTrips", "breakers", "budgets", "degraded", "dropped", "lagBound", "linkFallbacks", "messages", "openStores", "partial", "partialLast10m", "providerKeys", "queue", "rejectedByKind", "searches", "searchesLast10m", "startedAt", "version"}
 	if got := keys(fields); !slices.Equal(got, want) {
 		t.Fatalf("fields %v, want %v", got, want)
 	}
