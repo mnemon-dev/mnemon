@@ -171,9 +171,6 @@ type ViewConfig struct {
 	// words search of the records, after the cue searches' mix
 	// (simple_topdown.go). It needs a timelines consolidation.
 	TopDown bool `json:"topDown,omitempty"`
-	// NativeBM25 has the searches ranked by SQLite FTS5's own bm25()
-	// (records match "bm25") instead of the frozen rules.
-	NativeBM25 bool `json:"nativeBM25,omitempty"`
 }
 
 // ExpandConfig sets the evidence expansion of a simple read. Kinds names the

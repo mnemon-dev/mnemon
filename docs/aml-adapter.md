@@ -70,7 +70,9 @@ console, Prometheus (ops host) ──WireGuard──▶ aml-serve@<n>, admin <ov
 - **Retrieval is BM25 only.** The cue searches over a user's records, the consolidation
   layer's choice of the topics and values nearest to a question, and the linking of new
   topics and facts to stored ones all rank by shared words (BM25). Nothing is embedded and
-  no embedding service runs.
+  no embedding service runs. The cue searches rank by SQLite FTS5's own `bm25()` over the
+  store's background-built index (until it covers the records, by the frozen BM25 rules);
+  the raw ranking of a degraded Search, and the rest, keep the frozen rules.
 - Each `user_id` has its own store: `<data-root>/users/<hex(sha256(user_id))[:32]>`. One
   user can never reach another's records. Logs show only the first 8 hex digits.
 

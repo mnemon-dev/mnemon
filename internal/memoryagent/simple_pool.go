@@ -51,12 +51,13 @@ func (r *simpleRun) search(ctx context.Context, c cue) (*cueSearch, error) {
 		r.searches = append(r.searches, s)
 		return s, nil
 	}
-	input := map[string]json.RawMessage{"match": json.RawMessage(`"words"`)}
+	// Searches rank by SQLite FTS5's own bm25() (records match "bm25", by the
+	// frozen rules until the index covers the selection); with an embedder,
+	// by words and meaning.
+	input := map[string]json.RawMessage{"match": json.RawMessage(`"bm25"`)}
 	input["query"], _ = json.Marshal(c.Text)
 	if r.agent.config.Embedding != nil {
 		input["match"] = json.RawMessage(`"hybrid"`)
-	} else if r.agent.config.View.NativeBM25 {
-		input["match"] = json.RawMessage(`"bm25"`)
 	}
 	if r.intent != "" {
 		input["intent"], _ = json.Marshal(r.intent)
