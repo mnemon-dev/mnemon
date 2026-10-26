@@ -87,13 +87,13 @@ func TestEventsKeepTheLatestWarnings(t *testing.T) {
 			t.Errorf("%s answered %d", query, response.Code)
 		}
 	}
-	// The ring keeps the latest eventsKept.
-	ring := &eventRing{}
+	// The memory keeps the latest eventsKept warnings.
+	memory := newLineMemory()
 	for i := 0; i < eventsKept+3; i++ {
-		ring.add(Event{Time: time.Unix(int64(i), 0), Level: "WARN", Message: "m"})
+		memory.add(slog.LevelWarn, Event{Time: time.Unix(int64(i), 0), Level: "WARN", Message: "m"})
 	}
-	if events, total := ring.latest(slog.LevelWarn, eventsKept+10); len(events) != eventsKept || total != eventsKept+3 || events[0].Time.Unix() != eventsKept+2 {
-		t.Fatalf("ring kept %d of %d, newest %v", len(events), total, events[0].Time)
+	if events, _, total := memory.kept(slog.LevelWarn); len(events) != eventsKept || total != eventsKept+3 || events[0].Time.Unix() != eventsKept+2 {
+		t.Fatalf("memory kept %d of %d, newest %v", len(events), total, events[0].Time)
 	}
 }
 
