@@ -73,29 +73,18 @@ const (
 // job. LinkCandidates and Parallel are layered settings: the existing
 // threads (and keys) JEV compares each new thread (and key) with, 8 by
 // default, and the extraction calls a job keeps in flight, 4 by default.
-// NativeEdges (either mode) turns the consolidated state into derived
-// metadata for the records' native indexes after every job that changed it
-// (edges.go): entities with aliases, thread and value-history links, event
-// dates. LinkCandidates also bounds the names each new entity name is
-// compared with (8 in timelines mode). EdgeKinds (with NativeEdges, and a
-// decision model) lists the kinds of event edge JEV decides, each of
-// semantic, temporal, causal and entity once (event_edges.go): with any,
-// they replace the thread links, and LinkCandidates bounds the earlier
-// events each new event is compared with per kind (8 in timelines mode).
 // Insights (layered mode) consolidates the consolidated items one level up
 // (L2, insights.go) after every job's L0 and L1, and adds its conclusions
 // to the layer of simple reads (insights_layer.go); off, it stays out of the
 // config's JSON and the policy hash.
 type ConsolidationConfig struct {
-	Mode                string   `json:"mode,omitempty"`
-	BatchCharacters     int      `json:"batchCharacters,omitempty"`
-	AssistantCharacters int      `json:"assistantCharacters,omitempty"`
-	MaxBatches          int      `json:"maxBatches,omitempty"`
-	LinkCandidates      int      `json:"linkCandidates,omitempty"`
-	Parallel            int      `json:"parallel,omitempty"`
-	NativeEdges         bool     `json:"nativeEdges,omitempty"`
-	EdgeKinds           []string `json:"edgeKinds,omitempty"`
-	Insights            bool     `json:"insights,omitempty"`
+	Mode                string `json:"mode,omitempty"`
+	BatchCharacters     int    `json:"batchCharacters,omitempty"`
+	AssistantCharacters int    `json:"assistantCharacters,omitempty"`
+	MaxBatches          int    `json:"maxBatches,omitempty"`
+	LinkCandidates      int    `json:"linkCandidates,omitempty"`
+	Parallel            int    `json:"parallel,omitempty"`
+	Insights            bool   `json:"insights,omitempty"`
 	// EvenReading (layered mode) reads every record whole and alike, as
 	// neutral mode always does (evenReadable), and its extraction prompt no
 	// longer says assistant messages are cut short (layeredEvenFold).
@@ -224,9 +213,6 @@ type Agent struct {
 	timelineLocks sync.Map
 	// now is the clock timelines jobs date model errors by.
 	now func() time.Time
-	// edges serializes the replacements of the records' derived metadata,
-	// which every scope's state contributes to (edges.go).
-	edges sync.Mutex
 	// extractions keeps the L0 extractions of batches that jobs with
 	// DeferLinks extracted but left pending (layered.go).
 	extractions extractionCache
@@ -273,9 +259,6 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	}
 	if _, ok := models.Judge.(Chooser); config.Consolidation.Neutral() && !ok {
 		return nil, errors.New("neutral consolidation requires a decision model that answers choice questions")
-	}
-	if config.Consolidation != nil && len(config.Consolidation.EdgeKinds) > 0 && models.Judge == nil {
-		return nil, errors.New("edgeKinds requires a decision model")
 	}
 	// Config and its nested pointers belong to this service, never its caller.
 	raw, _ := json.Marshal(config)
@@ -362,17 +345,6 @@ func (c *ConsolidationConfig) normalize() error {
 	}
 	if c.BatchCharacters < 100 || c.BatchCharacters > 50000 || c.AssistantCharacters < 0 || c.AssistantCharacters > 4000 || c.MaxBatches < 1 || c.MaxBatches > 64 {
 		return errors.New("timelines consolidation requires batchCharacters 100–50000, assistantCharacters 0–4000 and maxBatches 1–64")
-	}
-	if len(c.EdgeKinds) > 0 && !c.NativeEdges {
-		return errors.New("edgeKinds requires nativeEdges")
-	}
-	for i, kind := range c.EdgeKinds {
-		if !slices.ContainsFunc(eventEdgeKinds, func(k eventEdgeKind) bool { return k.name == kind }) {
-			return fmt.Errorf("unknown edge kind %q: edgeKinds lists semantic, temporal, causal or entity", kind)
-		}
-		if slices.Contains(c.EdgeKinds[:i], kind) {
-			return fmt.Errorf("edge kind %q is listed twice", kind)
-		}
 	}
 	return nil
 }

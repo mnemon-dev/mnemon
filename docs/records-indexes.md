@@ -138,8 +138,7 @@ nor calls a model.
 
 ## Derived metadata
 
-A process that derives index metadata from the records (for example the memory
-service's consolidation with `nativeEdges`) keeps it beside them, in the
+A process that derives index metadata from the records keeps it beside them, in the
 `derived_metadata` table of `records.db`, never in the records. Each source owns
 one row per record, `{"version":1,"entities":[…],"aliases":[…],"links":[…],"eventAt":"…"}`,
 and replaces all its rows at once (Go: `Store.ReplaceDerivedMetadata`; readonly

@@ -14,7 +14,7 @@ while the service runs. No old data needs conversion.
 | `memory.write` | `text`, optional `id`, `source`, `at`, `scope`, `workspaceId`, `sessionId` | Committed revision, original-document reference and block references. |
 | `memory.writeConversation` | `messages` (`role`, `content`, optional RFC 3339 `at`), `sessionId`, optional `id`, `source`, `scope`, `workspaceId` | Same as `memory.write`. |
 | `memory.read` | `question`, optional `recent`, `scope`, `revision`, `maxItems` | Original-evidence View, index hints, needs, stop reason and resource use. |
-| `memory.consolidate` | Optional `scope`, `maxBatches` (1–4 for memory-agent/v1, 1–64 for timelines and layered), `reset`, `hold` (timelines and layered), `deferLinks` (layered), `deferEdges`, `rebuildEdges` | Background job progress and usage. |
+| `memory.consolidate` | Optional `scope`, `maxBatches` (1–4 for memory-agent/v1, 1–64 for timelines and layered), `reset`, `hold` (timelines and layered), `deferLinks` (layered) | Background job progress and usage. |
 
 `maxItems` caps the records of a `"strategy": "simple"` View: 0 or absent takes the
 configured `view.maxItems`, and more than it is an error. memory-agent/v1 reads have no
@@ -154,8 +154,7 @@ L2's own linking rule (`insightRead`'s `linkErrors` and `firstLinkError`; its ex
 is not kept). The state keeps
 the insights and L2's read position (`insightRead`: per list, the events, each key's values
 and the directives read from its start, and those read past an unread one, which date
-order can read first); neither is written without the setting, and the records' native
-edges ignore the insights. `remaining` also counts the
+order can read first); neither is written without the setting. `remaining` also counts the
 items L2 has not read, and the result adds `insightBatches` (L2 batches read),
 `insightsDropped` (their items given up on), `insightsNew` and `insightsMerged`,
 `insightFallbacks` (batches whose insights were added without JEV) and `insightLinkCalls`
@@ -185,90 +184,6 @@ never join the View, so the View's records are those of a read without insights 
 the block's characters cut one. `stats.layerInsights` counts the insights shown, and the
 AML adapter's warm-up embeds the insight texts with the layer's. Cost per read: one JEV
 call when insights are stored and any is a candidate.
-
-With `"nativeEdges": true` (timelines or layered mode) the consolidated state also
-feeds the records' native indexes ([records-indexes.md](records-indexes.md)): after
-every job that changed the memory since they were last built (also one that ended in a
-model error or a reset, not a canceled one), and on `rebuildEdges: true`, which folds
-nothing, the job replaces the records' derived metadata of source `consolidation` with
-what every stored scope state says (writing only the rows that changed). A job with
-`deferEdges: true` skips that step; its result then reports `edgesPending`, and one later
-job or `rebuildEdges` builds the edges of many (the AML adapter defers its jobs and
-rebuilds once after them). A failed edge step does not fail the job: it reports
-`edgeError` and `edgesPending`, and the next job retries. Without `nativeEdges`,
-`rebuildEdges` removes the consolidation's derived metadata. A record's `entities` are
-the names of the events and values citing it (layered extraction names them; timelines
-names none) and its `aliases` the other names of their clusters, then the words a query
-can name a multi-word name by: each capitalized word of three letters or more that is no
-stopword, month, weekday, role or first-person word ("Greg Hall" gives "Greg" and
-"Hall"). For the clusters, each new name is compared, one JEV question each, with up to
-`linkCandidates` (8 in timelines mode) names known before it whose contexts (the name and
-its first three texts) are nearest, as linking finds candidates, and joins the cluster of
-its best yes (at least 0.5); the decision is kept in the state, so each name is decided
-once, and a name JEV failed to decide stays alone. In date order, the records
-of each event of a thread link (`entity`, weight 0.6) to those of its 4 nearest events
-and (`temporal`, 0.5) to those of the previous and the next one; the records of a key's
-value link (`supersedes`, 1) to those of the value before it when the two differ (a hint
-that expands, never demotes); a record's `eventAt` is the earliest session date citing it,
-used only when its writer gave none (`memory.write` and `memory.writeConversation`
-always give one). Links bind the records' current versions. Turn a route on per read
-with the `index` setting. The result adds `edgeRecords` and `edgeLinks` (rows written
-and their links by type), `aliasCalls` (JEV calls, part of `linkUsage`), `aliasMerges`
-and `aliasFallbacks` (names that joined a cluster, or stayed alone because JEV failed).
-
-With `"edgeKinds"` (any of `semantic`, `temporal`, `causal` and `entity`, each once;
-requires `nativeEdges` and a decision model) the links between events are JEV's
-decisions instead of the thread rule above (the 4 nearest events and the previous and
-next one): every event edge is a yes to a question about two events, and no similarity
-threshold ever creates one. After the aliases, the edge step takes each event with
-records that is not yet decided for a kind (the events added since the last step, and
-those whose pairs JEV has not answered yet; an event's id is its date, text and
-records, so it survives rebuilds and thread changes) and compares it with up to
-`linkCandidates` (8 in timelines mode) events before it (an earlier session day, or the
-same day or no date and stored earlier), chosen by the kind; similarity (the cosine of
-the event texts' embeddings, else shared words) only picks and orders them. An entity
-cluster named by more than a quarter of the scope's events, and by at least 8 (in a
-conversation, its speakers), is hot: a frequency stop-list, under which sharing it
-never makes two events candidates of each other.
-
-| Kind | Candidates | JEV is asked whether … |
-| --- | --- | --- |
-| `semantic` | the most similar events, any thread | the two are about the same specific matter, so that one helps to answer a question about the other |
-| `temporal` | events of its thread, then events naming an entity of the same cluster that is not hot, each nearest day first, then by similarity | it is a later development (follow-up, change, completion, report) of the same matter |
-| `causal` | events of its thread by similarity, then similar events of other threads | the earlier event caused, enabled or prevented it, as the records state or clearly imply |
-| `entity` | events naming an entity of the same cluster that is not hot (the alias decisions), by similarity | both are about the same particular person, organization, place, product or document |
-
-JEV reads each event's date, thread title, text and first 16 names. A yes (at least 0.5)
-is an edge weighted by its probability (two decimals). Every answer, yes or no, is kept
-in the state, so a pair is asked once per kind; a reset forgets them with the memory.
-Events decided under older candidate rules are decided again under the current ones,
-asking only the pairs never answered. A call that fails for itself (a malformed or
-refused answer, a request error, a timeout) marks its pairs failed and the asking goes
-on, unless three calls in a row have failed, which ends the step. The failures count
-against their pairs only in a step in which some call succeeded, so a JEV that fails
-every call (an outage, a missing credential) gives up nothing; a pair whose counted
-failures reach 3 is given up (no edge, and not a "no"). A spent budget, an unavailable
-provider or the job's cancellation ends the asking; the job does not fail for it.
-Pairs left unanswered (not "no") keep their events undecided, and the next edge step
-(a job that changes the memory, or `rebuildEdges`) asks them again. The answers are
-saved in the state after every 32 calls, and when the job is canceled, so a step that is
-cut off resumes where it stopped. Each edge links every record of one event to every
-record of the other with its kind and weight: `temporal` and `causal` both ways,
-`semantic` and `entity` (which the index reads both ways) once a pair, on the record
-with fewer links. An `entity` edge whose events share only hot clusters (as the memory
-is when the edges are built) gives no link; its decision stays. Each record keeps its
-`supersedes` links, then its heaviest links, 50 in all. Entities, aliases, `supersedes`
-and `eventAt` are as without `edgeKinds`; absent or empty, nothing changes. Cost: at
-most `linkCandidates` questions per new event and kind, packed 128 a call (96,000 UTF-16
-units), about one JEV call per 16 new events and kind at the default, plus embeddings of
-the new event texts; listing a kind for an existing memory asks about all its events
-once. The JEV calls run while the step holds the agent's edges lock and the scope's
-consolidation lock, so other edge steps and the scope's jobs wait for them; every answer
-stays in the scope's state (about 0.8 KB per event in measured builds). The result adds
-`edgeCalls` (JEV calls, part of `linkUsage`), `edgeAsked` and `edgeYes` (by kind, the
-pairs JEV answered and the edges it made), `edgeFallbacks` (pairs left unanswered
-because JEV failed, asked again later), `edgeGivenUp` (pairs given up) and `edgeLexical`
-(edge steps whose candidates shared words found because the embedder failed).
 
 Native search/show/recall retain their access-count and operation-log effects.
 The new service returns the full typed search/recall structures; existing CLI

@@ -18,16 +18,13 @@ import (
 // linkCall is one linking judgement a linkJudge received.
 type linkCall struct {
 	State     linkState
-	Raw       string // the state's JSON
 	Questions map[string]Question
 	Size      int // the request as JEV's client measures it
 }
 
 // linkJudge answers the linking questions by the texts they name: kind is
-// "thread", "identity", "contradiction", "alias" (which gets the two
-// names), an event edge kind ("semantic", "temporal", "causal",
-// "entity"), or "insight". It records every call; err, when set, may fail
-// a call.
+// "thread", "identity", "contradiction" or "insight". It records every
+// call; err, when set, may fail a call.
 type linkJudge struct {
 	mu     sync.Mutex
 	calls  []linkCall
@@ -42,7 +39,7 @@ func (j *linkJudge) Decide(ctx context.Context, state any, questions map[string]
 	if err != nil {
 		return nil, Usage{}, err
 	}
-	call := linkCall{Questions: questions, Raw: string(raw)}
+	call := linkCall{Questions: questions}
 	if err := json.Unmarshal(raw, &call.State); err != nil {
 		return nil, Usage{}, err
 	}
@@ -76,29 +73,13 @@ func (j *linkJudge) Decide(ctx context.Context, state any, questions map[string]
 			kind = "thread"
 		case strings.HasPrefix(q.Instructions, "Do the new fact"):
 			kind = "identity"
-		case strings.HasPrefix(q.Instructions, "Do the name"):
-			kind = "alias"
-		case strings.HasPrefix(q.Instructions, "Are the new event") && strings.Contains(q.Instructions, "same matter"):
-			kind = "semantic"
-		case strings.HasPrefix(q.Instructions, "Is the new event"):
-			kind = "temporal"
-		case strings.HasPrefix(q.Instructions, "Did the candidate event"):
-			// The candidate is named first.
-			kind = "causal"
-			refs[0], refs[1] = refs[1], refs[0]
-		case strings.HasPrefix(q.Instructions, "Are the new event"):
-			kind = "entity"
 		case strings.HasPrefix(q.Instructions, "Does the new insight"):
 			kind = "insight"
 		}
 		n, c := item(call.State.New, refs[0][1]), item(call.State.Candidates, refs[1][1])
-		newText, candidateText := n.Text, c.Text
-		if kind == "alias" {
-			newText, candidateText = n.Name, c.Name
-		}
 		out[key] = 0.1
 		if j.answer != nil {
-			out[key] = j.answer(kind, newText, candidateText)
+			out[key] = j.answer(kind, n.Text, c.Text)
 		}
 	}
 	return out, Usage{InputTokens: 100, OutputTokens: 1, USD: 0.001}, nil

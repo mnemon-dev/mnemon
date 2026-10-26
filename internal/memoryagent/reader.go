@@ -102,8 +102,7 @@ type MemoryFact struct {
 // MemoryValue is one value of a key. Conflict is the consolidation's mark of
 // a value that contradicts an earlier one without the user saying it
 // changed; Supersedes is the index of the value it replaces, the one before
-// it when the two differ (the native edges' supersedes, edges.go), -1 for
-// none.
+// it when the two differ, -1 for none.
 type MemoryValue struct {
 	Value, Date string
 	Records     []string

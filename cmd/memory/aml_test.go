@@ -438,8 +438,7 @@ func TestIndustrialConfigLoadsAndStarts(t *testing.T) {
 		// cap it), delivered in time order after the consolidation blocks.
 		View: &memoryagent.ViewConfig{MaxItems: 100, MaxCharacters: 240000, Order: "time"},
 		// Layered consolidation: DeepSeek extracts each batch alone, JEV
-		// links it into the memory. No native edges, no expansion, no index
-		// routes: Expand, Index and NativeEdges stay unset.
+		// links it into the memory. No index routes: Index stays unset.
 		Consolidation: &memoryagent.ConsolidationConfig{Mode: "layered"},
 		// DeepSeek without thinking: a thinking planner can return empty plans
 		// under the 200/400-token planning caps.

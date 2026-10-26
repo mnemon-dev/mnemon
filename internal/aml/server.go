@@ -1158,23 +1158,15 @@ type foldOutcome struct {
 // error, logged under label, after maxConsolidateCalls jobs, or when stop
 // (nil for never) says so before a job; it logs each drop of records. In
 // background mode the jobs defer the links JEV cannot make for now
-// (DeferLinks). The jobs defer the records' native edges (nativeEdges);
-// when one leaves them pending, they are rebuilt once after the jobs.
+// (DeferLinks).
 func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, label string, stop func() bool) (outcome foldOutcome) {
-	pending := false
-	defer func() {
-		if pending {
-			s.rebuildEdges(ctx, user, label)
-		}
-	}()
 	for call := 1; call <= maxConsolidateCalls; call++ {
 		if stop != nil && stop() {
 			outcome.unfinished = true
 			break
 		}
-		result, err := s.consolidateOnce(ctx, user, memoryagent.ConsolidateRequest{Hold: hold, DeferEdges: true, DeferLinks: s.mode == ConsolidationBackground})
+		result, err := s.consolidateOnce(ctx, user, memoryagent.ConsolidateRequest{Hold: hold, DeferLinks: s.mode == ConsolidationBackground})
 		outcome.folded += result.Folded
-		pending = pending || result.EdgesPending
 		s.metrics.consolidated(result)
 		for _, drop := range result.Drops {
 			s.logf(ctx, slog.LevelWarn, "consolidation dropped %d records (user %s): %s", drop.Records, user.key[:8], drop.Reason)
@@ -1196,28 +1188,6 @@ func (s *Server) consolidate(ctx context.Context, user *userEntry, hold bool, la
 		}
 	}
 	return outcome
-}
-
-// rebuildEdges rebuilds the records' native edges that consolidate's jobs
-// left pending, unless its window has passed; a failure (a rebuild returns
-// its error; it reports no edgeError), the event edge pairs JEV left
-// undecided for the next rebuild, and those it gave up (edgeKinds), are
-// logged under label, and the next rebuild catches up.
-func (s *Server) rebuildEdges(ctx context.Context, user *userEntry, label string) {
-	if ctx.Err() != nil {
-		s.logf(ctx, slog.LevelWarn, "%s left native edges pending (user %s): %v", label, user.key[:8], ctx.Err())
-		return
-	}
-	result, err := s.consolidateOnce(ctx, user, memoryagent.ConsolidateRequest{RebuildEdges: true})
-	if err != nil {
-		s.logf(ctx, slog.LevelWarn, "%s native edges failed (user %s): %v", label, user.key[:8], err)
-	}
-	if result.EdgeFallbacks > 0 {
-		s.logf(ctx, slog.LevelWarn, "%s native edges left %d pairs undecided (user %s)", label, result.EdgeFallbacks, user.key[:8])
-	}
-	if result.EdgeGivenUp > 0 {
-		s.logf(ctx, slog.LevelWarn, "%s native edges gave up %d pairs whose calls failed 3 times (user %s)", label, result.EdgeGivenUp, user.key[:8])
-	}
 }
 
 // consolidateOnce runs one job; a job that panics fails, its panic and stack

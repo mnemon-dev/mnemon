@@ -20,15 +20,6 @@ type ConsolidateRequest struct {
 	// even when nothing new was read, for a later job without Hold to fold
 	// once the conversation pauses.
 	Hold bool `json:"hold,omitempty"`
-	// RebuildEdges folds nothing. With nativeEdges it decides the scope's
-	// entity names not yet decided and replaces the records' derived
-	// metadata from the stored states; without, it removes the
-	// consolidation's derived metadata.
-	RebuildEdges bool `json:"rebuildEdges,omitempty"`
-	// DeferEdges (nativeEdges) skips the edge step of a job that changed
-	// the memory: the result reports the edges pending, and a later job or
-	// RebuildEdges builds them, once for many jobs.
-	DeferEdges bool `json:"deferEdges,omitempty"`
 	// DeferLinks (layered mode) leaves a batch pending, for a later job,
 	// when JEV fails to link it, instead of linking it without JEV at
 	// once: an unavailable provider or a spent budget stops the job before
@@ -58,8 +49,8 @@ type ConsolidateResult struct {
 	Dropped int               `json:"dropped,omitempty"`
 	Drops   []ConsolidateDrop `json:"drops,omitempty"`
 	// A layered job's linking: LinkCalls counts its JEV calls (LinkUsage
-	// is the part of Usage of every JEV call of the job, these,
-	// AliasCalls and EdgeCalls); of the threads it extracted and linked,
+	// is the part of Usage of every JEV call of the job, these and
+	// InsightLinkCalls); of the threads it extracted and linked,
 	// ThreadsLinked continued a stored thread and ThreadsNew started one;
 	// of the keys, KeysLinked joined a stored key and KeysNew started one;
 	// Conflicts counts the joined keys whose new value JEV found contradicts
@@ -79,35 +70,6 @@ type ConsolidateResult struct {
 	// DeferLinks left pending because their linking failed (at most one: the
 	// job stops there).
 	Deferred int `json:"deferred,omitempty"`
-	// With nativeEdges, a job that changed the memory, or a rebuildEdges
-	// request, replaces the records' derived metadata (edges.go):
-	// EdgeRecords records got a row, with EdgeLinks links by type. Of the
-	// entity names it decided, AliasMerges joined another name's cluster and
-	// AliasFallbacks stayed alone because JEV failed; AliasCalls counts its
-	// JEV calls (part of LinkUsage).
-	// EdgesPending reports that the derived metadata does not yet follow
-	// the scope's memory after the job (deferred, or its edge step
-	// failed: EdgeError, which does not fail the job's folds).
-	// With edgeKinds (event_edges.go), EdgeCalls counts the JEV calls
-	// deciding event edges (part of LinkUsage); EdgeAsked the pairs JEV
-	// answered and EdgeYes the edges it made, by kind; EdgeFallbacks the
-	// pairs left unanswered because JEV failed, asked again next time;
-	// EdgeGivenUp the pairs given up because their calls failed 3 times in
-	// steps where other calls succeeded; EdgeLexical counts the edge steps
-	// whose candidates shared words found because the embedder failed.
-	EdgesPending   bool           `json:"edgesPending,omitempty"`
-	EdgeError      string         `json:"edgeError,omitempty"`
-	EdgeRecords    int            `json:"edgeRecords,omitempty"`
-	EdgeLinks      map[string]int `json:"edgeLinks,omitempty"`
-	AliasCalls     int            `json:"aliasCalls,omitempty"`
-	AliasMerges    int            `json:"aliasMerges,omitempty"`
-	AliasFallbacks int            `json:"aliasFallbacks,omitempty"`
-	EdgeCalls      int            `json:"edgeCalls,omitempty"`
-	EdgeAsked      map[string]int `json:"edgeAsked,omitempty"`
-	EdgeYes        map[string]int `json:"edgeYes,omitempty"`
-	EdgeFallbacks  int            `json:"edgeFallbacks,omitempty"`
-	EdgeGivenUp    int            `json:"edgeGivenUp,omitempty"`
-	EdgeLexical    int            `json:"edgeLexical,omitempty"`
 	// With consolidation.insights (insights.go), a layered job's L2:
 	// InsightBatches counts the L2 batches it read (their items no longer
 	// unread), InsightsDropped the items of those it gave up on (their
@@ -156,9 +118,6 @@ func (a *Agent) Consolidate(ctx context.Context, req ConsolidateRequest) (Consol
 	ctx = consolidationCalls(ctx)
 	if a.indexError != nil {
 		return ConsolidateResult{}, fmt.Errorf("derived index is unavailable: %w", a.indexError)
-	}
-	if req.RebuildEdges && !(a.config.Consolidation.Timelines() && a.config.Consolidation.NativeEdges) {
-		return ConsolidateResult{}, a.clearEdges(ctx, req)
 	}
 	if a.config.Consolidation.Timelines() {
 		return a.consolidateTimelines(ctx, req)

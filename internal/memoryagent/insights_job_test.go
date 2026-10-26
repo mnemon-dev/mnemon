@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -502,33 +501,6 @@ func TestConsolidateInsightsModelErrors(t *testing.T) {
 	}
 	if state = loadState(t, overlay); state.InsightRead.ModelErrors != 0 || len(state.Pending) != 0 {
 		t.Fatal(state.InsightRead, len(state.Pending))
-	}
-}
-
-func TestConsolidateInsightsLeaveTheEdgesAlone(t *testing.T) {
-	ctx := context.Background()
-	s, dir := agentStore(t)
-	seedTopics(t, s, 3)
-	model, judge := insightModel(nil), insightJudge()
-	off, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100, NativeEdges: true}, model, judge)
-	if result, err := off.Consolidate(ctx, ConsolidateRequest{}); err != nil || result.EdgesPending || result.EdgeRecords == 0 {
-		t.Fatal(result, err)
-	}
-	built := loadState(t, overlay).EdgesMemory
-	on, err := New(s, Config{Version: 1, Policy: &ReadPolicy{Consolidation: true}, Consolidation: &ConsolidationConfig{Mode: "layered", BatchCharacters: 100, NativeEdges: true, Insights: true}}, Models{Consolidator: model, Judge: judge}, overlay)
-	if err != nil {
-		t.Fatal(err)
-	}
-	// L2 changes the insights only: the records' edges stay built.
-	result, err := on.Consolidate(ctx, ConsolidateRequest{})
-	if err != nil || result.InsightBatches == 0 || result.EdgesPending || result.EdgeRecords != 0 {
-		t.Fatalf("%+v %v", result, err)
-	}
-	if state := loadState(t, overlay); state.EdgesMemory != built || len(state.Memory.Insights) == 0 {
-		t.Fatal("the edges were rebuilt for the insights")
-	}
-	if !reflect.DeepEqual(edgesDigest(loadState(t, overlay).Memory), built) {
-		t.Fatal("the insights changed the edges' digest")
 	}
 }
 

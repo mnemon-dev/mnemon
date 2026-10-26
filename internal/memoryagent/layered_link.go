@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/mnemon-dev/mnemon/internal/records"
@@ -61,16 +60,14 @@ const (
 )
 
 // linkItem is a thread or a key as JEV reads it: a new one, n1, n2, …, or a
-// stored one, by thread id or K<i> (the i-th key of M, from 1). An entity
-// name (edges.go) is an item with its Name and the texts naming it; an
-// event (event_edges.go) one with its date, thread title and names.
+// stored one, by thread id or K<i> (the i-th key of M, from 1). An insight
+// (insights.go) is an item with its date; a note (neutral.go) one with its
+// date and its group's title.
 type linkItem struct {
-	ID       string   `json:"id"`
-	Name     string   `json:"name,omitempty"`
-	Date     string   `json:"date,omitempty"`
-	Thread   string   `json:"thread,omitempty"`
-	Text     string   `json:"text"`
-	Entities []string `json:"entities,omitempty"`
+	ID     string `json:"id"`
+	Date   string `json:"date,omitempty"`
+	Thread string `json:"thread,omitempty"`
+	Text   string `json:"text"`
 }
 
 // linkState is a linking call's state: the new items and the candidates its
@@ -107,32 +104,23 @@ func (r *ConsolidateResult) addLinks(c linkCounts) {
 
 // The kinds of pair: does a new thread continue a stored one; is a new key
 // a stored one, and does its value contradict it; does a new key's value
-// contradict the stored key of the same name; do two entity names name the
-// same one (edges.go); does a kind of event edge join a new event and an
-// earlier one (event_edges.go); does a new insight state the same
-// conclusion as a stored one (insights.go); does a new note update an
+// contradict the stored key of the same name; does a new insight state the
+// same conclusion as a stored one (insights.go); does a new note update an
 // earlier one of its group (neutral.go).
 const (
 	linkThread = iota
 	linkKey
 	linkExact
-	linkAlias
-	linkSemantic
-	linkTemporal
-	linkCausal
-	linkEntity
 	linkInsight
 	linkUpdate
 )
 
 // linkPair is a new item (an index into the new items) and a candidate (an
-// index into the candidates), and JEV's answers about them (answered once
-// its call succeeded).
+// index into the candidates), and JEV's answers about them.
 type linkPair struct {
 	kind              int
 	item, candidate   int
 	same, contradicts float64
-	answered          bool
 }
 
 // linker links the batches of one job in order. It keeps the document
@@ -346,13 +334,6 @@ func freshThreadID(m timelineMemory) string {
 // no similarity at all (a cosine of 0 or less, no shared word) is not
 // ranked.
 func (l *linker) rank(ctx context.Context, queries, docs []string) (ranks [][]int, lexical bool, err error) {
-	return l.rankWith(ctx, queries, docs, l.k, true)
-}
-
-// rankWith is rank keeping the limit best docs of each query; storeDocs
-// says whether the docs' vectors go through the layer's vector cache, or are
-// embedded without storing them, as the queries are.
-func (l *linker) rankWith(ctx context.Context, queries, docs []string, limit int, storeDocs bool) (ranks [][]int, lexical bool, err error) {
 	out := make([][]int, len(queries))
 	if len(queries) == 0 || len(docs) == 0 {
 		return out, false, nil
@@ -360,7 +341,7 @@ func (l *linker) rankWith(ctx context.Context, queries, docs []string, limit int
 	queryVectors, ok := l.embed(ctx, queries, false)
 	var docVectors [][]float32
 	if ok {
-		docVectors, ok = l.embed(ctx, docs, storeDocs)
+		docVectors, ok = l.embed(ctx, docs, true)
 	}
 	if ok && len(queryVectors[0]) == len(docVectors[0]) {
 		for i, query := range queryVectors {
@@ -371,7 +352,7 @@ func (l *linker) rankWith(ctx context.Context, queries, docs []string, limit int
 				}
 			}
 			slices.SortStableFunc(order, func(a, b int) int { return probabilityOrder(score[a], score[b]) })
-			out[i] = order[:min(limit, len(order))]
+			out[i] = order[:min(l.k, len(order))]
 		}
 		return out, false, nil
 	}
@@ -380,7 +361,7 @@ func (l *linker) rankWith(ctx context.Context, queries, docs []string, limit int
 	}
 	index := newBM25(docs)
 	for i, query := range queries {
-		out[i] = index.top(query, limit)
+		out[i] = index.top(query, l.k)
 	}
 	return out, l.agent.config.Embedding != nil, nil
 }
@@ -419,9 +400,8 @@ func (l *linker) embed(ctx context.Context, texts []string, store bool) ([][]flo
 
 // linkRequest is one packed linking call: its state, its questions and the
 // pairs they ask about, in order (pair j asks t<j>, or i<j> and x<j>, or
-// x<j>, or a<j>, or an event edge kind's key and j, or g<j>), and the
-// request's size
-// so far, as JEV's client measures it, plus at most one unit per list item.
+// x<j>, or g<j>, or u<j>), and the request's size so far, as JEV's client
+// measures it, plus at most one unit per list item.
 type linkRequest struct {
 	state     linkState
 	questions map[string]Question
@@ -440,11 +420,6 @@ func pairQuestions(p *linkPair, news, cands []linkItem, j int) map[string]Questi
 		return map[string]Question{fmt.Sprintf("t%d", j): {Type: "noul", Instructions: continuesQuestion(n, c), Criteria: map[string]string{"true": continuesYes, "false": continuesNo}}}
 	case linkKey:
 		return map[string]Question{fmt.Sprintf("i%d", j): {Type: "noul", Instructions: sameKeyQuestion(n, c), Criteria: map[string]string{"true": sameKeyYes, "false": sameKeyNo}}, fmt.Sprintf("x%d", j): contradicts}
-	case linkAlias:
-		return map[string]Question{fmt.Sprintf("a%d", j): {Type: "noul", Instructions: aliasQuestion(n, c), Criteria: map[string]string{"true": aliasYes, "false": aliasNo}}}
-	case linkSemantic, linkTemporal, linkCausal, linkEntity:
-		k := edgeKindOf(p.kind)
-		return map[string]Question{k.key + strconv.Itoa(j): {Type: "noul", Instructions: k.question(n, c), Criteria: map[string]string{"true": k.yes, "false": k.no}}}
 	case linkInsight:
 		return map[string]Question{fmt.Sprintf("g%d", j): {Type: "noul", Instructions: sameInsightQuestion(n, c), Criteria: map[string]string{"true": sameInsightYes, "false": sameInsightNo}}}
 	case linkUpdate:
@@ -527,8 +502,6 @@ func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*lin
 				p.same = answers[fmt.Sprintf("t%d", j)]
 			case linkKey:
 				p.same, p.contradicts = answers[fmt.Sprintf("i%d", j)], answers[fmt.Sprintf("x%d", j)]
-			case linkAlias:
-				p.same = answers[fmt.Sprintf("a%d", j)]
 			case linkInsight:
 				p.same = answers[fmt.Sprintf("g%d", j)]
 			case linkUpdate:
@@ -536,7 +509,6 @@ func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*lin
 			default:
 				p.contradicts = answers[fmt.Sprintf("x%d", j)]
 			}
-			p.answered = true
 		}
 	}
 	return nil

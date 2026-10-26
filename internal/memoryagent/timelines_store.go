@@ -100,31 +100,3 @@ func (o *Overlay) saveTimelines(ctx context.Context, scope records.Scope, previo
 	}
 	return token, nil
 }
-
-// allTimelines returns every scope's stored state and its scope key
-// (scopeKey), in key order.
-func (o *Overlay) allTimelines(ctx context.Context) (keys []string, states []timelineState, err error) {
-	rows, err := o.db.QueryContext(ctx, `SELECT scope,token,payload FROM timelines ORDER BY scope`)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var key, token, raw string
-		if err := rows.Scan(&key, &token, &raw); err != nil {
-			return nil, nil, err
-		}
-		if token != reference("timelines", raw).Hash {
-			return nil, nil, errors.New("timelines payload digest changed")
-		}
-		state := emptyTimelineState()
-		if err := json.Unmarshal([]byte(raw), &state); err != nil {
-			return nil, nil, err
-		}
-		if err := state.normalize(); err != nil {
-			return nil, nil, err
-		}
-		keys, states = append(keys, key), append(states, state)
-	}
-	return keys, states, rows.Err()
-}

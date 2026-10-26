@@ -104,31 +104,25 @@ type timelineMemory struct {
 // failed for the linking request itself, for its linking rule (linkDue),
 // apart from its extraction's drop mode. Mode is the consolidation mode
 // of the job that last wrote the state: "" for timelines, "layered" or
-// "neutral".
-// EntityClusters (nativeEdges) holds the decided entity names: each name's
-// cluster, named by its first name; EventEdges (edgeKinds) JEV's decisions
-// about pairs of events (event_edges.go); EdgesMemory names the memory the
-// records' derived metadata was last built from (edges.go). InsightRead is
-// L2's read position (consolidation.insights, insights.go), absent without
-// it.
+// "neutral". InsightRead is L2's read position (consolidation.insights,
+// insights.go), absent without it. A stored state's fields beyond these,
+// such as those the deleted native edges wrote, are ignored when it loads
+// and dropped when it is next saved.
 type timelineState struct {
-	Format          string            `json:"format"`
-	Mode            string            `json:"mode,omitempty"`
-	Watermark       int64             `json:"watermark"`
-	Pending         []pendingRecord   `json:"pending"`
-	Memory          timelineMemory    `json:"memory"`
-	Usage           Usage             `json:"usage"`
-	Calls           int               `json:"calls"`
-	Batches         int               `json:"batches"`
-	Failed          int               `json:"failed"`
-	ModelErrors     int               `json:"modelErrors,omitempty"`
-	FirstModelError int64             `json:"firstModelError,omitempty"`
-	LinkErrors      int               `json:"linkErrors,omitempty"`
-	FirstLinkError  int64             `json:"firstLinkError,omitempty"`
-	EntityClusters  map[string]string `json:"entityClusters,omitempty"`
-	EventEdges      *eventEdges       `json:"eventEdges,omitempty"`
-	EdgesMemory     string            `json:"edgesMemory,omitempty"`
-	InsightRead     *insightRead      `json:"insightRead,omitempty"`
+	Format          string          `json:"format"`
+	Mode            string          `json:"mode,omitempty"`
+	Watermark       int64           `json:"watermark"`
+	Pending         []pendingRecord `json:"pending"`
+	Memory          timelineMemory  `json:"memory"`
+	Usage           Usage           `json:"usage"`
+	Calls           int             `json:"calls"`
+	Batches         int             `json:"batches"`
+	Failed          int             `json:"failed"`
+	ModelErrors     int             `json:"modelErrors,omitempty"`
+	FirstModelError int64           `json:"firstModelError,omitempty"`
+	LinkErrors      int             `json:"linkErrors,omitempty"`
+	FirstLinkError  int64           `json:"firstLinkError,omitempty"`
+	InsightRead     *insightRead    `json:"insightRead,omitempty"`
 }
 
 func emptyTimelineState() timelineState {
@@ -785,9 +779,6 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	if req.MaxBatches < 1 || req.MaxBatches > 64 {
 		return ConsolidateResult{}, errors.New("maxBatches must be 1–64")
 	}
-	if req.RebuildEdges && req.Reset {
-		return ConsolidateResult{}, errors.New("rebuildEdges folds nothing and cannot reset")
-	}
 	unlock, err := a.lockTimelines(ctx, req.Scope)
 	if err != nil {
 		return ConsolidateResult{}, err
@@ -799,16 +790,6 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	}
 	if err != nil {
 		return ConsolidateResult{}, err
-	}
-	if req.Reset && settings.NativeEdges {
-		// The old memory's edges go with it, even when nothing new folds.
-		state.EdgesMemory = edgesStale
-	}
-	if req.RebuildEdges {
-		var result ConsolidateResult
-		err := a.nativeEdges(ctx, req.Scope, &state, &token, &result)
-		result.EdgesPending = err != nil
-		return result, err
 	}
 	state.Mode = ""
 	if layered {
@@ -878,7 +859,7 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 		if foldErr != nil {
 			saveCtx = context.WithoutCancel(ctx)
 		}
-		if token, err = a.overlay.saveTimelines(saveCtx, req.Scope, token, state); err != nil {
+		if _, err = a.overlay.saveTimelines(saveCtx, req.Scope, token, state); err != nil {
 			return result, err
 		}
 	}
@@ -886,19 +867,6 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	result.Remaining = len(state.Pending) + unread
 	if settings.Insights {
 		result.Remaining += insightsUnread(state)
-	}
-	// The records' derived metadata follows the memory, after a job that
-	// failed too, unless it was canceled or defers it. A failed edge step
-	// leaves it pending for the next job and does not fail the folds.
-	if settings.NativeEdges && state.EdgesMemory != edgesDigest(state.Memory) {
-		result.EdgesPending = true
-		if !req.DeferEdges && ctx.Err() == nil {
-			if err := a.nativeEdges(ctx, req.Scope, &state, &token, &result); err != nil {
-				result.EdgeError = err.Error()
-			} else {
-				result.EdgesPending = false
-			}
-		}
 	}
 	return result, foldErr
 }
