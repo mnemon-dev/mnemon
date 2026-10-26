@@ -1,7 +1,10 @@
 # mnemon ZCode SessionStart hook for Windows PowerShell.
 
-# ZCode sends UTF-8 JSON regardless of the Windows console code page.
+# ZCode sends UTF-8 JSON regardless of the Windows console code page, and the
+# hook must answer in UTF-8: stdout defaults to the ANSI code page, which would
+# re-encode non-ASCII guide text on the way out.
 [Console]::InputEncoding = [Text.Encoding]::UTF8
+[Console]::OutputEncoding = [Text.Encoding]::UTF8
 $null = [Console]::In.ReadToEnd()
 
 function Resolve-Mnemon {
@@ -51,7 +54,9 @@ if ($null -ne $mnemon) {
 }
 
 if (Test-Path -LiteralPath $guidePath -PathType Leaf) {
-    $context.Add((Get-Content -LiteralPath $guidePath -Raw))
+    # guide.md is UTF-8 without BOM; PowerShell 5.1 defaults to the ANSI code
+    # page and would corrupt non-ASCII characters in the injected context.
+    $context.Add((Get-Content -LiteralPath $guidePath -Raw -Encoding UTF8))
 }
 
 $text = ($context -join "`n").Trim()
