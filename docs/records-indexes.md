@@ -133,8 +133,8 @@ visible records other than original documents and index items, in store order, t
 the same place (scope, workspace, session) and the same `data.session`, or without one the
 same `data.documentID`, or without one the same day of `data.eventAt` (else `date`) in the
 writer's offset. A revision's sessions in a scope are built once and cached in the store
-(the last 8 revision and scope pairs; a revision never changes). The memory service's
-`view.expand` reads both; neither ranks, embeds nor calls a model.
+(the last 8 revision and scope pairs; a revision never changes). Neither ranks, embeds
+nor calls a model.
 
 ## Derived metadata
 

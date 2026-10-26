@@ -24,16 +24,6 @@ const (
 	insightSource = "insight"
 )
 
-// layerBound is the most characters the layer's blocks can take in the
-// agent's Views: layerBlocksMax, and with insights their block, its budget
-// and header.
-func (a *Agent) layerBound() int {
-	if a.insightsOn() {
-		return layerBlocksMax + layerInsights + jsLen(insightsHead)
-	}
-	return layerBlocksMax
-}
-
 // insightLine is an insight as the block shows it, after "- ", and as JEV
 // reads it: "(<date>) <text>".
 func insightLine(in insight) string {

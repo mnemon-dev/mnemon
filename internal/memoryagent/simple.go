@@ -6,11 +6,8 @@ import (
 	"errors"
 	"maps"
 	"slices"
-	"strings"
 	"sync"
 	"time"
-
-	"github.com/mnemon-dev/mnemon/internal/retrieval"
 )
 
 // The simple strategy ports the reference system's ("author") final read
@@ -44,15 +41,6 @@ type simpleRun struct {
 	// pageReads counts search pages read, first pages included, against
 	// simplePageBudget.
 	pageReads int
-	// intent is the question's intent every search carries (view intent
-	// "question"); "" lets each search detect its own.
-	intent string
-	// targeted is set when view.expand's target asked the expansions the
-	// need table's question: compose then orders by it (ordered).
-	targeted bool
-	// held is the expansions compose held reserved slots for: the layer's
-	// character trim drops other records first.
-	held map[string]bool
 	// trace records the read for the inspect service (trace.go); nil, the
 	// read records nothing.
 	trace *ReadTrace
@@ -71,10 +59,6 @@ type simpleItem struct {
 	Superseded float64
 	Judged     bool
 	FirstSeen  int // position in pool order
-	// Expanded marks a record view.expand proposed and JEV judged: one the
-	// read had not pooled, or with rejudge one it had pooled and never
-	// judged.
-	Expanded bool
 }
 
 func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string) (View, error) {
@@ -85,10 +69,6 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if r.trace != nil {
 		r.traceStart()
 		defer r.traceEnd()
-	}
-	if a.config.View.Intent == viewIntentQuestion {
-		r.intent = string(retrieval.DetectIntent(intentText(req.Question)))
-		r.stats.Intent = r.intent
 	}
 	// The author's prompts read at most the last six messages (N:348).
 	for _, message := range req.Recent[max(0, len(req.Recent)-5):] {
@@ -110,22 +90,7 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if err != nil {
 		return View{}, err
 	}
-	ids := mixCues(pages, simplePoolSize)
-	// With view.topDown the consolidation's topics add the records they cite
-	// after the cues' mix (simple_topdown.go); a failure leaves the pool as
-	// the cues made it.
-	if a.config.View.TopDown {
-		extra, err := r.topDown(ctx, ids)
-		if ctx.Err() != nil {
-			return View{}, ctx.Err()
-		}
-		if err != nil {
-			r.degrade("top-down")
-		}
-		ids = append(ids, extra...)
-		r.stats.TopDown = len(extra)
-	}
-	pool, err := r.admit(ctx, ids)
+	pool, err := r.admit(ctx, mixCues(pages, simplePoolSize))
 	if err != nil {
 		return View{}, err
 	}
@@ -158,14 +123,6 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		}
 		r.degrade("judge")
 	}
-	// With view.expand, the neighbors of the judged items that seed it (and
-	// the events nearest the question) are judged the same way, and every
-	// one judged joins the list (simple_expand.go).
-	if a.config.View.Expand != nil {
-		if scored, err = r.expandEvidence(ctx, scored, stop); err != nil {
-			return View{}, err
-		}
-	}
 	r.stage(traceCompose)
 	view, err := r.compose(ctx, stop, scored)
 	if err == nil && a.layerOn() {
@@ -176,14 +133,6 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if err != nil {
 		return View{}, err
 	}
-	if a.config.View.Expand != nil {
-		view.Stats.ExpandShown = r.expandedShown(view.Records)
-		for _, record := range view.Records {
-			if r.held[record.ID] {
-				view.Stats.ExpandReserved++
-			}
-		}
-	}
 	// With view.links the records linked to the View's join it (oneshot_links.go).
 	if a.config.View != nil && a.config.View.Links {
 		if view, err = r.appendLinked(ctx, view); err != nil {
@@ -192,20 +141,6 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	}
 	// With view.order "time" the composed View is listed in time order.
 	return r.orderView(ctx, view)
-}
-
-// pooled reports whether a record is in the read's pool.
-func (r *simpleRun) pooled(id string) bool { return r.items[id] != nil }
-
-// expandedShown counts the records shown that view.expand proposed.
-func (r *simpleRun) expandedShown(records []Evidence) int {
-	n := 0
-	for _, record := range records {
-		if item := r.items[record.ID]; item != nil && item.Expanded {
-			n++
-		}
-	}
-	return n
 }
 
 // screen gives the pool JEV's screen. A spent JEV budget is not an error:
@@ -237,7 +172,6 @@ func (r *simpleRun) statsNow() ReadStats {
 	stats := r.stats
 	stats.Degraded = slices.Clone(r.stats.Degraded)
 	stats.IndexRoutes = maps.Clone(r.stats.IndexRoutes)
-	stats.ExpandKinds = maps.Clone(r.stats.ExpandKinds)
 	return stats
 }
 
@@ -265,15 +199,4 @@ func (r *simpleRun) complete(ctx context.Context, system, prompt string, maxToke
 func (r *simpleRun) policy() string {
 	config, _ := json.Marshal(r.agent.config)
 	return "memory-agent/simple/" + reference("policy", string(config)).Hash
-}
-
-// intentText is the question without leading "Current date: …" lines: a
-// date header gives the reader context, not the question's intent, and its
-// word "date" would make every question look like a WHEN question.
-func intentText(question string) string {
-	lines := strings.Split(question, "\n")
-	for len(lines) > 1 && strings.HasPrefix(strings.ToLower(strings.TrimSpace(lines[0])), "current date:") {
-		lines = lines[1:]
-	}
-	return strings.Join(lines, "\n")
 }

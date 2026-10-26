@@ -47,13 +47,6 @@ const (
 	valuesHead    = "History of values:"
 )
 
-// layerBlocksMax is the most characters the layer's four blocks can take:
-// each block's budget, the two headers counted outside theirs, and the
-// "\n\n" before a thread, added after the thread is fitted to the room
-// left, by which the timelines can pass their budget once (by 2). With
-// insights, layerBound adds their block.
-var layerBlocksMax = layerInstructions + layerDirectory + layerTimelines + 2 + layerValues + jsLen(timelinesHead) + jsLen(valuesHead)
-
 // eventThreads is the author's threadsOf (C:184-188) as event indexes, and
 // the threads that have events, in memory order.
 func eventThreads(m timelineMemory) (ids []string, by map[string][]int) {
@@ -166,13 +159,6 @@ func layerOrder(topics, values []string, lit litSets, threadScore, valueScore ma
 	litThreads := below(lit.Threads, threadScore)
 	slices.SortStableFunc(litThreads, func(a, b string) int { return cmp.Compare(lit.Counts[b], lit.Counts[a]) })
 	return append(yes(topics, threadScore), litThreads...), append(yes(values, valueScore), below(lit.Values, valueScore)...)
-}
-
-// neededOnly is order without the items JEV calls not needed (below 0.5),
-// in order (view.layerNeededOnly): the lit topics and values layerOrder
-// adds after JEV's yes are left out.
-func neededOnly(order []string, score map[string]float64) []string {
-	return slices.DeleteFunc(slices.Clone(order), func(id string) bool { return score[id] < 0.5 })
 }
 
 // layerCandidates is what JEV judges for the layer (N:1151-1152): the lit
@@ -462,9 +448,6 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 	if r.agent.config.Consolidation.Neutral() {
 		threadOrder = neutralLayerOrder(topics, lit, threadScore, threadOrder)
 	}
-	if r.agent.config.View.LayerNeededOnly {
-		threadOrder, valueOrder = neededOnly(threadOrder, threadScore), neededOnly(valueOrder, valueScore)
-	}
 	blocks := composeLayer(m, threadOrder, valueOrder, lit)
 	joined := len(blocks)
 	if r.agent.insightsOn() {
@@ -477,36 +460,13 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 		}
 	}
 
-	// With records the reserve held (r.held), the trim keeps by compose's
-	// priority: the needed records that are not expansions, then the held
-	// ones, then the others, each in View order.
 	used, kept, cut := 0, []Evidence{}, false
 	for _, block := range blocks {
 		used += jsLen(block.Text)
 	}
-	priority := func(record Evidence) int {
-		if len(r.held) == 0 {
-			return 0
-		}
-		if item := r.items[record.ID]; item != nil && !item.Expanded && current(item) && item.Needed >= 0.5 {
-			return 0
-		}
-		if r.held[record.ID] {
-			return 1
-		}
-		return 2
-	}
-	keep := map[string]bool{}
-	for pass := 0; pass < 3; pass++ {
-		for _, record := range view.Records {
-			if n := jsLen(record.Text); priority(record) == pass && used+n <= r.agent.config.View.MaxCharacters {
-				keep[record.ID], used = true, used+n
-			}
-		}
-	}
 	for _, record := range view.Records {
-		if keep[record.ID] {
-			kept = append(kept, record)
+		if n := jsLen(record.Text); used+n <= r.agent.config.View.MaxCharacters {
+			kept, used = append(kept, record), used+n
 		} else {
 			cut = true
 		}
@@ -700,14 +660,6 @@ func (a *Agent) documentVectors(ctx context.Context, texts []string, store bool)
 	})
 }
 
-// storedDocuments is the stored document vectors of the texts, cut as
-// layerDocuments cuts them, nil where none is stored; nothing is embedded.
-func (a *Agent) storedDocuments(ctx context.Context, texts []string) ([][]float32, error) {
-	return a.batchDocuments(texts, func(part []string) ([][]float32, error) {
-		return a.store.DerivedVectors(ctx, part, *a.config.Embedding, false)
-	})
-}
-
 // batchDocuments runs vectors over the texts, each cut to layerEmbedText
 // units, in batches of layerEmbedBatch.
 func (a *Agent) batchDocuments(texts []string, vectors func(part []string) ([][]float32, error)) ([][]float32, error) {
@@ -727,8 +679,7 @@ func (a *Agent) batchDocuments(texts []string, vectors func(part []string) ([][]
 }
 
 // WarmLayer embeds and stores the scope's timelines layer texts, its topics
-// and value histories, with view expand events the event texts
-// (simple_events.go), and with consolidation.insights the insight texts
+// and value histories, and with consolidation.insights the insight texts
 // (insights_layer.go), which the first read after a consolidation would
 // otherwise embed while it answers (the reference system embeds them when
 // its consolidation catches up). It does nothing without an embedder, the
@@ -751,11 +702,6 @@ func (a *Agent) WarmLayer(ctx context.Context, scope records.Scope) error {
 	}
 	for _, key := range m.FactOrder {
 		texts = append(texts, valueTexts[key])
-	}
-	if a.expandsEvents() {
-		for _, e := range expansionEvents(m) {
-			texts = append(texts, e.text)
-		}
 	}
 	if a.insightsOn() {
 		for _, in := range m.Insights {

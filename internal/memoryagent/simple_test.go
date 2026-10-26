@@ -2,9 +2,13 @@ package memoryagent
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -14,7 +18,6 @@ import (
 	"time"
 
 	"github.com/mnemon-dev/mnemon/internal/records"
-	"github.com/mnemon-dev/mnemon/internal/retrieval"
 )
 
 // plannerCall is one call a scripted planner received.
@@ -386,15 +389,15 @@ func TestSimpleStrategyConfig(t *testing.T) {
 	if err != nil || *a.config.View != (ViewConfig{MaxItems: 16, MaxCharacters: 12000}) {
 		t.Fatal(a, err)
 	}
-	view := &ViewConfig{MaxItems: 100, Fusion: "rrf"}
+	view := &ViewConfig{MaxItems: 100, Order: "time"}
 	a, err = New(s, Config{Version: 1, Strategy: "simple", View: view}, both, nil)
-	if err != nil || *a.config.View != (ViewConfig{MaxItems: 100, MaxCharacters: 12000, Fusion: "rrf"}) || *view != (ViewConfig{MaxItems: 100, Fusion: "rrf"}) {
+	if err != nil || *a.config.View != (ViewConfig{MaxItems: 100, MaxCharacters: 12000, Order: "time"}) || *view != (ViewConfig{MaxItems: 100, Order: "time"}) {
 		t.Fatal("view defaults wrong or written into the caller's config", a.config.View, view, err)
 	}
 	if _, err = New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{MaxItems: 200, MaxCharacters: 1000000}}, both, nil); err != nil {
 		t.Error("largest view rejected", err)
 	}
-	for _, bad := range []ViewConfig{{MaxItems: 201}, {MaxItems: -1}, {MaxCharacters: 1000001}, {MaxCharacters: -5}, {Fusion: "max"}} {
+	for _, bad := range []ViewConfig{{MaxItems: 201}, {MaxItems: -1}, {MaxCharacters: 1000001}, {MaxCharacters: -5}} {
 		if _, err = New(s, Config{Version: 1, Strategy: "simple", View: &bad}, both, nil); err == nil {
 			t.Error("invalid view accepted", bad)
 		}
@@ -403,10 +406,10 @@ func TestSimpleStrategyConfig(t *testing.T) {
 		t.Error("v1 accepted a view it would ignore")
 	}
 	// Service configs decode strictly (cmd/memory readMemoryConfig).
-	decoder := json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"maxItems":100,"maxCharacters":240000,"fusion":"rrf"}}`))
+	decoder := json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"maxItems":100,"maxCharacters":240000,"order":"time"}}`))
 	decoder.DisallowUnknownFields()
 	var decoded Config
-	if err = decoder.Decode(&decoded); err != nil || decoded.Strategy != "simple" || *decoded.View != (ViewConfig{MaxItems: 100, MaxCharacters: 240000, Fusion: "rrf"}) {
+	if err = decoder.Decode(&decoded); err != nil || decoded.Strategy != "simple" || *decoded.View != (ViewConfig{MaxItems: 100, MaxCharacters: 240000, Order: "time"}) {
 		t.Fatal(decoded, err)
 	}
 
@@ -494,7 +497,7 @@ func TestReadSimpleCountsIndexRoutes(t *testing.T) {
 	}
 }
 
-func TestReadSimpleQuestionIntent(t *testing.T) {
+func TestReadSimpleCountsRecallRoutes(t *testing.T) {
 	s, _ := agentStore(t)
 	seedNote(t, s, "anchor", "outage report ORBIT")
 	seedNote(t, s, "after", "weather was fine")
@@ -509,8 +512,8 @@ func TestReadSimpleQuestionIntent(t *testing.T) {
 		return "NEED: the outage time", Usage{}, nil
 	})
 	relations := &records.IndexPolicy{Version: 1, Lexical: true, Relations: true}
-	read := func(view *ViewConfig, index *records.IndexPolicy) View {
-		config := Config{Version: 1, Strategy: "simple", Index: index, View: view}
+	read := func(index *records.IndexPolicy) View {
+		config := Config{Version: 1, Strategy: "simple", Index: index}
 		a, err := New(s, config, Models{Planner: planner, Judge: decisionFunc(fixtureJudge)}, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -521,21 +524,15 @@ func TestReadSimpleQuestionIntent(t *testing.T) {
 		}
 		return got
 	}
-	// Each search detects its own intent: only the message's is WHEN.
-	view := read(nil, relations)
-	raw, _ := json.Marshal(view.Stats)
-	if view.Stats.Searches != 3 || !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"lexical": 3, "relations": 1}) || view.Stats.Intent != "" || strings.Contains(string(raw), `"intent"`) {
-		t.Fatal(string(raw))
-	}
-	// The question's intent goes with every search: the note and the search
-	// follow the temporal link too.
-	view = read(&ViewConfig{Intent: "question"}, relations)
-	if view.Stats.Searches != 3 || !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"lexical": 3, "relations": 3}) || view.Stats.Intent != "WHEN" {
+	// Each search detects its own intent: only the message's is WHEN, so
+	// only its relations route follows the temporal link.
+	view := read(relations)
+	if view.Stats.Searches != 3 || !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"lexical": 3, "relations": 1}) {
 		t.Fatal(view.Stats)
 	}
 	// The native recall routes are counted like the others; traversal+
 	// counts the searches whose traversal reached a record over a link.
-	view = read(&ViewConfig{Intent: "question"}, &records.IndexPolicy{Version: 1, Traversal: true})
+	view = read(&records.IndexPolicy{Version: 1, Traversal: true})
 	if !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"traversal": 3, "traversal+": 3}) {
 		t.Fatal(view.Stats)
 	}
@@ -543,45 +540,199 @@ func TestReadSimpleQuestionIntent(t *testing.T) {
 	if err := s.ReplaceDerivedMetadata(context.Background(), "consolidation", nil); err != nil {
 		t.Fatal(err)
 	}
-	view = read(&ViewConfig{Intent: "question"}, &records.IndexPolicy{Version: 1, Traversal: true})
+	view = read(&records.IndexPolicy{Version: 1, Traversal: true})
 	if !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"traversal": 3}) {
 		t.Fatal(view.Stats)
 	}
-	view = read(nil, &records.IndexPolicy{Version: 1, Recency: true})
+	view = read(&records.IndexPolicy{Version: 1, Recency: true})
 	if !reflect.DeepEqual(view.Stats.IndexRoutes, map[string]int{"recency": 3}) {
 		t.Fatal(view.Stats)
 	}
-	// An unknown setting is refused; the default stays out of the config's
-	// JSON, and so out of the policy hash.
-	both := Models{Planner: planner, Judge: decisionFunc(fixtureJudge)}
-	for _, bad := range []string{"WHEN", "message", "Question"} {
-		if _, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Intent: bad}}, both, nil); err == nil {
-			t.Error("view intent accepted", bad)
-		}
+}
+
+// pinnedView is a View's JSON with its clock readings zeroed.
+func pinnedView(t *testing.T, view View) string {
+	t.Helper()
+	view.Stats.QueryMS, view.Stats.ModelMS = 0, 0
+	raw, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if raw, _ := json.Marshal(ViewConfig{MaxItems: 16, MaxCharacters: 12000}); strings.Contains(string(raw), "intent") {
-		t.Fatal(string(raw))
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:])
+}
+
+// expandNote is a dated note with fixed bytes: its eventAt day is its date.
+func expandNote(id, text, eventAt string, data map[string]any) records.Upsert {
+	day := eventAt[:10]
+	values := map[string]any{"eventAt": eventAt}
+	maps.Copy(values, data)
+	v := recordValue{ID: id, Kind: "note", Title: "Note", Content: text, Scope: "global", Date: &day, State: "active", Version: 1, Signals: 1, CreatedAt: "2026-10-19T00:00:00Z", UpdatedAt: "2026-10-19T00:00:00Z", History: []any{}, Data: values}
+	return encodeRecord(v, text)
+}
+
+// expandDocument is an archived original document and one memory-record per
+// chunk, as buildDocument writes them, with fixed bytes.
+func expandDocument(id, eventAt string, chunks []string) []records.Upsert {
+	day := eventAt[:10]
+	content := strings.Join(chunks, "\n\n")
+	parent := recordValue{ID: id, Kind: "memory-document", Title: "Original document", Content: content, Scope: "global", Date: &day, State: "archived", Signals: 1, Version: 1, CreatedAt: "2026-10-19T00:00:00Z", UpdatedAt: "2026-10-19T00:00:00Z", History: []any{}, Data: map[string]any{"source": "test", "eventAt": eventAt}}
+	upserts := []records.Upsert{encodeRecord(parent, "")}
+	offset := 0
+	for i, chunk := range chunks {
+		child := parent
+		child.ID, child.Kind, child.Title, child.Content, child.State = id+"-0000"+string(rune('0'+i)), "memory-record", "Original record", chunk, "active"
+		child.Data = map[string]any{"source": "test", "eventAt": eventAt, "documentID": id, "start": offset, "end": offset + len(chunk)}
+		upserts = append(upserts, encodeRecord(child, chunk))
+		offset += len(chunk) + len("\n\n")
 	}
-	decoder := json.NewDecoder(strings.NewReader(`{"version":1,"strategy":"simple","view":{"intent":"question"}}`))
-	decoder.DisallowUnknownFields()
-	var decoded Config
-	if err := decoder.Decode(&decoded); err != nil || decoded.View.Intent != "question" {
-		t.Fatal(decoded, err)
+	return upserts
+}
+
+func expandLink(id, kind string, weight float64) map[string]any {
+	return map[string]any{"id": id, "version": 1, "type": kind, "weight": weight}
+}
+
+// expandFixture stores two dated sessions of notes and a document written on
+// the first session's day, in that order, with a writer link, a writer
+// correction and overlay links. Searches for the codename find a2 and its
+// session's talk of the codename; the launch notes share no word with them.
+//
+//	session A (2023-05-08): a0 a1 a2 a3 a4    a1 → b0 semantic (writer)
+//	session B (2023-05-09): b0 b1 b2           b2 supersedes b0 (writer)
+//	document doc (2023-05-08): doc-00000 doc-00001 doc-00002
+//	overlay: a2 → b1 temporal 0.8, a2 → doc-00001 causal 0.6
+func expandFixture(t *testing.T) *records.Store {
+	t.Helper()
+	s, _ := expandFixtureIn(t)
+	return s
+}
+
+// expandFixtureIn is expandFixture and the store's directory.
+func expandFixtureIn(t *testing.T) (*records.Store, string) {
+	t.Helper()
+	s, dir := agentStore(t)
+	a, b := "2023-05-08T13:56:00Z", "2023-05-09T10:00:00Z"
+	upserts := []records.Upsert{
+		expandNote("a0", "Caroline: good morning, how was your weekend", a, nil),
+		expandNote("a1", "Melanie: we picked a codename for the rocket project", a, map[string]any{"links": []any{expandLink("b0", "semantic", 0.5)}}),
+		expandNote("a2", "Caroline: the codename is ORBIT", a, nil),
+		expandNote("a3", "Melanie: launch window opens Friday at dawn", a, nil),
+		expandNote("a4", "Caroline: sounds great, see you there", a, nil),
+		expandNote("b0", "Melanie: rocket budget review went fine", b, nil),
+		expandNote("b1", "Caroline: launch moved to Monday", b, nil),
+		expandNote("b2", "Melanie: rocket budget review was redone", b, map[string]any{"mnemonSupersedes": map[string]any{"id": "b0", "version": 1}}),
+	}
+	upserts = append(upserts, expandDocument("doc", "2023-05-08T18:00:00Z", []string{"Notes: codename review meeting", "Notes: launch checklist signed", "Notes: wrap up and travel"})...)
+	if _, err := s.Put(context.Background(), records.PutRequest{Upsert: upserts}); err != nil {
+		t.Fatal(err)
+	}
+	overlay := map[string]records.DerivedMetadata{"a2": {Version: 1, Links: []records.Link{{ID: "b1", Version: 1, Type: "temporal", Weight: 0.8}, {ID: "doc-00001", Version: 1, Type: "causal", Weight: 0.6}}}}
+	if err := s.ReplaceDerivedMetadata(context.Background(), "consolidation", overlay); err != nil {
+		t.Fatal(err)
+	}
+	return s, dir
+}
+
+// eventsMemory is a consolidated memory over expandFixture's records. Event
+// 5 repeats event 3 and event 6 cites nothing.
+func eventsMemory() timelineMemory {
+	return timelineMemory{
+		Threads: []thread{{ID: "T1", Title: "Codename launch"}, {ID: "T2", Title: "Rocket budget"}, {ID: "T3", Title: "Codename"}, {ID: "T4", Title: "Weekend"}, {ID: "T5", Title: "Codename team travel plans"}},
+		Events: []event{
+			{Thread: "T4", Date: "2023/05/08", Text: "Caroline asked about a weekend trip.", Records: []string{"a0"}},
+			{Thread: "T3", Date: "2023/05/08", Text: "Codename ORBIT picked.", Records: []string{"a2"}},
+			{Thread: "T1", Date: "2023/05/08", Text: "Rocket with that codename lifts off Friday at dawn.", Records: []string{"a3"}},
+			{Thread: "T1", Date: "2023/05/09", Text: "Launch moved to Monday.", Records: []string{"b1", "doc-00001"}},
+			{Thread: "T2", Date: "2023/05/09", Text: "Budget review redone.", Records: []string{"b2", "b0"}},
+			{Thread: "T1", Date: "2023/05/09", Text: "Launch moved to Monday.", Records: []string{"b1", "doc-00001"}},
+			{Thread: "T2", Date: "2023/05/09", Text: "An unsourced remark."},
+			{Thread: "T5", Date: "2023/05/08", Text: "Codename team flies home after a long review meeting.", Records: []string{"doc-00002"}},
+		},
+		Facts: map[string][]factValue{}, FactOrder: []string{}, Directives: []directive{},
 	}
 }
 
-func TestIntentTextDropsDateHeader(t *testing.T) {
-	q := "Current date: 2024/04/25 (Thu) 00:00\nHow did the user feedback influence the UI improvements?"
-	if got := intentText(q); got != "How did the user feedback influence the UI improvements?" {
-		t.Fatalf("%q", got)
+// eventsStore is expandFixture with eventsMemory consolidated for the
+// default scope.
+func eventsStore(t *testing.T) (*records.Store, *Overlay) {
+	t.Helper()
+	s, dir := expandFixtureIn(t)
+	overlay, err := OpenOverlay(filepath.Join(dir, "memory-index.db"), false)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if retrieval.DetectIntent(intentText(q)) != retrieval.IntentGeneral {
-		t.Fatal("a date header must not make the question WHEN")
+	t.Cleanup(func() { overlay.Close() })
+	state := emptyTimelineState()
+	state.Memory = eventsMemory()
+	if _, err := overlay.saveTimelines(context.Background(), records.Scope{}, "", state); err != nil {
+		t.Fatal(err)
 	}
-	if got := intentText("Current date: 2024/04/25"); got != "Current date: 2024/04/25" {
-		t.Fatalf("a lone header is kept: %q", got)
+	return s, overlay
+}
+
+// expandJudge calls needed what names ORBIT or a launch, and no longer
+// current what was redone.
+func expandJudge() *scriptedJudge {
+	return &scriptedJudge{
+		answer: func(text string, _ int) float64 {
+			if strings.Contains(text, "ORBIT") || strings.Contains(text, "launch") {
+				return 0.9
+			}
+			return 0.2
+		},
+		superseded: func(text string) float64 {
+			if strings.Contains(text, "redone") {
+				return 0.7
+			}
+			return 0
+		},
 	}
-	if retrieval.DetectIntent(intentText("Current date: 2024/04/25\nWhen did I move?")) != retrieval.IntentWhen {
-		t.Fatal("a WHEN question stays WHEN")
+}
+
+func expandPlanner() *limitPlanner {
+	return replies("codename project\nNOTE: the codename is ORBIT", "NEED: the codename\nNEED: the launch day", "codename rocket")
+}
+
+// Reads pinned by hash. The plain read's hash was taken at 1f0c9a26, before
+// any evidence expansion code; the others at e6f5c3af, before the read
+// switches measured and not adopted (evidence expansion, fusion, a shared
+// intent, top-down recall and a needed-only layer) were deleted, so the
+// deletion moved none of these reads. "eval" is the AML eval instance's
+// configuration (its view and layered consolidation with even reading) over
+// a consolidated state.
+func TestReadSimplePinned(t *testing.T) {
+	ctx := context.Background()
+	s := expandFixture(t)
+	events, overlay := eventsStore(t)
+	evalView := &ViewConfig{MaxItems: 100, MaxCharacters: 240000, Order: "time"}
+	plain := func(config Config) *Agent {
+		config.Version, config.Strategy = 1, "simple"
+		a, err := New(s, config, Models{Planner: expandPlanner(), Judge: expandJudge()}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+	both := ReadRequest{Question: "What is the codename and when is the launch?"}
+	for name, tc := range map[string]struct {
+		agent *Agent
+		read  ReadRequest
+		want  string
+	}{
+		"judged":    {plain(Config{}), both, "3152098fef8497187f4ece79e44f4ce162672daebe33d6c133a10fdd89a499f7"},
+		"eval view": {plain(Config{View: evalView}), both, "e025f7d2f9b3df49fa4a9c82ac87dfab4d5e7aab39a5bb1901e381002fec89fd"},
+		"index":     {plain(Config{Index: &records.IndexPolicy{Version: 1, Lexical: true, Relations: true, Supersedes: true}}), both, "cef8c1f949a4a35d907fab22a5ee2b9da8a12ee91f2df0f523422e44a259477e"},
+		"eval": {layerAgent(t, events, overlay, Config{View: evalView, Consolidation: &ConsolidationConfig{Mode: "layered", EvenReading: true}}, expandPlanner(), expandJudge()),
+			ReadRequest{Question: "What is the codename?"}, "b2a081820cb0fc55e5f1d0fb33469376ab0db7e6d71c0a45b69980daac28652c"},
+	} {
+		view, err := tc.agent.Read(ctx, tc.read)
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		if got := pinnedView(t, view); got != tc.want {
+			raw, _ := json.Marshal(view)
+			t.Errorf("%s: %s\n%s", name, got, raw)
+		}
 	}
 }

@@ -131,23 +131,10 @@ func (c *ConsolidationConfig) Neutral() bool {
 }
 
 // ViewConfig bounds what a simple read returns. Zero fields take the
-// defaults: 16 records, 12000 characters, no fusion.
+// defaults: 16 records, 12000 characters.
 type ViewConfig struct {
 	MaxItems      int `json:"maxItems,omitempty"`
 	MaxCharacters int `json:"maxCharacters,omitempty"`
-	// Fusion "rrf" orders the View by reciprocal-rank fusion of the judged
-	// order and the message search; "" keeps the judged order.
-	Fusion string `json:"fusion,omitempty"`
-	// Intent "question" detects the read's intent once, from the question
-	// (native recall's intent detection), and gives it to every records
-	// search; "" lets each search detect its own from its text.
-	Intent string `json:"intent,omitempty"`
-	// Expand, when set, expands after the judgement from the judged records
-	// whose needed answer reaches its seedMin to their neighbors, and from
-	// the question to the events nearest it, judges those candidates the
-	// same way and composes them on their merit (simple_expand.go). Unset,
-	// it stays out of the policy hash and the read is unchanged.
-	Expand *ExpandConfig `json:"expand,omitempty"`
 	// Order "time" lists the View's records in time order once the View is
 	// composed (simple_order.go); "" keeps the rank order.
 	Order string `json:"order,omitempty"`
@@ -162,71 +149,7 @@ type ViewConfig struct {
 	// consolidation links with consolidation.nativeEdges, the one-shot links
 	// with consolidation.oneShotLinks (simple_linked.go).
 	LoopLinks bool `json:"loopLinks,omitempty"`
-	// LayerNeededOnly has the timelines layer show only the topics and values
-	// JEV calls needed (≥ 0.5), not then the lit ones it calls not needed
-	// (timelines_layer.go).
-	LayerNeededOnly bool `json:"layerNeededOnly,omitempty"`
-	// TopDown has the pool also take the records cited by the consolidated
-	// topics and values the question's words find, ranked by the question's
-	// words search of the records, after the cue searches' mix
-	// (simple_topdown.go). It needs a timelines consolidation.
-	TopDown bool `json:"topDown,omitempty"`
 }
-
-// ExpandConfig sets the evidence expansion of a simple read. Kinds names the
-// candidates proposed, each once: from the seeds (judged records whose
-// needed answer reaches SeedMin), "adjacent" (the records written just
-// before and after in the same session) and the link types "temporal",
-// "semantic", "causal", "entity" and "supersedes"; from the question,
-// "events" (the records cited by the consolidated events nearest it). Limit
-// bounds the candidates judged (24 by default, 1–64), Seeds the seeds
-// expanded from (16 by default, 1–32). AdjacentWindow (with adjacent) is
-// how many records on each side are adjacent (1 by default, 1–5);
-// EventsTop (with events) how many events are taken (10 by default, 1–40).
-// Gate, Target and Reserve are Jev-Mem's evaluate-then-expand parts
-// (simple_expand.go): Gate "needs" skips the expansion when the need table
-// finds the evidence sufficient, Target "needs" asks the candidates the
-// need table's question for the needs not covered yet and ranks those that
-// answer one first, and Reserve (0–8) holds View slots for expansions.
-// Unset, each leaves the read as it was.
-type ExpandConfig struct {
-	Kinds          []string `json:"kinds"`
-	Limit          int      `json:"limit,omitempty"`
-	Seeds          int      `json:"seeds,omitempty"`
-	AdjacentWindow int      `json:"adjacentWindow,omitempty"`
-	EventsTop      int      `json:"eventsTop,omitempty"`
-	Gate           string   `json:"gate,omitempty"`
-	Target         string   `json:"target,omitempty"`
-	Reserve        int      `json:"reserve,omitempty"`
-	// SeedMin is the least needed answer a seed may have, 0–1; absent
-	// (nil), 0.5. A pointer, so that a present 0 (any judged record may
-	// seed, as Jev-Mem's first frontier is its unjudged anchors) differs
-	// from absent.
-	SeedMin *float64 `json:"seedMin,omitempty"`
-	// Rejudge lets a pooled record JEV never judged (not on the shortlist)
-	// be proposed and judged; without it pooled records are not proposed.
-	Rejudge bool `json:"rejudge,omitempty"`
-}
-
-// seedMin is the least needed answer a seed may have: SeedMin, else 0.5.
-func (e *ExpandConfig) seedMin() float64 {
-	if e.SeedMin == nil {
-		return 0.5
-	}
-	return *e.SeedMin
-}
-
-// expandKinds are the candidates view.expand may propose.
-var expandKinds = []string{expandAdjacent, "temporal", "semantic", "causal", "entity", "supersedes", expandEvents}
-
-const (
-	expandAdjacent = "adjacent"
-	expandEvents   = "events"
-	// expandNeeds is the value of gate and target that reads the need table.
-	expandNeeds = "needs"
-)
-
-const viewIntentQuestion = "question"
 
 const strategySimple = "simple"
 
@@ -269,62 +192,20 @@ type ReadStats struct {
 	// layer-lexical (the layer's embedding failed: shared words rank), layer
 	// (the layer's judgement failed or found the budget spent),
 	// layer-insights (consolidation.insights' judgement failed or could not
-	// be paid for: no insights), expand
-	// (records linked from the layer could not be read or judged),
-	// expansion (view.expand could not read or judge every candidate it
-	// chose, its events' state did not load, or gate and target could not
-	// read the View whose coverage of the needs they check: nothing counts
-	// as covered), expansion-lexical (the events' embedding failed or left
-	// vectors missing: shared words ranked them), expansion-target
-	// (target's need table was skipped for the budget or failed) and order
-	// (view.order could not read the records' write positions: the View
-	// stays in rank order). Empty for a read that fell back nowhere, and
-	// for memory-agent/v1.
+	// be paid for: no insights), expand (records linked from the layer could
+	// not be read or judged) and order (view.order could not read the
+	// records' write positions: the View stays in rank order). Empty for a
+	// read that fell back nowhere, and for memory-agent/v1.
 	Degraded []string `json:"degraded,omitempty"`
 	// IndexRoutes counts, for each native index route of the records
 	// (Config.Index), the searches of a simple read in which it found a
 	// candidate. Absent when none did, and for memory-agent/v1.
 	IndexRoutes map[string]int `json:"indexRoutes,omitempty"`
-	// Intent is the intent a simple read with view intent "question" gave
-	// its searches (WHY, WHEN, ENTITY or GENERAL); absent otherwise.
-	Intent string `json:"intent,omitempty"`
-	// Expanded counts the candidates a read with view expand had JEV judge
-	// (each joins the judged list and composes on its needed answer),
-	// ExpandedNeeded those JEV called needed (≥ 0.5, current or not), and
-	// ExpandKinds, per kind, the judged candidates that kind proposed (one
-	// proposed by several kinds counts for each). Absent without view
-	// expand, and when nothing was judged.
-	Expanded       int            `json:"expanded,omitempty"`
-	ExpandedNeeded int            `json:"expandedNeeded,omitempty"`
-	ExpandKinds    map[string]int `json:"expandKinds,omitempty"`
-	// ExpandEventsLexical reports that shared words (BM25), not meaning,
-	// ranked the events of view expand: without an embedder, or when
-	// embedding failed or left vectors missing. ExpandEventsEmbedded counts
-	// the event texts the read embedded (and stored) because no stored
-	// vector had them.
-	ExpandEventsLexical  bool `json:"expandEventsLexical,omitempty"`
-	ExpandEventsEmbedded int  `json:"expandEventsEmbedded,omitempty"`
-	// ExpandGated reports that view expand's gate found the evidence
-	// sufficient and skipped the expansion; ExpandAnsweredNeeds counts the
-	// needs target asked (those not covered) that an expansion JEV judged
-	// needed and current answers; ExpandReserved the records held in
-	// reserved slots (reserve) that the final View still shows, after the
-	// timelines layer.
-	ExpandGated         bool `json:"expandGated,omitempty"`
-	ExpandAnsweredNeeds int  `json:"expandAnsweredNeeds,omitempty"`
-	ExpandReserved      int  `json:"expandReserved,omitempty"`
-	// ExpandShown counts the records view.expand proposed that the final
-	// View shows (after the timelines layer); ExpandSeeds the records it
-	// expanded from.
-	ExpandShown int `json:"expandShown,omitempty"`
 	// LinksAppended counts the records view.links added to the View.
 	LinksAppended int `json:"linksAppended,omitempty"`
 	// LoopLinked counts the records view.loopLinks pooled from the
 	// consolidation links of useful finds.
-	LoopLinked  int `json:"loopLinked,omitempty"`
-	ExpandSeeds int `json:"expandSeeds,omitempty"`
-	// TopDown counts the records view.topDown pooled.
-	TopDown int `json:"topDown,omitempty"`
+	LoopLinked int `json:"loopLinked,omitempty"`
 	// LayerInsights counts the insights the View's layer shows
 	// (consolidation.insights); absent at zero.
 	LayerInsights int `json:"layerInsights,omitempty"`
@@ -413,9 +294,6 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	if _, ok := models.Judge.(Chooser); config.Consolidation.Neutral() && !ok {
 		return nil, errors.New("neutral consolidation requires a decision model that answers choice questions")
 	}
-	if config.View != nil && config.View.TopDown && !config.Consolidation.Timelines() {
-		return nil, errors.New("view.topDown requires a timelines consolidation")
-	}
 	if config.Consolidation != nil && len(config.Consolidation.EdgeKinds) > 0 && models.Judge == nil {
 		return nil, errors.New("edgeKinds requires a decision model")
 	}
@@ -444,11 +322,6 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 			return nil, err
 		}
 	}
-	// The events source reads the timelines layer's state: without it the
-	// kind could only ever be inert.
-	if own.View != nil && own.View.Expand != nil && slices.Contains(own.View.Expand.Kinds, expandEvents) && !(own.Consolidation.Timelines() && own.Policy.Consolidation) {
-		return nil, errors.New("view expand kind events requires timelines or layered consolidation, with the policy's consolidation on")
-	}
 	return &Agent{store: store, config: own, models: models, overlay: overlay, now: time.Now}, nil
 }
 
@@ -460,66 +333,11 @@ func (v *ViewConfig) normalize() error {
 	if v.MaxCharacters == 0 {
 		v.MaxCharacters = 12000
 	}
-	if v.MaxItems < 1 || v.MaxItems > 200 || v.MaxCharacters < 1 || v.MaxCharacters > 1000000 || v.Fusion != "" && v.Fusion != "rrf" {
-		return errors.New("memory view requires maxItems 1–200, maxCharacters 1–1000000 and fusion \"\" or \"rrf\"")
-	}
-	if v.Intent != "" && v.Intent != viewIntentQuestion {
-		return errors.New("memory view requires intent \"\" or \"question\"")
+	if v.MaxItems < 1 || v.MaxItems > 200 || v.MaxCharacters < 1 || v.MaxCharacters > 1000000 {
+		return errors.New("memory view requires maxItems 1–200 and maxCharacters 1–1000000")
 	}
 	if v.Order != "" && v.Order != viewOrderTime {
 		return errors.New("memory view requires order \"\" or \"time\"")
-	}
-	if v.Expand != nil {
-		return v.Expand.normalize()
-	}
-	return nil
-}
-
-// normalize fills the expansion defaults and checks the kinds and bounds.
-func (e *ExpandConfig) normalize() error {
-	if len(e.Kinds) == 0 {
-		return errors.New("view expand requires kinds")
-	}
-	for i, kind := range e.Kinds {
-		if !slices.Contains(expandKinds, kind) {
-			return fmt.Errorf("unknown expand kind %q: kinds lists adjacent, temporal, semantic, causal, entity, supersedes or events", kind)
-		}
-		if slices.Contains(e.Kinds[:i], kind) {
-			return fmt.Errorf("expand kind %q is listed twice", kind)
-		}
-	}
-	if e.Limit == 0 {
-		e.Limit = 24
-	}
-	if e.Seeds == 0 {
-		e.Seeds = 16
-	}
-	if e.Limit < 1 || e.Limit > 64 || e.Seeds < 1 || e.Seeds > 32 {
-		return errors.New("view expand requires limit 1–64 and seeds 1–32")
-	}
-	for _, setting := range []struct {
-		kind, name  string
-		value       *int
-		fill, limit int
-	}{{expandAdjacent, "adjacentWindow", &e.AdjacentWindow, 1, 5}, {expandEvents, "eventsTop", &e.EventsTop, 10, 40}} {
-		if !slices.Contains(e.Kinds, setting.kind) {
-			if *setting.value != 0 {
-				return fmt.Errorf("view expand %s requires kind %s", setting.name, setting.kind)
-			}
-			continue
-		}
-		if *setting.value == 0 {
-			*setting.value = setting.fill
-		}
-		if *setting.value < 1 || *setting.value > setting.limit {
-			return fmt.Errorf("view expand requires %s 1–%d", setting.name, setting.limit)
-		}
-	}
-	if e.SeedMin != nil && !(*e.SeedMin >= 0 && *e.SeedMin <= 1) {
-		return errors.New("view expand requires seedMin 0–1")
-	}
-	if e.Gate != "" && e.Gate != expandNeeds || e.Target != "" && e.Target != expandNeeds || e.Reserve < 0 || e.Reserve > 8 {
-		return errors.New("view expand requires gate \"\" or \"needs\", target \"\" or \"needs\" and reserve 0–8")
 	}
 	return nil
 }

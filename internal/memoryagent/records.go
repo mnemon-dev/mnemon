@@ -94,8 +94,8 @@ type Evidence struct {
 	Truncated    bool       `json:"truncated,omitempty"`
 	Start        int        `json:"start"`
 	End          int        `json:"end"`
-	// Score is how the simple strategy ranked the record: JEV's needed, or
-	// the fused score with fusion. memory-agent/v1 leaves it unset.
+	// Score is how the simple strategy ranked the record: JEV's needed.
+	// memory-agent/v1 leaves it unset.
 	Score float64 `json:"score,omitempty"`
 }
 

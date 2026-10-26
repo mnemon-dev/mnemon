@@ -155,7 +155,7 @@ type harness struct {
 }
 
 func simpleConfig() memoryagent.Config {
-	return memoryagent.Config{Version: 1, Strategy: "simple", View: &memoryagent.ViewConfig{MaxItems: 100, MaxCharacters: 240000, Fusion: "rrf"}}
+	return memoryagent.Config{Version: 1, Strategy: "simple", View: &memoryagent.ViewConfig{MaxItems: 100, MaxCharacters: 240000}}
 }
 
 func newHarness(t *testing.T, edit func(*ServerConfig)) *harness {
@@ -800,7 +800,7 @@ func TestSearchOptionsJoinQuestion(t *testing.T) {
 
 func TestSearchClampsTopKToView(t *testing.T) {
 	h := newHarness(t, func(config *ServerConfig) {
-		config.MemoryConfig.View = &memoryagent.ViewConfig{MaxItems: 1, Fusion: "rrf"}
+		config.MemoryConfig.View = &memoryagent.ViewConfig{MaxItems: 1}
 	})
 	for i := range 3 {
 		h.mustAdd(t, addRequest(fmt.Sprintf("r%d", i), "u1"))

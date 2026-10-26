@@ -318,50 +318,6 @@ func TestInsightsCountTowardTheView(t *testing.T) {
 	if err != nil || viewCharacters(small) > tight || len(small.Records) != len(view.Records)-1 || !small.Truncated || small.Index[4].Text != view.Index[4].Text {
 		t.Fatal(err, viewCharacters(small), tight, recordIDs(small.Records))
 	}
-	// The most the blocks can take counts the insights block only with
-	// the setting.
-	if off := layerAgent(t, s, overlay, insightConfig(ViewConfig{}, false), codenamePlanner("x"), judge); off.layerBound() != layerBlocksMax || layerBlocksMax != 8059 {
-		t.Fatal(off.layerBound())
-	}
-	if on := layerAgent(t, s, overlay, insightConfig(ViewConfig{}, true), codenamePlanner("x"), judge); on.layerBound() != 8059+1500+jsLen("Conclusions drawn from the memory:") || on.layerBound() != 9593 {
-		t.Fatal(on.layerBound())
-	}
-}
-
-// With gate, the records that count toward the needs' coverage are those
-// within the View's characters less the most the blocks can take: with
-// insights, their block too.
-func TestInsightsBoundTheWouldShowView(t *testing.T) {
-	events, overlay := eventsStore(t)
-	withInsights(t, overlay, nil)
-	judge := func() *scriptedJudge {
-		return &scriptedJudge{answer: func(text string, _ int) float64 {
-			switch {
-			case strings.Contains(text, "ORBIT"):
-				return 0.9
-			case strings.Contains(text, "launch"):
-				return 0.8
-			}
-			return 0.3
-		}}
-	}
-	gated := func(chars int, insights bool) bool {
-		planner := replies("codename project\nNOTE: the codename is ORBIT", "NEED: the codename", "codename rocket")
-		view := ViewConfig{MaxCharacters: chars, Expand: &ExpandConfig{Kinds: []string{"adjacent"}, Gate: "needs"}}
-		got, err := layerAgent(t, events, overlay, insightConfig(view, insights), planner, judge()).Read(context.Background(), ReadRequest{Question: "What is the codename?"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		return got.Stats.ExpandGated
-	}
-	// a2, the codename (31 characters), counts while the room left for it
-	// holds it.
-	if !gated(layerBlocksMax+31, false) || gated(layerBlocksMax+30, false) {
-		t.Fatal("without insights")
-	}
-	if gated(layerBlocksMax+31, true) || !gated(layerBlocksMax+1534+31, true) || gated(layerBlocksMax+1534+30, true) {
-		t.Fatal("with insights")
-	}
 }
 
 func TestNearestInsights(t *testing.T) {

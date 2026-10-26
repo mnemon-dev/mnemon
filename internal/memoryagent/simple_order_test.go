@@ -32,6 +32,43 @@ func orderStore(t *testing.T) *records.Store {
 	return s
 }
 
+// needJudge answers the need table by need, the codename (q0) for ORBIT and
+// the launch day (q1) for a launch, and the screen and the judgement by
+// needed; it calls what was redone no longer current.
+func needJudge(needed func(text string) float64) *scriptedJudge {
+	return &scriptedJudge{
+		answer: func(text string, need int) float64 {
+			switch {
+			case need < 0:
+				return needed(text)
+			case need == 0 && strings.Contains(text, "ORBIT"), need == 1 && strings.Contains(text, "launch"):
+				return 0.9
+			}
+			return 0.1
+		},
+		superseded: func(text string) float64 {
+			if strings.Contains(text, "redone") {
+				return 0.7
+			}
+			return 0
+		},
+	}
+}
+
+// byWords is needed answers by the first word of the text that a table
+// gives, else 0.2.
+func byWords(answers map[string]float64) func(string) float64 {
+	return func(text string) float64 {
+		best, at := 0.2, len(text)
+		for word, answer := range answers {
+			if i := strings.Index(text, word); i >= 0 && i < at {
+				best, at = answer, i
+			}
+		}
+		return best
+	}
+}
+
 // orderJudge ranks the records apart: late first, then mid, undated, the
 // chunks, early-1 and early-2.
 func orderJudge() *scriptedJudge {
@@ -150,7 +187,7 @@ func TestTimeOrderFailureKeepsRankOrder(t *testing.T) {
 	ctx := context.Background()
 	ranked := orderRead(t, s, nil)
 	composed := ranked
-	composed.Stats.ExpandShown = 2
+	composed.Stats.LayerInsights = 2
 	agent := func(view *ViewConfig) *Agent {
 		a, err := New(s, Config{Version: 1, Strategy: "simple", View: view}, Models{Planner: expandPlanner(), Judge: orderJudge()}, nil)
 		if err != nil {

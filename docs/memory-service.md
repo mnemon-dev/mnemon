@@ -26,30 +26,17 @@ final judgement failed or found the budget spent; JEV's screen stands in), `laye
 failed; shared words rank the topics), `layer` (the layer's judgement failed),
 `layer-insights` (the insights' judgement of `consolidation.insights` failed or the
 decision budget could not pay for it; no insights), `expand` (records linked from the
-layer could not be read or judged), `expansion` (the
-`view.expand` candidates could not all be read or judged, the events' state did not
-load, or `gate` and `target` could not read the View whose coverage of the needs they
-check, so that nothing counts as covered; see below), `expansion-lexical` (the events'
-embedding failed or left vectors missing; shared words ranked them), `expansion-target`
-(`target`'s need table was skipped for the budget or failed) and `order` (`view.order`
-could not read the records' write positions; the View stays in rank order). It is absent
-when nothing fell back, and always for memory-agent/v1. With an `index` setting, a simple
-read's `stats.indexRoutes` counts, for each native route (`lexical`, `entities`,
-`relations`, `temporal`, `supersedes`, `recency`, `traversal`), the read's searches in
-which that route found a candidate, and under `traversal+` the searches whose traversal
-reached a record over a link (not only its anchors).
-
-`"view": {"intent": "question"}` makes a simple read detect the intent of its `question`
-once (native recall's WHY, WHEN, ENTITY or GENERAL detection) and pass it as `input.intent`
-to every records search it sends, the message's, the note's, the planner's and the
-loop's, so the `relations` and `traversal` routes weigh links by what was asked rather
-than by each search's own words; `stats.intent` reports it. Absent or `""`, each search
-detects its intent from its own text, as before, and `stats.intent` is absent. Other
-values are refused. The setting changes nothing without an `index` that reads intent.
+layer could not be read or judged) and `order` (`view.order` could not read the records'
+write positions; the View stays in rank order). It is absent when nothing fell back, and
+always for memory-agent/v1. With an `index` setting, a simple read's `stats.indexRoutes`
+counts, for each native route (`lexical`, `entities`, `relations`, `temporal`,
+`supersedes`, `recency`, `traversal`), the read's searches in which that route found a
+candidate, and under `traversal+` the searches whose traversal reached a record over a
+link (not only its anchors).
 
 `"view": {"order": "time"}` lists a simple read's records in time order once its View is
-composed: after the expansion and the timelines layer, which still select, cut and trim by
-rank. The key is the record's `date` (the writer's `data.eventAt`, else its date, else its
+composed: after the timelines layer, and the read still selects, cuts and trims by rank.
+The key is the record's `date` (the writer's `data.eventAt`, else its date, else its
 creation time) as an instant when it parses as RFC 3339 or as a day (`YYYY-MM-DD`, midnight
 UTC), earlier first, with records whose date does not parse after all the dated ones; then
 the write position (the document's, then the chunk's place in it); then the id. The index
@@ -57,101 +44,6 @@ blocks keep their place and order, each record keeps its `score`, and the needs,
 and the stats are those of the ranked View. If the write positions cannot be read the View
 stays in rank order and `order` is named in `stats.degraded`. Absent or `""` keeps the rank
 order, and reads and the policy hash are unchanged; other values are refused.
-
-`"view": {"expand": {"kinds": ["adjacent", "causal", "events"], "limit": 24, "seeds": 16}}`
-adds evidence-anchored expansion to a simple read. The cue searches, the pool, the need loop
-and the final judgement run as without it; then two sources propose more records, of the
-listed `kinds` (each at most once; required). The seed source expands from the judged
-records whose needed answer is at least `seedMin` (0–1; absent, 0.5), current or not, best
-first (ties in shortlist order), at most `seeds` (16 by default, 1–32): the seeds
-(`stats.expandSeeds`). `seedMin` is kept apart from absent, so `"seedMin": 0` lets any
-judged record seed, as Jev-Mem's first frontier is its unjudged anchors. The events source
-starts from the question.
-
-| Kind | Source | Proposes | Weight |
-|---|---|---|---|
-| `adjacent` | seed | The `adjacentWindow` records (1 by default, 1–5) written before and after the seed in its session, in store order. A session is the same place (scope, workspace, session) and then the same conversation session (`data.session`, which the service writes on every chunk of every Add of a conversation, so adjacency crosses the Adds), else the same original document, else the same day of the record's `data.eventAt` (else of its `date`) in the writer's own offset. Never across sessions; a record with none of them has no neighbors. A revision's sessions in a scope are built once and cached. | 1, at its distance |
-| `temporal`, `semantic`, `causal`, `entity` | seed | The seed's links of that type in the records' derived index, the writer's and the derived-metadata overlay's (for example consolidation's `nativeEdges` and `edgeKinds`), as the `relations` route reads them: semantic and entity links both ways, temporal and causal as written. | the link's, at distance 1 |
-| `supersedes` | seed | Corrections, both ways: the record the seed corrects and the record that corrects it. | the link's, at distance 1 |
-| `events` | events | The records cited by the `eventsTop` events (10 by default, 1–40) of the read scope's timelines or layered state nearest the question, in event rank order, then each event's record order. The kind is refused unless consolidation is timelines or layered with the policy's `consolidation` on. | — |
-
-Records already pooled are not proposed; with `rejudge`, a pooled record JEV never judged
-(not on the shortlist) may be, and is judged with the others (it keeps its item and the
-need-table answers the loop gave it). A seed neighbor scores the seed's needed answer times
-the weight, its best over every seed that reaches it; seed neighbors rank by that score,
-then by the better seed, then by distance, then by id. Events rank by meaning: each event
-that cites records is the text `<thread title>: <date> <event text>` (one repeating
-another's text and records is left out), and the cosine of the question's query vector (its
-last message without a date line, as the message search reads it) with each text's document
-vector orders them. Without an embedder, or when embedding fails or leaves a vector
-missing, shared words rank them (BM25 over the same texts; `stats.expandEventsLexical`, and
-when it was a failure `expansion-lexical` in `stats.degraded`). The event vectors are
-stored like the layer's texts, under the same document keys: `WarmLayer` (after the AML
-adapter's consolidations) embeds them with the layer's, and a read embeds the missing ones
-itself, at most 256 (`stats.expandEventsEmbedded`); one that finds more missing ranks by
-shared words and leaves the rest to the next reads. Without a consolidated state or a
-question the events source proposes nothing; a state that does not load names `expansion`
-in `stats.degraded`.
-
-The two sources fill `limit` (24 by default, 1–64) by turns, the seed source first: each
-turn takes the source's next record not picked yet, and once a source has none left the
-other fills the rest. A record both sources propose is taken once. With one source listed
-it is that source's ranking cut to `limit`. The records are read as evidence (chunks proved
-against their originals; ids without evidence are skipped) and judged with the final
-judgement's needed and no-longer-current questions, within the read's 128 decision calls.
-Each judgement call also shows, as context peers that are asked nothing and never change,
-the seeds and the current judged records JEV calls needed, each once, best first, at most
-8, so "no longer current" sees a correcting record and "needed" sees what is already
-there, as the final judgement's shared batches do; a candidate reached over a correction
-is shown with the seed at the link's other end even past the 8. A call holds at most 40
-records, peers included; when fewer calls are left than calls planned, the first are made
-and the rest of the candidates dropped.
-
-Every judged candidate joins the judged list and composes by the shortlist's rule: the
-current records JEV calls needed (≥ 0.5) first, then the fill by needed order, so an
-expansion JEV answers 0.3 goes before a pooled record at 0.05; with fusion it is ranked in
-the judged order (the message search's ranking is unchanged). Unjudged candidates are
-dropped. Expansion therefore adds candidates and displaces nothing before it is judged; it
-costs one or two decision calls per read, plus reading the neighbors, the state and the
-evidence (counted in `queryMs`), and embedding the question (the query runtime's cache
-usually holds that vector from the message search). Without `target`, expanded records are
-not asked the need table's questions, so they do not count toward `needs[].hasEvidence`,
-except a pooled record `rejudge` proposed: it keeps the need-table answers the loop gave it,
-so when shown it can give a need its evidence.
-`stats.expanded` counts the records judged, `stats.expandedNeeded` those JEV called needed,
-`stats.expandKinds` the judged records per kind that proposed them (one proposed by two
-kinds counts for both) and `stats.expandShown` those the final View shows (after the
-timelines layer); they are absent at zero. Reading the neighbors or judging the records
-that falls short (an error, or a spent budget) names `expansion` in `stats.degraded`,
-keeps what was judged and never fails the read; only a canceled read fails. Absent,
-`expand` stays out of the config's JSON and the policy hash, and reads are unchanged byte
-for byte. Unknown or repeated kinds, out-of-range bounds, and `adjacentWindow` or
-`eventsTop` without their kind are refused.
-
-Three further `expand` settings add Jev-Mem's evaluate-then-expand parts (its read loop:
-evaluate the evidence before expanding, score each candidate for new information, and keep
-output slots for expansions). Each is off when absent, and the read is then unchanged. Gate
-and target share one coverage: a need is covered when it is not an ALL need (one wants
-every instance) and a record of the View compose would show without the expansion answers
-it in the need table (≥ 0.5; the screen for an untabled single need), as `needs[]`
-reports `hasEvidence`. That View is compose's selection (fusion's when set); with the
-timelines layer only its leading records within the View's characters less the most the
-layer's blocks can take (8,059; 9,593 with `consolidation.insights`) count, since the
-layer's character trim, which depends on
-its own model calls, can never drop those. It makes no model call. Under fusion it reads
-the evidence of the raw hits that were not pooled, as compose does, and counts that time
-in `queryMs`; when that read fails, `expansion` is named in `stats.degraded`, nothing
-counts as covered, and so the gate does not skip. (`needs[].covered` remains the need
-loop's own state.)
-
-| Setting | Values | Jev-Mem step | What it does |
-|---|---|---|---|
-| `gate` | `""` (default) or `"needs"` | The sufficiency check before every expansion round, including the first (stop when the current evidence suffices). | Skips the expansion when the need loop stopped as covered and every need is covered. `stats.expandGated` reports a skip. |
-| `target` | `""` (default) or `"needs"` | Scoring each expansion candidate for relevance and new information (what the current evidence lacks). | Before their judgement, the candidates are asked the need table's question, with its rubric, batches of 24 and the read's budget, for each need not covered. The needs output counts a shown candidate that answers a need (≥ 0.5) as that need's evidence. In compose's order, each expansion that answers no need moves after the last needed, current record that answers one (for records the loop tabled: any need), keeping the needed answer it ranks by among those moved. With every need covered nothing is asked. When the budget cannot pay for the need table and the judgement both, or the need table fails, the judgement goes first: no candidate gets a new need answer, and `expansion-target` is named in `stats.degraded`. `stats.expandAnsweredNeeds` counts the needs it asked that a needed (≥ 0.5), current expansion answers. |
-| `reserve` | 0–8 (default 0) | The output structure: 40 (50) slots over at most 30 anchors, so expansions always get at least 10. | Holds up to `reserve` View slots, at most half the View's items, for expansions. Compose takes the current needed records that are not expansions first (a held slot never displaces them), then the first current expansions in compose's order (after `target`'s; needed ones only when the plan named no need), whatever their needed answer, then the needed records and the fill as without it; slots no expansion takes go back to the composition. Without fusion the View lists what compose took in compose's order; with fusion the records that are not held in fused order, then the held expansions. The timelines layer's character trim then keeps the needed records that are not expansions first, then the held ones, then the others. `stats.expandReserved` counts the held records the final View shows. |
-
-Cost: `gate` makes no call and saves the expansion's calls when it skips; `target` adds one
-need-table call per 24 candidates (one at the default `limit`); `reserve` makes no call.
 
 With `"consolidation": {"mode": "timelines"}` a job reads the records written since the
 last one into a pending list, folds every full batch of `batchCharacters`, and folds the

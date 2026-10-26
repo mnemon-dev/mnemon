@@ -271,78 +271,51 @@ func TestComposeSimpleCharBudgetSkips(t *testing.T) {
 	}
 }
 
-// rrf is the fused score of an id at these ranks, summed in list order as
-// float64 (an untyped constant sum would round once, not per term).
-func rrf(ranks ...int) float64 {
-	score := 0.0
-	for _, rank := range ranks {
-		score += 1 / float64(60+rank)
-	}
-	return score
-}
-
-func TestFuseRRFRecoversRawTopHit(t *testing.T) {
-	lists := [][]string{{"x", "y", "z"}, {"g", "x", "h"}}
-	// x = 1/60+1/61, g = 1/60, y = 1/61, then z and h tie at 1/62 in first-seen order.
-	if got := fuseRRF(lists, 60); !slices.Equal(got[:3], []string{"x", "g", "y"}) || !slices.Equal(got, []string{"x", "g", "y", "z", "h"}) {
-		t.Fatal(got)
-	}
-	want := map[string]float64{"x": rrf(0, 1), "g": rrf(0), "y": rrf(1), "z": rrf(2), "h": rrf(2)}
-	if got := rrfScores(lists, 60); !reflect.DeepEqual(got, want) {
-		t.Fatal(got)
-	}
-	if got := fuseRRF(nil, 60); len(got) != 0 {
-		t.Fatal(got)
-	}
-}
-
-func TestFusedViewHydratesAndVerifies(t *testing.T) {
+func TestComposeHydratesAndVerifies(t *testing.T) {
 	s, _ := agentStore(t)
 	refs := map[string]Reference{}
-	for id, text := range map[string]string{"x": "x text", "y": "y text", "z": "z text", "g": "g text", "w": "x \t text", "h": "h text", "p": "p text"} {
+	for id, text := range map[string]string{"x": "x text", "y": "y text", "z": "z text", "w": "x \t text", "p": "p text"} {
 		refs[id] = seedNote(t, s, id, text)
 	}
 	setup := func(maxItems int) (*simpleRun, []*simpleItem) {
-		a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{Fusion: "rrf"}}, Models{Planner: replies("", "", ""), Judge: &scriptedJudge{}}, nil)
+		a, err := New(s, Config{Version: 1, Strategy: "simple"}, Models{Planner: replies("", "", ""), Judge: &scriptedJudge{}}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
 		r := testRun(a, user("q"))
 		r.req.MaxItems = maxItems
-		if _, err = r.admit(context.Background(), []string{"x", "y", "z", "p"}); err != nil {
+		if _, err = r.admit(context.Background(), []string{"x", "y", "z", "w", "p"}); err != nil {
 			t.Fatal(err)
 		}
-		// The judged shortlist: y is needed but no longer current.
-		for id, judged := range map[string][2]float64{"x": {0.9, 0}, "y": {0.6, 0.8}, "z": {0.3, 0}} {
+		// The judged shortlist: y is needed but no longer current, w repeats
+		// x's text.
+		for id, judged := range map[string][2]float64{"x": {0.9, 0}, "y": {0.6, 0.8}, "z": {0.3, 0}, "w": {0.2, 0}, "p": {0.1, 0}} {
 			item := r.items[id]
 			item.Needed, item.Superseded, item.Judged = judged[0], judged[1], true
 		}
-		// Only the message search's ranking is fused; w repeats x's text.
-		r.searches = []*cueSearch{{Cue: cue{"q", "message"}, IDs: []string{"g", "w", "x", "y", "h"}}, {Cue: cue{"other", "search"}, IDs: []string{"p", "z"}}}
-		return r, []*simpleItem{r.items["x"], r.items["y"], r.items["z"]}
+		return r, []*simpleItem{r.items["x"], r.items["y"], r.items["z"], r.items["w"], r.items["p"]}
 	}
 
-	// Fused: x (1/60+1/62), g (1/60), z (1/61), w (1/61), y (1/63), h (1/64),
-	// then the rest of the pool (p). y is not current, w is a duplicate; g and
-	// h are raw hits read from the store.
-	r, scored := setup(5)
+	// x, then the fill: y is not current, w a duplicate. The records are read
+	// from the store, each scored by its needed answer.
+	r, scored := setup(3)
 	view, err := r.compose(context.Background(), "covered", scored)
-	if err != nil || !slices.Equal(recordIDs(view.Records), []string{"x", "g", "z", "h", "p"}) || view.Truncated || view.StopReason != "covered" {
+	if err != nil || !slices.Equal(recordIDs(view.Records), []string{"x", "z", "p"}) || view.Truncated || view.StopReason != "covered" {
 		t.Fatal(recordIDs(view.Records), view.Truncated, err)
 	}
-	scores := []float64{rrf(0, 2), rrf(0), rrf(1), rrf(4), 0}
+	scores := []float64{0.9, 0.3, 0.1}
 	for i, record := range view.Records {
 		if record.Score != scores[i] || record.Reference != refs[record.ID] || record.Text == "" {
 			t.Fatal(i, record)
 		}
 	}
 	// One fewer item cuts p: the View is truncated.
-	r, scored = setup(4)
-	if view, err = r.compose(context.Background(), "covered", scored); err != nil || !slices.Equal(recordIDs(view.Records), []string{"x", "g", "z", "h"}) || !view.Truncated {
+	r, scored = setup(2)
+	if view, err = r.compose(context.Background(), "covered", scored); err != nil || !slices.Equal(recordIDs(view.Records), []string{"x", "z"}) || !view.Truncated {
 		t.Fatal(recordIDs(view.Records), view.Truncated, err)
 	}
 	// Records are re-read and must be the evidence judged.
-	r, scored = setup(5)
+	r, scored = setup(3)
 	r.items["z"].Evidence.Hash = "changed"
 	if _, err = r.compose(context.Background(), "covered", scored); err == nil || !strings.Contains(err.Error(), "evidence changed") {
 		t.Fatal(err)
@@ -509,12 +482,14 @@ func TestReadSimpleLargeList(t *testing.T) {
 		},
 	}
 	planner := replies("codename NEBULA\nNOTE: the codename is ORBIT", "NEED: the codename", "")
-	a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{MaxItems: 100, MaxCharacters: 240000, Fusion: "rrf"}}, Models{Planner: planner, Judge: judge}, nil)
+	a, err := New(s, Config{Version: 1, Strategy: "simple", View: &ViewConfig{MaxItems: 100, MaxCharacters: 240000}}, Models{Planner: planner, Judge: judge}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The View is the judged list, never filled from the search ranking:
+	// the shortlist (the screen's yes and its best 16) less NEBULA.
 	view, err := a.Read(context.Background(), ReadRequest{Question: "What is the codename?", MaxItems: 100})
-	if err != nil || len(view.Records) != 100 || !view.Truncated {
+	if err != nil || len(view.Records) != simpleTabled-1 || view.Truncated {
 		t.Fatal(len(view.Records), view.Truncated, err)
 	}
 	ids, texts, characters := map[string]bool{}, map[string]bool{}, 0
@@ -525,9 +500,8 @@ func TestReadSimpleLargeList(t *testing.T) {
 		ids[record.ID], texts[record.Text] = true, true
 		characters += jsLen(record.Text)
 	}
-	// Judged picks plus raw search hits the pool never held.
-	if !ids["orbit"] || ids["nebula"] || view.Stats.Candidates >= 100 || characters > 240000 {
-		t.Fatal(ids["orbit"], ids["nebula"], view.Stats.Candidates, characters)
+	if view.Records[0].ID != "orbit" || ids["nebula"] || characters > 240000 {
+		t.Fatal(recordIDs(view.Records), characters)
 	}
 	// A smaller request takes the head of the same View.
 	small, err := a.Read(context.Background(), ReadRequest{Question: "What is the codename?", MaxItems: 10})

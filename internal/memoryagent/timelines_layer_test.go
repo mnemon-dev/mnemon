@@ -118,13 +118,6 @@ func TestLayerOrder(t *testing.T) {
 	if !slices.Equal(vals, []string{"k3", "k2", "k1"}) {
 		t.Fatal(vals)
 	}
-	// view.layerNeededOnly keeps JEV's yes alone, in order.
-	if got := neededOnly(threads, threadScore); !slices.Equal(got, []string{"T5", "T1", "T7"}) {
-		t.Fatal("needed-only threads", got)
-	}
-	if got := neededOnly(vals, valueScore); !slices.Equal(got, []string{"k3", "k2"}) {
-		t.Fatal("needed-only values", got)
-	}
 }
 
 func TestComposeLayerBudgets(t *testing.T) {
@@ -297,6 +290,22 @@ func TestComposeLayerEdges(t *testing.T) {
 	want = "Timelines of the topics this concerns:\nThread: A\n- 2024/01/01: " + sized("e0", 100) + "\n- 2024/01/03: " + sized("e2", 800)
 	if blocks[1].Text != want || !slices.Equal(linkedIDs(blocks[1]), []string{"r0", "r2"}) {
 		t.Fatalf("%q", blocks[1].Text)
+	}
+
+	// The "\n\n" before a thread is added after the thread is fitted to the
+	// room left, so the timelines can pass their 3500 by 2: A and B fill
+	// 1500 each, C the 498 left after them and their separator.
+	m = timelineMemory{Facts: map[string][]factValue{}, FactOrder: []string{}}
+	m.Threads = []thread{{ID: "A", Title: "A"}, {ID: "B", Title: "B"}, {ID: "C", Title: "C"}}
+	m.Events = []event{
+		{Thread: "A", Date: "2023/05/08", Text: strings.Repeat("a", 1476)},
+		{Thread: "B", Date: "2023/05/08", Text: strings.Repeat("b", 1476)},
+		{Thread: "C", Date: "2023/05/08", Text: strings.Repeat("c", 474)},
+	}
+	blocks = composeLayer(m, []string{"A", "B", "C"}, nil, litSets{Events: map[int]bool{}})
+	at := slices.IndexFunc(blocks, func(b IndexItem) bool { return b.ID == "3-timelines" })
+	if at < 0 || jsLen(blocks[at].Text) != jsLen(timelinesHead)+layerTimelines+2 {
+		t.Fatal(blocks)
 	}
 }
 
@@ -802,6 +811,18 @@ func (e *embeddingServer) start(t *testing.T, vectors func(text string) []float6
 	}))
 	t.Cleanup(server.Close)
 	return server.URL
+}
+
+// documents is the document texts an embedding server was asked for.
+func documents(server *embeddingServer) []string {
+	return slices.DeleteFunc(requests(server), func(input string) bool { return !strings.HasPrefix(input, "search_document: ") })
+}
+
+// requests is every text an embedding server was asked for.
+func requests(server *embeddingServer) []string {
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	return slices.Clone(server.inputs)
 }
 
 func TestLayerNearest(t *testing.T) {

@@ -132,7 +132,7 @@ func TestStatusLine(t *testing.T) {
 
 func TestSearchTopKDefaultsToViewAndBlankQueryIsEmpty(t *testing.T) {
 	h := newHarness(t, func(config *ServerConfig) {
-		config.MemoryConfig.View = &memoryagent.ViewConfig{MaxItems: 2, Fusion: "rrf"}
+		config.MemoryConfig.View = &memoryagent.ViewConfig{MaxItems: 2}
 	})
 	addSessions(t, h, "u1", 3)
 	for _, body := range []string{

@@ -102,14 +102,14 @@ type TracePage struct {
 // TraceItem is a pooled record and JEV's answers about it: its screen (with
 // HasScreen), its need table row (nil when untabled), and its judgement
 // (Judged; when the judgement did not reach it, Needed is its screen and
-// Superseded 0). Expanded marks a record view.expand proposed.
+// Superseded 0).
 type TraceItem struct {
 	ID, Text           string
 	Screen             float64
 	HasScreen          bool
 	Row                []float64
 	Needed, Superseded float64
-	Judged, Expanded   bool
+	Judged             bool
 }
 
 // TraceLayerItem is a candidate of the consolidated layer: a thread (Kind
@@ -201,7 +201,7 @@ func (r *simpleRun) traceEnd() {
 	for _, id := range r.order {
 		item := r.items[id]
 		traced := TraceItem{ID: id, Text: item.Evidence.Text, Screen: item.Screen, HasScreen: item.HasScreen, Row: slices.Clone(item.Row),
-			Needed: item.Needed, Superseded: item.Superseded, Judged: item.Judged, Expanded: item.Expanded}
+			Needed: item.Needed, Superseded: item.Superseded, Judged: item.Judged}
 		if !item.Judged {
 			traced.Needed, traced.Superseded = item.Screen, 0
 		}

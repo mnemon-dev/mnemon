@@ -9,9 +9,9 @@ import (
 )
 
 // The View's order (view.order): a read selects, cuts and trims by rank, and
-// with "time" the records of the composed View (after the expansion and the
-// timelines layer) are then listed in time order for the answer model; the
-// index blocks keep their place and each record its score.
+// with "time" the records of the composed View (after the timelines layer)
+// are then listed in time order for the answer model; the index blocks keep
+// their place and each record its score.
 
 const viewOrderTime = "time"
 
