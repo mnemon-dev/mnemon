@@ -140,17 +140,6 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		return View{}, err
 	}
 	view.NoEvidence = r.noEvidence(scored)
-	if view.NoEvidence && a.config.Safety != nil && a.config.Safety.Abstain {
-		// The user's standing instructions say how to answer, whatever the
-		// question: they stay.
-		view.Records = []Evidence{}
-		view.Index = slices.DeleteFunc(view.Index, func(block IndexItem) bool { return block.Kind != instructionsBlock })
-		for i := range view.Index {
-			view.Index[i].Records = []Reference{}
-		}
-		view.Needs = r.viewNeeds(view.Records)
-		return view, nil
-	}
 	// With view.order "time" the composed View is listed in time order.
 	return r.orderView(ctx, view)
 }

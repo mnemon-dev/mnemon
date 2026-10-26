@@ -161,7 +161,7 @@ func newMetrics(now func() time.Time) *metrics {
 	m.shed = factory.NewCounterVec(counterOpts("shed_total", "Requests refused with 503 because no slot freed within the wait."), []string{"route"})
 	m.partialStages = factory.NewCounterVec(counterOpts("search_partial_total", "Stages of a Search's read that fell back, counting each stage once per Search."), []string{"stage"})
 	m.maskedValues = factory.NewCounterVec(counterOpts("search_masked_total", "Sensitive values safety.mask hid in what Searches handed out, by kind: card, ssn, iban, secret, password, email, phone, account, passport, license."), []string{"kind"})
-	m.noEvidence = factory.NewCounter(counterOpts("search_no_evidence_total", "Searches whose read, run whole, found nothing the reply needs; with safety.abstain they answer no items."))
+	m.noEvidence = factory.NewCounter(counterOpts("search_no_evidence_total", "Searches whose read, run whole, found nothing the reply needs: JEV called no record and no consolidated block needed."))
 	m.attempts = factory.NewCounterVec(counterOpts("model_attempts_total", "Attempts of model calls, by provider kind, call class and outcome."), []string{"kind", "class", "outcome"})
 	m.attemptSeconds = factory.NewHistogramVec(histogramOpts("model_attempt_seconds", "Time the caller waited for an attempt that went to the provider."), []string{"kind", "class"})
 	m.retries = factory.NewCounterVec(counterOpts("model_retries_total", "Attempts after a call's first that went to the provider."), []string{"kind"})

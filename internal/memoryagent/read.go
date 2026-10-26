@@ -62,21 +62,16 @@ type Config struct {
 	// read at every job. It is not configuration, so it stays out of the
 	// JSON and View.policy.
 	ReadOverride func() *RoleReading `json:"-"`
-	// Safety switches the safety and privacy checks, each on its own
-	// (SafetyConfig); unset, none runs and the policy keeps its hash.
+	// Safety switches the privacy checks (SafetyConfig); unset, none runs and
+	// the policy keeps its hash.
 	Safety *SafetyConfig `json:"safety,omitempty"`
 }
 
-// SafetyConfig switches the safety and privacy checks, each on its own.
-// Abstain empties the View of a simple read that found no evidence
-// (View.NoEvidence) but for the user's standing instructions: the reply then
-// has nothing to go on, rather than the records nobody judged needed. Mask
-// is the service's: the AML adapter hides the sensitive values of a known
-// form in what a Search hands out (internal/safety.Mask); the memory and its
-// reads keep them.
+// SafetyConfig switches the privacy checks. Mask is the service's: the AML
+// adapter hides the sensitive values of a known form in what a Search hands
+// out (internal/safety.Mask); the memory and its reads keep them.
 type SafetyConfig struct {
-	Abstain bool `json:"abstain,omitempty"`
-	Mask    bool `json:"mask,omitempty"`
+	Mask bool `json:"mask,omitempty"`
 }
 
 const (
