@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -83,6 +84,50 @@ type metrics struct {
 	// admin token; it has no labels, as nothing a refused request sends may
 	// become one.
 	adminAuthFailures prometheus.Counter
+	// Model spend (the ledger's: every input token at the cache-miss price)
+	// and tokens, by provider kind and call class: interactive is a
+	// Search's read, flush the tail a Search folds first, background the
+	// consolidation jobs.
+	modelSpend  *prometheus.CounterVec // kind, class
+	modelTokens *prometheus.CounterVec // kind, class, type
+	// What a Search delivered (items, characters) and how long a Search's
+	// flush took when it folded anything.
+	deliveredItems, deliveredChars, flushSeconds prometheus.Histogram
+	// messages counts the messages Adds stored by role, and reading what
+	// consolidation read and passed over of them, by role: the bucket names
+	// of RoleReading.Bucket, a closed set.
+	messages labeledTotals
+	reading  labeledTotals
+}
+
+// labeledTotals are counts by label value, for /admin/status and a counter
+// metric (totalsCollector) alike.
+type labeledTotals struct {
+	mu     sync.Mutex
+	counts map[string]int64
+}
+
+func (l *labeledTotals) add(label string, n int64) {
+	if n == 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.counts == nil {
+		l.counts = map[string]int64{}
+	}
+	l.counts[label] += n
+}
+
+// snapshot is a copy of the counts.
+func (l *labeledTotals) snapshot() map[string]int64 {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	out := make(map[string]int64, len(l.counts))
+	for label, n := range l.counts {
+		out[label] = n
+	}
+	return out
 }
 
 const (
@@ -118,6 +163,11 @@ func newMetrics(now func() time.Time) *metrics {
 	m.retries = factory.NewCounterVec(counterOpts("model_retries_total", "Attempts after a call's first that went to the provider."), []string{"kind"})
 	m.jobs = factory.NewCounterVec(counterOpts("consolidation_jobs_total", "Consolidation jobs of the scheduler, by how they ended."), []string{"outcome"})
 	m.adminAuthFailures = factory.NewCounter(counterOpts("admin_auth_failures_total", "Admin requests refused with 401 because they lacked the admin token or carried a wrong one."))
+	m.modelSpend = factory.NewCounterVec(counterOpts("model_spend_total", "Spend of model calls as the budget charges it (every input token at the cache-miss price), in the account's currency (deepseek CNY, jev USD), by provider kind and call class (interactive: a Search's read; flush: the tail a Search folds first; background: consolidation jobs)."), []string{"kind", "class"})
+	m.modelTokens = factory.NewCounterVec(counterOpts("model_tokens_total", "Tokens of model calls, by provider kind, call class and type: input (all input tokens), cached (the input tokens the provider served from its cache, billed lower: DeepSeek's prompt_cache_hit_tokens) and output."), []string{"kind", "class", "type"})
+	m.deliveredItems = factory.NewHistogram(prometheus.HistogramOpts{Namespace: metricsNamespace, Subsystem: metricsSubsystem, Name: "search_items", Help: "Items a Search answered.", Buckets: []float64{0, 1, 5, 10, 20, 30, 50, 75, 100}})
+	m.deliveredChars = factory.NewHistogram(prometheus.HistogramOpts{Namespace: metricsNamespace, Subsystem: metricsSubsystem, Name: "search_characters", Help: "Characters of the content a Search answered.", Buckets: []float64{0, 1000, 5000, 10000, 20000, 40000, 80000, 160000, 240000}})
+	m.flushSeconds = factory.NewHistogram(histogramOpts("search_flush_seconds", "Time a Search spent folding what was pending before it read, when it folded anything."))
 	// Series known in advance exist from the start, at 0.
 	for _, route := range routeNames {
 		m.inFlight.WithLabelValues(route)
@@ -173,6 +223,12 @@ func (m *metrics) instrument(route string, next http.Handler) http.Handler {
 // follow an earlier attempt of their call, counted as retries.
 func (m *metrics) ModelAttempt(e memoryagent.AttemptEvent) {
 	m.attempts.WithLabelValues(e.Kind, e.Class, e.Outcome).Inc()
+	if u := e.Usage; u.InputTokens > 0 || u.OutputTokens > 0 {
+		m.modelSpend.WithLabelValues(e.Kind, e.Class).Add(u.CNY + u.USD)
+		m.modelTokens.WithLabelValues(e.Kind, e.Class, "input").Add(float64(u.InputTokens))
+		m.modelTokens.WithLabelValues(e.Kind, e.Class, "cached").Add(float64(u.CacheHitTokens))
+		m.modelTokens.WithLabelValues(e.Kind, e.Class, "output").Add(float64(u.OutputTokens))
+	}
 	switch e.Outcome {
 	case memoryagent.OutcomeBreakerOpen, memoryagent.OutcomeBulkheadFull, memoryagent.OutcomeBudget:
 		return
@@ -212,6 +268,45 @@ func (m *metrics) consolidated(result memoryagent.ConsolidateResult) {
 	m.batches[batchDeferred].Add(int64(result.Deferred))
 	m.batches[batchDropped].Add(int64(len(result.Drops)))
 	m.linkFallbacks.Add(int64(result.LinkFallbacks))
+	for role, units := range result.Reading {
+		m.reading.add(role+"\x00read", int64(units.Read))
+		m.reading.add(role+"\x00skipped", int64(units.Skipped))
+	}
+}
+
+// added counts the messages an Add stored, by role bucket.
+func (m *metrics) added(byRole map[string]int) {
+	for role, n := range byRole {
+		m.messages.add(role, int64(n))
+	}
+}
+
+// delivered observes what a Search answered: its items and their
+// characters.
+func (m *metrics) delivered(items []SearchItem) {
+	chars := 0
+	for _, item := range items {
+		chars += len([]rune(item.Content))
+	}
+	m.deliveredItems.Observe(float64(len(items)))
+	m.deliveredChars.Observe(float64(chars))
+}
+
+// readingByRole is reading as /admin/status shows it: by role, the units
+// read and passed over.
+func (m *metrics) readingByRole() map[string]memoryagent.ReadUnits {
+	out := map[string]memoryagent.ReadUnits{}
+	for key, n := range m.reading.snapshot() {
+		role, outcome, _ := strings.Cut(key, "\x00")
+		units := out[role]
+		if outcome == "read" {
+			units.Read = int(n)
+		} else {
+			units.Skipped = int(n)
+		}
+		out[role] = units
+	}
+	return out
 }
 
 // job counts a scheduler job that ended with outcome (jobOutcomes).
@@ -284,6 +379,8 @@ var (
 	linkFallbacksDesc = newDesc("consolidation_link_fallbacks_total", "Batches linked without JEV because JEV failed.")
 	addOutranDesc     = newDesc("add_outran_total", "Adds that waited out their window for consolidation and answered anyway.")
 	batchesDesc       = newDesc("consolidation_batches_total", "Batches of records by outcome: folded (taken off the pending records, those given up on included), deferred (left pending because linking failed) and dropped (drops: a batch, or half of a split one, the layer gave up on).", "outcome")
+	messagesDesc      = newDesc("add_messages_total", "Messages Adds stored, by role: user, assistant, system, tool, a role the role reading names, or other.", "role")
+	readingDesc       = newDesc("consolidation_read_units_total", "UTF-16 units of conversation lines consolidation read or passed over by its role reading, by role and outcome (read, skipped).", "role", "outcome")
 )
 
 // constMetric sends a series of desc to ch, unless it cannot be made: a
@@ -305,6 +402,8 @@ func (totalsCollector) Describe(ch chan<- *prometheus.Desc) {
 	ch <- linkFallbacksDesc
 	ch <- addOutranDesc
 	ch <- batchesDesc
+	ch <- messagesDesc
+	ch <- readingDesc
 }
 
 func (c totalsCollector) Collect(ch chan<- prometheus.Metric) {
@@ -316,6 +415,13 @@ func (c totalsCollector) Collect(ch chan<- prometheus.Metric) {
 	counter(addOutranDesc, c.m.addOutran.Load())
 	for outcome, name := range batchOutcomeNames {
 		counter(batchesDesc, c.m.batches[outcome].Load(), name)
+	}
+	for role, n := range c.m.messages.snapshot() {
+		counter(messagesDesc, n, role)
+	}
+	for key, n := range c.m.reading.snapshot() {
+		role, outcome, _ := strings.Cut(key, "\x00")
+		counter(readingDesc, n, role, outcome)
 	}
 }
 

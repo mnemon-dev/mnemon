@@ -289,6 +289,11 @@ type storeEntry struct {
 	Modified string `json:"modified"`
 	Open     bool   `json:"open"`
 	Backlog  *int64 `json:"backlog"`
+	// Consolidation is the scheduler's state of the user (scheduler.StateOf):
+	// "queued", "running", "backing-off", "held" or "" for idle; Failures,
+	// its failed jobs in a row.
+	Consolidation string `json:"consolidation"`
+	Failures      int    `json:"failures"`
 }
 
 // serveStores answers GET /admin/v1/stores?limit=<1..500, default 100>&after=<cursor>
@@ -394,9 +399,28 @@ func (s *Server) pageOf(scan *storeScan, limit int, after string) storesPage {
 		page.Stores = append(page.Stores, storeEntry{
 			Store: short(store.key), Bytes: store.bytes, Modified: store.modified.UTC().Format(time.RFC3339),
 			Open: s.users.isOpen(store.key), Backlog: s.storeBacklog(store.key),
+			Consolidation: s.storeState(store.key), Failures: s.storeFailures(store.key),
 		})
 	}
 	return page
+}
+
+// storeState and storeFailures are the scheduler's state of the store's user
+// (scheduler.StateOf): "" and 0 without a scheduler.
+func (s *Server) storeState(key string) string {
+	if s.sched == nil {
+		return ""
+	}
+	state, _ := s.sched.StateOf(key)
+	return state
+}
+
+func (s *Server) storeFailures(key string) int {
+	if s.sched == nil {
+		return 0
+	}
+	_, failures := s.sched.StateOf(key)
+	return failures
 }
 
 // storeBacklog is the scheduler's estimate of the characters pending for the

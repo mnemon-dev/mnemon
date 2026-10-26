@@ -23,40 +23,134 @@ import (
 
 func TestReadableCases(t *testing.T) {
 	heading := "Conversation #2 on 2024/03/15 (Fri) 00:00:\n"
-	long := "assistant: " + strings.Repeat("x", 300)
+	reading := DefaultRoleReading()
+	// Records without data.lines: a conversation chunk is read whole, whoever
+	// speaks in it; other records as the reference system reads them.
 	for _, tc := range []struct {
 		name, title, content string
-		assistant            int
 		header, body         string
 		ok                   bool
 	}{
-		{"user chunk is read whole", "2024/03/15 (Fri) 00:00 · conversation 1", heading + "user: I moved the demo to Friday.\n{\"branch\":\"bench\"}", 10,
+		{"user chunk is read whole", "2024/03/15 (Fri) 00:00 · conversation 1", heading + "user: I moved the demo to Friday.\n{\"branch\":\"bench\"}",
 			"2024/03/15 (session 2)", "user: I moved the demo to Friday.", true},
-		{"assistant start is cut", "t", heading + "assistant: Sure, here is a long plan for Friday.\n{\"branch\":\"bench\"}", 10,
-			"2024/03/15 (session 2)", "assistant: …", true},
-		{"assistant start cut at 240", "t", heading + long, 240,
-			"2024/03/15 (session 2)", long[:240] + " …", true},
-		{"short assistant start is whole", "t", heading + "assistant: ok", 240,
-			"2024/03/15 (session 2)", "assistant: ok", true},
-		{"assistant continuation is not read", "t", heading + "the rest of an assistant message", 10, "", "", false},
-		{"end of an answer then the user is whole", "t", heading + "long answer.\nuser: next question", 10,
-			"2024/03/15 (session 2)", "long answer.\nuser: next question", true},
-		{"our conversation heading", "Original record", "Conversation s-1 on 2024/03/16 (Sat) 09:30:\nuser: hello", 240,
+		{"an assistant chunk is read whole", "t", heading + "assistant: Sure, here is a long plan for Friday.\n{\"branch\":\"bench\"}",
+			"2024/03/15 (session 2)", "assistant: Sure, here is a long plan for Friday.", true},
+		{"a continuation is read whole", "t", heading + "the rest of an assistant message",
+			"2024/03/15 (session 2)", "the rest of an assistant message", true},
+		{"a colon inside continued text is read whole", "t", heading + "the result was: good",
+			"2024/03/15 (session 2)", "the result was: good", true},
+		{"our conversation heading", "Original record", "Conversation s-1 on 2024/03/16 (Sat) 09:30:\nuser: hello",
 			"2024/03/16 (session s-1)", "user: hello", true},
-		{"other record whole", "Shopping", "Buy oat milk on Friday.\n{\"branch\":\"bench\"}", 10, "Shopping", "Buy oat milk on Friday.", true},
-		{"other record cut", strings.Repeat("T", 50), strings.Repeat("c", 2500), 240, strings.Repeat("T", 40), strings.Repeat("c", 2000), true},
-		{"cuts count UTF-16 units", strings.Repeat("😀", 30), strings.Repeat("原", 2100), 240, strings.Repeat("😀", 20), strings.Repeat("原", 2000), true},
-		{"only a data line", "Note", `  {"a":1}  `, 240, "", "", false},
-		{"blank record", "Note", " \n\t", 240, "", "", false},
-		{"a data line is only the last line", "Note", "{\"a\":1}\nkept", 240, "Note", "{\"a\":1}\nkept", true},
-		{"conversation without a date is another record", "Original record", "Conversation s-1:\nuser: hi", 240, "Original record", "Conversation s-1:\nuser: hi", true},
+		{"an empty chunk", "t", heading + "  \n", "", "", false},
+		{"other record whole", "Shopping", "Buy oat milk on Friday.\n{\"branch\":\"bench\"}", "Shopping", "Buy oat milk on Friday.", true},
+		{"other record cut", strings.Repeat("T", 50), strings.Repeat("c", 2500), strings.Repeat("T", 40), strings.Repeat("c", 2000), true},
+		{"cuts count UTF-16 units", strings.Repeat("😀", 30), strings.Repeat("原", 2100), strings.Repeat("😀", 20), strings.Repeat("原", 2000), true},
+		{"only a data line", "Note", `  {"a":1}  `, "", "", false},
+		{"blank record", "Note", " \n\t", "", "", false},
+		{"a data line is only the last line", "Note", "{\"a\":1}\nkept", "Note", "{\"a\":1}\nkept", true},
+		{"conversation without a date is another record", "Original record", "Conversation s-1:\nuser: hi", "Original record", "Conversation s-1:\nuser: hi", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			header, body, ok := readable(tc.title, tc.content, tc.assistant)
+			header, body, ok := readable(reading, tc.title, tc.content, nil, nil)
 			if header != tc.header || body != tc.body || ok != tc.ok {
 				t.Fatalf("readable = (%q, %q, %v), want (%q, %q, %v)", header, body, ok, tc.header, tc.body, tc.ok)
 			}
 		})
+	}
+}
+
+// owned is a chunk's data.lines, as WriteConversation stores them (JSON
+// decoded): role, offset, role, offset, ...
+func owned(pairs ...any) map[string]any {
+	lines := []any{}
+	for i := 0; i+1 < len(pairs); i += 2 {
+		lines = append(lines, map[string]any{"role": pairs[i], "offset": float64(pairs[i+1].(int))})
+	}
+	return map[string]any{"lines": lines}
+}
+
+func TestReadableByMessage(t *testing.T) {
+	heading := "Conversation s-1 on 2024/03/16 (Sat) 09:30:\n"
+	reading := RoleReading{Default: ReadFull, Excerpt: 10, Roles: map[string]string{"user": ReadFull, "assistant": ReadExcerpt, "tool": ReadIgnore}}
+	for _, tc := range []struct {
+		name, content string
+		data          map[string]any
+		reading       RoleReading
+		body          string
+		ok            bool
+	}{
+		{"a wrapped user message is read whole", heading + "user: first part of a long\nsecond part", owned("user", 0, "user", 18), reading,
+			"user: first part of a long\nsecond part", true},
+		{"an assistant message is cut, its prefix not counted", heading + "assistant: abcdefghijklmnop", owned("assistant", 0), reading,
+			"assistant: abcdefghij …", true},
+		{"a short assistant message is whole", heading + "assistant: ok", owned("assistant", 0), reading, "assistant: ok", true},
+		{"the excerpt ends inside a later line", heading + "assistant: abcdef\nghijklmn", owned("assistant", 0, "assistant", 7), reading,
+			"assistant: abcdef\nghi …", true},
+		{"a line past the excerpt is not read", heading + "far into an answer", owned("assistant", 540), reading, "", false},
+		{"a user continuation then a reply", heading + "end of the user's paste\nassistant: abcdefghijklmnop", owned("user", 540, "assistant", 0), reading,
+			"end of the user's paste\nassistant: abcdefghij …", true},
+		{"an ignored role is left out", heading + "user: hi\ntool: result rows", owned("user", 0, "tool", 0), reading, "user: hi", true},
+		{"a chunk of ignored lines is not read", heading + "tool: result rows", owned("tool", 0), reading, "", false},
+		{"other roles take the default", heading + "Caroline: abcdefghijklmnop", owned("Caroline", 0), RoleReading{Default: ReadExcerpt, Excerpt: 10, Roles: map[string]string{}},
+			"Caroline: abcdefghij …", true},
+		{"roles match without case", heading + "Assistant: abcdefghijklmnop", owned("Assistant", 0), reading, "Assistant: abcdefghij …", true},
+		{"lines that do not match the chunk are read whole", heading + "assistant: abcdefghijklmnop\nmore", owned("assistant", 0), reading,
+			"assistant: abcdefghijklmnop\nmore", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			header, body, ok := readable(tc.reading, "Original record", tc.content, tc.data, nil)
+			if body != tc.body || ok != tc.ok || ok && header != "2024/03/16 (session s-1)" {
+				t.Fatalf("readable = (%q, %q, %v), want body %q, %v", header, body, ok, tc.body, tc.ok)
+			}
+		})
+	}
+	if header, body, ok := readable(reading, "Original record", "Conversation s-1:\nuser: hi", owned("user", 0), nil); !ok || header != "Conversation s-1" || body != "user: hi" {
+		t.Fatalf("an undated chunk with lines: (%q, %q, %v)", header, body, ok)
+	}
+	// A tally counts, by role, what was read and passed over: the user line
+	// whole (8 units), the assistant's prefix and first 10 units of 27, the
+	// ignored tool line (17) and the Caroline line, counted as other.
+	tally := map[string]ReadUnits{}
+	readable(reading, "Original record", heading+"user: hi\nassistant: abcdefghijklmnop\ntool: result rows\nCaroline: hey", owned("user", 0, "assistant", 0, "tool", 0, "Caroline", 0), tally)
+	want := map[string]ReadUnits{"user": {Read: 8}, "assistant": {Read: 21, Skipped: 6}, "tool": {Skipped: 17}, "other": {Read: 13}}
+	if !reflect.DeepEqual(tally, want) {
+		t.Fatalf("tally %v, want %v", tally, want)
+	}
+}
+
+func TestRoleReadingNormalizedAndCutShort(t *testing.T) {
+	got, err := RoleReading{Default: ReadFull, Roles: map[string]string{" Assistant ": ReadExcerpt, "user": ReadFull}}.Normalized()
+	if err != nil || got.Excerpt != 240 || !reflect.DeepEqual(got.Roles, map[string]string{"assistant": ReadExcerpt, "user": ReadFull}) {
+		t.Fatalf("normalized %+v %v", got, err)
+	}
+	if got.cutShort() != defaultCutShort || DefaultRoleReading().cutShort() != defaultCutShort {
+		t.Fatal("the default reading does not keep the reference prompt:", got.cutShort())
+	}
+	for policy, field := range map[*RoleReading]string{
+		{Default: "most"}:                                                              "default",
+		{Default: ReadFull, Excerpt: 39}:                                               "excerpt",
+		{Default: ReadFull, Excerpt: 2001}:                                             "excerpt",
+		{Default: ReadFull, Roles: map[string]string{" ": "full"}}:                     "roles",
+		{Default: ReadFull, Roles: map[string]string{strings.Repeat("r", 65): "full"}}: "roles",
+		{Default: ReadFull, Roles: map[string]string{"a\nb": "full"}}:                  "roles",
+		{Default: ReadFull, Roles: map[string]string{"bot": "half"}}:                   "roles.bot",
+		{Default: ReadFull, Roles: map[string]string{"Bot": "full", "bot": "ignore"}}:  "roles.bot",
+	} {
+		var refused *RoleReadingError
+		if _, err := policy.Normalized(); !errors.As(err, &refused) || refused.Field != field {
+			t.Fatalf("%+v: %v, want field %s", *policy, err, field)
+		}
+	}
+	for policy, want := range map[*RoleReading]string{
+		{Default: ReadFull}: "",
+		{Default: ReadIgnore, Roles: map[string]string{"user": ReadFull}}:                              "",
+		{Default: ReadFull, Roles: map[string]string{"system": ReadExcerpt, "assistant": ReadExcerpt}}: " (assistant, system messages are cut short)",
+		{Default: ReadExcerpt}: " (messages are cut short)",
+		{Default: ReadExcerpt, Roles: map[string]string{"user": ReadFull, "tool": ReadIgnore}}: " (messages are cut short, except those of user)",
+	} {
+		if got := policy.cutShort(); got != want {
+			t.Fatalf("%+v cuts %q, want %q", *policy, got, want)
+		}
 	}
 }
 
@@ -562,15 +656,16 @@ func TestConsolidationConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := *a.config.Consolidation; !reflect.DeepEqual(got, ConsolidationConfig{Mode: "timelines", BatchCharacters: 10000, AssistantCharacters: 240, MaxBatches: 16}) {
+	if got := *a.config.Consolidation; !reflect.DeepEqual(got, ConsolidationConfig{Mode: "timelines", BatchCharacters: 10000, MaxBatches: 16}) {
 		t.Fatalf("defaults %+v", got)
 	}
 	for _, bad := range []Config{
 		{Version: 1, Policy: &ReadPolicy{}, Consolidation: &ConsolidationConfig{Mode: "graph"}},
 		{Version: 1, Policy: &ReadPolicy{}, Consolidation: &ConsolidationConfig{Mode: "timelines", BatchCharacters: 99}},
 		{Version: 1, Policy: &ReadPolicy{}, Consolidation: &ConsolidationConfig{Mode: "timelines", BatchCharacters: 50001}},
-		{Version: 1, Policy: &ReadPolicy{}, Consolidation: &ConsolidationConfig{Mode: "timelines", AssistantCharacters: 4001}},
-		{Version: 1, Policy: &ReadPolicy{}, Consolidation: &ConsolidationConfig{Mode: "timelines", AssistantCharacters: -1}},
+		{Version: 1, Policy: &ReadPolicy{}, Consolidation: &ConsolidationConfig{Mode: "timelines", Read: &RoleReading{Default: ReadFull, Excerpt: 2001}}},
+		{Version: 1, Policy: &ReadPolicy{}, Consolidation: &ConsolidationConfig{Mode: "timelines", Read: &RoleReading{Default: "half"}}},
+		{Version: 1, Policy: &ReadPolicy{}, Consolidation: &ConsolidationConfig{Read: &RoleReading{Default: ReadFull}}},
 		{Version: 1, Policy: &ReadPolicy{}, Consolidation: &ConsolidationConfig{Mode: "timelines", MaxBatches: 65}},
 		{Version: 1, Policy: &ReadPolicy{}, Consolidation: &ConsolidationConfig{BatchCharacters: 1000}},
 		{Version: 1, Policy: &ReadPolicy{}, Consolidator: &ModelConfig{Kind: "local", Model: "m", BaseURL: "http://127.0.0.1:1/v1"}},

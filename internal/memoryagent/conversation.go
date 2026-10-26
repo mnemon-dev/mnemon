@@ -58,7 +58,7 @@ type ConversationRequest struct {
 // every chunk's data.session. It becomes the record's own sessionId only for the
 // "session" scope, like Write; other scopes cannot carry a session.
 func WriteConversation(ctx context.Context, store *records.Store, req ConversationRequest) (WriteResult, error) {
-	parent, chunks, err := PackConversation(req)
+	parent, chunks, lines, err := packConversation(req)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -77,12 +77,21 @@ func WriteConversation(ctx context.Context, store *records.Store, req Conversati
 		at = time.Now().UTC()
 	}
 	spans := make([][2]int, len(chunks))
+	extras := make([]map[string]any, len(chunks))
 	offset := 0
 	for i, chunk := range chunks {
 		spans[i] = [2]int{offset, offset + len(chunk)}
 		offset += len(chunk) + len("\n\n")
+		// data.lines says whose each line of the chunk's body is, so that a
+		// role reading can read by message (readable): a wrapped line does
+		// not repeat its speaker.
+		owners := make([]map[string]any, len(lines[i]))
+		for j, line := range lines[i] {
+			owners[j] = map[string]any{"role": line.role, "offset": line.offset}
+		}
+		extras[i] = map[string]any{"session": req.SessionID, "lines": owners}
 	}
-	upserts, result := buildDocument(write, at, parent, spans, map[string]any{"session": req.SessionID})
+	upserts, result := buildDocument(write, at, parent, spans, extras)
 	return putDocument(ctx, store, upserts, result)
 }
 
@@ -92,15 +101,22 @@ func WriteConversation(ctx context.Context, store *records.Store, req Conversati
 // can be compared with a stored document by its parent content. Only the
 // messages and the session id are packed; id, source and scope are not.
 func PackConversation(req ConversationRequest) (parent string, chunks []string, err error) {
+	parent, chunks, _, err = packConversation(req)
+	return parent, chunks, err
+}
+
+// packConversation is PackConversation with, for each chunk, the lines of its
+// body and the message each belongs to.
+func packConversation(req ConversationRequest) (parent string, chunks []string, lines [][]dialogueLine, err error) {
 	if err := validateConversation(req); err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 	heading := "Conversation " + req.SessionID
 	if at, dated := conversationStart(req); dated {
 		heading += " on " + at.Format("2006/01/02 (Mon) 15:04")
 	}
-	chunks = NoteChunks(heading, DialogueLines(req.Messages, dialogueLineLimit), noteChunkLimit)
-	return strings.Join(chunks, "\n\n"), chunks, nil
+	chunks, lines = groupChunks(heading, dialogueLines(req.Messages, dialogueLineLimit), noteChunkLimit)
+	return strings.Join(chunks, "\n\n"), chunks, lines, nil
 }
 
 // conversationStart is the UTC time of the first message that has a
@@ -147,12 +163,30 @@ func validateConversation(req ConversationRequest) error {
 // past half the limit, otherwise at limit. The rest continues on the next line
 // without a speaker prefix.
 func DialogueLines(msgs []ConversationMessage, limit int) []string {
+	var lines []string
+	for _, line := range dialogueLines(msgs, limit) {
+		lines = append(lines, line.text)
+	}
+	return lines
+}
+
+// dialogueLine is a line DialogueLines writes and the message it belongs to:
+// the message's role, and the UTF-16 units of the message's collapsed text
+// before the line, 0 for its first line, the one with the "role: " prefix.
+type dialogueLine struct {
+	text   string
+	role   string
+	offset int
+}
+
+func dialogueLines(msgs []ConversationMessage, limit int) []dialogueLine {
 	if limit < 1 {
 		limit = 1
 	}
-	var lines []string
+	var lines []dialogueLine
 	for _, message := range msgs {
-		rest := message.Role + ": " + collapseSpace(message.Content)
+		prefix := jsLen(message.Role + ": ")
+		rest, offset := message.Role+": "+collapseSpace(message.Content), -prefix
 		for jsLen(rest) > limit {
 			// Like rest.lastIndexOf(' ', limit): the last space in units [0, limit].
 			cut := jsOffset(rest, limit)
@@ -163,10 +197,12 @@ func DialogueLines(msgs []ConversationMessage, limit int) []string {
 			if cut == 0 { // a limit smaller than the first character: take it whole
 				_, cut = utf8.DecodeRuneInString(rest)
 			}
-			lines = append(lines, rest[:cut])
-			rest = strings.TrimLeftFunc(rest[cut:], isJSSpace)
+			lines = append(lines, dialogueLine{text: rest[:cut], role: message.Role, offset: max(offset, 0)})
+			next := strings.TrimLeftFunc(rest[cut:], isJSSpace)
+			offset += jsLen(rest) - jsLen(next)
+			rest = next
 		}
-		lines = append(lines, rest)
+		lines = append(lines, dialogueLine{text: rest, role: message.Role, offset: max(offset, 0)})
 	}
 	return lines
 }
@@ -178,29 +214,47 @@ func DialogueLines(msgs []ConversationMessage, limit int) []string {
 // Like the author's rule this ignores the two units of ":\n", so a chunk can
 // reach limit+2.
 func NoteChunks(heading string, lines []string, limit int) []string {
-	var chunks []string
-	var chunk []string
-	size := 0 // jsLen(strings.Join(chunk, "\n"))
+	var flat []dialogueLine
 	for _, block := range lines {
 		for _, line := range strings.Split(block, "\n") {
-			if strings.TrimFunc(line, isJSSpace) == "" {
-				continue
-			}
-			if len(chunk) > 0 && size+1+jsLen(line)+jsLen(heading) > limit {
-				chunks = append(chunks, heading+":\n"+strings.Join(chunk, "\n"))
-				chunk, size = nil, 0
-			}
-			if len(chunk) > 0 {
-				size++
-			}
-			chunk = append(chunk, line)
-			size += jsLen(line)
+			flat = append(flat, dialogueLine{text: line})
 		}
 	}
-	if len(chunk) > 0 {
-		chunks = append(chunks, heading+":\n"+strings.Join(chunk, "\n"))
-	}
+	chunks, _ := groupChunks(heading, flat, limit)
 	return chunks
+}
+
+// groupChunks is NoteChunks over lines that do not break, with the lines of
+// each chunk's body.
+func groupChunks(heading string, lines []dialogueLine, limit int) (chunks []string, members [][]dialogueLine) {
+	var chunk []dialogueLine
+	size := 0 // jsLen of the chunk's lines joined by "\n"
+	flush := func() {
+		texts := make([]string, len(chunk))
+		for i, line := range chunk {
+			texts[i] = line.text
+		}
+		chunks = append(chunks, heading+":\n"+strings.Join(texts, "\n"))
+		members = append(members, chunk)
+	}
+	for _, line := range lines {
+		if strings.TrimFunc(line.text, isJSSpace) == "" {
+			continue
+		}
+		if len(chunk) > 0 && size+1+jsLen(line.text)+jsLen(heading) > limit {
+			flush()
+			chunk, size = nil, 0
+		}
+		if len(chunk) > 0 {
+			size++
+		}
+		chunk = append(chunk, line)
+		size += jsLen(line.text)
+	}
+	if len(chunk) > 0 {
+		flush()
+	}
+	return chunks, members
 }
 
 // isJSSpace reports whether r matches JavaScript's \s and String.prototype.trim:

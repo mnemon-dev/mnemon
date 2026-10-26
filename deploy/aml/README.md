@@ -32,7 +32,7 @@ dedicated instance `eval`.
 | Field | Value |
 |---|---|
 | System name | Mnemon |
-| Version | v0.3.0: the `VERSION` given to `make build-linux-amd64`, built from the git tag `v0.3.0` |
+| Version | v0.3.1: the `VERSION` given to `make build-linux-amd64`, built from the git tag `v0.3.1` |
 | Track | Industrial (commercial products), textual |
 | Team / organization | Mnemon Team / Mnemon |
 | Contact | `grivn.wang@gmail.com` |
@@ -100,8 +100,10 @@ may do (see step 6 below).
    in: a record JEV did not judge is not delivered.
 6. **Consolidation layer.** Records are folded in batches into threads of dated events, facts
    with value histories and standing directives, in two steps (layered consolidation). A model
-   reads each batch of records on its own, every record whole whatever its role (even reading:
-   no speaker is skipped or cut short), and writes its events, facts and directives; then
+   reads each batch of records on its own, by the default role reading: each user message whole,
+   the first 240 characters of each assistant message, a message of any other role whole,
+   applied per message (a write keeps each chunk line's role), and writes its events, facts and
+   directives; then
    JEV links each batch to the memory so far, in batch order, by asking whether a new thread
    continues a stored one, whether a new fact is the same attribute of the same thing as a
    stored fact, and whether its value contradicts the stored one. At read time BM25 shortlists
@@ -237,6 +239,15 @@ on a scratch instance there): its values then replace the local ones.
   the operators' Telegram chat (or a Feishu or WeCom group) every minute, independently of the
   console.
 - Retrieval is BM25 only; no embedding model runs on the host.
+- **Role reading** (how much of each role's messages consolidation reads) is
+  `consolidation.read` in the configuration, and can be changed at run time from the console
+  (`PUT`/`DELETE /admin/v1/read`, docs/admin-api.md); a change applies to what is consolidated
+  from then on.
+  - The configuration no longer takes `evenReading` or `assistantCharacters`, and the strict
+    decoding refuses a file that still has them. Before upgrading an instance, replace
+    `"evenReading": true` with `"read": {"default": "full"}`.
+  - A settings file that holds a role reading is version 2, which older binaries refuse. Revert
+    the reading (`DELETE /admin/v1/read`) before rolling an instance back.
 
 ## Data handling
 
@@ -262,7 +273,10 @@ each number. None is reported in this draft.>`
   (`scripts/aml/load.sh`, as the runbook's "Capacity declaration" describes). The rows now hold
   the final run's local values, marked as such, and the unit limits (16 Adds, 16 Searches) are
   provisional until that test.
-- Done: the release is the git tag `v0.3.0` (`VERSION=v0.3.0`). The capacity rows' commit,
+- Done: the release is the git tag `v0.3.1` (`VERSION=v0.3.1`): the per-message role reading
+  (BEAM +3.44 [+0.81, +5.94] and LoCoMo +0.26 [−0.64, +1.11] against reading every message
+  whole, at a seventh of BEAM's consolidation batches) and the observability of
+  docs/admin-api.md. v0.3.0 (tag `v0.3.0`) read every message whole. The capacity rows' commit,
   `bc18487b`, is the final run's, not the release's.
 - The Windows CI job (`windows-memory`). As it stood it could not pass, for two reasons. On
   Windows the private-mode check refused the budget file and the model cache for every file; that

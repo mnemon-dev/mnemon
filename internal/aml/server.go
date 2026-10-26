@@ -180,6 +180,13 @@ type Server struct {
 	configCaps   map[string]float64
 	settingsCaps atomic.Pointer[map[string]float64]
 	capsWriter   chan struct{}
+	// configRead is the configuration's role reading, normalized, and
+	// settingsRead the settings file's, nil when it sets none: the one the
+	// agents' consolidation reads by (MemoryConfig.ReadOverride) while set.
+	configRead   memoryagent.RoleReading
+	settingsRead atomic.Pointer[memoryagent.RoleReading]
+	// events keeps the latest WARN and ERROR lines (GET /admin/v1/events).
+	events *eventRing
 	// stores scans the data root for the store overview and the store gauges.
 	stores *storeScanner
 	// freeDisk is the free bytes of the disk holding a directory, which
@@ -269,7 +276,8 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if s.log == nil {
 		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
-	s.log = slog.New(contextHandler{s.log.Handler()})
+	s.events = &eventRing{}
+	s.log = slog.New(contextHandler{eventsHandler{s.log.Handler(), s.events}})
 	if config.AdminToken != "" {
 		digest := sha256.Sum256([]byte(config.AdminToken))
 		s.adminKey = &digest
@@ -286,18 +294,27 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if err := loadKeyFile(config.ProviderKeysFile, s.keys); err != nil {
 		return nil, err
 	}
-	// The settings file's caps, refused at the start as the key file is; the
-	// server is its one writer too.
+	// The settings file's caps and role reading, refused at the start as the
+	// key file is; the server is its one writer too.
 	settings := map[string]float64{}
+	var read *memoryagent.RoleReading
 	if config.SettingsFile != "" {
 		if removed := removeInterrupted(config.SettingsFile); len(removed) > 0 {
 			s.logf(context.Background(), slog.LevelWarn, "removed what an interrupted write of %s left: %s", settingsWhat, strings.Join(removed, ", "))
 		}
-		if settings, err = readBudgetsFile(config.SettingsFile, s.keys.Uses); err != nil {
+		if settings, read, err = readSettingsFile(config.SettingsFile, s.keys.Uses); err != nil {
 			return nil, err
 		}
 	}
 	s.settingsCaps.Store(&settings)
+	s.settingsRead.Store(read)
+	s.configRead = consolidation.RoleReading()
+	if s.configRead, err = s.configRead.Normalized(); err != nil {
+		return nil, fmt.Errorf("memory config: consolidation.read: %w", err)
+	}
+	// Every user's agent reads by the settings file's role reading while it
+	// sets one.
+	s.config.MemoryConfig.ReadOverride = s.settingsRead.Load
 	if config.Models != nil {
 		s.models, err = config.Models(config.MemoryConfig)
 	} else {
@@ -897,9 +914,12 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	}
 	release := sync.OnceFunc(func() { s.users.release(user) })
 	defer release()
+	byRole := s.messageRoles(parts)
+	nameRoles(ctx, byRole)
 	if !s.writeParts(ctx, w, user, parts, deadline) {
 		return
 	}
+	s.metrics.added(byRole)
 	if s.sched != nil {
 		// Stored and told to the scheduler: the wait needs the scheduler, not
 		// the store.
@@ -908,6 +928,22 @@ func (s *Server) add(w http.ResponseWriter, r *http.Request) {
 	}
 	s.metrics.adds.Add(1)
 	writeJSON(w, http.StatusOK, done)
+}
+
+// messageRoles counts the messages of an Add's parts by role, under the
+// bucket names of the role reading consolidation reads by.
+func (s *Server) messageRoles(parts []addPart) map[string]int {
+	reading := s.configRead
+	if read := s.settingsRead.Load(); read != nil {
+		reading = *read
+	}
+	byRole := map[string]int{}
+	for _, part := range parts {
+		for _, message := range part.conversation.Messages {
+			byRole[reading.Bucket(message.Role)]++
+		}
+	}
+	return byRole
 }
 
 // writeParts writes an Add's parts under the user's write lock and embeds
@@ -1124,7 +1160,11 @@ func (s *Server) flushHeld(ctx context.Context, user *userEntry) {
 func (s *Server) flush(ctx context.Context, user *userEntry) {
 	ctx, cancel := context.WithTimeout(memoryagent.WithCallClass(ctx, memoryagent.Flush), s.flushWindow)
 	defer cancel()
+	started := time.Now()
 	outcome := s.consolidate(ctx, user, false, "flush", nil)
+	if outcome.folded > 0 {
+		s.metrics.flushSeconds.Observe(time.Since(started).Seconds())
+	}
 	if outcome.unfinished && s.sched != nil {
 		s.sched.Notify(ctx, user.key, 0)
 	}
@@ -1292,6 +1332,7 @@ func (s *Server) read(ctx context.Context, user *userEntry, req memoryagent.Read
 func (s *Server) answer(w http.ResponseWriter, items []SearchItem) {
 	scoreByPosition(items)
 	s.metrics.searchAnswered()
+	s.metrics.delivered(items)
 	writeJSON(w, http.StatusOK, SearchResponse{Data: items})
 }
 

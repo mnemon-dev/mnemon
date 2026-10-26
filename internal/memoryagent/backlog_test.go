@@ -72,14 +72,13 @@ func TestBacklogCountsPendingAndUnreadWithoutAJob(t *testing.T) {
 func TestBacklogReadsAsTheJobReads(t *testing.T) {
 	ctx := context.Background()
 	s, dir := agentStore(t)
-	// A conversation chunk of an assistant message is read under its session
-	// header (23 units), cut at 240 units plus " …".
+	// Conversation chunks written without data.lines are read whole under
+	// their session header (23 units): an assistant message (311 units) and a
+	// chunk that continues one (32), whose speaker its text does not say.
 	seedNote(t, s, "a0", "Conversation s1 on 2024/03/15 (Fri) 00:00:\nassistant: "+strings.Repeat("x", 300))
-	// A chunk that only continues an assistant message is read past, never
-	// pending: a record of no characters.
 	seedNote(t, s, "a1", "Conversation s1 on 2024/03/15 (Fri) 00:00:\nthe rest of an assistant message")
 	a, _ := timelinesAgent(t, s, dir, ConsolidationConfig{}, Models{Consolidator: &limitPlanner{reply: func(_, prompt string) (string, error) { return eventsReply(prompt), nil }}})
-	if got, err := a.Backlog(ctx, records.Scope{}); err != nil || got != (Backlog{Records: 2, Characters: 23 + 242}) {
+	if got, err := a.Backlog(ctx, records.Scope{}); err != nil || got != (Backlog{Records: 2, Characters: 23 + 311 + 23 + 32}) {
 		t.Fatal(got, err)
 	}
 	// Without a timelines state there is no backlog.

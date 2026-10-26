@@ -347,19 +347,11 @@ func (a *Agent) extractBatches(ctx context.Context, model Completer, head timeli
 	}), keys
 }
 
-// extractionFold is the L0 fold of the agent's mode: layeredEvenFold with
-// evenReading, else layeredFold.
+// extractionFold is the L0 fold, its prompt saying what the agent's role
+// reading cuts (readFold).
 func (a *Agent) extractionFold() foldSpec {
-	if a.config.Consolidation.readsEvenly() {
-		return layeredEvenFold
-	}
-	return layeredFold
+	return readFold(layeredFold, a.roleReading())
 }
-
-// layeredEvenFold is layeredFold for records read whole (evenReading): its
-// prompt no longer says assistant messages are cut short, and is the
-// layered prompt otherwise.
-var layeredEvenFold = foldSpec{system: edited(layeredSystem, " (assistant messages are cut short)", ""), prompt: layeredFold.prompt, entities: true}
 
 // startExtractions starts n extractions, extract(ctx, i, out[i]) for batch
 // i, at most parallel at a time and in order.

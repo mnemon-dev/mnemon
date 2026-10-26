@@ -24,7 +24,7 @@ type Backlog struct {
 // revision, so a job running meanwhile may already have moved past part of
 // what it counts. Without a timelines state there is none.
 func (a *Agent) Backlog(ctx context.Context, scope records.Scope) (Backlog, error) {
-	settings := a.config.Consolidation
+	settings, reading := a.config.Consolidation, a.roleReading()
 	if !settings.Timelines() || a.overlay == nil {
 		return Backlog{}, nil
 	}
@@ -57,7 +57,7 @@ func (a *Agent) Backlog(ctx context.Context, scope records.Scope) (Backlog, erro
 			if json.Unmarshal([]byte(raw), &value) != nil {
 				continue
 			}
-			if header, body, ok := a.recordReader(settings.AssistantCharacters)(value.Title, value.Content); ok {
+			if header, body, ok := readable(reading, value.Title, value.Content, value.Data, nil); ok {
 				backlog.Characters += int64(jsLen(header) + jsLen(body))
 			}
 		}

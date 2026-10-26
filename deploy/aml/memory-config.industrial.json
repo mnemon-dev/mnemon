@@ -7,8 +7,7 @@
     "order": "time"
   },
   "consolidation": {
-    "mode": "layered",
-    "evenReading": true
+    "mode": "layered"
   },
   "planner": {
     "kind": "deepseek",

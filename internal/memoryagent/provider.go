@@ -516,8 +516,9 @@ func (p *Provider) parseCompletion(raw []byte) (completionReply, error) {
 			FinishReason string `json:"finish_reason"`
 		}
 		Usage struct {
-			Input  *int `json:"prompt_tokens"`
-			Output *int `json:"completion_tokens"`
+			Input    *int `json:"prompt_tokens"`
+			Output   *int `json:"completion_tokens"`
+			CacheHit int  `json:"prompt_cache_hit_tokens"`
 		}
 	}
 	if json.Unmarshal(raw, &result) != nil {
@@ -526,6 +527,7 @@ func (p *Provider) parseCompletion(raw []byte) (completionReply, error) {
 	reply := completionReply{}
 	if result.Usage.Input != nil && result.Usage.Output != nil {
 		reply.usage.InputTokens, reply.usage.OutputTokens, reply.metering = *result.Usage.Input, *result.Usage.Output, true
+		reply.usage.CacheHitTokens = min(max(result.Usage.CacheHit, 0), reply.usage.InputTokens)
 	}
 	switch p.config.Kind {
 	case "deepseek":

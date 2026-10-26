@@ -5,7 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
+	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -48,7 +52,10 @@ type requestUserKey struct{}
 // them (contextHandler; spec §5, the final review's Minor 3). It never holds
 // a user id or a key. The handler sets it and a line may read it on another
 // goroutine.
-type requestUser struct{ prefix atomic.Pointer[string] }
+//
+// roles holds the roles of the messages an Add stores, as "user=3,assistant=2"
+// (nameRoles): its request line carries them, for an audit of what arrived.
+type requestUser struct{ prefix, roles atomic.Pointer[string] }
 
 // withRequestUser is ctx with an empty holder of the user its request will
 // name.
@@ -64,6 +71,32 @@ func nameUser(ctx context.Context, key string) {
 		prefix := short(key)
 		holder.prefix.Store(&prefix)
 	}
+}
+
+// nameRoles records the roles of the messages ctx's Add stores, by role
+// bucket: its lines carry them as roles from now on. Outside a request it
+// does nothing.
+func nameRoles(ctx context.Context, byRole map[string]int) {
+	holder, ok := ctx.Value(requestUserKey{}).(*requestUser)
+	if !ok || len(byRole) == 0 {
+		return
+	}
+	parts := make([]string, 0, len(byRole))
+	for _, role := range slices.Sorted(maps.Keys(byRole)) {
+		parts = append(parts, role+"="+strconv.Itoa(byRole[role]))
+	}
+	roles := strings.Join(parts, ",")
+	holder.roles.Store(&roles)
+}
+
+// requestRoles is what nameRoles recorded for ctx's request, "" when none.
+func requestRoles(ctx context.Context) string {
+	if holder, ok := ctx.Value(requestUserKey{}).(*requestUser); ok {
+		if roles := holder.roles.Load(); roles != nil {
+			return *roles
+		}
+	}
+	return ""
 }
 
 // userPrefix is the prefix of the user ctx's request named, "" when it
@@ -121,8 +154,8 @@ func identified(next http.Handler) http.Handler {
 type contextHandler struct{ slog.Handler }
 
 func (h contextHandler) Handle(ctx context.Context, record slog.Record) error {
-	id, user := requestID(ctx), userPrefix(ctx)
-	if id != "" || user != "" {
+	id, user, roles := requestID(ctx), userPrefix(ctx), requestRoles(ctx)
+	if id != "" || user != "" || roles != "" {
 		record = record.Clone()
 	}
 	if id != "" {
@@ -130,6 +163,9 @@ func (h contextHandler) Handle(ctx context.Context, record slog.Record) error {
 	}
 	if user != "" {
 		record.AddAttrs(slog.String("user", user))
+	}
+	if roles != "" {
+		record.AddAttrs(slog.String("roles", roles))
 	}
 	return h.Handler.Handle(ctx, record)
 }

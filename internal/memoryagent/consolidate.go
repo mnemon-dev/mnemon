@@ -69,6 +69,16 @@ type ConsolidateResult struct {
 	// Deferred counts the batches a job with DeferLinks left pending
 	// because their linking failed (at most one: the job stops there).
 	Deferred int `json:"deferred,omitempty"`
+	// Reading is what the job's role reading read of the conversation lines
+	// it read, by role (RoleReading.Bucket), in UTF-16 units.
+	Reading map[string]ReadUnits `json:"reading,omitempty"`
+}
+
+// ReadUnits is how much of a role's messages consolidation read and passed
+// over, in UTF-16 units.
+type ReadUnits struct {
+	Read    int `json:"read"`
+	Skipped int `json:"skipped"`
 }
 
 // ConsolidateDrop is records a timelines job gave up on: they stay

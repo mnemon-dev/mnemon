@@ -110,18 +110,22 @@ and works as it always did; `mnemon_aml_admin_auth_failures_total` stays 0.
 | `GET /ready` | readiness: 200, or 503 with the reasons |
 | `GET /admin/status` | the status the watcher reads, as JSON |
 | `GET /admin/v1/stores` | the store overview, as JSON |
+| `GET /admin/v1/events` | the latest WARN and ERROR lines, as JSON |
 | `PUT /admin/v1/provider-keys` | the account's own provider keys: checked, written, swapped in |
 | `DELETE /admin/v1/provider-keys?kind=` | back to the host's keys |
 | `PUT /admin/v1/budgets` | budget caps at run time, a cap or unlimited per kind |
 | `DELETE /admin/v1/budgets?kind=` | back to the configuration's caps |
+| `PUT /admin/v1/read` | the role reading consolidation reads by, at run time |
+| `DELETE /admin/v1/read` | back to the configuration's role reading |
 | `/debug/pprof/` and below | Go's profiler |
 | anything else | 404 `{"error":"not found"}` |
 
-`/metrics`, `/ready`, `/admin/status` and `/admin/v1/stores` are for GET, and
-`/admin/v1/provider-keys` and `/admin/v1/budgets` for PUT and DELETE only (the keys are
-write-only: no route answers them; the caps are in `/admin/status`). Any other method on them is
-answered by the 404 route. The answers of `/ready`, `/admin/status`, `/admin/v1/provider-keys`,
-`/admin/v1/budgets` and (when it succeeds) `/admin/v1/stores` are `Cache-Control: no-store`.
+`/metrics`, `/ready`, `/admin/status`, `/admin/v1/stores` and `/admin/v1/events` are for GET, and
+`/admin/v1/provider-keys`, `/admin/v1/budgets` and `/admin/v1/read` for PUT and DELETE only (the
+keys are write-only: no route answers them; the caps and the role reading are in
+`/admin/status`). Any other method on them is answered by the 404 route. The answers of `/ready`,
+`/admin/status`, `/admin/v1/provider-keys`, `/admin/v1/budgets`, `/admin/v1/read` and (when it
+succeeds) `/admin/v1/stores` are `Cache-Control: no-store`.
 
 ### `GET /metrics`
 
@@ -139,6 +143,13 @@ consolidation queue, it carries these, which the memory cloud console reads:
 | `mnemon_aml_stores` | user stores in the data root, from the latest scan (at most 60 s old) |
 | `mnemon_aml_store_bytes` | bytes of the regular files of those stores, from the same scan |
 | `mnemon_aml_consolidation_lag_bound_characters` | the backlog, in characters, above which an Add waits for consolidation; 0 unless `--consolidate background`. `mnemon_aml_consolidation_max_backlog_characters` is measured against it |
+| `mnemon_aml_add_messages_total{role}` | messages Adds stored, by role: `user`, `assistant`, `system`, `tool`, a role the role reading names, or `other` |
+| `mnemon_aml_consolidation_read_units_total{role,outcome}` | UTF-16 units of conversation lines consolidation `read` or `skipped` by its role reading, by role (same names) |
+| `mnemon_aml_consolidation_batches_total{outcome}` | batches `folded`, `deferred` (linking failed) and `dropped` |
+| `mnemon_aml_model_spend_total{kind,class}` | spend of model calls as the budget charges it (every input token at the cache-miss price), in the account's currency (`deepseek` CNY, `jev` USD), by call class: `interactive` (a Search's read), `flush` (the tail a Search folds first) and `background` (consolidation jobs) |
+| `mnemon_aml_model_tokens_total{kind,class,type}` | tokens of model calls by `type`: `input`, `cached` (input the provider served from its cache, billed lower: DeepSeek's `prompt_cache_hit_tokens`; the bill is below the spend by about their share) and `output` |
+| `mnemon_aml_search_items`, `mnemon_aml_search_characters` | histograms of what a Search answered: its items, and the characters of their content |
+| `mnemon_aml_search_flush_seconds` | histogram of the time a Search spent folding what was pending before it read, when it folded anything (each user's first Search after Adds) |
 
 `mnemon_aml_stores` and `mnemon_aml_store_bytes` come from the scan `GET /admin/v1/stores`
 reads (below): a scrape makes a new scan only when the latest is older than 60 seconds, and
@@ -179,6 +190,8 @@ counts only.
 | `openStores` | user stores open now |
 | `version` | the product version string of the build (`dev` for a build made without one) |
 | `providerKeys` | by key kind the configuration's models use (`deepseek`, `jev`): `{"source","fingerprint"}`. `source` is `account` (the key file's key), `host` (the environment's) or `none` (neither: the variable is empty, and the kind's calls fail); `fingerprint` is the key's (below), `""` with none. Never a key. An empty object when the configuration has neither kind |
+| `messages` | by role, the messages Adds stored (the names of `mnemon_aml_add_messages_total`); `{}` before the first |
+| `read` | the role reading: `policy` (in force), `source` (`config` or `settings`), `config` (the configuration's) and `units`, by role, the `read` and `skipped` UTF-16 units of consolidation; absent without timelines or layered consolidation |
 
 ### `GET /admin/v1/stores`
 
@@ -201,7 +214,7 @@ read as the query without that pair, and the error says which:
   "scannedAt": "2026-10-25T08:00:00Z",
   "stores": [
     {"store": "58e645e0", "bytes": 61440000, "modified": "2026-10-25T07:59:12Z",
-     "open": true, "backlog": 12345}
+     "open": true, "backlog": 12345, "consolidation": "running", "failures": 0}
   ],
   "next": "58e645e06cad8b5e2d3b842ebef7c1c5"
 }
@@ -227,6 +240,9 @@ read as the query without that pair, and the error says which:
   not), and the estimate then counts what the Adds after it write. It is `null` when the
   scheduler has no estimate: outside `--consolidate background`; before that first Add or job; and
   for a store with nothing pending, which the scheduler stops tracking.
+- `consolidation` is the scheduler's state of the store's user: `queued`, `running`,
+  `backing-off` (after failed jobs; `failures` counts them in a row), `held` (idle, held by a
+  Search's flush), or `""` when idle or outside `--consolidate background`. Read for each page.
 - `next` is the last store of the page, as a cursor, to pass back as `after`. It is `null` on the
   last page. A cursor that names no store is where the order resumes, so a store removed
   between two pages does not end the walk.
@@ -240,6 +256,21 @@ deadline or its client does), so a console that polls cannot make a storm of dir
 answer is 500 `{"error":"the store scan failed"}` (503 when it was interrupted), nothing is kept,
 and the server logs the failure once, naming a store by its 8-digit prefix, until a scan goes well
 again.
+
+### `GET /admin/v1/events`
+
+The latest WARN and ERROR lines the server logged, from memory (the last 500 since the start),
+for the console's 事件 view: `?level=warn` (the default: WARN and ERROR) or `error`, and
+`?limit=1..500` (100 by default). Anything else is a 400.
+
+```json
+{"total": 37, "events": [{"time": "2026-10-27T02:15:04Z", "level": "WARN",
+  "message": "degraded search 3 (user 58e645e0): …", "user": "58e645e0", "requestId": "9d44…"}]}
+```
+
+`events` are the newest first; `total` counts every one since the start, those the ring no longer
+holds included. A line carries the user's 8-hex store prefix and the request id when it had them;
+no line holds a key or a record's content. `Cache-Control: no-store`.
 
 ### `PUT /admin/v1/provider-keys`
 
@@ -400,6 +431,40 @@ or repeated `kind`, or a query string that does not parse, is
 `400 {"error":"invalid","field":"kind"}`; a kind the configuration has no model of `409
 unknown_kind`; without `--settings-file`, `409 no_settings_file`.
 
+### `PUT /admin/v1/read`
+
+Sets the role reading: how much of each role's messages consolidation reads, written to the
+settings file and read by the consolidation jobs that start from then on. The records they read
+from then on are read by it; records already pending keep how they were read, and nothing
+consolidated is read again. The body is a complete role reading, at most 4 KiB:
+
+```json
+{"default":"full","excerpt":240,"roles":{"user":"full","assistant":"excerpt","tool":"ignore"}}
+```
+
+- `default` is `full` (the whole message), `excerpt` (the first `excerpt` UTF-16 units of its
+  text, the `role: ` prefix not counted) or `ignore` (not read), for every role `roles` does not
+  name.
+- `excerpt` is 40 to 2,000, 240 when absent.
+- `roles` maps a role to its mode. Roles compare without case and are trimmed. A role is 1–64
+  bytes of single-line UTF-8, and two that differ only in case are refused.
+
+The reply, like `/admin/status`'s `read`, is the reading read by (`policy`, complete), its
+`source` (`settings`) and the configuration's (`config`), which DELETE goes back to. One INFO
+line: `role reading set: {…}`. A reading that is not one is `400 {"error":"invalid","field":…}`,
+the field `default`, `excerpt`, `roles` (a role name that is not one), `roles.<role>` (its mode, or
+a second spelling of it) or `body`; a larger body `413 too_large`; without `--settings-file`, `409
+no_settings_file`; without timelines or layered consolidation, `409 no_consolidation`. A
+refusal changes nothing. Reading only changes what the consolidating model reads: every message
+is stored and searched whole.
+
+### `DELETE /admin/v1/read`
+
+Goes back to the configuration's role reading (`consolidation.read`, or the default: users whole,
+the first 240 units of each assistant message, other roles whole). The reading leaves the settings
+file, which is removed once it holds no cap either. The reply is the one above, `source` `config`.
+One INFO line: `role reading reverted to the configuration's: {…}`.
+
 ### The settings file
 
 `--settings-file PATH` names it: in the memory cloud `/var/lib/mnemon-aml/<n>/settings.json`,
@@ -409,7 +474,14 @@ beside the key file and outside the data root (aml-serve refuses a path inside i
 {"version":1,"budgets":{"deepseek":800,"jev":null},"updatedAt":"<RFC 3339>"}
 ```
 
-Either kind may be absent, and `null` is unlimited. A missing file means the configuration's
+and, while it holds a role reading, version 2 with the reading in `read`:
+
+```json
+{"version":2,"budgets":{"deepseek":800},"read":{"default":"full","excerpt":240,"roles":{}},"updatedAt":"<RFC 3339>"}
+```
+
+A file without a role reading stays version 1, so a binary that predates the role reading still
+starts once the reading is reverted. Either kind may be absent, and `null` is unlimited. A missing file means the configuration's
 caps. It is written as the key file is (atomically, mode 0600, the service user's), and a start
 is refused by the key file's rules: a file that is not a regular one, that its group or others
 may read or write, that another user owns, that is larger than 64 KiB or malformed (another
