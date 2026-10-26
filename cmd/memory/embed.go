@@ -46,12 +46,19 @@ Modes:
 				return fmt.Errorf("embedding stats: %w", err)
 			}
 			available := ec.Available()
+			embeddingAvailable := false
+			if available {
+				// Discovery can succeed even when the configured model is missing
+				// or cannot embed. Keep this extra probe out of normal recall.
+				_, err := ec.Embed("availability probe")
+				embeddingAvailable = err == nil
+			}
 			output := map[string]interface{}{
 				"total_insights":      total,
 				"embedded":            embedded,
 				"coverage":            fmt.Sprintf("%.0f%%", float64(embedded)/float64(max(total, 1))*100),
-				"embedding_available": available,
-				"ollama_available":    available, // Backward-compatible alias.
+				"embedding_available": embeddingAvailable,
+				"ollama_available":    available, // Legacy provider-reachability field.
 				"protocol":            ec.Protocol(),
 				"model":               ec.Model(),
 			}
