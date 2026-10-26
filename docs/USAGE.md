@@ -437,6 +437,10 @@ Mnemon works fully without an embedding provider — all core features (remember
 
 When the configured provider is unavailable, the reranking system automatically redistributes similarity weight to keyword and graph signals — no configuration or degraded-mode flag is needed. Mnemon checks provider availability at runtime with a 2-second timeout.
 
+If the provider responds but the query embedding fails (for example, because
+the selected model is missing), `recall` prints one warning to stderr and
+continues without vector similarity. JSON results remain on stdout.
+
 ### Setup
 
 Ollama remains the default provider:
@@ -465,6 +469,14 @@ Verify with:
 mnemon embed --status
 ```
 
+`embedding_available` verifies that the configured model returns a nonempty
+vector, using a small synthetic input and the normal 30-second embedding
+timeout. This explicit diagnostic can load the model and may incur a provider
+request charge; it sends no stored memories. The legacy `ollama_available`
+field keeps its provider-availability meaning for both protocols, so it can be
+`true` while `embedding_available` is `false`. Coverage counts stored vectors
+and does not establish that the current model can produce new ones.
+
 ```json
 {
   "total_insights": 87,
@@ -477,7 +489,7 @@ mnemon embed --status
 }
 ```
 
-`ollama_available` is retained as a compatibility alias for existing scripts;
+`ollama_available` is retained for compatibility with existing scripts;
 new integrations should use `embedding_available` and `protocol`.
 
 ### Backfilling existing insights

@@ -184,7 +184,10 @@ meta.intent and meta.intent_source (auto or override). --basic bypasses intent.`
 		var queryVec []float64
 		ec := embed.NewClientWithModel(resolveEmbedModel())
 		if ec.Available() {
-			queryVec, _ = ec.Embed(keyword)
+			queryVec, err = ec.Embed(keyword)
+			if err != nil {
+				fmt.Fprintf(cmd.ErrOrStderr(), "warning: query embedding failed for model %q; continuing without vector similarity (check --embed-model or MNEMON_EMBED_MODEL and run 'mnemon embed --status')\n", ec.Model())
+			}
 		}
 
 		// Extract query entities at cmd layer (avoid graph->search circular dep).
