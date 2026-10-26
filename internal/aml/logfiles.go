@@ -60,6 +60,15 @@ func openLogFiles(dir string, now func() time.Time) (*logFiles, error) {
 
 func (f *logFiles) hour() time.Time { return f.now().UTC().Truncate(time.Hour) }
 
+// utcTime writes a line's time in UTC, as the files are named, whatever the
+// host's time zone.
+func utcTime(groups []string, attr slog.Attr) slog.Attr {
+	if len(groups) == 0 && attr.Key == slog.TimeKey && attr.Value.Kind() == slog.KindTime {
+		attr.Value = slog.TimeValue(attr.Value.Time().UTC())
+	}
+	return attr
+}
+
 // Write queues a copy of p, a line as slog's JSON handler writes it, or drops
 // and counts it when the queue is full. It never blocks and never fails.
 func (f *logFiles) Write(p []byte) (int, error) {

@@ -330,7 +330,7 @@ func TestLogExportEndpoint(t *testing.T) {
 			break
 		}
 	}
-	if line["msg"] != "a line to export" || line["level"] != "WARN" {
+	if line["msg"] != "a line to export" || line["level"] != "WARN" || !strings.HasSuffix(line["time"].(string), "Z") {
 		t.Fatalf("exported %q", body)
 	}
 	for _, query := range []string{"from=yesterday", "to=2026-10-27", "from=2026-10-27T04:00:00Z&to=2026-10-27T03:00:00Z"} {

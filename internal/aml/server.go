@@ -296,7 +296,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 		if s.logFiles, err = openLogFiles(config.LogDir, time.Now); err != nil {
 			return nil, fmt.Errorf("the log directory: %w", err)
 		}
-		handler = teeHandler{handler, slog.NewJSONHandler(s.logFiles, nil)}
+		handler = teeHandler{handler, slog.NewJSONHandler(s.logFiles, &slog.HandlerOptions{ReplaceAttr: utcTime})}
 	}
 	s.log = slog.New(contextHandler{linesHandler{handler, s.lines}})
 	if config.AdminToken != "" {
