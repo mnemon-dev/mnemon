@@ -290,7 +290,7 @@ func (l *linker) markUpdates(ctx context.Context, out *timelineMemory, first int
 	if len(pairs) == 0 {
 		return nil
 	}
-	if err := l.judge(ctx, news, cands, pairs, state, result, &result.LinkCalls); err != nil {
+	if err := l.judge(ctx, news, cands, pairs, state, result); err != nil {
 		return err
 	}
 	for _, p := range pairs {

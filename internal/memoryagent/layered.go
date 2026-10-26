@@ -365,7 +365,7 @@ func (a *Agent) extractionFold() foldSpec {
 var layeredEvenFold = foldSpec{system: edited(layeredSystem, " (assistant messages are cut short)", ""), prompt: layeredFold.prompt, entities: true}
 
 // startExtractions starts n extractions, extract(ctx, i, out[i]) for batch
-// i, at most parallel at a time and in order (L0's batches, or L2's).
+// i, at most parallel at a time and in order.
 func startExtractions(ctx context.Context, n, parallel int, extract func(ctx context.Context, i int, x *extraction) error) *extractionRun {
 	run := &extractionRun{out: make([]extraction, n), done: make([]chan struct{}, n), cancels: make([]context.CancelFunc, n), failed: n}
 	contexts := make([]context.Context, n)

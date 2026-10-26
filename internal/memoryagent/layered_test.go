@@ -543,6 +543,15 @@ func healthyMemory(t *testing.T, n int) string {
 	return string(raw)
 }
 
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
+	raw, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+
 func TestDeferredLinkLeavesBatchPending(t *testing.T) {
 	ctx := context.Background()
 	s, dir := agentStore(t)

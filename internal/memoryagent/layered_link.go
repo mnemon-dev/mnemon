@@ -60,9 +60,8 @@ const (
 )
 
 // linkItem is a thread or a key as JEV reads it: a new one, n1, n2, …, or a
-// stored one, by thread id or K<i> (the i-th key of M, from 1). An insight
-// (insights.go) is an item with its date; a note (neutral.go) one with its
-// date and its group's title.
+// stored one, by thread id or K<i> (the i-th key of M, from 1). A note
+// (neutral.go) is an item with its date and its group's title.
 type linkItem struct {
 	ID     string `json:"id"`
 	Date   string `json:"date,omitempty"`
@@ -104,14 +103,12 @@ func (r *ConsolidateResult) addLinks(c linkCounts) {
 
 // The kinds of pair: does a new thread continue a stored one; is a new key
 // a stored one, and does its value contradict it; does a new key's value
-// contradict the stored key of the same name; does a new insight state the
-// same conclusion as a stored one (insights.go); does a new note update an
+// contradict the stored key of the same name; does a new note update an
 // earlier one of its group (neutral.go).
 const (
 	linkThread = iota
 	linkKey
 	linkExact
-	linkInsight
 	linkUpdate
 )
 
@@ -223,7 +220,7 @@ func (l *linker) link(ctx context.Context, state *timelineState, batch timelineM
 		}
 		pairs = append(pairs, keyPairs[j]...)
 	}
-	if err := l.judge(ctx, news, cands, pairs, state, result, &result.LinkCalls); err != nil {
+	if err := l.judge(ctx, news, cands, pairs, state, result); err != nil {
 		if ctx.Err() != nil || keepsPending(ctx, err, l.agent.linkDue(*state)) {
 			return timelineMemory{}, linkCounts{}, err
 		}
@@ -295,9 +292,8 @@ func (l *linker) link(ctx context.Context, state *timelineState, batch timelineM
 // pending, for a later job, instead of linking without JEV: only in a job
 // that defers links (ConsolidateRequest.DeferLinks), and there for an
 // outage (outageError) always, for the linking request's own failure until
-// the batch's linking rule is due (due: linkDue, insightLinkDue). Its
-// extraction is never split for it: drop mode follows extraction errors
-// alone.
+// the batch's linking rule is due (due: linkDue). Its extraction is never
+// split for it: drop mode follows extraction errors alone.
 func keepsPending(ctx context.Context, err error, due bool) bool {
 	return foldJobOf(ctx).defersLinks() && (outageError(err) || !due)
 }
@@ -400,8 +396,8 @@ func (l *linker) embed(ctx context.Context, texts []string, store bool) ([][]flo
 
 // linkRequest is one packed linking call: its state, its questions and the
 // pairs they ask about, in order (pair j asks t<j>, or i<j> and x<j>, or
-// x<j>, or g<j>, or u<j>), and the request's size so far, as JEV's client
-// measures it, plus at most one unit per list item.
+// x<j>, or u<j>), and the request's size so far, as JEV's client measures
+// it, plus at most one unit per list item.
 type linkRequest struct {
 	state     linkState
 	questions map[string]Question
@@ -420,8 +416,6 @@ func pairQuestions(p *linkPair, news, cands []linkItem, j int) map[string]Questi
 		return map[string]Question{fmt.Sprintf("t%d", j): {Type: "noul", Instructions: continuesQuestion(n, c), Criteria: map[string]string{"true": continuesYes, "false": continuesNo}}}
 	case linkKey:
 		return map[string]Question{fmt.Sprintf("i%d", j): {Type: "noul", Instructions: sameKeyQuestion(n, c), Criteria: map[string]string{"true": sameKeyYes, "false": sameKeyNo}}, fmt.Sprintf("x%d", j): contradicts}
-	case linkInsight:
-		return map[string]Question{fmt.Sprintf("g%d", j): {Type: "noul", Instructions: sameInsightQuestion(n, c), Criteria: map[string]string{"true": sameInsightYes, "false": sameInsightNo}}}
 	case linkUpdate:
 		return map[string]Question{fmt.Sprintf("u%d", j): {Type: "noul", Instructions: updateQuestion(n, c), Criteria: map[string]string{"true": updateYes, "false": updateNo}}}
 	}
@@ -488,11 +482,11 @@ func packLinks(news, cands []linkItem, pairs []*linkPair, limit int) []*linkRequ
 
 // judge asks JEV the pairs' questions, packed by packLinks within the
 // judge's question limit (128 unless it states fewer), one call after
-// another, and sets the pairs' answers; calls counts the calls. The first
-// failed call ends the judging with its error.
-func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*linkPair, state *timelineState, result *ConsolidateResult, calls *int) error {
+// another, and sets the pairs' answers. The first failed call ends the
+// judging with its error.
+func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*linkPair, state *timelineState, result *ConsolidateResult) error {
 	for _, call := range packLinks(news, cands, pairs, l.questionLimit()) {
-		answers, err := l.decide(ctx, call.state, call.questions, state, result, calls)
+		answers, err := l.decide(ctx, call.state, call.questions, state, result)
 		if err != nil {
 			return err
 		}
@@ -502,8 +496,6 @@ func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*lin
 				p.same = answers[fmt.Sprintf("t%d", j)]
 			case linkKey:
 				p.same, p.contradicts = answers[fmt.Sprintf("i%d", j)], answers[fmt.Sprintf("x%d", j)]
-			case linkInsight:
-				p.same = answers[fmt.Sprintf("g%d", j)]
 			case linkUpdate:
 				p.same = answers[fmt.Sprintf("u%d", j)]
 			default:
@@ -530,9 +522,9 @@ func judgeQuestionLimit(judge Decider) int {
 }
 
 // decide makes one linking call and meters it: its usage is the job's and
-// the state's, and the job's linking usage; calls counts it. An answered
-// call is the job's (foldJob.answer).
-func (l *linker) decide(ctx context.Context, s linkState, questions map[string]Question, state *timelineState, result *ConsolidateResult, calls *int) (map[string]float64, error) {
+// the state's, and the job's linking usage; LinkCalls counts it. An
+// answered call is the job's (foldJob.answer).
+func (l *linker) decide(ctx context.Context, s linkState, questions map[string]Question, state *timelineState, result *ConsolidateResult) (map[string]float64, error) {
 	start := time.Now()
 	answers, usage, err := l.agent.models.Judge.Decide(ctx, s, questions)
 	if err == nil {
@@ -545,7 +537,7 @@ func (l *linker) decide(ctx context.Context, s linkState, questions map[string]Q
 		result.LinkUsage = &Usage{}
 	}
 	result.LinkUsage.add(usage)
-	*calls++
+	result.LinkCalls++
 	if err == nil {
 		err = validateAnswers(answers, questions)
 	}

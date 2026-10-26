@@ -61,8 +61,8 @@ func (a *Agent) Unchanged() error {
 // consolidation (timelines or layered), as one read of its state found
 // them. Its items have the ids the Items of the View's layer blocks name
 // (IndexItem.Items): a thread's own id, "e<i>" for the i-th event, a fact's
-// key, "d<i>" for the i-th directive ("i<i>" for the i-th insight), i
-// counting in memory order, which consolidation only appends to.
+// key, "d<i>" for the i-th directive, i counting in memory order, which
+// consolidation only appends to.
 type Consolidation struct {
 	// Watermark is the version (records.Head.Version) of the newest record
 	// a job has read; 0 before the first job.
@@ -117,7 +117,7 @@ type MemoryDirective struct {
 }
 
 // itemID is the id of the position-th consolidated item of a kind named by
-// prefix: e (events), d (directives) or i (insights) (Consolidation).
+// prefix: e (events) or d (directives) (Consolidation).
 func itemID(prefix string, position int) string { return prefix + strconv.Itoa(position) }
 
 // Consolidated reads the scope's consolidated memory and its consolidation's

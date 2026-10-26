@@ -73,10 +73,6 @@ const (
 // job. LinkCandidates and Parallel are layered settings: the existing
 // threads (and keys) JEV compares each new thread (and key) with, 8 by
 // default, and the extraction calls a job keeps in flight, 4 by default.
-// Insights (layered mode) consolidates the consolidated items one level up
-// (L2, insights.go) after every job's L0 and L1, and adds its conclusions
-// to the layer of simple reads (insights_layer.go); off, it stays out of the
-// config's JSON and the policy hash.
 type ConsolidationConfig struct {
 	Mode                string `json:"mode,omitempty"`
 	BatchCharacters     int    `json:"batchCharacters,omitempty"`
@@ -84,7 +80,6 @@ type ConsolidationConfig struct {
 	MaxBatches          int    `json:"maxBatches,omitempty"`
 	LinkCandidates      int    `json:"linkCandidates,omitempty"`
 	Parallel            int    `json:"parallel,omitempty"`
-	Insights            bool   `json:"insights,omitempty"`
 	// EvenReading (layered mode) reads every record whole and alike, as
 	// neutral mode always does (evenReadable), and its extraction prompt no
 	// longer says assistant messages are cut short (layeredEvenFold).
@@ -164,20 +159,16 @@ type ReadStats struct {
 	// (the judgement failed or found the budget spent: the screen stands
 	// in), layer-state (the consolidated state did not load: no layer),
 	// layer-lexical (the layer's embedding failed: shared words rank), layer
-	// (the layer's judgement failed or found the budget spent),
-	// layer-insights (consolidation.insights' judgement failed or could not
-	// be paid for: no insights), expand (records linked from the layer could
-	// not be read or judged) and order (view.order could not read the
-	// records' write positions: the View stays in rank order). Empty for a
-	// read that fell back nowhere, and for memory-agent/v1.
+	// (the layer's judgement failed or found the budget spent), expand
+	// (records linked from the layer could not be read or judged) and order
+	// (view.order could not read the records' write positions: the View
+	// stays in rank order). Empty for a read that fell back nowhere, and for
+	// memory-agent/v1.
 	Degraded []string `json:"degraded,omitempty"`
 	// IndexRoutes counts, for each native index route of the records
 	// (Config.Index), the searches of a simple read in which it found a
 	// candidate. Absent when none did, and for memory-agent/v1.
 	IndexRoutes map[string]int `json:"indexRoutes,omitempty"`
-	// LayerInsights counts the insights the View's layer shows
-	// (consolidation.insights); absent at zero.
-	LayerInsights int `json:"layerInsights,omitempty"`
 }
 
 type View struct {
@@ -305,9 +296,6 @@ func (v *ViewConfig) normalize() error {
 // normalize fills the timelines (and layered) defaults and checks the
 // bounds. Mode "" is the v1 fold, which takes no settings.
 func (c *ConsolidationConfig) normalize() error {
-	if c.Insights && c.Mode != consolidationLayered {
-		return errors.New("consolidation insights requires consolidation mode \"layered\"")
-	}
 	if c.EvenReading && c.Mode != consolidationLayered {
 		return errors.New("evenReading requires consolidation mode \"layered\" (neutral mode always reads evenly)")
 	}

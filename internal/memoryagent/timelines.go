@@ -83,15 +83,13 @@ type directive struct {
 
 // timelineMemory is the author's Consolidated (C:30). Facts keeps each key's
 // value history; FactOrder lists the keys in the order they were first added,
-// as the author's object keys are. Insights are the conclusions L2 drew from
-// the other items (consolidation.insights, insights.go); none without it.
+// as the author's object keys are.
 type timelineMemory struct {
 	Threads    []thread               `json:"threads"`
 	Events     []event                `json:"events"`
 	Facts      map[string][]factValue `json:"facts"`
 	FactOrder  []string               `json:"factOrder"`
 	Directives []directive            `json:"directives"`
-	Insights   []insight              `json:"insights,omitempty"`
 }
 
 // timelineState is one scope's consolidation (C:32-39). Watermark is the
@@ -104,10 +102,11 @@ type timelineMemory struct {
 // failed for the linking request itself, for its linking rule (linkDue),
 // apart from its extraction's drop mode. Mode is the consolidation mode
 // of the job that last wrote the state: "" for timelines, "layered" or
-// "neutral". InsightRead is L2's read position (consolidation.insights,
-// insights.go), absent without it. A stored state's fields beyond these,
-// such as those the deleted native edges wrote, are ignored when it loads
-// and dropped when it is next saved.
+// "neutral". A stored state's fields beyond these, in the state or in its
+// memory, such as those the deleted native edges and the deleted L2
+// consolidation wrote, are ignored when it loads (loadTimelines decodes it
+// with plain json.Unmarshal, which must stay lenient) and dropped when it
+// is next saved.
 type timelineState struct {
 	Format          string          `json:"format"`
 	Mode            string          `json:"mode,omitempty"`
@@ -122,7 +121,6 @@ type timelineState struct {
 	FirstModelError int64           `json:"firstModelError,omitempty"`
 	LinkErrors      int             `json:"linkErrors,omitempty"`
 	FirstLinkError  int64           `json:"firstLinkError,omitempty"`
-	InsightRead     *insightRead    `json:"insightRead,omitempty"`
 }
 
 func emptyTimelineState() timelineState {
@@ -754,9 +752,7 @@ func jsString(raw json.RawMessage) string {
 // budget, counts against the head batch: after dropErrors such jobs over
 // dropAfter, the head batch is folded in drop mode (foldDropping). A
 // layered job's folds share a foldJob (req.DeferLinks, and whether a call
-// of the job was answered, for its timeouts). With insights (layered
-// mode), L2 then reads the consolidated items it has not read
-// (foldInsights), and Remaining counts those too.
+// of the job was answered, for its timeouts).
 func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest) (ConsolidateResult, error) {
 	settings := a.config.Consolidation
 	model := a.models.Consolidator
@@ -815,15 +811,6 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 		if foldErr, err = a.foldLayered(ctx, model, req, &state, &token, flush, &dirty, &result); err != nil {
 			return result, err
 		}
-		// With insights, L2 reads what L0 and L1 consolidated, after them,
-		// the short rest of its stream only when the job does not hold and
-		// no record is left to fold (insights.go).
-		if settings.Insights && foldErr == nil && ctx.Err() == nil {
-			rest := !req.Hold && len(state.Pending) == 0 && unread == 0
-			if foldErr, err = a.foldInsights(ctx, model, req, &state, &token, rest, &dirty, &result); err != nil {
-				return result, err
-			}
-		}
 	} else {
 		for n := 0; n < req.MaxBatches; n++ {
 			batch := nextBatch(state.Pending, settings.BatchCharacters, flush)
@@ -865,9 +852,6 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	}
 	result.Added = memorySize(state.Memory) - before
 	result.Remaining = len(state.Pending) + unread
-	if settings.Insights {
-		result.Remaining += insightsUnread(state)
-	}
 	return result, foldErr
 }
 
@@ -966,8 +950,8 @@ func (a *Agent) foldDropping(ctx context.Context, model Completer, spec foldSpec
 	return nil
 }
 
-// halfFailure is a drop-mode half that failed: its size, in records or
-// items, and its error.
+// halfFailure is a drop-mode half that failed: its size, in records, and
+// its error.
 type halfFailure struct {
 	records int
 	err     error
@@ -1125,7 +1109,7 @@ func (a *Agent) completeFold(ctx context.Context, model Completer, system, promp
 
 func cloneMemory(m timelineMemory) timelineMemory {
 	out := timelineMemory{Threads: slices.Clone(m.Threads), Events: slices.Clone(m.Events), Facts: make(map[string][]factValue, len(m.Facts)),
-		FactOrder: slices.Clone(m.FactOrder), Directives: slices.Clone(m.Directives), Insights: slices.Clone(m.Insights)}
+		FactOrder: slices.Clone(m.FactOrder), Directives: slices.Clone(m.Directives)}
 	for key, values := range m.Facts {
 		out.Facts[key] = slices.Clone(values)
 	}

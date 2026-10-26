@@ -359,7 +359,7 @@ func composeBlocks(result []SearchItem, index []memoryagent.IndexItem) []traceBl
 	for _, item := range result {
 		records[item.ID] = true
 	}
-	layers := map[string]string{"1-instructions": "instructions", "2-topics": "topics", "3-timelines": "timelines", "4-values": "facts", "5-insights": "insights"}
+	layers := map[string]string{"1-instructions": "instructions", "2-topics": "topics", "3-timelines": "timelines", "4-values": "facts"}
 	for p, item := range result {
 		block, ok := byID[item.ID]
 		if !ok {

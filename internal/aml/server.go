@@ -63,12 +63,12 @@ const (
 	// Search first folds the rest (the conversation's tail); otherwise an
 	// Add folds until caught up. Failures are logged, not returned.
 	ConsolidationOnAdd ConsolidationMode = "on-add"
-	// ConsolidationBackground (timelines or layered, without insights)
-	// folds the full batches in supervised workers that Run starts
-	// (scheduler.go): an Add only writes and notifies them, then waits while
-	// its user's backlog is above one job's window, and a Search first folds
-	// the rest, as in on-add mode. A link JEV cannot make for now is
-	// deferred (ConsolidateRequest.DeferLinks), never made without JEV.
+	// ConsolidationBackground (timelines or layered) folds the full
+	// batches in supervised workers that Run starts (scheduler.go): an Add
+	// only writes and notifies them, then waits while its user's backlog is
+	// above one job's window, and a Search first folds the rest, as in
+	// on-add mode. A link JEV cannot make for now is deferred
+	// (ConsolidateRequest.DeferLinks), never made without JEV.
 	ConsolidationBackground ConsolidationMode = "background"
 )
 
@@ -388,15 +388,8 @@ func consolidationMode(config ServerConfig) (ConsolidationMode, error) {
 	switch mode {
 	case ConsolidationOff, ConsolidationOnAdd:
 	case ConsolidationBackground:
-		consolidation := config.MemoryConfig.Consolidation
-		if !consolidation.Timelines() {
+		if !config.MemoryConfig.Consolidation.Timelines() {
 			return "", errors.New(`background consolidation requires consolidation mode "timelines" or "layered"`)
-		}
-		// L2 reads every unread item in date order, so its batches depend
-		// on how many batches each job folded: a worker's jobs would read
-		// other L2 batches than the Adds' jobs of on-add mode.
-		if consolidation.Insights {
-			return "", errors.New("background consolidation does not support consolidation.insights: its L2 batches would differ from on-add mode's; use on-add")
 		}
 	default:
 		return "", fmt.Errorf("unknown consolidation %q: off (\"\"), on-add or background", mode)

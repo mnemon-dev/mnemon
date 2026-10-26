@@ -576,9 +576,6 @@ func TestServerConsolidationModes(t *testing.T) {
 		"background without timelines": func(c *ServerConfig) {
 			c.Consolidation, c.MemoryConfig.Consolidation = ConsolidationBackground, nil
 		},
-		"background with insights": func(c *ServerConfig) {
-			c.Consolidation, c.MemoryConfig.Consolidation = ConsolidationBackground, &memoryagent.ConsolidationConfig{Mode: "layered", Insights: true}
-		},
 		"negative workers": func(c *ServerConfig) { c.Consolidation, c.ConsolidationWorkers = ConsolidationBackground, -1 },
 	} {
 		if _, err := server(edit); err == nil {

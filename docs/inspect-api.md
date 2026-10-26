@@ -547,7 +547,7 @@ The View as `result` shows it, item by item.
 | `order` | string | how the records are listed: `time` or `rank` |
 
 - `position` is the item's index in `result` and `id` its `id` there.
-- `layer` is `instructions`, `topics`, `timelines`, `facts`, `insights` or `records`.
+- `layer` is `instructions`, `topics`, `timelines`, `facts` or `records`.
 - `items` are the memory items a block shows: directives (`d…`), threads (`T…`), events (`e…`),
   fact keys; for a record, its own id.
 - `records` are the record ids a block links to that `result` shows; for a record, its own id.

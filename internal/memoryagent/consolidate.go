@@ -28,7 +28,7 @@ type ConsolidateRequest struct {
 	// drop rule's thresholds, its own counters), and once that is due the
 	// batch links without JEV from its whole extraction, never split or
 	// dropped. The job keeps the extractions of the batches it leaves
-	// pending for the job that links them (in memory). L2 linking likewise.
+	// pending for the job that links them (in memory).
 	DeferLinks bool `json:"deferLinks,omitempty"`
 }
 
@@ -49,14 +49,14 @@ type ConsolidateResult struct {
 	Dropped int               `json:"dropped,omitempty"`
 	Drops   []ConsolidateDrop `json:"drops,omitempty"`
 	// A layered job's linking: LinkCalls counts its JEV calls (LinkUsage
-	// is the part of Usage of every JEV call of the job, these and
-	// InsightLinkCalls); of the threads it extracted and linked,
-	// ThreadsLinked continued a stored thread and ThreadsNew started one;
-	// of the keys, KeysLinked joined a stored key and KeysNew started one;
-	// Conflicts counts the joined keys whose new value JEV found contradicts
-	// the stored latest; LinkFallbacks counts the batches linked without
-	// JEV because it failed, and LinkLexical those whose candidates shared
-	// words found because the configured embedder failed.
+	// is the part of Usage of every JEV call of the job); of the threads it
+	// extracted and linked, ThreadsLinked continued a stored thread and
+	// ThreadsNew started one; of the keys, KeysLinked joined a stored key
+	// and KeysNew started one; Conflicts counts the joined keys whose new
+	// value JEV found contradicts the stored latest; LinkFallbacks counts
+	// the batches linked without JEV because it failed, and LinkLexical
+	// those whose candidates shared words found because the configured
+	// embedder failed.
 	LinkCalls     int    `json:"linkCalls,omitempty"`
 	LinkUsage     *Usage `json:"linkUsage,omitempty"`
 	ThreadsLinked int    `json:"threadsLinked,omitempty"`
@@ -66,25 +66,9 @@ type ConsolidateResult struct {
 	Conflicts     int    `json:"conflicts,omitempty"`
 	LinkFallbacks int    `json:"linkFallbacks,omitempty"`
 	LinkLexical   int    `json:"linkLexical,omitempty"`
-	// Deferred counts the batches, of records or of L2's items, a job with
-	// DeferLinks left pending because their linking failed (at most one: the
-	// job stops there).
+	// Deferred counts the batches a job with DeferLinks left pending
+	// because their linking failed (at most one: the job stops there).
 	Deferred int `json:"deferred,omitempty"`
-	// With consolidation.insights (insights.go), a layered job's L2:
-	// InsightBatches counts the L2 batches it read (their items no longer
-	// unread), InsightsDropped the items of those it gave up on (their
-	// replies did not parse, or their requests were too large); of the
-	// insights the batches gave, InsightsNew were added and InsightsMerged
-	// joined a stored insight JEV found states the same conclusion;
-	// InsightFallbacks counts the batches whose insights were all added
-	// because JEV failed; InsightLinkCalls the JEV calls of L2 linking
-	// (part of LinkUsage).
-	InsightBatches   int `json:"insightBatches,omitempty"`
-	InsightsDropped  int `json:"insightsDropped,omitempty"`
-	InsightsNew      int `json:"insightsNew,omitempty"`
-	InsightsMerged   int `json:"insightsMerged,omitempty"`
-	InsightFallbacks int `json:"insightFallbacks,omitempty"`
-	InsightLinkCalls int `json:"insightLinkCalls,omitempty"`
 }
 
 // ConsolidateDrop is records a timelines job gave up on: they stay

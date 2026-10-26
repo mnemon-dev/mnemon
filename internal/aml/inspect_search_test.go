@@ -520,7 +520,7 @@ func TestInspectFullTrace(t *testing.T) {
 		t.Fatal("the consolidated layer shows no block", compose.Blocks)
 	}
 	for i, block := range compose.Blocks {
-		if block.Position != i || block.ID != result[i].ID || !slices.Contains([]string{"instructions", "topics", "timelines", "facts", "insights", "records"}, block.Layer) {
+		if block.Position != i || block.ID != result[i].ID || !slices.Contains([]string{"instructions", "topics", "timelines", "facts", "records"}, block.Layer) {
 			t.Fatalf("%+v", block)
 		}
 		if block.Layer == "records" && (!slices.Equal(block.Items, []string{block.ID}) || strings.HasPrefix(block.ID, "index:")) {

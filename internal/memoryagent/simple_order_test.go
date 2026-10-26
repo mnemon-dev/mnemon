@@ -187,7 +187,7 @@ func TestTimeOrderFailureKeepsRankOrder(t *testing.T) {
 	ctx := context.Background()
 	ranked := orderRead(t, s, nil)
 	composed := ranked
-	composed.Stats.LayerInsights = 2
+	composed.Stats.IndexRoutes = map[string]int{"lexical": 2}
 	agent := func(view *ViewConfig) *Agent {
 		a, err := New(s, Config{Version: 1, Strategy: "simple", View: view}, Models{Planner: expandPlanner(), Judge: orderJudge()}, nil)
 		if err != nil {
