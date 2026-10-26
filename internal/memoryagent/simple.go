@@ -56,9 +56,7 @@ type simpleRun struct {
 	// trace records the read for the inspect service (trace.go); nil, the
 	// read records nothing.
 	trace *ReadTrace
-	// unlimited lifts the page and decision budgets (view.roundRecall).
-	unlimited bool
-	mu        sync.Mutex // guards stats during concurrent model calls
+	mu    sync.Mutex // guards stats during concurrent model calls
 }
 
 // simpleItem is one pooled record and what the models said about it.
@@ -100,20 +98,7 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		r.dialogue = append(r.dialogue, message)
 	}
 	r.dialogue = append(r.dialogue, Message{Role: "user", Text: req.Question})
-	// With view.roundRecall rounds of planned searches replace the plan,
-	// loop and shortlist (simple_rounds.go).
-	if a.config.View.RoundRecall {
-		return r.readRounds(ctx)
-	}
-	// With view.deriveLoop the planner writes every search and need in one
-	// call (simple_derive.go).
-	var cues []cue
-	var err error
-	if a.config.View.DeriveLoop {
-		cues, err = r.derive(ctx)
-	} else {
-		cues, err = r.plan(ctx)
-	}
+	cues, err := r.plan(ctx)
 	if err != nil {
 		return View{}, err
 	}
@@ -155,12 +140,7 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		return View{}, err
 	}
 	r.stage(traceNeed)
-	var stop string
-	if a.config.View.DeriveLoop {
-		stop, err = r.deriveLoop(ctx)
-	} else {
-		stop, err = r.loop(ctx)
-	}
+	stop, err := r.loop(ctx)
 	if err != nil {
 		return View{}, err
 	}
@@ -190,16 +170,8 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	view, err := r.compose(ctx, stop, scored)
 	if err == nil && a.layerOn() {
 		// In timelines mode the consolidated layer goes before the records
-		// (timelines_layer.go); with view.layerRecall it is the one the
-		// question recalls (layer_recall.go).
-		switch {
-		case a.config.View.LayerRecall:
-			view, err = r.layerRecalled(ctx, view)
-		case a.config.View.LayerRanked:
-			view, err = r.layerRanked(ctx, view)
-		default:
-			view, err = r.layer(ctx, view)
-		}
+		// (timelines_layer.go).
+		view, err = r.layer(ctx, view)
 	}
 	if err != nil {
 		return View{}, err

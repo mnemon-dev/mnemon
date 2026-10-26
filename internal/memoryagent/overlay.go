@@ -66,7 +66,7 @@ func OpenOverlay(path string, readonly bool) (*Overlay, error) {
 		if err == nil {
 			_, err = db.Exec(timelinesSchema)
 		}
-		for _, statement := range strings.Split(recordLinksSchema+";\n"+layerIndexSchema, ";\n") {
+		for _, statement := range strings.Split(recordLinksSchema, ";\n") {
 			if err == nil {
 				_, err = db.Exec(statement)
 			}

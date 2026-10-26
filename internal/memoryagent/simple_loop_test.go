@@ -377,8 +377,7 @@ func TestTableKeepsEachCallWithinTheQuestionLimit(t *testing.T) {
 			}
 		}
 	}
-	// Seven needs (the derive loop does not cap them): 18 items a call, 126
-	// questions, then the other 12.
+	// Seven needs: 18 items a call, 126 questions, then the other 12.
 	judge := &scriptedJudge{answer: answer}
 	r := testRun(judgedAgent(t, s, replies("", "", ""), judge), user("q"))
 	for k := range 7 {

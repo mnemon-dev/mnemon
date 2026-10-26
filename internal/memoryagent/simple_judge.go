@@ -125,9 +125,6 @@ func judgeCandidates(items []*simpleItem) []judgeCandidate {
 func (r *simpleRun) decisionsLeft() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.unlimited {
-		return int(^uint(0) >> 1)
-	}
 	return max(0, simpleDecisionBudget-r.stats.DecisionCalls)
 }
 
@@ -135,7 +132,7 @@ func (r *simpleRun) decisionsLeft() int {
 // returns errCallBudget without calling.
 func (r *simpleRun) decide(ctx context.Context, state any, questions map[string]Question) (map[string]float64, error) {
 	r.mu.Lock()
-	if !r.unlimited && r.stats.DecisionCalls >= simpleDecisionBudget {
+	if r.stats.DecisionCalls >= simpleDecisionBudget {
 		r.mu.Unlock()
 		return nil, errCallBudget
 	}
