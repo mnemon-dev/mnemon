@@ -32,7 +32,7 @@ dedicated instance `eval`.
 | Field | Value |
 |---|---|
 | System name | Mnemon |
-| Version | v0.3.1: the `VERSION` given to `make build-linux-amd64`, built from the git tag `v0.3.1` |
+| Version | v0.3.2: the `VERSION` given to `make build-linux-amd64`, built from the git tag `v0.3.2` |
 | Track | Industrial (commercial products), textual |
 | Team / organization | Mnemon Team / Mnemon |
 | Contact | `grivn.wang@gmail.com` |
@@ -273,11 +273,15 @@ each number. None is reported in this draft.>`
   (`scripts/aml/load.sh`, as the runbook's "Capacity declaration" describes). The rows now hold
   the final run's local values, marked as such, and the unit limits (16 Adds, 16 Searches) are
   provisional until that test.
-- Done: the release is the git tag `v0.3.1` (`VERSION=v0.3.1`): the per-message role reading
-  (BEAM +3.44 [+0.81, +5.94] and LoCoMo +0.26 [−0.64, +1.11] against reading every message
-  whole, at a seventh of BEAM's consolidation batches) and the observability of
-  docs/admin-api.md. v0.3.0 (tag `v0.3.0`) read every message whole. The capacity rows' commit,
-  `bc18487b`, is the final run's, not the release's.
+- Done: the release is the git tag `v0.3.2` (`VERSION=v0.3.2`): v0.3.1's memory, unchanged, and
+  the console's logs (docs/admin-api.md, `GET /admin/v1/logs` and `GET /admin/v1/logs/export`):
+  every line in a file per hour under `--log-dir`, which `aml-serve@.service` sets to
+  `/var/lib/mnemon-aml/<instance>/logs`. An upgrade from v0.3.1 installs the binary and the unit
+  together (the v0.3.1 binary refuses `--log-dir`), and a rollback restores both. v0.3.1 (tag
+  `v0.3.1`) brought the per-message role reading (BEAM +3.44 [+0.81, +5.94] and LoCoMo +0.26
+  [−0.64, +1.11] against reading every message whole, at a seventh of BEAM's consolidation
+  batches) and the observability; v0.3.0 (tag `v0.3.0`) read every message whole. The capacity
+  rows' commit, `bc18487b`, is the final run's, not the release's.
 - The Windows CI job (`windows-memory`). As it stood it could not pass, for two reasons. On
   Windows the private-mode check refused the budget file and the model cache for every file; that
   fix is in (`8888d9dd`: the check applies only where POSIX modes mean something). And every AML
