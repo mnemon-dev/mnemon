@@ -55,7 +55,7 @@ var rememberCmd = &cobra.Command{
 				t = strings.TrimSpace(t)
 				if t != "" {
 					if len(t) > 100 {
-						return fmt.Errorf("tag too long (%d chars, max 100): %s", len(t), t[:50])
+						return fmt.Errorf("tag too long (%d chars, max 100): %s", len(t), truncateRunes(t, 50))
 					}
 					tags = append(tags, t)
 				}
@@ -74,7 +74,7 @@ var rememberCmd = &cobra.Command{
 				e = strings.TrimSpace(e)
 				if e != "" {
 					if len(e) > 200 {
-						return fmt.Errorf("entity too long (%d chars, max 200): %s", len(e), e[:50])
+						return fmt.Errorf("entity too long (%d chars, max 200): %s", len(e), truncateRunes(e, 50))
 					}
 					entities = append(entities, e)
 				}

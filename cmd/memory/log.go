@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"text/tabwriter"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 )
@@ -44,8 +45,8 @@ var logCmd = &cobra.Command{
 				insightID = insightID[:8]
 			}
 			detail := e.Detail
-			if len(detail) > 60 {
-				detail = detail[:57] + "..."
+			if utf8.RuneCountInString(detail) > 60 {
+				detail = truncateRunes(detail, 57) + "..."
 			}
 			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", e.CreatedAt, e.Operation, insightID, detail)
 		}

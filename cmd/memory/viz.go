@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/mnemon-dev/mnemon/internal/memory/model"
 	"github.com/spf13/cobra"
@@ -64,8 +65,8 @@ func init() {
 // nodeLabel returns a short display label for a node.
 func nodeLabel(i *model.Insight) string {
 	content := i.Content
-	if len(content) > 60 {
-		content = content[:60] + "..."
+	if utf8.RuneCountInString(content) > 60 {
+		content = truncateRunes(content, 60) + "..."
 	}
 	return fmt.Sprintf("[%s] %s", i.Category, content)
 }
