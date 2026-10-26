@@ -55,17 +55,17 @@ func readAnswer(t *testing.T, body string) ReadStatus {
 // only caps and going once it holds nothing; a start reads it back.
 func TestRoleReadingSetAndRevert(t *testing.T) {
 	b := layeredBudgets(t)
-	defaults := memoryagent.DefaultRoleReading()
+	defaults := readingOf(memoryagent.DefaultRoleReading())
 	if read := b.adminStatus(t).Read; read == nil || read.Source != "config" || !reflect.DeepEqual(read.Policy, defaults) || !reflect.DeepEqual(read.Config, defaults) {
 		t.Fatalf("status read %+v", read)
 	}
 	okAnswer(t, b.admin("PUT", "/admin/v1/budgets", `{"deepseek":800}`))
 	set := readAnswer(t, okAnswer(t, b.admin("PUT", "/admin/v1/read", `{"default":"full","roles":{" Tool ":"ignore"}}`)))
-	want := memoryagent.RoleReading{Default: "full", Excerpt: 240, Roles: map[string]string{"tool": "ignore"}}
+	want := Reading{Default: "full", Excerpt: 240, Roles: map[string]string{"tool": "ignore"}}
 	if set.Source != "settings" || !reflect.DeepEqual(set.Policy, want) || !reflect.DeepEqual(set.Config, defaults) {
 		t.Fatalf("set answered %+v", set)
 	}
-	if got := b.server.config.MemoryConfig.ReadOverride(); got == nil || !reflect.DeepEqual(*got, want) {
+	if got := b.server.config.MemoryConfig.ReadOverride(); got == nil || !reflect.DeepEqual(readingOf(*got), want) {
 		t.Fatal("the agents do not read by the reading set:", got)
 	}
 	file := settingsJSON(t, b.settingsFile())
@@ -76,6 +76,9 @@ func TestRoleReadingSetAndRevert(t *testing.T) {
 	okAnswer(t, b.admin("PUT", "/admin/v1/budgets", `{"jev":70}`))
 	if file := settingsJSON(t, b.settingsFile()); file["read"] == nil || string(file["budgets"]) != `{"deepseek":800,"jev":70}` {
 		t.Fatalf("a cap change dropped the reading: %v", file)
+	}
+	if body := okAnswer(t, b.admin("PUT", "/admin/v1/read", `{"default":"full"}`)); !strings.Contains(body, `"policy":{"default":"full","excerpt":240,"roles":{}}`) {
+		t.Fatal("an answer without roles must spell them {}:", body)
 	}
 	reverted := readAnswer(t, okAnswer(t, b.admin("DELETE", "/admin/v1/read", "")))
 	if reverted.Source != "config" || !reflect.DeepEqual(reverted.Policy, defaults) || b.server.config.MemoryConfig.ReadOverride() != nil {

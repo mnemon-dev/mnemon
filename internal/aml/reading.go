@@ -14,9 +14,25 @@ import (
 // ("config", or "settings" for one the settings file sets), and the
 // configuration's, which DELETE /admin/v1/read goes back to.
 type ReadStatus struct {
-	Policy memoryagent.RoleReading `json:"policy"`
-	Source string                  `json:"source"`
-	Config memoryagent.RoleReading `json:"config"`
+	Policy Reading `json:"policy"`
+	Source string  `json:"source"`
+	Config Reading `json:"config"`
+}
+
+// Reading is a normalized role reading as the admin routes spell it: every
+// field present, roles {} when it names none, for the console.
+type Reading struct {
+	Default string            `json:"default"`
+	Excerpt int               `json:"excerpt"`
+	Roles   map[string]string `json:"roles"`
+}
+
+func readingOf(r memoryagent.RoleReading) Reading {
+	roles := r.Roles
+	if roles == nil {
+		roles = map[string]string{}
+	}
+	return Reading{Default: r.Default, Excerpt: r.Excerpt, Roles: roles}
 }
 
 // readStatus is the server's ReadStatus; nil without timelines or layered
@@ -25,9 +41,9 @@ func (s *Server) readStatus() *ReadStatus {
 	if !s.timelines {
 		return nil
 	}
-	status := &ReadStatus{Policy: s.configRead, Source: capFromConfig, Config: s.configRead}
+	status := &ReadStatus{Policy: readingOf(s.configRead), Source: capFromConfig, Config: readingOf(s.configRead)}
 	if read := s.settingsRead.Load(); read != nil {
-		status.Policy, status.Source = *read, capFromSettings
+		status.Policy, status.Source = readingOf(*read), capFromSettings
 	}
 	return status
 }
