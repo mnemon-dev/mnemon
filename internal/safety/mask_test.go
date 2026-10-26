@@ -24,6 +24,9 @@ func TestMaskHidesWhatItShould(t *testing.T) {
 		{"-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIB\n-----END RSA PRIVATE KEY----- done", "[secret] done", map[string]int{KindSecret: 1}},
 		{"My password is Hunter2!x and my PIN: 4821.", "My password is [hidden] and my PIN: [hidden].", map[string]int{KindPassword: 2}},
 		{"I forgot my password again", "I forgot my password again", map[string]int{}},
+		{"make sure the password is strong; Password: [Your password]", "make sure the password is strong; Password: [Your password]", map[string]int{}},
+		{"User(password=hashed_password)", "User(password=hashed_password)", map[string]int{}},
+		{"SLACK_TOKEN=xoxb-your-slack-token, real xoxb-123456789012-1234567890123-AbCdEfGhIjKl", "SLACK_TOKEN=xoxb-your-slack-token, real [secret]", map[string]int{KindSecret: 1}},
 		{"nothing sensitive here", "nothing sensitive here", map[string]int{}},
 	} {
 		got, counts := Mask(c.in)

@@ -23,10 +23,14 @@ var (
 	ibanPattern = regexp.MustCompile(`\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){2,7}(?: ?[A-Z0-9]{1,4})?\b`)
 	// Secrets of a known form: OpenAI- and DeepSeek-style keys, AWS access
 	// key ids, GitHub and Slack tokens, JSON web tokens, and private keys.
-	secretPattern = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}|\bAKIA[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36,}\b|\bxox[abprs]-[A-Za-z0-9-]{10,}|\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)`)
+	secretPattern = regexp.MustCompile(`\bsk-[A-Za-z0-9_-]{20,}|\bAKIA[0-9A-Z]{16}\b|\bgh[pousr]_[A-Za-z0-9]{36,}\b|\bxox[abprs]-\d+-[A-Za-z0-9-]{10,}|\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)`)
 	// A password said outright: the word, then "is", ":" or "=", then the
-	// value, one token of four or more characters.
-	passwordPattern = regexp.MustCompile(`(?i)\b(password|passwd|passcode|pin(?: code)?)(\s*(?:is|:|=)\s*)([^\s"'.,;]{4,})`)
+	// value, one token of four or more characters that holds a digit or a
+	// symbol other than "_" and opens with no bracket (a word such as
+	// "strong", a variable such as hashed_password, or a template's
+	// "[your password]", is not a password).
+	passwordPattern = regexp.MustCompile(`(?i)\b(password|passwd|passcode|pin(?: code)?)(\s*(?:is|:|=)\s*)([^\s"'.,;\[\]<>{}()]{4,})`)
+	passwordValue   = regexp.MustCompile(`[0-9!@#$%^&*+=?~-]`)
 )
 
 // Mask returns text with every sensitive value of a kind above hidden, and
@@ -41,6 +45,9 @@ func Mask(text string) (string, map[string]int) {
 	})
 	text = passwordPattern.ReplaceAllStringFunc(text, func(match string) string {
 		parts := passwordPattern.FindStringSubmatch(match)
+		if !passwordValue.MatchString(parts[3]) {
+			return match
+		}
 		counts[KindPassword]++
 		return parts[1] + parts[2] + "[hidden]"
 	})
