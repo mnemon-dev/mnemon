@@ -36,6 +36,11 @@ const (
 type EngineOptions struct {
 	EntityMode   EntityMode
 	TemporalMode TemporalMode
+	// ModelEntities are entities an extraction model found in the insight's
+	// content. Callers fetch them before the write transaction the engine runs
+	// in, because network I/O must not hold the lock. Nil means no model ran;
+	// see ResolveEntitiesWithModel.
+	ModelEntities []string
 }
 
 // NewEngine creates a new graph edge engine.
@@ -71,12 +76,13 @@ func (e *Engine) OnInsightCreated(insight *model.Insight) EdgeStats {
 	//    the existing entity index, so user vocabulary already represented in
 	//    the graph propagates into new insights without dictionary edits. On
 	//    error the index lookup falls through to nil and behavior matches the
-	//    non-indexed extractor.
+	//    non-indexed extractor. Entities from an extraction model, when given,
+	//    replace the acronym guess.
 	var knownEntities map[string]bool
 	if e.entityMode != EntityModeProvided {
 		knownEntities, _ = e.db.LoadKnownEntities()
 	}
-	insight.Entities = ResolveEntitiesIndexed(insight.Content, insight.Entities, e.entityMode, knownEntities)
+	insight.Entities = ResolveEntitiesWithModel(insight.Content, insight.Entities, e.entityMode, knownEntities, e.options.ModelEntities)
 
 	// 2. Temporal backbone + proximity edges
 	if e.options.TemporalMode != TemporalDisabled {

@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   directory and the legacy `~/.mavis/` directory migrated by current releases.
 - `mnemon setup --eject --target minimax-code` removes only the Mnemon skill
   while preserving other MiniMax Code skills.
+- Optional entity extraction model. With `MNEMON_EXTRACT_MODEL` and
+  `MNEMON_EXTRACT_ENDPOINT` set (for example Cloudflare Clairic on Workers AI),
+  `remember` and `import` ask the model for the entities of memories stored
+  without any, keep only names that appear in the memory as whole tokens, and
+  use them in place of the all-caps acronym guess. A missing or failing model
+  falls back to heuristic extraction with a one-line warning.
 
 ### Tests
 
@@ -46,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   cleanup.
 - Added MiniMax Code coverage for skill installation, current and legacy data
   directory detection, and scoped eject cleanup.
+- Added extraction client coverage for the Workers AI and bare response
+  shapes, whole-token grounding, limits, and error redaction, plus CLI coverage
+  for `remember` and `import` with a working, skipped, and failing model.
 
 ### Note
 

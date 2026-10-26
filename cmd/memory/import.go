@@ -76,6 +76,7 @@ exports are documented in docs/IMPORT.md.`,
 		importedSources := make(map[string]bool)
 		refreshIDs := make(map[string]bool)
 		results := make([]importResult, 0, len(draft.Insights))
+		extractor := newEntityExtractor()
 
 		for idx, di := range draft.Insights {
 			cat := model.Category(di.Category)
@@ -149,6 +150,8 @@ exports are documented in docs/IMPORT.md.`,
 				continue
 			}
 
+			modelEntities := extractor.entities(insight.Content, insight.Entities, graph.EntityModeMerge)
+
 			var writeErr error
 			err = db.InTransaction(func() error {
 				if err := db.InsertInsight(insight); err != nil {
@@ -163,8 +166,9 @@ exports are documented in docs/IMPORT.md.`,
 					}
 				}
 				engine := graph.NewEngineWithOptions(db, embedCache, graph.EngineOptions{
-					EntityMode:   graph.EntityModeMerge,
-					TemporalMode: graph.TemporalDisabled,
+					EntityMode:    graph.EntityModeMerge,
+					TemporalMode:  graph.TemporalDisabled,
+					ModelEntities: modelEntities,
 				})
 				engine.OnInsightCreated(insight)
 				if len(insight.Entities) > 0 {

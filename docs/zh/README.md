@@ -434,6 +434,10 @@ Sub-agent 委派是可选执行策略。当 runtime 支持时，主 agent 可以
 | `MNEMON_EMBED_API_KEY` | *（无）* | OpenAI 兼容服务器（oMLX、vLLM 等）的 Bearer 令牌 |
 | `MNEMON_EMBED_KEEP_ALIVE` | `30m` | 每次请求后 Ollama 保持嵌入模型加载的时长（OpenAI 兼容服务器忽略此项） |
 | `MNEMON_EMBED_DIMENSIONS` | *（原生维度）* | 可选的 Matryoshka 维度截断 |
+| `MNEMON_EXTRACT_MODEL` | *（空 = 禁用）* | 抽取模型（如 `clairic`）；`remember` 与 `import` 对未带实体的记忆调用它抽取实体 |
+| `MNEMON_EXTRACT_ENDPOINT` | *（无，必填）* | 抽取请求 POST 的完整 URL；云端端点会收到这些记忆的全文 |
+| `MNEMON_EXTRACT_API_KEY` | *（无）* | 抽取端点的 Bearer 令牌 |
+| `MNEMON_EXTRACT_TIMEOUT` | `15s` | 单次抽取的时间预算（Go duration） |
 
 每次自动删除均为软删除，以 `prune` 操作记录到 oplog，并通过触发命令的
 `auto_pruned_ids` 字段返回具体 ID。

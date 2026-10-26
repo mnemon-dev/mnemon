@@ -411,8 +411,20 @@ Nodes are colored by category (decision, fact, insight, preference, context); ed
 | `MNEMON_EMBED_API_KEY` | (none) | Bearer token for OpenAI-compatible servers |
 | `MNEMON_EMBED_KEEP_ALIVE` | 30m | How long Ollama keeps the embedding model loaded after each request |
 | `MNEMON_EMBED_DIMENSIONS` | (native) | Embedding dimensions; set to truncate (e.g., `256` for Matryoshka models) |
+| `MNEMON_EXTRACT_MODEL` | (empty = disabled) | System One extraction model (`clairic`) that `remember` and `import` ask for the entities of memories stored without any |
+| `MNEMON_EXTRACT_ENDPOINT` | (none, required) | Full URL that extraction requests are POSTed to |
+| `MNEMON_EXTRACT_API_KEY` | (none) | Bearer token for the extraction endpoint |
+| `MNEMON_EXTRACT_TIMEOUT` | `15s` | Time budget for one extraction (Go duration) |
 | `MNEMON_MAX_INSIGHTS` | `1000` | Active-insight ceiling before auto-pruning starts; `0` disables auto-pruning |
 | `MNEMON_AUTO_PRUNE_MIN_AGE` | `24h` | Minimum age before automatic pruning; accepts durations such as `24h`, integer days such as `7d`, or `0` to disable the grace period |
+
+`MNEMON_EXTRACT_MODEL` sends one request per memory stored without entities,
+with the full memory text as `state` and one `list` field named `entities`. For
+Clairic on Cloudflare Workers AI the endpoint is
+`https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/run/@cf/cloudflare/clairic`.
+Only names found in the memory as whole tokens are kept, and they replace the
+all-caps acronym guess. On failure mnemon warns once on stderr and falls back to
+heuristic extraction.
 
 Auto-prune may temporarily leave the active count above the ceiling when every
 eligible insight is still inside the grace period. Age is measured from local

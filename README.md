@@ -546,6 +546,29 @@ export MNEMON_EMBED_API_KEY=pa-...
 mnemon embed --status
 ```
 
+**Entity extraction model** (optional, opt-in by environment):
+
+| Environment Variable | Default | Description |
+|---|---|---|
+| `MNEMON_EXTRACT_MODEL` | *(empty = disabled)* | System One extraction model name, e.g. `clairic` |
+| `MNEMON_EXTRACT_ENDPOINT` | *(none, required)* | Full URL that requests are POSTed to, e.g. `https://api.cloudflare.com/client/v4/accounts/<account-id>/ai/run/@cf/cloudflare/clairic` |
+| `MNEMON_EXTRACT_API_KEY` | *(none)* | Bearer token, e.g. a Cloudflare API token with Workers AI access |
+| `MNEMON_EXTRACT_TIMEOUT` | `15s` | Time budget for one extraction (Go duration) |
+
+When `MNEMON_EXTRACT_MODEL` is set, `mnemon remember` and `mnemon import` ask
+the model for the entities of every memory that arrives without any (no
+`--entities` in `merge` mode, or `--entity-mode auto`). Mnemon keeps only names
+that appear in the memory verbatim as whole tokens. They replace the all-caps
+acronym guess; CamelCase, file path, URL, @mention, title-mark, dictionary, and
+known-entity matches still apply. Memories that arrive with entities, and
+`recall` queries, are unchanged. If the model is missing or fails, mnemon
+prints a one-line warning to stderr and falls back to heuristic extraction;
+`import` stops asking after the first failure.
+
+> **Privacy:** extraction sends the full text of each such memory to
+> `MNEMON_EXTRACT_ENDPOINT`. Leave `MNEMON_EXTRACT_MODEL` unset if memories must
+> not leave the machine.
+
 ## Development
 
 ```bash
