@@ -293,6 +293,50 @@ func TestWriteConversationRecords(t *testing.T) {
 	}
 }
 
+func TestWriteConversationKeepsWhoseEachLineIs(t *testing.T) {
+	ctx := context.Background()
+	s, _ := agentStore(t)
+	// A long user message wraps over chunks; whitespace runs collapse and the
+	// space at a wrap is dropped, so offsets count the collapsed text.
+	long := strings.Repeat("word ", 230) + "  tail"
+	req := ConversationRequest{ID: "own", SessionID: "s1", Messages: []ConversationMessage{
+		{Role: "user", Content: long}, {Role: "assistant", Content: "short reply"}, {Role: "Caroline", Content: "and me"}}}
+	result, err := WriteConversation(ctx, s, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	collapsed := collapseSpace(long)
+	var seen []lineOwner
+	for _, ref := range result.Records {
+		child := fetchValue(t, s, result.Revision, ref.ID)
+		owners := chunkLines(child.Data)
+		_, body, _ := strings.Cut(child.Content, "\n")
+		lines := strings.Split(body, "\n")
+		if owners == nil || len(owners) != len(lines) {
+			t.Fatalf("chunk %s: lines %v for %d body lines", ref.ID, child.Data["lines"], len(lines))
+		}
+		for i, owner := range owners {
+			text := lines[i]
+			if owner.offset == 0 {
+				text = strings.TrimPrefix(text, owner.role+": ")
+			}
+			if owner.role == "user" && !strings.HasPrefix(collapsed[owner.offset:], text) {
+				t.Fatalf("line %q is not at offset %d of the message", text, owner.offset)
+			}
+		}
+		seen = append(seen, owners...)
+	}
+	if len(seen) < 4 || seen[0] != (lineOwner{"user", 0}) || seen[1].role != "user" || seen[1].offset == 0 ||
+		seen[len(seen)-2] != (lineOwner{"assistant", 0}) || seen[len(seen)-1] != (lineOwner{"Caroline", 0}) {
+		t.Fatalf("owners %+v", seen)
+	}
+	// What is stored is unchanged: the parent is the author's packing.
+	parent, chunks, err := PackConversation(req)
+	if err != nil || fetchValue(t, s, result.Revision, result.Document.ID).Content != parent || len(chunks) != len(result.Records) {
+		t.Fatal("the packing changed", err)
+	}
+}
+
 func TestWriteConversationNormalizesTimeToUTC(t *testing.T) {
 	s, _ := agentStore(t)
 	zone := time.FixedZone("UTC+8", 8*3600)

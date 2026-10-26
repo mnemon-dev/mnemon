@@ -42,12 +42,15 @@ const (
 	capFromSettings = "settings"
 )
 
-// budgetsFile is the format of aml-serve's settings file; a nil cap is
-// unlimited.
+// budgetsFile is the format of aml-serve's settings file: budget caps, a nil
+// cap unlimited, and (version 2) the role reading consolidation reads by. A
+// file without a role reading stays version 1, which binaries that predate
+// it read.
 type budgetsFile struct {
-	Version   int                 `json:"version"`
-	Budgets   map[string]*float64 `json:"budgets"`
-	UpdatedAt string              `json:"updatedAt,omitempty"`
+	Version   int                      `json:"version"`
+	Budgets   map[string]*float64      `json:"budgets"`
+	Read      *memoryagent.RoleReading `json:"read,omitempty"`
+	UpdatedAt string                   `json:"updatedAt,omitempty"`
 }
 
 // capsIn is caps as a settings file spells them: an unlimited cap is null.
@@ -86,26 +89,41 @@ func fileCaps(what, path string, caps map[string]*float64, uses func(string) boo
 	return out, nil
 }
 
-// readBudgetsFile reads aml-serve's settings file at path: its caps by kind,
-// none when it does not exist. It refuses what readPrivateFile refuses, and
-// a file that is not the format: another version or field, no budgets, an
-// updatedAt that is not an RFC 3339 time, or a cap fileCaps refuses (uses
-// says which kinds the configuration has models of).
-func readBudgetsFile(path string, uses func(string) bool) (map[string]float64, error) {
+// readSettingsFile reads aml-serve's settings file at path: its caps by kind
+// and its role reading (normalized), none of either when it does not exist.
+// It refuses what readPrivateFile refuses, and a file that is not the format:
+// another version or field, version 1 without budgets or with a role reading,
+// version 2 without one, an updatedAt that is not an RFC 3339 time, a cap
+// fileCaps refuses (uses says which kinds the configuration has models of),
+// or a role reading that is not one.
+func readSettingsFile(path string, uses func(string) bool) (map[string]float64, *memoryagent.RoleReading, error) {
 	raw, exists, err := readPrivateFile(settingsWhat, path)
 	if err != nil || !exists {
-		return map[string]float64{}, err
+		return map[string]float64{}, nil, err
 	}
 	var file budgetsFile
-	if decodeStrict(raw, &file) != nil || file.Version != 1 || file.Budgets == nil {
-		return nil, fmt.Errorf(`%s %s is malformed: it must be {"version":1,"budgets":{"deepseek":<cap or null>,"jev":<cap or null>},"updatedAt":"<RFC 3339>"}`, settingsWhat, path)
+	if decodeStrict(raw, &file) != nil || file.Version == 1 && (file.Budgets == nil || file.Read != nil) || file.Version == 2 && file.Read == nil || file.Version != 1 && file.Version != 2 {
+		return nil, nil, fmt.Errorf(`%s %s is malformed: it must be {"version":1,"budgets":{"deepseek":<cap or null>,"jev":<cap or null>},"updatedAt":"<RFC 3339>"}, or version 2 with a role reading in "read"`, settingsWhat, path)
 	}
 	if file.UpdatedAt != "" {
 		if _, err := time.Parse(time.RFC3339, file.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("%s %s is malformed: its updatedAt is not an RFC 3339 time", settingsWhat, path)
+			return nil, nil, fmt.Errorf("%s %s is malformed: its updatedAt is not an RFC 3339 time", settingsWhat, path)
 		}
 	}
-	return fileCaps(settingsWhat, path, file.Budgets, uses, maxBudgetCap)
+	if file.Read != nil {
+		read, err := file.Read.Normalized()
+		if err != nil {
+			return nil, nil, fmt.Errorf("%s %s is malformed: its read: %v", settingsWhat, path, err)
+		}
+		file.Read = &read
+	}
+	caps := map[string]float64{}
+	if file.Budgets != nil {
+		if caps, err = fileCaps(settingsWhat, path, file.Budgets, uses, maxBudgetCap); err != nil {
+			return nil, nil, err
+		}
+	}
+	return caps, file.Read, nil
 }
 
 // capText is a cap as a log line says it: its amount, or unlimited.
@@ -311,34 +329,53 @@ func (s *Server) changeCaps(w http.ResponseWriter, r *http.Request, kinds []stri
 // failed write changes nothing; the caps were checked, so the swap cannot
 // fail.
 func (s *Server) writeCaps(ctx context.Context, change func(file map[string]float64)) error {
+	return s.writeSettings(ctx, func(caps map[string]float64, _ **memoryagent.RoleReading) { change(caps) })
+}
+
+// writeSettings is one change of the settings file: change is made to a copy
+// of its caps and to its role reading, which are written atomically together
+// (the file is removed once it holds neither, and is version 2 only while it
+// holds a role reading), then set: the caps into the budget, the
+// configuration's for the kinds it no longer holds, and the role reading for
+// the consolidation jobs that start from then on. One change runs at a time
+// (capsWriter), waiting for the one before it until ctx ends. A failed write
+// changes nothing; what is written was checked, so the swap cannot fail.
+func (s *Server) writeSettings(ctx context.Context, change func(caps map[string]float64, read **memoryagent.RoleReading)) error {
 	select {
 	case s.capsWriter <- struct{}{}:
 	case <-ctx.Done():
 		return ctx.Err()
 	}
 	defer func() { <-s.capsWriter }()
-	file := maps.Clone(*s.settingsCaps.Load())
-	change(file)
+	file, read := maps.Clone(*s.settingsCaps.Load()), s.settingsRead.Load()
+	change(file, &read)
 	var err error
-	if len(file) == 0 {
+	if len(file) == 0 && read == nil {
 		err = removePrivateFile(s.config.SettingsFile)
 	} else {
-		raw, _ := json.Marshal(budgetsFile{Version: 1, Budgets: capsIn(file), UpdatedAt: time.Now().UTC().Format(time.RFC3339)})
+		version := 1
+		if read != nil {
+			version = 2
+		}
+		raw, _ := json.Marshal(budgetsFile{Version: version, Budgets: capsIn(file), Read: read, UpdatedAt: time.Now().UTC().Format(time.RFC3339)})
 		err = writePrivateFile(s.config.SettingsFile, raw)
 	}
 	if err != nil {
 		return fmt.Errorf("writing %s %s: %w", settingsWhat, s.config.SettingsFile, err)
 	}
-	caps := map[string]float64{}
-	for _, kind := range s.cappedKinds() {
-		caps[kind] = s.configCaps[kind]
-		if cap, ok := file[kind]; ok {
-			caps[kind] = cap
+	if s.budget != nil {
+		caps := map[string]float64{}
+		for _, kind := range s.cappedKinds() {
+			caps[kind] = s.configCaps[kind]
+			if cap, ok := file[kind]; ok {
+				caps[kind] = cap
+			}
+		}
+		if err := s.budget.SetCaps(caps); err != nil {
+			return err
 		}
 	}
-	if err := s.budget.SetCaps(caps); err != nil {
-		return err
-	}
 	s.settingsCaps.Store(&file)
+	s.settingsRead.Store(read)
 	return nil
 }

@@ -438,9 +438,9 @@ func TestIndustrialConfigLoadsAndStarts(t *testing.T) {
 		// cap it), delivered in time order after the consolidation blocks.
 		View: &memoryagent.ViewConfig{MaxItems: 100, MaxCharacters: 240000, Order: "time"},
 		// Layered consolidation: DeepSeek extracts each batch alone, reading
-		// every record whole whatever its role (even reading), and JEV links
-		// it into the memory. No index routes: Index stays unset.
-		Consolidation: &memoryagent.ConsolidationConfig{Mode: "layered", EvenReading: true},
+		// every message whole whatever its role (v0.3.0's even reading), and
+		// JEV links it into the memory. No index routes: Index stays unset.
+		Consolidation: &memoryagent.ConsolidationConfig{Mode: "layered", Read: &memoryagent.RoleReading{Default: memoryagent.ReadFull}},
 		// DeepSeek without thinking: a thinking planner can return empty plans
 		// under the 200/400-token planning caps.
 		Planner: &memoryagent.ModelConfig{Kind: "deepseek", Model: "deepseek-flash", KeyEnv: "DEEPSEEK_API_KEY"},

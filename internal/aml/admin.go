@@ -75,6 +75,10 @@ const (
 //	providerKeys     by key kind the configuration uses (deepseek, jev): where its key comes from,
 //	                 "account" (the key file), "host" (the environment) or "none", and the key's
 //	                 fingerprint, the first 12 hex digits of its SHA-256 ("" with none); never a key
+//	read             the role reading consolidation reads by (policy), where it comes from (source:
+//	                 "config", or "settings" for one the settings file sets) and the configuration's
+//	                 (config), which DELETE /admin/v1/read goes back to; absent without timelines or
+//	                 layered consolidation
 type AdminStatus struct {
 	StartedAt       time.Time                        `json:"startedAt"`
 	Adds            int64                            `json:"adds"`
@@ -95,6 +99,7 @@ type AdminStatus struct {
 	OpenStores      int                              `json:"openStores"`
 	Version         string                           `json:"version"`
 	ProviderKeys    map[string]memoryagent.KeyStatus `json:"providerKeys"`
+	Read            *ReadStatus                      `json:"read,omitempty"`
 }
 
 // AdminHandler serves the operator's endpoints: GET /metrics (Prometheus),
@@ -119,6 +124,8 @@ func (s *Server) adminRoutes() http.Handler {
 	mux.HandleFunc("DELETE /admin/v1/provider-keys", s.revertProviderKeys)
 	mux.HandleFunc("PUT /admin/v1/budgets", s.setBudgetCaps)
 	mux.HandleFunc("DELETE /admin/v1/budgets", s.revertBudgetCaps)
+	mux.HandleFunc("PUT /admin/v1/read", s.setRoleReading)
+	mux.HandleFunc("DELETE /admin/v1/read", s.revertRoleReading)
 	// The profiler's handlers are registered here by name. Importing
 	// net/http/pprof also registers them on http.DefaultServeMux, a side
 	// effect that is inert: no server of the process serves the default mux.
@@ -221,6 +228,7 @@ func (s *Server) status(ctx context.Context) AdminStatus {
 		OpenStores:      s.users.open(),
 		Version:         s.config.Version,
 		ProviderKeys:    s.keys.Status(),
+		Read:            s.readStatus(),
 	}
 }
 

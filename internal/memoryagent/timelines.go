@@ -172,15 +172,27 @@ var (
 	sessionHeading       = regexp.MustCompile(`^Conversation (\S+) on (\d{4}/\d{2}/\d{2})[^\n]*\n?`)
 )
 
-// readable is what a consolidating model reads of a record, or !ok for
-// nothing (C:50-63). A conversation chunk holding user text is read whole, the
-// start of an assistant message up to assistantChars UTF-16 units, and a chunk
-// that only continues an assistant message not at all. Unlike the author's, a
-// chunk holding a line of another speaker (otherSpeaker: system, a name,
-// unknown) is read whole too. Other records are read whole, up to 2000 units,
-// under the first 40 units of their title. A last line that is a JSON object is
-// the author's data line and is not read.
-func readable(title, content string, assistantChars int) (header, body string, ok bool) {
+// readable is what a consolidating model reads of a record under a role
+// reading, or !ok for nothing (C:50-63). A conversation chunk whose data.lines
+// say whose each line is (WriteConversation) is read line by line, as the
+// reading reads the role of the line's message: whole, the part within the
+// first Excerpt units of the message's text, or not at all; a chunk none of
+// whose lines is read is not read. A conversation chunk written before the
+// lines were kept is read whole: its text does not say whose a wrapped line
+// is. Other records are read whole, up to 2000 units, under the first 40
+// units of their title. A last line that is a JSON object is the author's
+// data line and is not read.
+func readable(reading RoleReading, title, content string, data map[string]any) (header, body string, ok bool) {
+	if owners := chunkLines(data); owners != nil {
+		heading, rest, found := strings.Cut(content, "\n")
+		if lines := strings.Split(rest, "\n"); found && len(lines) == len(owners) {
+			body, ok = readLines(reading, lines, owners)
+			if !ok {
+				return "", "", false
+			}
+			return chunkHeader(heading), body, true
+		}
+	}
 	if lines := strings.Split(content, "\n"); isDataLine(lines[len(lines)-1]) {
 		content = strings.Join(lines[:len(lines)-1], "\n")
 	}
@@ -195,32 +207,77 @@ func readable(title, content string, assistantChars int) (header, body string, o
 		return jsSlice(title, 0, 40), jsSlice(content, 0, 2000), true
 	}
 	header, body = session[2]+" (session "+session[1]+")", content[len(session[0]):]
-	switch {
-	case strings.HasPrefix(body, "user: ") || strings.Contains(body, "\nuser: "):
-		return header, body, true
-	case strings.HasPrefix(body, "assistant: "):
-		if jsLen(body) > assistantChars {
-			body = jsSlice(body, 0, assistantChars) + " …"
-		}
-		return header, body, true
-	case otherSpeaker(body):
-		return header, body, true
+	if strings.TrimFunc(body, isJSSpace) == "" {
+		return "", "", false
 	}
-	return "", "", false
+	return header, body, true
 }
 
-// otherSpeaker reports whether a chunk body has a line that begins a message
-// of a speaker other than user and assistant: a `speaker: ` prefix whose
-// speaker is one word of at most maxRoleBytes. A line that continues a wrapped
-// message starts mid-text, so a colon after its first word is no speaker.
-func otherSpeaker(body string) bool {
-	for _, line := range strings.Split(body, "\n") {
-		speaker, _, found := strings.Cut(line, ": ")
-		if found && speaker != "" && len(speaker) <= maxRoleBytes && speaker != "user" && speaker != "assistant" && !strings.ContainsFunc(speaker, isJSSpace) {
-			return true
+// lineOwner is an entry of a conversation chunk's data.lines: the role of the
+// message its line belongs to, and the units of the message's text before
+// the line.
+type lineOwner struct {
+	role   string
+	offset int
+}
+
+// chunkLines is a record's data.lines, or nil when it has none or they are
+// not the format.
+func chunkLines(data map[string]any) []lineOwner {
+	raw, ok := data["lines"].([]any)
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	owners := make([]lineOwner, len(raw))
+	for i, item := range raw {
+		entry, _ := item.(map[string]any)
+		role, isRole := entry["role"].(string)
+		offset, isOffset := entry["offset"].(float64)
+		if !isRole || !isOffset || offset < 0 {
+			return nil
+		}
+		owners[i] = lineOwner{role: role, offset: int(offset)}
+	}
+	return owners
+}
+
+// readLines is what reading reads of a chunk's lines, owners[i] saying whose
+// lines[i] is: the lines it reads, an excerpted message's last line cut with
+// " …", joined by newlines; !ok when it reads none. The "role: " prefix of a
+// message's first line does not count against the excerpt.
+func readLines(reading RoleReading, lines []string, owners []lineOwner) (string, bool) {
+	var kept []string
+	for i, line := range lines {
+		owner := owners[i]
+		switch reading.modeOf(owner.role) {
+		case ReadFull:
+			kept = append(kept, line)
+		case ReadExcerpt:
+			room := reading.Excerpt - owner.offset
+			if room <= 0 {
+				continue
+			}
+			prefix := ""
+			if owner.offset == 0 && strings.HasPrefix(line, owner.role+": ") {
+				prefix, line = owner.role+": ", line[len(owner.role)+2:]
+			}
+			if jsLen(line) > room {
+				line = jsSlice(line, 0, room) + " …"
+			}
+			kept = append(kept, prefix+line)
 		}
 	}
-	return false
+	return strings.Join(kept, "\n"), len(kept) > 0
+}
+
+// chunkHeader is what a conversation chunk's heading line shows the model:
+// the date and session as readable has them, or the heading itself when it
+// has no date.
+func chunkHeader(heading string) string {
+	if session := sessionHeading.FindStringSubmatch(heading + "\n"); session != nil {
+		return session[2] + " (session " + session[1] + ")"
+	}
+	return strings.TrimSuffix(heading, ":")
 }
 
 // isDataLine is the author's /^\s*\{.*\}\s*$/: JavaScript whitespace around
@@ -228,34 +285,6 @@ func otherSpeaker(body string) bool {
 func isDataLine(line string) bool {
 	t := strings.TrimFunc(line, isJSSpace)
 	return len(t) >= 2 && t[0] == '{' && t[len(t)-1] == '}' && !strings.ContainsAny(t, "\r\n  ")
-}
-
-// evenReadable is how evenReading reads a record: whole, like every other,
-// with no rule by role. A leading session heading becomes the header, as
-// readable has it, so that the record shows its date; otherwise the title
-// does. Only an empty record is not read.
-func evenReadable(title, content string) (header, body string, ok bool) {
-	session := authorSessionHeading.FindStringSubmatch(content)
-	if session == nil {
-		session = sessionHeading.FindStringSubmatch(content)
-	}
-	header, body = jsSlice(title, 0, 40), content
-	if session != nil {
-		header, body = session[2]+" (session "+session[1]+")", content[len(session[0]):]
-	}
-	if strings.TrimFunc(body, isJSSpace) == "" {
-		return "", "", false
-	}
-	return header, body, true
-}
-
-// recordReader is how the agent's consolidation reads a record:
-// evenReadable with evenReading, else readable with its assistant cut.
-func (a *Agent) recordReader(assistantChars int) func(title, content string) (string, string, bool) {
-	if a.config.Consolidation.readsEvenly() {
-		return evenReadable
-	}
-	return func(title, content string) (string, string, bool) { return readable(title, content, assistantChars) }
 }
 
 // nextBatch is the records until their text reaches chars UTF-16 units, or,
@@ -826,7 +855,8 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 	if layered {
 		state.Mode = settings.Mode
 	}
-	revision, read, unread, err := a.readNewRecords(ctx, req.Scope, &state, settings.AssistantCharacters, settings.MaxBatches*settings.BatchCharacters)
+	reading := a.roleReading()
+	revision, read, unread, err := a.readNewRecords(ctx, req.Scope, &state, reading, settings.MaxBatches*settings.BatchCharacters)
 	if err != nil {
 		return ConsolidateResult{}, err
 	}
@@ -855,9 +885,9 @@ func (a *Agent) consolidateTimelines(ctx context.Context, req ConsolidateRequest
 			memory, batches, failed, drops := cloneMemory(state.Memory), state.Batches, state.Failed, len(result.Drops)
 			dirty = true
 			if n == 0 && a.dropDue(state) {
-				foldErr = a.foldDropping(ctx, model, timelinesFold, &state, batch, &result)
+				foldErr = a.foldDropping(ctx, model, readFold(timelinesFold, reading), &state, batch, &result)
 			} else {
-				foldErr = a.foldTimelines(ctx, model, timelinesFold, &state, batch, true, &result)
+				foldErr = a.foldTimelines(ctx, model, readFold(timelinesFold, reading), &state, batch, true, &result)
 			}
 			if foldErr != nil {
 				state.Memory, state.Batches, state.Failed = memory, batches, failed
@@ -1011,7 +1041,7 @@ func (a *Agent) lockTimelines(ctx context.Context, scope records.Scope) (func(),
 // a job after the pending records drain. A record longer than bound is read
 // when nothing is pending, so none can block. It returns the revision read,
 // the number of records read and the number left unread.
-func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *timelineState, assistantChars, bound int) (string, int, int, error) {
+func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *timelineState, reading RoleReading, bound int) (string, int, int, error) {
 	revision, heads, err := a.store.Heads(ctx, "", scope)
 	if err != nil {
 		return "", 0, 0, err
@@ -1027,7 +1057,7 @@ func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *
 	for _, record := range state.Pending {
 		size += jsLen(record.Header) + jsLen(record.Text)
 	}
-	read, reader := 0, a.recordReader(assistantChars)
+	read := 0
 	for start := 0; start < len(fresh); start += 500 {
 		part := fresh[start:min(start+500, len(fresh))]
 		ids := make([]string, len(part))
@@ -1047,7 +1077,7 @@ func (a *Agent) readNewRecords(ctx context.Context, scope records.Scope, state *
 		}
 		for _, head := range part {
 			if value, ok := values[head.ID]; ok {
-				if header, body, ok := reader(value.Title, value.Content); ok {
+				if header, body, ok := readable(reading, value.Title, value.Content, value.Data); ok {
 					units := jsLen(header) + jsLen(body)
 					if len(state.Pending) > 0 && size+units > bound {
 						return revision, read, len(fresh) - read, nil

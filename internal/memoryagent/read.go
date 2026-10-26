@@ -57,6 +57,11 @@ type Config struct {
 	// planner folds; either way every fold asks for at most 8192 output
 	// tokens.
 	Consolidator *ModelConfig `json:"consolidator,omitempty"`
+	// ReadOverride, when it gives a policy, is the role reading consolidation
+	// reads by instead of Consolidation.Read: a service's run-time setting,
+	// read at every job. It is not configuration, so it stays out of the
+	// JSON and View.policy.
+	ReadOverride func() *RoleReading `json:"-"`
 }
 
 const (
@@ -66,27 +71,27 @@ const (
 
 // ConsolidationConfig sets the timelines or layered consolidation. Zero
 // fields take the reference system's defaults: batches of 10000 characters
-// of readable text, 240 characters of an assistant message, 16 batches per
-// job. LinkCandidates and Parallel are layered settings: the existing
-// threads (and keys) JEV compares each new thread (and key) with, 8 by
-// default, and the extraction calls a job keeps in flight, 4 by default.
+// of readable text, 16 batches per job. LinkCandidates and Parallel are
+// layered settings: the existing threads (and keys) JEV compares each new
+// thread (and key) with, 8 by default, and the extraction calls a job keeps
+// in flight, 4 by default. Read is how much of each role's messages the
+// folding model reads; unset, DefaultRoleReading.
 type ConsolidationConfig struct {
-	Mode                string `json:"mode,omitempty"`
-	BatchCharacters     int    `json:"batchCharacters,omitempty"`
-	AssistantCharacters int    `json:"assistantCharacters,omitempty"`
-	MaxBatches          int    `json:"maxBatches,omitempty"`
-	LinkCandidates      int    `json:"linkCandidates,omitempty"`
-	Parallel            int    `json:"parallel,omitempty"`
-	// EvenReading (layered mode) reads every record whole and alike
-	// (evenReadable), and its extraction prompt no longer says assistant
-	// messages are cut short (layeredEvenFold).
-	EvenReading bool `json:"evenReading,omitempty"`
+	Mode            string       `json:"mode,omitempty"`
+	BatchCharacters int          `json:"batchCharacters,omitempty"`
+	MaxBatches      int          `json:"maxBatches,omitempty"`
+	LinkCandidates  int          `json:"linkCandidates,omitempty"`
+	Parallel        int          `json:"parallel,omitempty"`
+	Read            *RoleReading `json:"read,omitempty"`
 }
 
-// readsEvenly reports whether the mode reads every record whole and alike:
-// layered mode with EvenReading.
-func (c *ConsolidationConfig) readsEvenly() bool {
-	return c != nil && c.EvenReading
+// RoleReading is the configuration's role reading, normalized:
+// DefaultRoleReading when it sets none.
+func (c *ConsolidationConfig) RoleReading() RoleReading {
+	if c == nil || c.Read == nil {
+		return DefaultRoleReading()
+	}
+	return *c.Read
 }
 
 // Timelines reports whether the mode keeps a timelines state ("timelines"
@@ -249,6 +254,8 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	// The model cache belongs to the models; left out of the agent's
 	// config, it stays out of View.policy.
 	own.ModelCache = ""
+	// The run-time role reading is no JSON: the copy keeps the caller's.
+	own.ReadOverride = config.ReadOverride
 	if own.Strategy == strategySimple {
 		if own.View == nil {
 			own.View = &ViewConfig{}
@@ -285,9 +292,6 @@ func (v *ViewConfig) normalize() error {
 // normalize fills the timelines (and layered) defaults and checks the
 // bounds. Mode "" is the v1 fold, which takes no settings.
 func (c *ConsolidationConfig) normalize() error {
-	if c.EvenReading && c.Mode != consolidationLayered {
-		return errors.New("evenReading requires consolidation mode \"layered\"")
-	}
 	switch c.Mode {
 	case "":
 		if !reflect.ValueOf(*c).IsZero() {
@@ -314,14 +318,18 @@ func (c *ConsolidationConfig) normalize() error {
 	if c.BatchCharacters == 0 {
 		c.BatchCharacters = 10000
 	}
-	if c.AssistantCharacters == 0 {
-		c.AssistantCharacters = 240
-	}
 	if c.MaxBatches == 0 {
 		c.MaxBatches = 16
 	}
-	if c.BatchCharacters < 100 || c.BatchCharacters > 50000 || c.AssistantCharacters < 0 || c.AssistantCharacters > 4000 || c.MaxBatches < 1 || c.MaxBatches > 64 {
-		return errors.New("timelines consolidation requires batchCharacters 100–50000, assistantCharacters 0–4000 and maxBatches 1–64")
+	if c.BatchCharacters < 100 || c.BatchCharacters > 50000 || c.MaxBatches < 1 || c.MaxBatches > 64 {
+		return errors.New("timelines consolidation requires batchCharacters 100–50000 and maxBatches 1–64")
+	}
+	if c.Read != nil {
+		read, err := c.Read.Normalized()
+		if err != nil {
+			return fmt.Errorf("consolidation.read: %w", err)
+		}
+		c.Read = &read
 	}
 	return nil
 }

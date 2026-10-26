@@ -114,14 +114,17 @@ and works as it always did; `mnemon_aml_admin_auth_failures_total` stays 0.
 | `DELETE /admin/v1/provider-keys?kind=` | back to the host's keys |
 | `PUT /admin/v1/budgets` | budget caps at run time, a cap or unlimited per kind |
 | `DELETE /admin/v1/budgets?kind=` | back to the configuration's caps |
+| `PUT /admin/v1/read` | the role reading consolidation reads by, at run time |
+| `DELETE /admin/v1/read` | back to the configuration's role reading |
 | `/debug/pprof/` and below | Go's profiler |
 | anything else | 404 `{"error":"not found"}` |
 
 `/metrics`, `/ready`, `/admin/status` and `/admin/v1/stores` are for GET, and
-`/admin/v1/provider-keys` and `/admin/v1/budgets` for PUT and DELETE only (the keys are
-write-only: no route answers them; the caps are in `/admin/status`). Any other method on them is
-answered by the 404 route. The answers of `/ready`, `/admin/status`, `/admin/v1/provider-keys`,
-`/admin/v1/budgets` and (when it succeeds) `/admin/v1/stores` are `Cache-Control: no-store`.
+`/admin/v1/provider-keys`, `/admin/v1/budgets` and `/admin/v1/read` for PUT and DELETE only (the
+keys are write-only: no route answers them; the caps and the role reading are in
+`/admin/status`). Any other method on them is answered by the 404 route. The answers of `/ready`,
+`/admin/status`, `/admin/v1/provider-keys`, `/admin/v1/budgets`, `/admin/v1/read` and (when it
+succeeds) `/admin/v1/stores` are `Cache-Control: no-store`.
 
 ### `GET /metrics`
 
@@ -400,6 +403,40 @@ or repeated `kind`, or a query string that does not parse, is
 `400 {"error":"invalid","field":"kind"}`; a kind the configuration has no model of `409
 unknown_kind`; without `--settings-file`, `409 no_settings_file`.
 
+### `PUT /admin/v1/read`
+
+Sets the role reading: how much of each role's messages consolidation reads, written to the
+settings file and read by the consolidation jobs that start from then on. The records they read
+from then on are read by it; records already pending keep how they were read, and nothing
+consolidated is read again. The body is a complete role reading, at most 4 KiB:
+
+```json
+{"default":"full","excerpt":240,"roles":{"user":"full","assistant":"excerpt","tool":"ignore"}}
+```
+
+- `default` is `full` (the whole message), `excerpt` (the first `excerpt` UTF-16 units of its
+  text, the `role: ` prefix not counted) or `ignore` (not read), for every role `roles` does not
+  name.
+- `excerpt` is 40 to 2,000, 240 when absent.
+- `roles` maps a role to its mode. Roles compare without case and are trimmed. A role is 1–64
+  bytes of single-line UTF-8, and two that differ only in case are refused.
+
+The reply, like `/admin/status`'s `read`, is the reading read by (`policy`, complete), its
+`source` (`settings`) and the configuration's (`config`), which DELETE goes back to. One INFO
+line: `role reading set: {…}`. A reading that is not one is `400 {"error":"invalid","field":…}`,
+the field `default`, `excerpt`, `roles` (a role name that is not one), `roles.<role>` (its mode, or
+a second spelling of it) or `body`; a larger body `413 too_large`; without `--settings-file`, `409
+no_settings_file`; without timelines or layered consolidation, `409 no_consolidation`. A
+refusal changes nothing. Reading only changes what the consolidating model reads: every message
+is stored and searched whole.
+
+### `DELETE /admin/v1/read`
+
+Goes back to the configuration's role reading (`consolidation.read`, or the default: users whole,
+the first 240 units of each assistant message, other roles whole). The reading leaves the settings
+file, which is removed once it holds no cap either. The reply is the one above, `source` `config`.
+One INFO line: `role reading reverted to the configuration's: {…}`.
+
 ### The settings file
 
 `--settings-file PATH` names it: in the memory cloud `/var/lib/mnemon-aml/<n>/settings.json`,
@@ -409,7 +446,14 @@ beside the key file and outside the data root (aml-serve refuses a path inside i
 {"version":1,"budgets":{"deepseek":800,"jev":null},"updatedAt":"<RFC 3339>"}
 ```
 
-Either kind may be absent, and `null` is unlimited. A missing file means the configuration's
+and, while it holds a role reading, version 2 with the reading in `read`:
+
+```json
+{"version":2,"budgets":{"deepseek":800},"read":{"default":"full","excerpt":240,"roles":{}},"updatedAt":"<RFC 3339>"}
+```
+
+A file without a role reading stays version 1, so a binary that predates the role reading still
+starts once the reading is reverted. Either kind may be absent, and `null` is unlimited. A missing file means the configuration's
 caps. It is written as the key file is (atomically, mode 0600, the service user's), and a start
 is refused by the key file's rules: a file that is not a regular one, that its group or others
 may read or write, that another user owns, that is larger than 64 KiB or malformed (another

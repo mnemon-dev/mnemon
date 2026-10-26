@@ -100,8 +100,9 @@ may do (see step 6 below).
    in: a record JEV did not judge is not delivered.
 6. **Consolidation layer.** Records are folded in batches into threads of dated events, facts
    with value histories and standing directives, in two steps (layered consolidation). A model
-   reads each batch of records on its own, every record whole whatever its role (even reading:
-   no speaker is skipped or cut short), and writes its events, facts and directives; then
+   reads each batch of records on its own, every message whole whatever its role
+   (`consolidation.read: {"default": "full"}`, v0.3.0's even reading: no speaker is skipped or
+   cut short), and writes its events, facts and directives; then
    JEV links each batch to the memory so far, in batch order, by asking whether a new thread
    continues a stored one, whether a new fact is the same attribute of the same thing as a
    stored fact, and whether its value contradicts the stored one. At read time BM25 shortlists
@@ -237,6 +238,15 @@ on a scratch instance there): its values then replace the local ones.
   the operators' Telegram chat (or a Feishu or WeCom group) every minute, independently of the
   console.
 - Retrieval is BM25 only; no embedding model runs on the host.
+- **Role reading** (how much of each role's messages consolidation reads) is
+  `consolidation.read` in the configuration, and can be changed at run time from the console
+  (`PUT`/`DELETE /admin/v1/read`, docs/admin-api.md); a change applies to what is consolidated
+  from then on.
+  - The configuration no longer takes `evenReading` or `assistantCharacters`, and the strict
+    decoding refuses a file that still has them. Before upgrading an instance, replace
+    `"evenReading": true` with `"read": {"default": "full"}`.
+  - A settings file that holds a role reading is version 2, which older binaries refuse. Revert
+    the reading (`DELETE /admin/v1/read`) before rolling an instance back.
 
 ## Data handling
 

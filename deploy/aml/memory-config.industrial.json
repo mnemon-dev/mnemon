@@ -8,7 +8,7 @@
   },
   "consolidation": {
     "mode": "layered",
-    "evenReading": true
+    "read": {"default": "full"}
   },
   "planner": {
     "kind": "deepseek",

@@ -194,8 +194,8 @@ func documentRecords(req WriteRequest, at time.Time) ([]records.Upsert, WriteRes
 
 // buildDocument makes the archived parent holding content and one active
 // memory-record per span, a [start,end) byte range of content that verifyParent
-// can check. extra is added to every chunk's data.
-func buildDocument(req WriteRequest, at time.Time, content string, spans [][2]int, extra map[string]any) ([]records.Upsert, WriteResult) {
+// can check. extras[i], when there is one, is added to chunk i's data.
+func buildDocument(req WriteRequest, at time.Time, content string, spans [][2]int, extras []map[string]any) ([]records.Upsert, WriteResult) {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	day := at.UTC().Format("2006-01-02")
 	value := recordValue{ID: req.ID, Kind: "memory-document", Title: "Original document", Content: content, Scope: req.Scope, Date: &day, State: "active", Signals: 1, Version: 1, CreatedAt: now, UpdatedAt: now, History: []any{}, Data: map[string]any{"source": req.Source, "eventAt": at.Format(time.RFC3339Nano)}}
@@ -215,8 +215,10 @@ func buildDocument(req WriteRequest, at time.Time, content string, spans [][2]in
 		value.Kind, value.Title, value.Content = "memory-record", "Original record", content[start:end]
 		value.State = "active"
 		value.Data = map[string]any{"source": req.Source, "eventAt": at.Format(time.RFC3339Nano), "documentID": req.ID, "start": start, "end": end}
-		for key, item := range extra {
-			value.Data[key] = item
+		if ordinal < len(extras) {
+			for key, item := range extras[ordinal] {
+				value.Data[key] = item
+			}
 		}
 		upsert := encodeRecord(value, value.Content)
 		upserts = append(upserts, upsert)

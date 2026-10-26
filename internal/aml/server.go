@@ -180,6 +180,11 @@ type Server struct {
 	configCaps   map[string]float64
 	settingsCaps atomic.Pointer[map[string]float64]
 	capsWriter   chan struct{}
+	// configRead is the configuration's role reading, normalized, and
+	// settingsRead the settings file's, nil when it sets none: the one the
+	// agents' consolidation reads by (MemoryConfig.ReadOverride) while set.
+	configRead   memoryagent.RoleReading
+	settingsRead atomic.Pointer[memoryagent.RoleReading]
 	// stores scans the data root for the store overview and the store gauges.
 	stores *storeScanner
 	// freeDisk is the free bytes of the disk holding a directory, which
@@ -286,18 +291,27 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if err := loadKeyFile(config.ProviderKeysFile, s.keys); err != nil {
 		return nil, err
 	}
-	// The settings file's caps, refused at the start as the key file is; the
-	// server is its one writer too.
+	// The settings file's caps and role reading, refused at the start as the
+	// key file is; the server is its one writer too.
 	settings := map[string]float64{}
+	var read *memoryagent.RoleReading
 	if config.SettingsFile != "" {
 		if removed := removeInterrupted(config.SettingsFile); len(removed) > 0 {
 			s.logf(context.Background(), slog.LevelWarn, "removed what an interrupted write of %s left: %s", settingsWhat, strings.Join(removed, ", "))
 		}
-		if settings, err = readBudgetsFile(config.SettingsFile, s.keys.Uses); err != nil {
+		if settings, read, err = readSettingsFile(config.SettingsFile, s.keys.Uses); err != nil {
 			return nil, err
 		}
 	}
 	s.settingsCaps.Store(&settings)
+	s.settingsRead.Store(read)
+	s.configRead = consolidation.RoleReading()
+	if s.configRead, err = s.configRead.Normalized(); err != nil {
+		return nil, fmt.Errorf("memory config: consolidation.read: %w", err)
+	}
+	// Every user's agent reads by the settings file's role reading while it
+	// sets one.
+	s.config.MemoryConfig.ReadOverride = s.settingsRead.Load
 	if config.Models != nil {
 		s.models, err = config.Models(config.MemoryConfig)
 	} else {

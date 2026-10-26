@@ -112,7 +112,7 @@ func TestLayeredConsolidationConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := ConsolidationConfig{Mode: "layered", BatchCharacters: 10000, AssistantCharacters: 240, MaxBatches: 16, LinkCandidates: 8, Parallel: 4}
+	want := ConsolidationConfig{Mode: "layered", BatchCharacters: 10000, MaxBatches: 16, LinkCandidates: 8, Parallel: 4}
 	if got := *a.config.Consolidation; !reflect.DeepEqual(got, want) {
 		t.Fatalf("defaults %+v", got)
 	}
@@ -159,8 +159,8 @@ func TestLayeredConsolidationConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Timelines settings keep their bytes.
-	raw, _ := json.Marshal(ConsolidationConfig{Mode: "timelines", BatchCharacters: 10000, AssistantCharacters: 240, MaxBatches: 16})
-	if string(raw) != `{"mode":"timelines","batchCharacters":10000,"assistantCharacters":240,"maxBatches":16}` {
+	raw, _ := json.Marshal(ConsolidationConfig{Mode: "timelines", BatchCharacters: 10000, MaxBatches: 16})
+	if string(raw) != `{"mode":"timelines","batchCharacters":10000,"maxBatches":16}` {
 		t.Fatal(string(raw))
 	}
 	for config, want := range map[*ConsolidationConfig]bool{nil: false, {}: false, {Mode: "timelines"}: true, {Mode: "layered"}: true} {
@@ -174,60 +174,38 @@ func TestLayeredConsolidationConfig(t *testing.T) {
 	}
 }
 
-func TestEvenReadingReadsEveryRecordWholeAndAlike(t *testing.T) {
-	heading := "Conversation beam-1-s1 on 2024/03/15 (Fri) 00:00:\n"
-	continuation := heading + "so we can tailor this schedule further?"
-	longAnswer := heading + "assistant: " + strings.Repeat("step ", 100)
-	// The layered reader passes a continuation over and cuts an answer.
-	if _, _, ok := readable("Original record", continuation, 240); ok {
-		t.Fatal("readable read a continuation")
-	}
-	if _, body, _ := readable("Original record", longAnswer, 240); !strings.HasSuffix(body, " …") {
-		t.Fatal("readable did not cut a long answer")
-	}
+func TestLayeredRoleReadingAndItsPrompt(t *testing.T) {
 	s, dir := agentStore(t)
 	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return layeredReply(prompt), nil }}
-	a, _ := layeredAgent(t, s, dir, ConsolidationConfig{EvenReading: true}, model, topicJudge())
-	read := a.recordReader(240)
-	if header, body, ok := read("Original record", continuation); !ok || header != "2024/03/15 (session beam-1-s1)" || body != "so we can tailor this schedule further?" {
-		t.Fatalf("even read %q %q %v", header, body, ok)
-	}
-	if _, body, ok := read("Original record", longAnswer); !ok || body != longAnswer[len(heading):] {
-		t.Fatal("evenReading cut a long answer")
-	}
-	if header, body, ok := read("A note", "plain text, no heading"); !ok || header != "A note" || body != "plain text, no heading" {
-		t.Fatal("even read of a record without a heading", header, body)
-	}
-	if _, _, ok := read("Empty", heading+"  \n"); ok {
-		t.Fatal("evenReading read an empty record")
-	}
-}
-
-func TestLayeredEvenReadingReadsWholeUnderTheLayeredPrompt(t *testing.T) {
-	s, dir := agentStore(t)
-	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return layeredReply(prompt), nil }}
-	a, _ := layeredAgent(t, s, dir, ConsolidationConfig{EvenReading: true}, model, topicJudge())
-	spec := a.extractionFold()
-	if spec.system == layeredSystem || strings.Contains(spec.system, "cut short") || !strings.Contains(spec.system, "Put each event in a thread") || !spec.entities {
-		t.Fatalf("evenReading fold %+v", spec)
-	}
-	if spec.system != strings.Replace(layeredSystem, " (assistant messages are cut short)", "", 1) {
-		t.Fatal("evenReading changed more of the layered prompt than the cut")
-	}
-	continuation := "Conversation beam-1-s1 on 2024/03/15 (Fri) 00:00:\nso we can tailor this schedule further?"
-	if _, body, ok := a.recordReader(240)("Original record", continuation); !ok || body != "so we can tailor this schedule further?" {
-		t.Fatal("evenReading did not read a continuation")
-	}
+	// The default reading keeps the reference prompt word for word.
 	plain, _ := layeredAgent(t, s, dir, ConsolidationConfig{}, model, topicJudge())
-	if plain.extractionFold().system != layeredSystem {
-		t.Fatal("plain layered mode lost its prompt")
+	if plain.extractionFold().system != layeredSystem || plain.roleReading().cutShort() != defaultCutShort {
+		t.Fatal("the default reading changed the layered prompt")
 	}
-	if _, _, ok := plain.recordReader(240)("Original record", continuation); ok {
-		t.Fatal("plain layered mode read a continuation")
+	// Reading every role whole drops the cut from the prompt, and only it.
+	whole, _ := layeredAgent(t, s, dir, ConsolidationConfig{Read: &RoleReading{Default: ReadFull}}, model, topicJudge())
+	spec := whole.extractionFold()
+	if strings.Contains(spec.system, "cut short") || !spec.entities || spec.system != strings.Replace(layeredSystem, defaultCutShort, "", 1) {
+		t.Fatalf("whole reading fold %+v", spec)
 	}
-	c := ConsolidationConfig{Mode: "timelines", EvenReading: true}
-	if err := c.normalize(); err == nil || !strings.Contains(err.Error(), "evenReading requires") {
-		t.Fatal("timelines mode accepted evenReading:", err)
+	if got := whole.roleReading(); got.Default != ReadFull || got.Excerpt != 240 || len(got.Roles) != 0 {
+		t.Fatalf("normalized reading %+v", got)
+	}
+	// A run-time reading wins over the configuration's while it gives one,
+	// through New's copy of the configuration.
+	var override *RoleReading
+	config := Config{Version: 1, Policy: &ReadPolicy{Consolidation: true}, Consolidation: &ConsolidationConfig{Mode: "layered", Read: &RoleReading{Default: ReadFull}},
+		ReadOverride: func() *RoleReading { return override }}
+	whole, err := New(s, config, Models{Planner: model, Judge: topicJudge()}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if whole.roleReading().Default != ReadFull {
+		t.Fatal("no run-time reading should leave the configuration's")
+	}
+	override = &RoleReading{Default: ReadExcerpt, Excerpt: 100, Roles: map[string]string{}}
+	if got := whole.extractionFold().system; !strings.Contains(got, " (messages are cut short)") {
+		t.Fatal("the run-time reading did not reach the prompt")
 	}
 }
 
@@ -1030,7 +1008,7 @@ func TestExtractionKey(t *testing.T) {
 		"a text":    extractionKey(layeredFold.system, false, changed(func(r *pendingRecord) { r.Text = "z" })),
 		"the order": extractionKey(layeredFold.system, false, []pendingRecord{batch[1], batch[0]}),
 		"a record":  extractionKey(layeredFold.system, false, batch[:1]),
-		"a prompt":  extractionKey(layeredEvenFold.system, false, batch),
+		"a prompt":  extractionKey(readFold(layeredFold, RoleReading{Default: ReadFull}).system, false, batch),
 	} {
 		if other == key {
 			t.Fatal(name, "does not change the key")

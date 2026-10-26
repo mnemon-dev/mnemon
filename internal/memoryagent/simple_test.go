@@ -723,8 +723,10 @@ func TestReadSimplePinned(t *testing.T) {
 		"judged":    {plain(Config{}), both, "3152098fef8497187f4ece79e44f4ce162672daebe33d6c133a10fdd89a499f7"},
 		"eval view": {plain(Config{View: evalView}), both, "e025f7d2f9b3df49fa4a9c82ac87dfab4d5e7aab39a5bb1901e381002fec89fd"},
 		"index":     {plain(Config{Index: &records.IndexPolicy{Version: 1, Lexical: true, Relations: true, Supersedes: true}}), both, "cef8c1f949a4a35d907fab22a5ee2b9da8a12ee91f2df0f523422e44a259477e"},
-		"eval": {layerAgent(t, events, overlay, Config{View: evalView, Consolidation: &ConsolidationConfig{Mode: "layered", EvenReading: true}}, expandPlanner(), expandJudge()),
-			ReadRequest{Question: "What is the codename?"}, "b2a081820cb0fc55e5f1d0fb33469376ab0db7e6d71c0a45b69980daac28652c"},
+		"eval": {layerAgent(t, events, overlay, Config{View: evalView, Consolidation: &ConsolidationConfig{Mode: "layered", Read: &RoleReading{Default: ReadFull}}}, expandPlanner(), expandJudge()),
+			// consolidation.read replaced evenReading: the same reading of these
+			// records under the same prompt, a new View.policy.
+			ReadRequest{Question: "What is the codename?"}, "195f3e95d2152d6d747d6d3f4d1333e9a0d9a6a2afa78a2ea72efd5495b02c3c"},
 	} {
 		view, err := tc.agent.Read(ctx, tc.read)
 		if err != nil {
