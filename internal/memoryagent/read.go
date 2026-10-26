@@ -70,11 +70,14 @@ type Config struct {
 // SafetyConfig switches the safety and privacy checks, each on its own.
 // Abstain empties the View of a simple read that found no evidence
 // (View.NoEvidence): the reply then has nothing to go on, rather than the
-// records nobody judged needed. Mask is the service's: the AML adapter hides
-// the sensitive values of a known form in what a Search hands out
-// (internal/safety.Mask); the memory and its reads keep them.
+// records nobody judged needed. Forget withdraws from every read what the
+// user asked to forget (safety_forget.go): layered consolidation only. Mask
+// is the service's: the AML adapter hides the sensitive values of a known
+// form in what a Search hands out (internal/safety.Mask); the memory and its
+// reads keep them.
 type SafetyConfig struct {
 	Abstain bool `json:"abstain,omitempty"`
+	Forget  bool `json:"forget,omitempty"`
 	Mask    bool `json:"mask,omitempty"`
 }
 

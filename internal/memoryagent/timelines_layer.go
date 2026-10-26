@@ -367,16 +367,21 @@ func (a *Agent) layerOn() bool {
 // an embedder that fails, a judgement that fails or finds the budget spent;
 // each named in ReadStats.Degraded), unless the read is canceled.
 func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
-	state, _, err := r.agent.overlay.loadTimelines(ctx, r.req.Scope)
-	if ctx.Err() != nil {
-		return View{}, ctx.Err()
+	var m timelineMemory
+	if r.forgotten != nil {
+		m = *r.forgotten
+	} else {
+		state, _, err := r.agent.overlay.loadTimelines(ctx, r.req.Scope)
+		if ctx.Err() != nil {
+			return View{}, ctx.Err()
+		}
+		if err != nil {
+			r.degrade("layer-state")
+			view.Stats = r.statsNow()
+			return view, nil
+		}
+		m = state.Memory
 	}
-	if err != nil {
-		r.degrade("layer-state")
-		view.Stats = r.statsNow()
-		return view, nil
-	}
-	m := state.Memory
 	if len(m.Events) == 0 && len(m.Directives) == 0 && len(m.Facts) == 0 {
 		return view, nil
 	}

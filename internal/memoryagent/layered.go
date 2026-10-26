@@ -348,9 +348,14 @@ func (a *Agent) extractBatches(ctx context.Context, model Completer, head timeli
 }
 
 // extractionFold is the L0 fold, its prompt saying what the agent's role
-// reading cuts (readFold).
+// reading cuts (readFold), and asking to mark a request to forget under
+// safety.forget (forgetFold).
 func (a *Agent) extractionFold() foldSpec {
-	return readFold(layeredFold, a.roleReading())
+	spec := readFold(layeredFold, a.roleReading())
+	if a.forgets() {
+		spec = forgetFold(spec)
+	}
+	return spec
 }
 
 // startExtractions starts n extractions, extract(ctx, i, out[i]) for batch
