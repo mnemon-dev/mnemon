@@ -19,7 +19,9 @@ while the service runs. No old data needs conversion.
 `maxItems` caps the records of a `"strategy": "simple"` View: 0 or absent takes the
 configured `view.maxItems`, and more than it is an error. memory-agent/v1 reads have no
 View setting and reject a nonzero `maxItems`. A simple read's `stats.degraded` lists the
-stages that fell back instead of failing the read, each once and in order: `scan-budget`
+stages that fell back instead of failing the read, each once and in order: `lexical-index`
+(the store's lexical index could not be caught up before the read, so the record versions it
+lacks rank by the frozen BM25 rules instead of SQLite's `bm25()`), `scan-budget`
 and `loop-budget` (the decision budget ran out and the need loop stopped), `judge` (the
 final judgement failed or found the budget spent; JEV's screen stands in), `layer-state`
 (the consolidated state did not load; no layer), `layer-lexical` (the layer's embedding

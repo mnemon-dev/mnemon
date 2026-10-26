@@ -26,10 +26,24 @@ func (s *Store) runLexicalWorker(ctx context.Context) {
 	}
 }
 
+// CatchUpLexical runs the background lexical build now, for a store with a
+// query runtime (StartRuntime, Serve): it indexes the record versions the
+// worker has not reached yet, so a query after it ranks over an index that
+// covers them all (match "bm25" by SQLite's own bm25(), native_bm25.go)
+// whatever the worker's timing. Without a runtime, read-only or without FTS
+// it does nothing.
+func (s *Store) CatchUpLexical(ctx context.Context) error {
+	if s.cache == nil {
+		return nil
+	}
+	return s.buildLexical(ctx)
+}
+
 // This is a derived, append-only index of immutable record versions. The
 // original tokenizer runs once in the background build, not on every query.
-// FTS supplies postings only: all scores, candidate-local statistics and ties
-// still use the frozen TS rules rather than SQLite's built-in bm25().
+// For match "words" FTS supplies postings only: all scores, candidate-local
+// statistics and ties still use the frozen TS rules; match "bm25" ranks by
+// SQLite's built-in bm25() (native_bm25.go).
 func (s *Store) buildLexical(ctx context.Context) error {
 	if !s.fts || s.readonly {
 		return nil

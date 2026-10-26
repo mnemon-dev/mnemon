@@ -417,12 +417,26 @@ func (a *Agent) Read(ctx context.Context, req ReadRequest) (View, error) {
 	if a.config.View != nil && (req.MaxItems < 0 || req.MaxItems > a.config.View.MaxItems) {
 		return View{}, fmt.Errorf("read maxItems must be 0–%d", a.config.View.MaxItems)
 	}
+	// A simple read's searches rank by SQLite's bm25() over the store's
+	// lexical index (records match "bm25"); catching the index up first
+	// makes the ranking independent of the background build's timing. When
+	// that fails, the versions the index lacks rank by the frozen rules
+	// (stage lexical-index).
+	behind := false
+	if a.config.Strategy == strategySimple {
+		if err := a.store.CatchUpLexical(ctx); err != nil {
+			if ctx.Err() != nil {
+				return View{}, ctx.Err()
+			}
+			behind = true
+		}
+	}
 	snapshot, err := a.store.Get(ctx, records.GetRequest{Revision: req.Revision, IDs: []string{}})
 	if err != nil {
 		return View{}, err
 	}
 	if a.config.Strategy == strategySimple {
-		return a.readSimple(ctx, req, snapshot.Revision)
+		return a.readSimple(ctx, req, snapshot.Revision, behind)
 	}
 	r := &readRun{agent: a, request: req, revision: snapshot.Revision, items: map[string]*candidate{}}
 	for _, message := range req.Recent[max(0, len(req.Recent)-5):] {

@@ -61,11 +61,14 @@ type simpleItem struct {
 	FirstSeen  int // position in pool order
 }
 
-func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string) (View, error) {
+func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string, lexicalBehind bool) (View, error) {
 	if req.MaxItems == 0 {
 		req.MaxItems = a.config.View.MaxItems
 	}
 	r := &simpleRun{agent: a, req: req, revision: revision, items: map[string]*simpleItem{}, trace: readTraceFrom(ctx)}
+	if lexicalBehind {
+		r.degrade("lexical-index")
+	}
 	if r.trace != nil {
 		r.traceStart()
 		defer r.traceEnd()
