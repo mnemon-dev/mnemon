@@ -175,9 +175,11 @@ var (
 // readable is what a consolidating model reads of a record, or !ok for
 // nothing (C:50-63). A conversation chunk holding user text is read whole, the
 // start of an assistant message up to assistantChars UTF-16 units, and a chunk
-// that only continues an assistant message not at all. Other records are read
-// whole, up to 2000 units, under the first 40 units of their title. A last
-// line that is a JSON object is the author's data line and is not read.
+// that only continues an assistant message not at all. Unlike the author's, a
+// chunk holding a line of another speaker (otherSpeaker: system, a name,
+// unknown) is read whole too. Other records are read whole, up to 2000 units,
+// under the first 40 units of their title. A last line that is a JSON object is
+// the author's data line and is not read.
 func readable(title, content string, assistantChars int) (header, body string, ok bool) {
 	if lines := strings.Split(content, "\n"); isDataLine(lines[len(lines)-1]) {
 		content = strings.Join(lines[:len(lines)-1], "\n")
@@ -201,8 +203,24 @@ func readable(title, content string, assistantChars int) (header, body string, o
 			body = jsSlice(body, 0, assistantChars) + " …"
 		}
 		return header, body, true
+	case otherSpeaker(body):
+		return header, body, true
 	}
 	return "", "", false
+}
+
+// otherSpeaker reports whether a chunk body has a line that begins a message
+// of a speaker other than user and assistant: a `speaker: ` prefix whose
+// speaker is one word of at most maxRoleBytes. A line that continues a wrapped
+// message starts mid-text, so a colon after its first word is no speaker.
+func otherSpeaker(body string) bool {
+	for _, line := range strings.Split(body, "\n") {
+		speaker, _, found := strings.Cut(line, ": ")
+		if found && speaker != "" && len(speaker) <= maxRoleBytes && speaker != "user" && speaker != "assistant" && !strings.ContainsFunc(speaker, isJSSpace) {
+			return true
+		}
+	}
+	return false
 }
 
 // isDataLine is the author's /^\s*\{.*\}\s*$/: JavaScript whitespace around
