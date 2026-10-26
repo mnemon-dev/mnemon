@@ -111,6 +111,8 @@ and works as it always did; `mnemon_aml_admin_auth_failures_total` stays 0.
 | `GET /admin/status` | the status the watcher reads, as JSON |
 | `GET /admin/v1/stores` | the store overview, as JSON |
 | `GET /admin/v1/events` | the latest WARN and ERROR lines, as JSON |
+| `GET /admin/v1/logs` | the latest lines of every level, filtered and paged, as JSON |
+| `GET /admin/v1/logs/export` | every line the log files hold for a range of hours, as one gzip file |
 | `PUT /admin/v1/provider-keys` | the account's own provider keys: checked, written, swapped in |
 | `DELETE /admin/v1/provider-keys?kind=` | back to the host's keys |
 | `PUT /admin/v1/budgets` | budget caps at run time, a cap or unlimited per kind |
@@ -120,12 +122,14 @@ and works as it always did; `mnemon_aml_admin_auth_failures_total` stays 0.
 | `/debug/pprof/` and below | Go's profiler |
 | anything else | 404 `{"error":"not found"}` |
 
-`/metrics`, `/ready`, `/admin/status`, `/admin/v1/stores` and `/admin/v1/events` are for GET, and
+`/metrics`, `/ready`, `/admin/status`, `/admin/v1/stores`, `/admin/v1/events`, `/admin/v1/logs` and
+`/admin/v1/logs/export` are for GET, and
 `/admin/v1/provider-keys`, `/admin/v1/budgets` and `/admin/v1/read` for PUT and DELETE only (the
 keys are write-only: no route answers them; the caps and the role reading are in
 `/admin/status`). Any other method on them is answered by the 404 route. The answers of `/ready`,
-`/admin/status`, `/admin/v1/provider-keys`, `/admin/v1/budgets`, `/admin/v1/read` and (when it
-succeeds) `/admin/v1/stores` are `Cache-Control: no-store`.
+`/admin/status`, `/admin/v1/events`, `/admin/v1/logs`, `/admin/v1/logs/export`,
+`/admin/v1/provider-keys`, `/admin/v1/budgets`, `/admin/v1/read` and (when it succeeds)
+`/admin/v1/stores` are `Cache-Control: no-store`.
 
 ### `GET /metrics`
 
@@ -259,18 +263,78 @@ again.
 
 ### `GET /admin/v1/events`
 
-The latest WARN and ERROR lines the server logged, from memory (the last 500 since the start),
-for the console's 事件 view: `?level=warn` (the default: WARN and ERROR) or `error`, and
-`?limit=1..500` (100 by default). Anything else is a 400.
+The latest WARN and ERROR lines the server logged, from memory (the last 500 since the start):
+`?level=warn` (the default: WARN and ERROR) or `error`, and `?limit=1..500` (100 by default).
+Anything else is a 400. `GET /admin/v1/logs?level=warn` reads the same lines with filters and
+pages; this route stays for consoles that read it.
 
 ```json
-{"total": 37, "events": [{"time": "2026-10-27T02:15:04Z", "level": "WARN",
+{"total": 37, "events": [{"seq": 9120, "time": "2026-10-27T02:15:04Z", "level": "WARN",
   "message": "degraded search 3 (user 58e645e0): …", "user": "58e645e0", "requestId": "9d44…"}]}
 ```
 
-`events` are the newest first; `total` counts every one since the start, those the ring no longer
-holds included. A line carries the user's 8-hex store prefix and the request id when it had them;
-no line holds a key or a record's content. `Cache-Control: no-store`.
+`events` are the newest first, as `GET /admin/v1/logs` gives its lines; `total` counts every one
+since the start, those the memory no longer holds included.
+
+### `GET /admin/v1/logs`
+
+The latest lines the server logged, of every level, from memory, for the console's 日志 view: it
+pages back through them and tails the new ones. The memory holds the last 10000 lines, and the
+last 500 WARN and ERROR lines besides, which a burst of request lines cannot push out; journald and
+the log files (`GET /admin/v1/logs/export`) hold every line. Its query, every parameter optional:
+
+| Parameter | Meaning |
+| --- | --- |
+| `level` | `info` (the default: every line), `warn` (WARN and ERROR, from the 500) or `error` |
+| `q` | at most 200 characters, at most 8 terms split at white space; a line matches when each term is in its message, user, request id or roles, case aside |
+| `minMs` | only the request lines that took this many milliseconds or more |
+| `before` | only lines numbered below this `seq`: the next page back |
+| `after` | only lines numbered above this `seq`: what came since (not with `before`) |
+| `limit` | 1 to 200, 100 by default |
+
+Anything else is a 400 `{"error": "…"}`.
+
+```json
+{"lines": [{"seq": 9123, "time": "2026-10-27T03:07:12.345Z", "level": "INFO",
+  "message": "POST /add 200 532ms", "user": "ab12cd34", "requestId": "9d44…",
+  "roles": "assistant=1,user=3", "status": 200, "ms": 532}],
+ "more": true, "skipped": 0, "since": "2026-10-27T01:12:40Z", "kept": 10000, "total": 123456,
+ "archive": {"since": "2026-10-20T00:00:00Z", "bytes": 12345678, "dropped": 0}}
+```
+
+- `lines` are the newest that match, the newest first; `seq` numbers every line from 1 since the
+  start, in the order they were logged. A line carries the user's 8-hex store prefix, the request id
+  and an Add's roles when it had them; a request line (`METHOD /path STATUS NNNms`) carries its
+  `status` and `ms` too (`ms` left out at 0). No line holds a key or a record's content; a message
+  is cut at 4096 bytes (journald and the files keep it whole).
+- `more` (without `after`): older lines that match are still in memory; ask again with `before`
+  the last line's `seq`.
+- `skipped` (with `after`): lines newer than `after` that match and were left out, because more
+  than `limit` came since; the page holds the newest of them.
+- `since`: the time of the oldest line the memory read holds; left out while it holds none.
+  `kept`: the most it holds, 10000 for `info`, 500 for `warn` and `error`. `total`: the lines it has
+  seen since the start.
+- `archive`: what the log files hold, left out while there are none: the first hour kept, their
+  bytes on disk, and the lines dropped since the start (the writer never holds up a line: one that
+  finds its queue of 8192 full, or that the disk refuses, is dropped and counted).
+
+### `GET /admin/v1/logs/export`
+
+Every line the log files hold for the whole hours a range touches, the oldest first, as one gzip
+file of JSON lines, for an offline look (`zcat`, `jq`, DuckDB). The server writes every line it
+logs, as journald gets it in JSON, to a file per hour under `<data-root>/logs/`
+(`2026-10-27T03.jsonl`, gzipped to `2026-10-27T03.jsonl.gz` once the hour has passed), and keeps
+30 days and 1 GiB at most, dropping the oldest first. `?from=` and `?to=` are RFC 3339 times,
+either left out; an hour is in when it ends after `from` and starts before `to`. A bad time, or
+`from` not before `to`, is a 400.
+
+The answer is `200`, `Content-Type: application/gzip`,
+`Content-Disposition: attachment; filename="mnemon-logs-<first hour>-<last hour>.jsonl.gz"`,
+streamed with no `Content-Length`: a gzip member per hour, which gzip, zcat and Go's and Python's
+readers read as one file (an empty gzip file when no hour is in). One export runs at a time;
+another is a `429 {"error": "a log export is running; retry"}` with `Retry-After: 30`. Each hour's
+file has a minute to be sent, past the listener's write timeout, so a long export is not cut and a
+stalled client is.
 
 ### `PUT /admin/v1/provider-keys`
 

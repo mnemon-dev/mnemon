@@ -6,7 +6,8 @@
 # Everything per instance comes from %i, the instance name:
 #   /etc/mnemon-aml/%i/env                 addresses, flag values and secrets (below)
 #   /etc/mnemon-aml/%i/memory-config.json  the shipped configuration with the instance's caps
-#   /var/lib/mnemon-aml/%i/                the data root (data/), the model budget file and,
+#   /var/lib/mnemon-aml/%i/                the data root (data/), the log files (logs/: every line,
+#                                          a file per hour, 30 days), the model budget file and,
 #                                          once the console sets them, the account's own provider
 #                                          keys (provider-keys.json) and budget caps (settings.json),
 #                                          each mode 0600 and written by aml-serve
@@ -48,7 +49,7 @@ Group=mnemon
 # AML_WORKERS. Mode 0600, root's: systemd reads it before it drops to
 # User=mnemon.
 EnvironmentFile=/etc/mnemon-aml/%i/env
-ExecStart=/usr/local/bin/mnemon memory-agent aml-serve --listen ${AML_LISTEN} --admin-listen ${AML_ADMIN_LISTEN} --admin-token-env MNEMON_ADMIN_TOKEN --auth-key-env AML_API_KEY --data-root /var/lib/mnemon-aml/%i/data --memory-config /etc/mnemon-aml/%i/memory-config.json --consolidate background --consolidation-workers ${AML_WORKERS} --max-open-stores ${AML_MAX_OPEN_STORES} --max-concurrent-adds ${AML_MAX_ADDS} --max-concurrent-searches ${AML_MAX_SEARCHES} --log-format json --provider-keys-file /var/lib/mnemon-aml/%i/provider-keys.json --settings-file /var/lib/mnemon-aml/%i/settings.json
+ExecStart=/usr/local/bin/mnemon memory-agent aml-serve --listen ${AML_LISTEN} --admin-listen ${AML_ADMIN_LISTEN} --admin-token-env MNEMON_ADMIN_TOKEN --auth-key-env AML_API_KEY --data-root /var/lib/mnemon-aml/%i/data --memory-config /etc/mnemon-aml/%i/memory-config.json --consolidate background --consolidation-workers ${AML_WORKERS} --max-open-stores ${AML_MAX_OPEN_STORES} --max-concurrent-adds ${AML_MAX_ADDS} --max-concurrent-searches ${AML_MAX_SEARCHES} --log-format json --provider-keys-file /var/lib/mnemon-aml/%i/provider-keys.json --settings-file /var/lib/mnemon-aml/%i/settings.json --log-dir /var/lib/mnemon-aml/%i/logs
 # Every open user store holds SQLite files and a reader pool.
 LimitNOFILE=65536
 

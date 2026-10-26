@@ -126,6 +126,11 @@ type ServerConfig struct {
 	// configuration's caps alone and no such routes. A missing file holds no
 	// cap.
 	SettingsFile string
+	// LogDir is the directory of the log files (logfiles.go): every line the
+	// server logs, a file per hour, kept 30 days and 1 GiB at most, which GET
+	// /admin/v1/logs/export streams. Absolute and outside the data root; ""
+	// for none.
+	LogDir string
 }
 
 // MinAdminTokenLength is the fewest bytes an admin token (ServerConfig) holds.
@@ -185,8 +190,11 @@ type Server struct {
 	// agents' consolidation reads by (MemoryConfig.ReadOverride) while set.
 	configRead   memoryagent.RoleReading
 	settingsRead atomic.Pointer[memoryagent.RoleReading]
-	// events keeps the latest WARN and ERROR lines (GET /admin/v1/events).
-	events *eventRing
+	// lines keeps the latest lines in memory (GET /admin/v1/logs and
+	// /admin/v1/events), and logFiles every line on disk, a file per hour
+	// (GET /admin/v1/logs/export); nil without a log directory.
+	lines    *lineMemory
+	logFiles *logFiles
 	// stores scans the data root for the store overview and the store gauges.
 	stores *storeScanner
 	// freeDisk is the free bytes of the disk holding a directory, which
@@ -253,6 +261,12 @@ func NewServer(config ServerConfig) (*Server, error) {
 		}
 		config.ProviderKeysFile = filepath.Clean(config.ProviderKeysFile)
 	}
+	if config.LogDir != "" {
+		if err := checkStateFile("the log directory", config.LogDir, config.DataRoot, "the data root holds the users' stores"); err != nil {
+			return nil, err
+		}
+		config.LogDir = filepath.Clean(config.LogDir)
+	}
 	if config.SettingsFile != "" {
 		if err := checkStateFile(settingsWhat, config.SettingsFile, config.DataRoot, "it is the instance's, beside the key file, and the data root holds the users' stores"); err != nil {
 			return nil, err
@@ -276,8 +290,15 @@ func NewServer(config ServerConfig) (*Server, error) {
 	if s.log == nil {
 		s.log = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
-	s.events = &eventRing{}
-	s.log = slog.New(contextHandler{eventsHandler{s.log.Handler(), s.events}})
+	s.lines = newLineMemory()
+	handler := s.log.Handler()
+	if config.LogDir != "" {
+		if s.logFiles, err = openLogFiles(config.LogDir, time.Now); err != nil {
+			return nil, fmt.Errorf("the log directory: %w", err)
+		}
+		handler = teeHandler{handler, slog.NewJSONHandler(s.logFiles, nil)}
+	}
+	s.log = slog.New(contextHandler{linesHandler{handler, s.lines}})
 	if config.AdminToken != "" {
 		digest := sha256.Sum256([]byte(config.AdminToken))
 		s.adminKey = &digest
@@ -347,6 +368,7 @@ func NewServer(config ServerConfig) (*Server, error) {
 	s.models.Observe(s.metrics)
 	s.handler = s.routes()
 	s.admin = s.adminRoutes()
+	s.logFiles.start()
 	return s, nil
 }
 
@@ -488,6 +510,7 @@ func (s *Server) CloseWithin(ctx context.Context) error {
 		}
 		s.users.close()
 		err = s.closeModels(ctx)
+		s.logFiles.close()
 	})
 	return err
 }
@@ -1485,8 +1508,23 @@ func (s *Server) logged(next http.Handler) http.Handler {
 		start := time.Now()
 		recorder := &statusWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(recorder, r)
-		s.logf(r.Context(), slog.LevelInfo, "%s %s %d %dms", r.Method, r.URL.Path, recorder.status, time.Since(start).Milliseconds())
+		s.logRequest(r.Context(), r.Method, r.URL.Path, recorder.status, time.Since(start))
 	})
+}
+
+// logRequest logs a request's line as logf would, its status and
+// milliseconds as attributes too: GET /admin/v1/logs filters by them, and the
+// log files keep them.
+func (s *Server) logRequest(ctx context.Context, method, path string, status int, took time.Duration) {
+	if !s.log.Enabled(ctx, slog.LevelInfo) {
+		return
+	}
+	var pcs [1]uintptr
+	runtime.Callers(2, pcs[:]) // past runtime.Callers and logRequest
+	ms := took.Milliseconds()
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, fmt.Sprintf("%s %s %d %dms", method, path, status, ms), pcs[0])
+	record.AddAttrs(slog.Int("status", status), slog.Int64("ms", ms))
+	_ = s.log.Handler().Handle(ctx, record)
 }
 
 // statusWriter records a response's status and whether anything was

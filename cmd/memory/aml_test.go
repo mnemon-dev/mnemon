@@ -152,6 +152,19 @@ func TestProviderKeysFileFlag(t *testing.T) {
 	}
 }
 
+// --log-dir names the directory of the log files: an absolute path, or none.
+func TestLogDirFlag(t *testing.T) {
+	if options, err := amlFlags(t, "--log-dir", "/var/lib/x/logs"); err != nil || options.logDir != "/var/lib/x/logs" {
+		t.Fatal("--log-dir:", options.logDir, err)
+	}
+	if options, err := amlFlags(t); err != nil || options.logDir != "" {
+		t.Fatal("no --log-dir:", options.logDir, err)
+	}
+	if _, err := amlFlags(t, "--log-dir", "logs"); err == nil || err.Error() != "--log-dir must be an absolute path" {
+		t.Fatal("a relative --log-dir:", err)
+	}
+}
+
 // --settings-file names the file of the caps that change at run time
 // (ruling R99): aml-serve's budgets, and aml-inspect's own debug caps, which
 // need its debug budget. An absolute path, or none.

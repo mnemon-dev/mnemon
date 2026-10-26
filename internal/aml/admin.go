@@ -107,9 +107,10 @@ type AdminStatus struct {
 }
 
 // AdminHandler serves the operator's endpoints: GET /metrics (Prometheus),
-// GET /ready, GET /admin/status, GET /admin/v1/stores, PUT and DELETE
-// /admin/v1/provider-keys (byok.go) and /admin/v1/budgets (budgets.go), and
-// /debug/pprof/. With
+// GET /ready, GET /admin/status, GET /admin/v1/stores, GET /admin/v1/events,
+// GET /admin/v1/logs and /admin/v1/logs/export (logs.go, logfiles.go), PUT
+// and DELETE /admin/v1/provider-keys (byok.go), /admin/v1/budgets
+// (budgets.go) and /admin/v1/read (reading.go), and /debug/pprof/. With
 // an admin token every request, an unknown path included, must carry it as
 // `Authorization: Bearer <token>` (requireAdminToken); without one the handler
 // has no authentication, and must be served on a loopback address only. Never
@@ -125,6 +126,8 @@ func (s *Server) adminRoutes() http.Handler {
 	mux.HandleFunc("GET /admin/status", s.serveStatus)
 	mux.HandleFunc("GET /admin/v1/stores", s.serveStores)
 	mux.HandleFunc("GET /admin/v1/events", s.serveEvents)
+	mux.HandleFunc("GET /admin/v1/logs", s.serveLogs)
+	mux.HandleFunc("GET /admin/v1/logs/export", s.serveLogExport)
 	mux.HandleFunc("PUT /admin/v1/provider-keys", s.replaceProviderKeys)
 	mux.HandleFunc("DELETE /admin/v1/provider-keys", s.revertProviderKeys)
 	mux.HandleFunc("PUT /admin/v1/budgets", s.setBudgetCaps)

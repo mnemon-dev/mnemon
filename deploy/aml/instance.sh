@@ -12,7 +12,7 @@
 #   /etc/mnemon-aml/<n>/watch.env          watcher environment: alert bot, public URL, admin token
 #   /etc/mnemon-aml/<n>/inspect.env        inspect environment, while it is on: listener, caps, token, provider keys
 #   /etc/mnemon-aml/<n>/memory-config.json the shipped configuration with this instance's caps
-#   /var/lib/mnemon-aml/<n>/               data root (data/), model budget file and, once the
+#   /var/lib/mnemon-aml/<n>/               data root (data/), log files (logs/), model budget file and, once the
 #                                          console has set them, the account's own provider keys
 #                                          (provider-keys.json: aml-serve writes it, list reads its
 #                                          key names only) and budget caps (settings.json)
