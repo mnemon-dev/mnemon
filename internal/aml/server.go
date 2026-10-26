@@ -23,6 +23,7 @@ import (
 
 	"github.com/mnemon-dev/mnemon/internal/memoryagent"
 	"github.com/mnemon-dev/mnemon/internal/records"
+	mask "github.com/mnemon-dev/mnemon/internal/safety"
 )
 
 const (
@@ -1357,6 +1358,13 @@ func (s *Server) read(ctx context.Context, user *userEntry, req memoryagent.Read
 // answer writes a Search's items, scored by position (scoreByPosition), and
 // counts the Search.
 func (s *Server) answer(w http.ResponseWriter, items []SearchItem) {
+	if safety := s.config.MemoryConfig.Safety; safety != nil && safety.Mask {
+		for i := range items {
+			var hidden map[string]int
+			items[i].Content, hidden = mask.Mask(items[i].Content)
+			s.metrics.masked(hidden)
+		}
+	}
 	scoreByPosition(items)
 	s.metrics.searchAnswered()
 	s.metrics.delivered(items)
