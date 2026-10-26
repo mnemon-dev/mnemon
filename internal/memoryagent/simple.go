@@ -105,7 +105,15 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if a.config.View.RoundRecall {
 		return r.readRounds(ctx)
 	}
-	cues, err := r.plan(ctx)
+	// With view.deriveLoop the planner writes every search and need in one
+	// call (simple_derive.go).
+	var cues []cue
+	var err error
+	if a.config.View.DeriveLoop {
+		cues, err = r.derive(ctx)
+	} else {
+		cues, err = r.plan(ctx)
+	}
 	if err != nil {
 		return View{}, err
 	}
@@ -117,7 +125,12 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if err != nil {
 		return View{}, err
 	}
-	ids := mixCues(pages, simplePoolSize)
+	// With view.weightedRecall the topics the searches find add their
+	// records (topic_weights.go).
+	ids, err := r.mix(ctx, cues, pages)
+	if err != nil {
+		return View{}, err
+	}
 	// With view.topDown the consolidation's topics add the records they cite
 	// after the cues' mix (simple_topdown.go); a failure leaves the pool as
 	// the cues made it.
@@ -147,7 +160,12 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		return View{}, err
 	}
 	r.stage(traceNeed)
-	stop, err := r.loop(ctx)
+	var stop string
+	if a.config.View.DeriveLoop {
+		stop, err = r.deriveLoop(ctx)
+	} else {
+		stop, err = r.loop(ctx)
+	}
 	if err != nil {
 		return View{}, err
 	}
@@ -179,9 +197,12 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		// In timelines mode the consolidated layer goes before the records
 		// (timelines_layer.go); with view.layerRecall it is the one the
 		// question recalls (layer_recall.go).
-		if a.config.View.LayerRecall {
+		switch {
+		case a.config.View.LayerRecall:
 			view, err = r.layerRecalled(ctx, view)
-		} else {
+		case a.config.View.LayerRanked:
+			view, err = r.layerRanked(ctx, view)
+		default:
 			view, err = r.layer(ctx, view)
 		}
 	}

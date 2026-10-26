@@ -179,6 +179,18 @@ func (s *Store) rankSelectionCosines(ctx context.Context, hash string, req Query
 	query := stringValue(req.Input["query"])
 	term := lower(query)
 	match := stringValue(req.Input["match"])
+	// Match "bm25" ranks by SQLite's own bm25() (native_bm25.go); before the
+	// index covers the selection it ranks as "words" does.
+	if match == "bm25" && term != "" {
+		ids, ready, err := s.nativeLexical(ctx, selection, term, req.CandidateLimit)
+		if err != nil {
+			return QueryResult{}, nil, err
+		}
+		if ready {
+			return QueryResult{IDs: ids}, nil, nil
+		}
+		match = "words"
+	}
 	words := (match == "words" || match == "hybrid") && term != ""
 	records := selection.docs
 	var err error

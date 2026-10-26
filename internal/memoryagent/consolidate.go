@@ -75,7 +75,12 @@ type ConsolidateResult struct {
 	// the stored latest; LinkFallbacks counts the batches linked without
 	// JEV because it failed, and LinkLexical those whose candidates shared
 	// words found because the configured embedder failed.
-	LinkCalls     int    `json:"linkCalls,omitempty"`
+	LinkCalls int `json:"linkCalls,omitempty"`
+	// WeightEdges counts the topic → record edges a job with
+	// consolidation.topicWeights stored, and WeightErrors its batches whose
+	// weighting or storing failed (their cited edges may still stand).
+	WeightEdges   int    `json:"weightEdges,omitempty"`
+	WeightErrors  int    `json:"weightErrors,omitempty"`
 	LinkUsage     *Usage `json:"linkUsage,omitempty"`
 	ThreadsLinked int    `json:"threadsLinked,omitempty"`
 	ThreadsNew    int    `json:"threadsNew,omitempty"`

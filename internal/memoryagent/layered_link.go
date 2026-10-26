@@ -123,6 +123,7 @@ const (
 	linkEntity
 	linkInsight
 	linkUpdate
+	linkWeight
 )
 
 // linkPair is a new item (an index into the new items) and a candidate (an
@@ -449,6 +450,8 @@ func pairQuestions(p *linkPair, news, cands []linkItem, j int) map[string]Questi
 		return map[string]Question{fmt.Sprintf("g%d", j): {Type: "noul", Instructions: sameInsightQuestion(n, c), Criteria: map[string]string{"true": sameInsightYes, "false": sameInsightNo}}}
 	case linkUpdate:
 		return map[string]Question{fmt.Sprintf("u%d", j): {Type: "noul", Instructions: updateQuestion(n, c), Criteria: map[string]string{"true": updateYes, "false": updateNo}}}
+	case linkWeight:
+		return map[string]Question{fmt.Sprintf("w%d", j): {Type: "noul", Instructions: weightQuestion(n, c), Criteria: map[string]string{"true": weightYes, "false": weightNo}}}
 	}
 	return map[string]Question{fmt.Sprintf("x%d", j): contradicts}
 }
@@ -533,6 +536,8 @@ func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*lin
 				p.same = answers[fmt.Sprintf("g%d", j)]
 			case linkUpdate:
 				p.same = answers[fmt.Sprintf("u%d", j)]
+			case linkWeight:
+				p.same = answers[fmt.Sprintf("w%d", j)]
 			default:
 				p.contradicts = answers[fmt.Sprintf("x%d", j)]
 			}

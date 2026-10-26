@@ -55,6 +55,8 @@ func (r *simpleRun) search(ctx context.Context, c cue) (*cueSearch, error) {
 	input["query"], _ = json.Marshal(c.Text)
 	if r.agent.config.Embedding != nil {
 		input["match"] = json.RawMessage(`"hybrid"`)
+	} else if r.agent.config.View.NativeBM25 {
+		input["match"] = json.RawMessage(`"bm25"`)
 	}
 	if r.intent != "" {
 		input["intent"], _ = json.Marshal(r.intent)
