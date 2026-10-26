@@ -19,8 +19,6 @@ import (
 //     lead (the item JEV answers best) highest; after a page that did not help
 //     (no new yes, no lead among what the round read) the planner words a new
 //     search, and a need both failed for is given up.
-//
-// With view.loopLinks the read runs the linked loop instead (simple_linked.go).
 
 const (
 	simpleRounds = 3  // the author's `loop`
@@ -115,9 +113,6 @@ func (r *simpleRun) screened() []string {
 // had (rounds); spent page reads read nothing, as in the author. New finds
 // are pooled, screened (their Screen set) and tabled like the first round's.
 func (r *simpleRun) loop(ctx context.Context) (string, error) {
-	if r.agent.config.View != nil && r.agent.config.View.LoopLinks {
-		return r.linkedLoop(ctx)
-	}
 	stop := stopRounds
 	ended := func(err error) (string, error) {
 		if errors.Is(err, errCallBudget) {

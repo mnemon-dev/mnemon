@@ -96,10 +96,6 @@ type ConsolidationConfig struct {
 	NativeEdges         bool     `json:"nativeEdges,omitempty"`
 	EdgeKinds           []string `json:"edgeKinds,omitempty"`
 	Insights            bool     `json:"insights,omitempty"`
-	// OneShotLinks has every timelines job first ask JEV, a window of the
-	// user's new records per request, which earlier record each depends on
-	// (oneshot_links.go); view.links uses the answers.
-	OneShotLinks bool `json:"oneShotLinks,omitempty"`
 	// EvenReading (layered mode) reads every record whole and alike, as
 	// neutral mode always does (evenReadable), and its extraction prompt no
 	// longer says assistant messages are cut short (layeredEvenFold).
@@ -138,17 +134,6 @@ type ViewConfig struct {
 	// Order "time" lists the View's records in time order once the View is
 	// composed (simple_order.go); "" keeps the rank order.
 	Order string `json:"order,omitempty"`
-	// Links appends to the composed View the records the one-shot links
-	// (consolidation.oneShotLinks) reach from its records, hop by hop until
-	// the View is full, calling no model (oneshot_links.go), before
-	// view.order.
-	Links bool `json:"links,omitempty"`
-	// LoopLinks runs the linked loop instead of the simple loop: up to ten
-	// rounds of judging what is new, then new searches for the needs still
-	// open and every record the links tie to what JEV found useful: the
-	// consolidation links with consolidation.nativeEdges, the one-shot links
-	// with consolidation.oneShotLinks (simple_linked.go).
-	LoopLinks bool `json:"loopLinks,omitempty"`
 }
 
 const strategySimple = "simple"
@@ -201,11 +186,6 @@ type ReadStats struct {
 	// (Config.Index), the searches of a simple read in which it found a
 	// candidate. Absent when none did, and for memory-agent/v1.
 	IndexRoutes map[string]int `json:"indexRoutes,omitempty"`
-	// LinksAppended counts the records view.links added to the View.
-	LinksAppended int `json:"linksAppended,omitempty"`
-	// LoopLinked counts the records view.loopLinks pooled from the
-	// consolidation links of useful finds.
-	LoopLinked int `json:"loopLinked,omitempty"`
 	// LayerInsights counts the insights the View's layer shows
 	// (consolidation.insights); absent at zero.
 	LayerInsights int `json:"layerInsights,omitempty"`
@@ -296,9 +276,6 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	}
 	if config.Consolidation != nil && len(config.Consolidation.EdgeKinds) > 0 && models.Judge == nil {
 		return nil, errors.New("edgeKinds requires a decision model")
-	}
-	if config.Consolidation != nil && config.Consolidation.OneShotLinks && (!config.Consolidation.Timelines() || models.Judge == nil) {
-		return nil, errors.New("oneShotLinks requires consolidation mode \"timelines\" or \"layered\" and a decision model")
 	}
 	// Config and its nested pointers belong to this service, never its caller.
 	raw, _ := json.Marshal(config)

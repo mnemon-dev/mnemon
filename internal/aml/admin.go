@@ -76,20 +76,14 @@ const (
 //	                 "account" (the key file), "host" (the environment) or "none", and the key's
 //	                 fingerprint, the first 12 hex digits of its SHA-256 ("" with none); never a key
 type AdminStatus struct {
-	StartedAt     time.Time `json:"startedAt"`
-	Adds          int64     `json:"adds"`
-	Searches      int64     `json:"searches"`
-	Degraded      int64     `json:"degraded"`
-	Partial       int64     `json:"partial"`
-	Dropped       int64     `json:"dropped"`
-	LinkFallbacks int64     `json:"linkFallbacks"`
-	AddOutran     int64     `json:"addOutran"`
-	// The one-shot links: records asked, windows JEV refused, jobs whose step
-	// stopped on an error; and the records view.loopLinks pooled.
-	OneShotAsked    int64                            `json:"oneShotAsked"`
-	OneShotRefused  int64                            `json:"oneShotRefused"`
-	OneShotErrors   int64                            `json:"oneShotErrors"`
-	LoopLinked      int64                            `json:"loopLinked"`
+	StartedAt       time.Time                        `json:"startedAt"`
+	Adds            int64                            `json:"adds"`
+	Searches        int64                            `json:"searches"`
+	Degraded        int64                            `json:"degraded"`
+	Partial         int64                            `json:"partial"`
+	Dropped         int64                            `json:"dropped"`
+	LinkFallbacks   int64                            `json:"linkFallbacks"`
+	AddOutran       int64                            `json:"addOutran"`
 	PartialLast10m  int64                            `json:"partialLast10m"`
 	SearchesLast10m int64                            `json:"searchesLast10m"`
 	Queue           SchedulerStatus                  `json:"queue"`
@@ -216,10 +210,6 @@ func (s *Server) status(ctx context.Context) AdminStatus {
 		Dropped:         m.batches[batchDropped].Load(),
 		LinkFallbacks:   m.linkFallbacks.Load(),
 		AddOutran:       m.addOutran.Load(),
-		OneShotAsked:    m.oneShotAsked.Load(),
-		OneShotRefused:  m.oneShotRefused.Load(),
-		OneShotErrors:   m.oneShotErrors.Load(),
-		LoopLinked:      m.loopLinked.Load(),
 		PartialLast10m:  partial,
 		SearchesLast10m: searches,
 		Queue:           s.queueStatus(),

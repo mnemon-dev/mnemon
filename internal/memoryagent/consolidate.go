@@ -53,15 +53,6 @@ type ConsolidateResult struct {
 	// Folded counts the batches a timelines job took off the pending
 	// records: folded, or given up on (Drops).
 	Folded int `json:"folded,omitempty"`
-	// LinkedRecords counts the records a job's one-shot links asked about
-	// (consolidation.oneShotLinks), LinkRefused the windows JEV refused for
-	// their own request (their records stay unlinked); LinksPending says
-	// records were left for a later job, and LinkError why the step stopped
-	// early.
-	LinkedRecords int    `json:"linkedRecords,omitempty"`
-	LinkRefused   int    `json:"linkRefused,omitempty"`
-	LinksPending  bool   `json:"linksPending,omitempty"`
-	LinkError     string `json:"linkError,omitempty"`
 	// Dropped counts the records a timelines job gave up on, for any
 	// reason; Drops says how many each time, and why.
 	Dropped int               `json:"dropped,omitempty"`

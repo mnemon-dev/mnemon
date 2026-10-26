@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/mnemon-dev/mnemon/internal/records"
 	"github.com/mnemon-dev/mnemon/internal/retrieval"
@@ -65,11 +64,6 @@ func OpenOverlay(path string, readonly bool) (*Overlay, error) {
 		_, err = db.Exec(`CREATE TABLE IF NOT EXISTS overlays(scope TEXT PRIMARY KEY,token TEXT NOT NULL,payload TEXT NOT NULL)`)
 		if err == nil {
 			_, err = db.Exec(timelinesSchema)
-		}
-		for _, statement := range strings.Split(recordLinksSchema, ";\n") {
-			if err == nil {
-				_, err = db.Exec(statement)
-			}
 		}
 	} else {
 		err = db.Ping()

@@ -133,12 +133,6 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if err != nil {
 		return View{}, err
 	}
-	// With view.links the records linked to the View's join it (oneshot_links.go).
-	if a.config.View != nil && a.config.View.Links {
-		if view, err = r.appendLinked(ctx, view); err != nil {
-			return View{}, err
-		}
-	}
 	// With view.order "time" the composed View is listed in time order.
 	return r.orderView(ctx, view)
 }
