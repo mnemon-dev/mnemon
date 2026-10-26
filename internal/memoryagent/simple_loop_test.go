@@ -356,6 +356,62 @@ func TestTableBatchesAndShape(t *testing.T) {
 	}
 }
 
+// cappedJudge is a scriptedJudge that takes at most max questions a call.
+type cappedJudge struct {
+	*scriptedJudge
+	max int
+}
+
+func (j cappedJudge) MaxQuestions() int { return j.max }
+
+func TestTableKeepsEachCallWithinTheQuestionLimit(t *testing.T) {
+	s, _ := agentStore(t)
+	answer := func(text string, k int) float64 { return float64(itemNumber(text)*10+k) / 1000 }
+	full := func(items []*simpleItem, needs int) {
+		t.Helper()
+		for i, item := range items {
+			for k := range needs {
+				if item.Row[k] != float64(i*10+k)/1000 {
+					t.Fatal(i, item.Row)
+				}
+			}
+		}
+	}
+	// Seven needs (the derive loop does not cap them): 18 items a call, 126
+	// questions, then the other 12.
+	judge := &scriptedJudge{answer: answer}
+	r := testRun(judgedAgent(t, s, replies("", "", ""), judge), user("q"))
+	for k := range 7 {
+		r.needs = append(r.needs, Need{Text: fmt.Sprintf("need %d", k)})
+	}
+	items := textItems(30, 50)
+	if err := r.table(context.Background(), items); err != nil || judge.count() != 2 || len(judge.calls[0].Questions) != 18*7 || len(judge.calls[1].Questions) != 12*7 {
+		t.Fatal(err, judge.count())
+	}
+	full(items, 7)
+
+	// More needs than a judge takes questions: one item a call, the needs in
+	// groups of the limit, each call's state listing its group.
+	judge = &scriptedJudge{answer: answer}
+	r = testRun(judgedAgent(t, s, replies("", "", ""), cappedJudge{judge, 4}), user("q"))
+	for k := range 6 {
+		r.needs = append(r.needs, Need{Text: fmt.Sprintf("need %d", k)})
+	}
+	items = textItems(3, 50)
+	if err := r.table(context.Background(), items); err != nil || judge.count() != 6 {
+		t.Fatal(err, judge.count())
+	}
+	for _, call := range judge.calls {
+		if len(call.Questions) > 4 || len(call.State.Needs) != len(call.Questions) {
+			t.Fatal(len(call.Questions), call.State.Needs)
+		}
+	}
+	full(items, 6)
+	if !slices.Equal(r.rows, []string{"0", "1", "2"}) {
+		t.Fatal(r.rows)
+	}
+}
+
 func TestLoopMetSingleNeed(t *testing.T) {
 	s, _ := agentStore(t)
 	seedNote(t, s, "answer", "codename ORBIT")

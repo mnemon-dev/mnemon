@@ -246,34 +246,51 @@ func (r *simpleRun) table(ctx context.Context, items []*simpleItem) error {
 
 // askNeeds asks JEV the need table's question (J:108-119) for each item and
 // each of the asked needs (indexes into r.needs, in order), in sequential
-// batches of 24, and passes set each item's row: its answers for the asked
-// needs, 0 for the others. A spent decision budget returns errCallBudget
-// between batches; rows already set stay.
+// batches of 24, fewer when 24 items' questions would pass the judge's
+// question limit (judgeQuestionLimit), and passes set each item's row: its
+// answers for the asked needs, 0 for the others. More asked needs than the
+// limit are asked in groups of the limit, one item a call. A spent decision
+// budget returns errCallBudget between calls; rows already set stay.
 func (r *simpleRun) askNeeds(ctx context.Context, items []*simpleItem, asked []int, set func(*simpleItem, []float64)) error {
-	needs := []judgeNeed{}
-	for _, k := range asked {
-		needs = append(needs, judgeNeed{ID: fmt.Sprintf("q%d", k), Need: r.needs[k].Text})
+	limit := judgeQuestionLimit(r.agent.models.Judge)
+	per := max(1, min(len(asked), limit))
+	groups, needs := [][]int{}, [][]judgeNeed{}
+	for start := 0; start < len(asked); start += per {
+		group := asked[start:min(start+per, len(asked))]
+		list := []judgeNeed{}
+		for _, k := range group {
+			list = append(list, judgeNeed{ID: fmt.Sprintf("q%d", k), Need: r.needs[k].Text})
+		}
+		groups, needs = append(groups, group), append(needs, list)
 	}
+	batch := max(1, min(tableBatch, limit/per))
 	dialogue := judgeDialogue(r.dialogue, 6, simpleListing)
 	rubric := judgeRubric{Question: needQuestion, Yes: needYes, No: needNo}
-	for start := 0; start < len(items); start += tableBatch {
-		part := items[start:min(start+tableBatch, len(items))]
-		questions := map[string]Question{}
+	for start := 0; start < len(items); start += batch {
+		part := items[start:min(start+batch, len(items))]
+		rows := make([][]float64, len(part))
 		for i := range part {
-			for _, k := range asked {
-				questions[fmt.Sprintf("c%dq%d", i, k)] = Question{Type: "noul", Instructions: needInstruction(i, k)}
-			}
+			rows[i] = make([]float64, len(r.needs))
 		}
-		answers, err := r.decide(ctx, needState{Dialogue: dialogue, Needs: needs, Candidates: judgeCandidates(part), Rubric: rubric}, questions)
-		if err != nil {
-			return err
+		for g, group := range groups {
+			questions := map[string]Question{}
+			for i := range part {
+				for _, k := range group {
+					questions[fmt.Sprintf("c%dq%d", i, k)] = Question{Type: "noul", Instructions: needInstruction(i, k)}
+				}
+			}
+			answers, err := r.decide(ctx, needState{Dialogue: dialogue, Needs: needs[g], Candidates: judgeCandidates(part), Rubric: rubric}, questions)
+			if err != nil {
+				return err
+			}
+			for i := range part {
+				for _, k := range group {
+					rows[i][k] = answers[fmt.Sprintf("c%dq%d", i, k)]
+				}
+			}
 		}
 		for i, item := range part {
-			row := make([]float64, len(r.needs))
-			for _, k := range asked {
-				row[k] = answers[fmt.Sprintf("c%dq%d", i, k)]
-			}
-			set(item, row)
+			set(item, rows[i])
 		}
 	}
 	return nil

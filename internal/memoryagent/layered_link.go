@@ -547,10 +547,16 @@ func (l *linker) judge(ctx context.Context, news, cands []linkItem, pairs []*lin
 	return nil
 }
 
-// questionLimit is the questions a linking call may ask: 128, or fewer
-// when the judge states fewer.
+// questionLimit is the questions a linking call may ask
+// (judgeQuestionLimit).
 func (l *linker) questionLimit() int {
-	if limited, ok := l.agent.models.Judge.(interface{ MaxQuestions() int }); ok {
+	return judgeQuestionLimit(l.agent.models.Judge)
+}
+
+// judgeQuestionLimit is the questions one call of judge may ask: 128, or
+// fewer when the judge states fewer.
+func judgeQuestionLimit(judge Decider) int {
+	if limited, ok := judge.(interface{ MaxQuestions() int }); ok {
 		return min(128, limited.MaxQuestions())
 	}
 	return 128
