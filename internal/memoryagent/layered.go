@@ -168,14 +168,7 @@ func (a *Agent) foldLayered(ctx context.Context, model Completer, req Consolidat
 			}
 			break
 		}
-		before := len(state.Memory.Events)
 		state.applyLinked(memory, x, counts, len(batch), result)
-		// With consolidation.topicWeights the batch's topics are tied to its
-		// records (topic_weights.go), stored once the state is.
-		var edges map[string][]string
-		if settings.TopicWeights {
-			edges = a.batchWeights(ctx, state.Memory, before, batch, state, result)
-		}
 		linked++
 		saved, err := a.overlay.saveTimelines(ctx, req.Scope, *token, *state)
 		if err != nil {
@@ -192,17 +185,6 @@ func (a *Agent) foldLayered(ctx context.Context, model Completer, req Consolidat
 			return nil, err
 		}
 		*token, *dirty = saved, false
-		if len(edges) > 0 {
-			if err := a.overlay.saveTopicChunks(ctx, req.Scope, edges); err != nil {
-				if ctx.Err() == nil {
-					result.WeightErrors++
-				}
-			} else {
-				for _, ids := range edges {
-					result.WeightEdges += len(ids)
-				}
-			}
-		}
 	}
 	// A job that defers links keeps the extractions of the batches it
 	// leaves pending, unless an extraction stopped it (keys is nil without

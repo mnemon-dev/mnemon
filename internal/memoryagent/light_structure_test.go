@@ -9,61 +9,6 @@ import (
 	"github.com/mnemon-dev/mnemon/internal/records"
 )
 
-func TestTopicWeightsTieEachBatchsTopicsToItsRecords(t *testing.T) {
-	ctx := context.Background()
-	s, dir := agentStore(t)
-	seedTopics(t, s, 3)
-	model := &limitPlanner{reply: func(_, prompt string) (string, error) { return layeredReply(prompt), nil }}
-	judge := topicJudge()
-	threads := judge.answer
-	// JEV also calls the garden note of a batch about the kayak topic.
-	judge.answer = func(kind, newText, candidateText string) float64 {
-		if kind == "weight" {
-			if strings.Contains(newText, "kayak") && strings.HasPrefix(candidateText, "garden") || strings.Contains(newText, strings.Fields(candidateText)[0]) {
-				return 0.9
-			}
-			return 0.1
-		}
-		return threads(kind, newText, candidateText)
-	}
-	a, overlay := layeredAgent(t, s, dir, ConsolidationConfig{BatchCharacters: 100, TopicWeights: true}, model, judge)
-	result, err := a.Consolidate(ctx, ConsolidateRequest{})
-	if err != nil || result.Folded != 3 || result.WeightErrors != 0 {
-		t.Fatal(result, err)
-	}
-	state := loadState(t, overlay)
-	ids := map[string]string{}
-	for _, th := range state.Memory.Threads {
-		ids[th.Title] = th.ID
-	}
-	held, err := overlay.topicChunks(ctx, records.Scope{}, []string{ids["kayak"], ids["taxes"]})
-	if err != nil {
-		t.Fatal(err)
-	}
-	kayak, taxes := held[ids["kayak"]], held[ids["taxes"]]
-	slices.Sort(kayak)
-	slices.Sort(taxes)
-	// Each batch adds its own records only: the cited kayak notes and the
-	// garden notes JEV called about kayak, across the three batches.
-	if !slices.Equal(kayak, []string{"n00", "n02", "n03", "n05", "n06", "n08"}) || !slices.Equal(taxes, []string{"n01", "n04", "n07"}) {
-		t.Fatal(kayak, taxes)
-	}
-	if result.WeightEdges != 6+3+3 {
-		t.Fatal(result.WeightEdges)
-	}
-}
-
-func TestMixWeightedRanksTopicRecordsAfterEachSearchsShare(t *testing.T) {
-	lists := [][]string{{"a", "b"}, {"c"}}
-	// Each list keeps its share (one each), then the topics' record beats b.
-	if got := mixWeighted(lists, map[string]float64{"z": 0.05}, 3); !slices.Equal(got, []string{"a", "c", "z"}) {
-		t.Fatal(got)
-	}
-	if got := mixWeighted(lists, nil, 3); !slices.Equal(got, mixCues(lists, 3)) {
-		t.Fatal(got)
-	}
-}
-
 func TestDeriveLoopAsksAgainForOpenNeeds(t *testing.T) {
 	s, _ := agentStore(t)
 	seedTrip(t, s)

@@ -47,24 +47,6 @@ func (r *simpleRun) derive(ctx context.Context) ([]cue, error) {
 	return out, nil
 }
 
-// mix is the pool of a set of first pages: mixCues, or with
-// view.weightedRecall mixWeighted with the topics' scores (a failure to read
-// them degrades to mixCues).
-func (r *simpleRun) mix(ctx context.Context, cues []cue, pages [][]string) ([]string, error) {
-	if !r.agent.config.View.WeightedRecall {
-		return mixCues(pages, simplePoolSize), nil
-	}
-	extra, err := r.topicScores(ctx, cues)
-	if ctx.Err() != nil {
-		return nil, ctx.Err()
-	}
-	if err != nil {
-		r.degrade("weighted-recall")
-		return mixCues(pages, simplePoolSize), nil
-	}
-	return mixWeighted(pages, extra, simplePoolSize), nil
-}
-
 // deriveLoop runs the derive loop over the screened pool and returns why it
 // stopped.
 func (r *simpleRun) deriveLoop(ctx context.Context) (string, error) {
@@ -128,11 +110,7 @@ func (r *simpleRun) deriveLoop(ctx context.Context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		ids, err := r.mix(ctx, cues, pages)
-		if err != nil {
-			return "", err
-		}
-		items, err := r.admit(ctx, ids)
+		items, err := r.admit(ctx, mixCues(pages, simplePoolSize))
 		if err != nil {
 			return "", err
 		}

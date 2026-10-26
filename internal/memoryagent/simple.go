@@ -125,12 +125,7 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if err != nil {
 		return View{}, err
 	}
-	// With view.weightedRecall the topics the searches find add their
-	// records (topic_weights.go).
-	ids, err := r.mix(ctx, cues, pages)
-	if err != nil {
-		return View{}, err
-	}
+	ids := mixCues(pages, simplePoolSize)
 	// With view.topDown the consolidation's topics add the records they cite
 	// after the cues' mix (simple_topdown.go); a failure leaves the pool as
 	// the cues made it.

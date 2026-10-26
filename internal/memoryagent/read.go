@@ -104,10 +104,6 @@ type ConsolidationConfig struct {
 	// neutral mode always does (evenReadable), and its extraction prompt no
 	// longer says assistant messages are cut short (layeredEvenFold).
 	EvenReading bool `json:"evenReading,omitempty"`
-	// TopicWeights (layered mode) ties each linked batch's topics to the
-	// batch's records JEV calls about them, and to those its events cite
-	// (topic_weights.go), for view.weightedRecall.
-	TopicWeights bool `json:"topicWeights,omitempty"`
 }
 
 // readsEvenly reports whether the mode reads every record whole and alike:
@@ -187,11 +183,6 @@ type ViewConfig struct {
 	// NativeBM25 has the searches ranked by SQLite FTS5's own bm25()
 	// (records match "bm25") instead of the frozen rules.
 	NativeBM25 bool `json:"nativeBM25,omitempty"`
-	// WeightedRecall adds to each search's mix the records of the topics its
-	// words find, by the topics' rank and the edges of
-	// consolidation.topicWeights (topic_weights.go). It needs a timelines
-	// consolidation.
-	WeightedRecall bool `json:"weightedRecall,omitempty"`
 	// DeriveLoop has the planner write every search and need in one call and
 	// replaces the loop's paging and rewriting with rounds that ask it again
 	// for the needs still open (simple_derive.go), with no call or page
@@ -454,11 +445,8 @@ func New(store *records.Store, config Config, models Models, overlay *Overlay) (
 	if config.View != nil && config.View.LayerRecall && !config.Consolidation.Timelines() {
 		return nil, errors.New("view.layerRecall requires a timelines consolidation")
 	}
-	if config.View != nil && (config.View.WeightedRecall || config.View.LayerRanked) && !config.Consolidation.Timelines() {
-		return nil, errors.New("view.weightedRecall and view.layerRanked require a timelines consolidation")
-	}
-	if config.Consolidation != nil && config.Consolidation.TopicWeights && !config.Consolidation.Layered() {
-		return nil, errors.New("consolidation.topicWeights requires layered mode")
+	if config.View != nil && config.View.LayerRanked && !config.Consolidation.Timelines() {
+		return nil, errors.New("view.layerRanked requires a timelines consolidation")
 	}
 	if config.Consolidation != nil && len(config.Consolidation.EdgeKinds) > 0 && models.Judge == nil {
 		return nil, errors.New("edgeKinds requires a decision model")
