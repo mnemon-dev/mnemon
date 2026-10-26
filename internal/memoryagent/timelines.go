@@ -70,8 +70,6 @@ type factValue struct {
 	Records  []string `json:"records"`
 	Conflict bool     `json:"conflict"`
 	Entities []string `json:"entities,omitempty"`
-	// Forget marks the user's request to forget the key (safety.forget).
-	Forget bool `json:"forget,omitempty"`
 }
 
 type directive struct {
@@ -703,17 +701,14 @@ func applyReplyWith(m *timelineMemory, batch []pendingRecord, reply string, enti
 		if key == "" || said == "" {
 			continue
 		}
-		var conflict, forget bool
+		var conflict bool
 		if json.Unmarshal(f["conflict"], &conflict) != nil {
 			conflict = false
-		}
-		if json.Unmarshal(f["forget"], &forget) != nil {
-			forget = false
 		}
 		if _, known := m.Facts[key]; !known {
 			m.FactOrder = append(m.FactOrder, key)
 		}
-		m.Facts[key] = append(m.Facts[key], factValue{Value: said, Date: jsonText(f["date"]), Records: refs(f["records"]), Conflict: conflict, Entities: names(f["entities"]), Forget: forget})
+		m.Facts[key] = append(m.Facts[key], factValue{Value: said, Date: jsonText(f["date"]), Records: refs(f["records"]), Conflict: conflict, Entities: names(f["entities"])})
 	}
 	for _, raw := range jsonList(value["directives"]) {
 		d := jsonObject(raw)

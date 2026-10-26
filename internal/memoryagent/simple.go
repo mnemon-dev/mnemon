@@ -47,12 +47,7 @@ type simpleRun struct {
 	// layerNeeded reports that JEV called a block of the consolidated layer
 	// needed.
 	layerNeeded bool
-	// forgotten is the consolidated memory with what was forgotten withdrawn,
-	// and withheld the records the View must not show (safety.forget); nil
-	// without the check.
-	forgotten *timelineMemory
-	withheld  map[string]bool
-	mu        sync.Mutex // guards stats during concurrent model calls
+	mu          sync.Mutex // guards stats during concurrent model calls
 }
 
 // simpleItem is one pooled record and what the models said about it.
@@ -134,10 +129,6 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 		}
 		r.degrade("judge")
 	}
-	if err = r.forget(ctx); err != nil {
-		return View{}, err
-	}
-	scored = slices.DeleteFunc(scored, func(item *simpleItem) bool { return r.withheld[item.ID] })
 	r.stage(traceCompose)
 	view, err := r.compose(ctx, stop, scored)
 	if err == nil && a.layerOn() {
@@ -162,26 +153,6 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	}
 	// With view.order "time" the composed View is listed in time order.
 	return r.orderView(ctx, view)
-}
-
-// forget loads the consolidated memory with what was forgotten withdrawn,
-// and the records withheld, under safety.forget; a memory that cannot be
-// read leaves nothing withheld and degrades the read (stage forget).
-func (r *simpleRun) forget(ctx context.Context) error {
-	if !r.agent.forgets() || !r.agent.layerOn() {
-		return nil
-	}
-	state, _, err := r.agent.overlay.loadTimelines(ctx, r.req.Scope)
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if err != nil {
-		r.degrade("forget")
-		return nil
-	}
-	m, withheld := forgetting(state.Memory)
-	r.forgotten, r.withheld = &m, withheld
-	return nil
 }
 
 // noEvidence reports whether the read, run whole, found nothing the reply
