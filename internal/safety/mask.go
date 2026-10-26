@@ -7,13 +7,23 @@ import (
 	"strings"
 )
 
-// Kinds of values Mask hides, as its counts name them.
+// Kinds of values Mask hides, as its counts name them. They are the kinds
+// Presidio recognizes by default that a pattern finds (it finds a person,
+// a place or a date with a language model, which this does not do), with
+// a secret scanner's key forms: by a pattern and a checksum where the kind
+// has one, by a pattern and a context word ("account", "passport",
+// "license") where it has none.
 const (
 	KindCard     = "card"     // a payment card number that passes Luhn's check
 	KindSSN      = "ssn"      // a US social security number in its dashed form
 	KindIBAN     = "iban"     // an IBAN whose check digits hold (ISO 13616)
 	KindSecret   = "secret"   // an API key, token or private key of a known form
 	KindPassword = "password" // the value after "password", "passcode" or "PIN"
+	KindEmail    = "email"    // an email address
+	KindPhone    = "phone"    // a phone number in the North American or E.164 form
+	KindAccount  = "account"  // a bank account number: 8 to 17 digits after "account" or "acct"
+	KindPassport = "passport" // a passport number: the token after "passport"
+	KindLicense  = "license"  // a driver's license number: the token after "license"
 )
 
 var (
@@ -31,6 +41,14 @@ var (
 	// "[your password]", is not a password).
 	passwordPattern = regexp.MustCompile(`(?i)\b(password|passwd|passcode|pin(?: code)?)(\s*(?:is|:|=)\s*)([^\s"'.,;\[\]<>{}()]{4,})`)
 	passwordValue   = regexp.MustCompile(`[0-9!@#$%^&*+=?~-]`)
+	emailPattern    = regexp.MustCompile(`\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b`)
+	phonePattern    = regexp.MustCompile(`(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)|\b\d{3})[ .-]\d{3}[ .-]\d{4}\b`)
+	// A number after its context word: the word, optionally "number", "no."
+	// or "#", optionally "is", ":" or "=", then the value.
+	accountPattern  = regexp.MustCompile(`(?i)(\b(?:bank\s+)?(?:account|acct)(?:\s+(?:number|no\.?|#))?\s*(?:is\s+|:\s*|=\s*|#\s*)?)(\d(?:[ -]?\d){7,16})\b`)
+	passportPattern = regexp.MustCompile(`(?i)(\bpassport(?:\s+(?:number|no\.?|#))?\s*(?:is\s+|:\s*|=\s*|#\s*)?)([A-Z0-9]{6,15})\b`)
+	licensePattern  = regexp.MustCompile(`(?i)(\b(?:driver'?s?\s+)?licen[cs]e(?:\s+(?:number|no\.?|#))?\s*(?:is\s+|:\s*|=\s*|#\s*)?)([A-Z0-9][A-Z0-9-]{4,19})\b`)
+	hasDigit        = regexp.MustCompile(`\d`)
 )
 
 // Mask returns text with every sensitive value of a kind above hidden, and
@@ -68,6 +86,24 @@ func Mask(text string) (string, map[string]int) {
 		counts[KindSSN]++
 		return "[SSN ending " + serial + "]"
 	})
+	text = emailPattern.ReplaceAllStringFunc(text, func(string) string {
+		counts[KindEmail]++
+		return "[email]"
+	})
+	for _, rule := range []struct {
+		kind    string
+		pattern *regexp.Regexp
+	}{{KindAccount, accountPattern}, {KindPassport, passportPattern}, {KindLicense, licensePattern}} {
+		text = rule.pattern.ReplaceAllStringFunc(text, func(match string) string {
+			parts := rule.pattern.FindStringSubmatch(match)
+			value := strings.NewReplacer(" ", "", "-", "").Replace(parts[2])
+			if !hasDigit.MatchString(value) || len(value) < 4 {
+				return match
+			}
+			counts[rule.kind]++
+			return parts[1] + "[" + rule.kind + " ending " + value[len(value)-4:] + "]"
+		})
+	}
 	text = cardPattern.ReplaceAllStringFunc(text, func(match string) string {
 		digits := strings.NewReplacer(" ", "", "-", "").Replace(match)
 		if !luhnValid(digits) || !consistentGroups(match) {
@@ -75,6 +111,11 @@ func Mask(text string) (string, map[string]int) {
 		}
 		counts[KindCard]++
 		return "[card ending " + digits[len(digits)-4:] + "]"
+	})
+	text = phonePattern.ReplaceAllStringFunc(text, func(match string) string {
+		digits := regexp.MustCompile(`\D`).ReplaceAllString(match, "")
+		counts[KindPhone]++
+		return "[phone ending " + digits[len(digits)-4:] + "]"
 	})
 	return text, counts
 }
