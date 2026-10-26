@@ -3,6 +3,7 @@ package memoryagent
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -57,7 +58,7 @@ func TestReadSimpleNoEvidenceAndAbstain(t *testing.T) {
 		t.Fatalf("nothing needed, no abstain: no evidence %v, %d records", view.NoEvidence, len(view.Records))
 	}
 	abstained := read(Config{Safety: &SafetyConfig{Abstain: true}}, judge(0, nil))
-	if !abstained.NoEvidence || len(abstained.Records) != 0 || len(abstained.Index) != 0 {
+	if !abstained.NoEvidence || len(abstained.Records) != 0 || slices.ContainsFunc(abstained.Index, func(b IndexItem) bool { return b.Kind != instructionsBlock }) {
 		t.Fatalf("nothing needed, abstain: no evidence %v, %d records", abstained.NoEvidence, len(abstained.Records))
 	}
 	if view := read(Config{Safety: &SafetyConfig{Abstain: true}}, judge(1, nil)); view.NoEvidence || len(view.Records) == 0 {

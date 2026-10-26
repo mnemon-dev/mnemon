@@ -196,6 +196,10 @@ func layerCandidates(lit litSets, threadIDs, keys []string, nearThreads, nearVal
 // each once, by id only; the read keeps those its View shows. Items name
 // the items each block shows, in order (Consolidation's ids: "d<i>", thread
 // ids, "e<i>", keys).
+// instructionsBlock is the kind and id of the block of the user's standing
+// instructions, which leads the layer.
+const instructionsBlock = "1-instructions"
+
 func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSets) []IndexItem {
 	_, by := eventThreads(m)
 	blocks := []IndexItem{}
@@ -222,7 +226,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 		items = append(items, itemID("d", i))
 	}
 	if shown > 0 {
-		add("1-instructions", text, items, linked)
+		add(instructionsBlock, text, items, linked)
 	}
 
 	type span struct {
