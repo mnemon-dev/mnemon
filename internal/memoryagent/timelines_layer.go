@@ -428,6 +428,7 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 		r.traceLayer(layerTrace{memory: m, anchors: anchors, lit: lit, threadIDs: ids, topics: topics, values: values,
 			nearThreads: nearThreads, nearValues: nearValues, threadTexts: threadTexts, valueTexts: valueTexts, scores: scores})
 	}
+	r.layerNeeded = slices.ContainsFunc(scores, func(score float64) bool { return score >= 0.5 })
 	threadScore, valueScore := map[string]float64{}, map[string]float64{}
 	for i, id := range topics {
 		threadScore[id] = scores[i]

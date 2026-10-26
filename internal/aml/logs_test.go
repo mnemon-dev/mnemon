@@ -345,3 +345,18 @@ func TestLogExportEndpoint(t *testing.T) {
 		t.Fatal("a second export:", response.Code)
 	}
 }
+
+// TestNoEvidenceSearchLinesSayItself: the lines of a Search that found
+// nothing the reply needs carry evidence=none, which the memory keeps and a
+// query finds.
+func TestNoEvidenceSearchLinesSayItself(t *testing.T) {
+	h := newHarness(t, nil)
+	ctx := withRequestUser(withRequestID(t.Context(), "req-none"))
+	nameNoEvidence(ctx)
+	h.server.logRequest(ctx, "POST", "/search", 200, 5*time.Millisecond)
+	h.server.logRequest(withRequestUser(t.Context()), "POST", "/search", 200, 5*time.Millisecond)
+	page := h.logs(t, "q=none")
+	if len(page.Lines) != 1 || page.Lines[0].RequestID != "req-none" || page.Lines[0].Evidence != "none" {
+		t.Fatalf("evidence=none lines: %+v", page.Lines)
+	}
+}

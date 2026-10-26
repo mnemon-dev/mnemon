@@ -62,6 +62,17 @@ type Config struct {
 	// read at every job. It is not configuration, so it stays out of the
 	// JSON and View.policy.
 	ReadOverride func() *RoleReading `json:"-"`
+	// Safety switches the safety and privacy checks, each on its own
+	// (SafetyConfig); unset, none runs and the policy keeps its hash.
+	Safety *SafetyConfig `json:"safety,omitempty"`
+}
+
+// SafetyConfig switches the safety and privacy checks of the simple read,
+// each on its own. Abstain empties the View of a read that found no evidence
+// (View.NoEvidence): the reply then has nothing to go on, rather than the
+// records nobody judged needed.
+type SafetyConfig struct {
+	Abstain bool `json:"abstain,omitempty"`
 }
 
 const (
@@ -183,6 +194,10 @@ type View struct {
 	Truncated  bool        `json:"truncated"`
 	IndexStale bool        `json:"indexStale"`
 	Stats      ReadStats   `json:"stats"`
+	// NoEvidence reports that the simple read, run whole (nothing degraded),
+	// found nothing the reply needs: JEV called no current record of its
+	// shortlist needed and no block of the consolidated layer.
+	NoEvidence bool `json:"noEvidence,omitempty"`
 }
 
 type Agent struct {

@@ -76,6 +76,7 @@ type metrics struct {
 	inFlight       *prometheus.GaugeVec     // route
 	shed           *prometheus.CounterVec   // route
 	partialStages  *prometheus.CounterVec   // stage
+	noEvidence     prometheus.Counter
 	attempts       *prometheus.CounterVec   // kind, class, outcome
 	attemptSeconds *prometheus.HistogramVec // kind, class
 	retries        *prometheus.CounterVec   // kind
@@ -158,6 +159,7 @@ func newMetrics(now func() time.Time) *metrics {
 	m.inFlight = factory.NewGaugeVec(gaugeOpts("in_flight", "Requests being served, those queued for a slot included."), []string{"route"})
 	m.shed = factory.NewCounterVec(counterOpts("shed_total", "Requests refused with 503 because no slot freed within the wait."), []string{"route"})
 	m.partialStages = factory.NewCounterVec(counterOpts("search_partial_total", "Stages of a Search's read that fell back, counting each stage once per Search."), []string{"stage"})
+	m.noEvidence = factory.NewCounter(counterOpts("search_no_evidence_total", "Searches whose read, run whole, found nothing the reply needs; with safety.abstain they answer no items."))
 	m.attempts = factory.NewCounterVec(counterOpts("model_attempts_total", "Attempts of model calls, by provider kind, call class and outcome."), []string{"kind", "class", "outcome"})
 	m.attemptSeconds = factory.NewHistogramVec(histogramOpts("model_attempt_seconds", "Time the caller waited for an attempt that went to the provider."), []string{"kind", "class"})
 	m.retries = factory.NewCounterVec(counterOpts("model_retries_total", "Attempts after a call's first that went to the provider."), []string{"kind"})

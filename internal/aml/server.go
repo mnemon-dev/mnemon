@@ -1303,6 +1303,10 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	}
 	view, err := s.read(ctx, user, memoryagent.ReadRequest{Question: req.question(), MaxItems: maxItems})
 	if err == nil {
+		if view.NoEvidence {
+			s.metrics.noEvidence.Inc()
+			nameNoEvidence(ctx)
+		}
 		if stages := view.Stats.Degraded; len(stages) > 0 {
 			n := s.metrics.searchPartlyDegraded(stages)
 			s.logf(ctx, slog.LevelWarn, "partially degraded search %d (user %s): %s", n, user.key[:8], strings.Join(stages, ", "))
