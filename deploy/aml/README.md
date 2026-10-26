@@ -32,7 +32,7 @@ dedicated instance `eval`.
 | Field | Value |
 |---|---|
 | System name | Mnemon |
-| Version | v0.2.x: a v0.2.x release follows this work (the `VERSION` given to `make build-linux-amd64`), commit `<release commit>` |
+| Version | v0.3.0: the `VERSION` given to `make build-linux-amd64`, built from the git tag `v0.3.0` |
 | Track | Industrial (commercial products), textual |
 | Team / organization | Mnemon Team / Mnemon |
 | Contact | `grivn.wang@gmail.com` |
@@ -100,7 +100,8 @@ may do (see step 6 below).
    in: a record JEV did not judge is not delivered.
 6. **Consolidation layer.** Records are folded in batches into threads of dated events, facts
    with value histories and standing directives, in two steps (layered consolidation). A model
-   reads each batch of records on its own and writes its events, facts and directives; then
+   reads each batch of records on its own, every record whole whatever its role (even reading:
+   no speaker is skipped or cut short), and writes its events, facts and directives; then
    JEV links each batch to the memory so far, in batch order, by asking whether a new thread
    continues a stored one, whether a new fact is the same attribute of the same thing as a
    stored fact, and whether its value contradicts the stored one. At read time BM25 shortlists
@@ -131,8 +132,10 @@ may do (see step 6 below).
 
 Retrieval is BM25 only. The cue searches over the records, the consolidation layer's choice
 of the topics and values nearest to a question, and the linking of new topics and facts to
-stored ones all rank by shared words (BM25). Nothing is embedded and no embedding service
-runs.
+stored ones all rank by shared words (BM25). The cue searches rank by SQLite FTS5's own
+`bm25()` over each store's lexical index, which a Search first brings up to date; the raw ranking
+of a degraded Search and the rest keep the frozen BM25 rules. Nothing is embedded and no
+embedding service runs.
 
 During a Search, the question, the planner's searches and candidate record texts go to the
 DeepSeek and JEV APIs; during consolidation (in the background workers, or before a user's
@@ -259,8 +262,8 @@ each number. None is reported in this draft.>`
   (`scripts/aml/load.sh`, as the runbook's "Capacity declaration" describes). The rows now hold
   the final run's local values, marked as such, and the unit limits (16 Adds, 16 Searches) are
   provisional until that test.
-- The release commit, `<release commit>` in the System table, and the `VERSION` of the release
-  binary. The capacity rows' commit, `bc18487b`, is the final run's, not the release's.
+- Done: the release is the git tag `v0.3.0` (`VERSION=v0.3.0`). The capacity rows' commit,
+  `bc18487b`, is the final run's, not the release's.
 - The Windows CI job (`windows-memory`). As it stood it could not pass, for two reasons. On
   Windows the private-mode check refused the budget file and the model cache for every file; that
   fix is in (`8888d9dd`: the check applies only where POSIX modes mean something). And every AML
