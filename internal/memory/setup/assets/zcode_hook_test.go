@@ -82,19 +82,31 @@ func TestZCodePrimeHookPowerShellReadsBOMlessCJKGuide(t *testing.T) {
 		"-ExecutionPolicy", "Bypass", "-Command",
 		"[Console]::OutputEncoding = [System.Text.Encoding]::GetEncoding(936); & "+quoted)
 	cmd.Stdin = strings.NewReader("{}")
-	cmd.Env = []string{
-		"MNEMON_BIN=" + filepath.Join(systemRoot, "System32", "where.exe"),
-		"MNEMON_DATA_DIR=" + dataDir,
-		"SystemRoot=" + systemRoot,
-		"PATH=" + filepath.Join(systemRoot, "System32"),
-		"TEMP=" + os.TempDir(),
-		"TMP=" + os.TempDir(),
+	// PowerShell needs the Windows environment for module discovery. A nearly
+	// empty environment can stall the first path cmdlet on hosted runners.
+	// Preserve it while isolating Mnemon configuration and profile fallbacks.
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if !strings.HasPrefix(strings.ToUpper(key), "MNEMON_") {
+			cmd.Env = append(cmd.Env, entry)
+		}
 	}
+	homeDir := t.TempDir()
+	cmd.Env = append(cmd.Env,
+		"MNEMON_BIN="+filepath.Join(systemRoot, "System32", "where.exe"),
+		"MNEMON_DATA_DIR="+dataDir,
+		"HOME="+homeDir,
+		"USERPROFILE="+homeDir,
+		"SystemRoot="+systemRoot,
+		"PATH="+filepath.Join(systemRoot, "System32"),
+		"TEMP="+os.TempDir(),
+		"TMP="+os.TempDir(),
+	)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("run prime.ps1: %v\nstderr:\n%s", err, stderr.String())
+		t.Fatalf("run prime.ps1: %v (context: %v)\nstdout:\n%s\nstderr:\n%s", err, ctx.Err(), out, stderr.String())
 	}
 
 	var payload hookOutput
