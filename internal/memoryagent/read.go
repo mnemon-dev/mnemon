@@ -93,6 +93,11 @@ type ConsolidationConfig struct {
 	LinkCandidates  int          `json:"linkCandidates,omitempty"`
 	Parallel        int          `json:"parallel,omitempty"`
 	Read            *RoleReading `json:"read,omitempty"`
+	// Profile asks the layered extraction to write, as facts under keys
+	// "user · <attribute>", what the user's messages show about the user
+	// without saying it outright (profileFold): preferences, habits,
+	// background, health, relationships, the tools and services they use.
+	Profile bool `json:"profile,omitempty"`
 }
 
 // RoleReading is the configuration's role reading, normalized:

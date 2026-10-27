@@ -348,9 +348,28 @@ func (a *Agent) extractBatches(ctx context.Context, model Completer, head timeli
 }
 
 // extractionFold is the L0 fold, its prompt saying what the agent's role
-// reading cuts (readFold).
+// reading cuts (readFold), and asking for the user's profile under
+// consolidation.profile (profileFold).
 func (a *Agent) extractionFold() foldSpec {
-	return readFold(layeredFold, a.roleReading())
+	spec := readFold(layeredFold, a.roleReading())
+	if a.config.Consolidation != nil && a.config.Consolidation.Profile {
+		spec = profileFold(spec)
+	}
+	return spec
+}
+
+// profileFold is spec asking the extraction to write the user's profile as
+// facts: what their messages show about them, said outright or not. A
+// request often shows a preference, a habit or a circumstance it never
+// names ("polish this WhatsApp message to my client"), which the events
+// keep only as the request; as a fact, linked and superseded like any
+// other, a later read can be handed it.
+func profileFold(spec foldSpec) foldSpec {
+	spec.system = edited(spec.system,
+		`Use a short key "thing · attribute".`,
+		`Use a short key "thing · attribute". Write as facts, too, what the user's messages show about the user even when they do not say it outright: their preferences and dislikes, habits, background, health, family and relationships, and the tools and services they use, under keys "user · <attribute>".`,
+	)
+	return spec
 }
 
 // startExtractions starts n extractions, extract(ctx, i, out[i]) for batch
