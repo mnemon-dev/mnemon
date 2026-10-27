@@ -66,38 +66,10 @@ func TestSearchDeliversInTimeOrder(t *testing.T) {
 	}
 }
 
-// A degraded Search cuts the raw ranking at top_k by rank, then delivers in
-// the same order as a read, scored by position.
-// storeRanking is the user's store's own ranking of query by match, its
-// lexical index caught up first.
-func storeRanking(t *testing.T, h *harness, userID, query, match string) []string {
-	t.Helper()
-	ctx := context.Background()
-	user, err := h.server.users.acquire(ctx, userID, false)
-	if err != nil || user == nil {
-		t.Fatal(err)
-	}
-	defer h.server.users.release(user)
-	if err := user.store.CatchUpLexical(ctx); err != nil {
-		t.Fatal(err)
-	}
-	snapshot, err := user.store.Get(ctx, records.GetRequest{IDs: []string{}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	text, _ := json.Marshal(query)
-	input := map[string]json.RawMessage{"query": text, "match": json.RawMessage(`"` + match + `"`)}
-	result, err := user.store.Query(ctx, records.QueryRequest{Revision: snapshot.Revision, Input: input, CandidateLimit: 200})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return result.IDs
-}
-
-// A degraded Search ranks as the read's searches do: by bm25 over the
-// lexical index, caught up first.
-func TestDegradedSearchRanksByBM25(t *testing.T) {
-	h := newHarness(t, nil)
+// rankedAdds are Adds of one message each on which the two lexical rankings
+// of rankedQuery differ: bm25 and the frozen rules (words).
+var rankedQuery, rankedAdds = "rome camping", func() []AddRequest {
+	adds := []AddRequest{}
 	for i, text := range []string{
 		"camping camping camping lake caroline sunrise",
 		"paris camping rome caroline camping trip melanie group lake",
@@ -108,20 +80,113 @@ func TestDegradedSearchRanksByBM25(t *testing.T) {
 		"group painted caroline sunrise group sunrise painted rome lake",
 		"group trip camping sunday melanie",
 	} {
-		h.mustAdd(t, AddRequest{RequestID: fmt.Sprintf("r%d", i), UserID: "u1", SessionID: fmt.Sprintf("s%d", i), Messages: []Message{{Role: "user", Content: text, Timestamp: at(i)}}})
+		adds = append(adds, AddRequest{RequestID: fmt.Sprintf("r%d", i), UserID: "u1", SessionID: fmt.Sprintf("s%d", i), Messages: []Message{{Role: "user", Content: text, Timestamp: at(i)}}})
 	}
-	const query = "rome camping"
-	bm25, words := storeRanking(t, h, "u1", query, "bm25"), storeRanking(t, h, "u1", query, "words")
+	return adds
+}()
+
+// ranking is store's own ranking of query by match, its lexical index caught
+// up first.
+func ranking(t *testing.T, store *records.Store, query, match string) []string {
+	t.Helper()
+	ctx := context.Background()
+	if err := store.CatchUpLexical(ctx); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := store.Get(ctx, records.GetRequest{IDs: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _ := json.Marshal(query)
+	input := map[string]json.RawMessage{"query": text, "match": json.RawMessage(`"` + match + `"`)}
+	result, err := store.Query(ctx, records.QueryRequest{Revision: snapshot.Revision, Input: input, CandidateLimit: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result.IDs
+}
+
+// storeRanking is ranking over userID's store.
+func storeRanking(t *testing.T, h *harness, userID, query, match string) []string {
+	t.Helper()
+	user, err := h.server.users.acquire(context.Background(), userID, false)
+	if err != nil || user == nil {
+		t.Fatal(err)
+	}
+	defer h.server.users.release(user)
+	return ranking(t, user.store, query, match)
+}
+
+// A degraded Search ranks as the read's searches do: by bm25 over the
+// lexical index, caught up first.
+func TestDegradedSearchRanksByBM25(t *testing.T) {
+	h := newHarness(t, nil)
+	for _, add := range rankedAdds {
+		h.mustAdd(t, add)
+	}
+	bm25, words := storeRanking(t, h, "u1", rankedQuery, "bm25"), storeRanking(t, h, "u1", rankedQuery, "words")
 	if slices.Equal(bm25, words) {
 		t.Fatal("the records no longer tell the two rankings apart", bm25)
 	}
 	h.judge.fail.Store(true)
-	items := h.search(t, SearchRequest{Query: query, UserID: "u1", TopK: 100})
+	items := h.search(t, SearchRequest{Query: rankedQuery, UserID: "u1", TopK: 100})
 	if h.server.DegradedSearches() != 1 || !slices.Equal(ids(items), bm25) {
 		t.Fatal(ids(items), "bm25:", bm25, "words:", words)
 	}
 }
 
+// The raw ranking catches the lexical index up itself: records that the
+// background build has not indexed still rank by bm25, not by the frozen
+// rules over an in-memory index of the whole store.
+func TestRawRankingCatchesTheIndexUp(t *testing.T) {
+	dir := t.TempDir()
+	store, err := records.Open(dir, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	run, cancel := context.WithCancel(context.Background())
+	stop, err := store.StartRuntime(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	// The runtime's background build ends with its context: from here on only
+	// a catch-up indexes what is written.
+	cancel()
+	time.Sleep(50 * time.Millisecond)
+	agent, err := memoryagent.OpenWithModels(store, dir, simpleConfig(), false, memoryagent.Models{Planner: &fakePlanner{}, Judge: &fakeJudge{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer agent.Close()
+	ctx := context.Background()
+	for _, add := range rankedAdds {
+		parts, _, err := add.parts()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, part := range parts {
+			if _, err := memoryagent.WriteConversation(ctx, store, part.conversation); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	raw, err := rawRanking(ctx, store, agent, simpleConfig(), rankedQuery, 100, func(event string, err error) { t.Error(event, err) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	bm25, words := ranking(t, store, rankedQuery, "bm25"), ranking(t, store, rankedQuery, "words")
+	if slices.Equal(bm25, words) {
+		t.Fatal("the records no longer tell the two rankings apart", bm25)
+	}
+	if got := ids(raw.items); !slices.Equal(got, bm25) {
+		t.Fatal(got, "bm25:", bm25, "words:", words)
+	}
+}
+
+// A degraded Search cuts the raw ranking at top_k by rank, then delivers in
+// the same order as a read, scored by position.
 func TestDegradedSearchDeliversInTimeOrder(t *testing.T) {
 	ranked, timed := newHarness(t, nil), newHarness(t, timeOrdered)
 	for _, h := range []*harness{ranked, timed} {
