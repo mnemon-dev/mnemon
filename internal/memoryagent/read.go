@@ -62,6 +62,16 @@ type Config struct {
 	// read at every job. It is not configuration, so it stays out of the
 	// JSON and View.policy.
 	ReadOverride func() *RoleReading `json:"-"`
+	// Safety switches the privacy checks (SafetyConfig); unset, none runs and
+	// the policy keeps its hash.
+	Safety *SafetyConfig `json:"safety,omitempty"`
+}
+
+// SafetyConfig switches the privacy checks. Mask is the service's: the AML
+// adapter hides the sensitive values of a known form in what a Search hands
+// out (internal/safety.Mask); the memory and its reads keep them.
+type SafetyConfig struct {
+	Mask bool `json:"mask,omitempty"`
 }
 
 const (
@@ -183,6 +193,10 @@ type View struct {
 	Truncated  bool        `json:"truncated"`
 	IndexStale bool        `json:"indexStale"`
 	Stats      ReadStats   `json:"stats"`
+	// NoEvidence reports that the simple read, run whole (nothing degraded),
+	// found nothing the reply needs: JEV called no current record of its
+	// shortlist needed and no block of the consolidated layer.
+	NoEvidence bool `json:"noEvidence,omitempty"`
 }
 
 type Agent struct {

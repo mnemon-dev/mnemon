@@ -32,7 +32,7 @@ dedicated instance `eval`.
 | Field | Value |
 |---|---|
 | System name | Mnemon |
-| Version | v0.3.2: the `VERSION` given to `make build-linux-amd64`, built from the git tag `v0.3.2` |
+| Version | v0.3.3: the `VERSION` given to `make build-linux-amd64`, built from the git tag `v0.3.3` |
 | Track | Industrial (commercial products), textual |
 | Team / organization | Mnemon Team / Mnemon |
 | Contact | `grivn.wang@gmail.com` |
@@ -273,7 +273,13 @@ each number. None is reported in this draft.>`
   (`scripts/aml/load.sh`, as the runbook's "Capacity declaration" describes). The rows now hold
   the final run's local values, marked as such, and the unit limits (16 Adds, 16 Searches) are
   provisional until that test.
-- Done: the release is the git tag `v0.3.2` (`VERSION=v0.3.2`): v0.3.1's memory, unchanged, and
+- Done: the release is the git tag `v0.3.3` (`VERSION=v0.3.3`): v0.3.2's memory, unchanged, with
+  what the operators see: the inspect API gives each record line's role (`records[].lines`, from
+  the roles the write keeps), a Search that found nothing the reply needs counts in
+  `mnemon_aml_search_no_evidence_total` and marks its request line `evidence=none`, and the
+  privacy mask (`safety.mask`) is in, off. The switches measured and not adopted (an abstain gate,
+  forget-as-supersede, the profile extraction) are gone again. v0.3.2 (tag `v0.3.2`) was
+  v0.3.1's memory, unchanged, and
   the console's logs (docs/admin-api.md, `GET /admin/v1/logs` and `GET /admin/v1/logs/export`):
   every line in a file per hour under `--log-dir`, which `aml-serve@.service` sets to
   `/var/lib/mnemon-aml/<instance>/logs`. An upgrade from v0.3.1 installs the binary and the unit

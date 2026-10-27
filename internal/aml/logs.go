@@ -48,6 +48,9 @@ type Event struct {
 	Roles     string    `json:"roles,omitempty"`
 	Status    int       `json:"status,omitempty"`
 	Ms        int64     `json:"ms,omitempty"`
+	// Evidence is "none" on the line of a Search that found nothing the
+	// reply needs.
+	Evidence string `json:"evidence,omitempty"`
 }
 
 // ring keeps the latest size events, and counts every one since the start.
@@ -139,6 +142,8 @@ func (h linesHandler) Handle(ctx context.Context, record slog.Record) error {
 			event.RequestID = attr.Value.String()
 		case "roles":
 			event.Roles = attr.Value.String()
+		case "evidence":
+			event.Evidence = attr.Value.String()
 		case "status":
 			if attr.Value.Kind() == slog.KindInt64 {
 				event.Status = int(attr.Value.Int64())
@@ -197,7 +202,8 @@ func parseLevel(name string) slog.Level {
 }
 
 // lineQuery is what GET /admin/v1/logs asks for: lines at level or above that
-// hold every term (case aside) in their message, user, request id or roles;
+// hold every term (case aside) in their message, user, request id, roles or
+// evidence;
 // only request lines of minMs or more when minMs is set; below the seq
 // before, or above the seq after, when set; at most limit of them.
 type lineQuery struct {
@@ -215,7 +221,7 @@ func (q lineQuery) matches(event Event) bool {
 	if len(q.terms) == 0 {
 		return true
 	}
-	text := strings.ToLower(event.Message + "\n" + event.User + "\n" + event.RequestID + "\n" + event.Roles)
+	text := strings.ToLower(event.Message + "\n" + event.User + "\n" + event.RequestID + "\n" + event.Roles + "\n" + event.Evidence)
 	for _, term := range q.terms {
 		if !strings.Contains(text, term) {
 			return false

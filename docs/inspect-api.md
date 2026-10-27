@@ -199,7 +199,8 @@ scope, as `/search` returns them, without the archived documents they are cut fr
 {
   "records": [
     {"id": "aml-5c1f…-00000", "seq": 12, "created_at": "2023-05-08T13:56:00Z", "session": "s1",
-     "content": "Conversation s1 on 2023/05/08 (Mon) 13:56:\nuser: I adopted a dog named Biscuit …"}
+     "content": "Conversation s1 on 2023/05/08 (Mon) 13:56:\nuser: I adopted a dog named Biscuit …",
+     "lines": [{"role": "user", "text": "I adopted a dog named Biscuit …"}]}
   ],
   "next": 12
 }
@@ -212,6 +213,7 @@ scope, as `/search` returns them, without the archived documents they are cut fr
 | `records[].created_at` | string | its time, as the `/search` item's `created_at` |
 | `records[].session` | string | the session id it was added under; `""` when none |
 | `records[].content` | string | its whole text: the `/search` item's `content` |
+| `records[].lines` | array | its conversation lines under the heading, each `{role, text}` with `continued: true` on the later lines of a message cut into lines (only a message's first line carries the `role: ` prefix in `content`; `text` is without it). Left out for a record written before v0.3.1, which kept no roles |
 | `next` | int or null | the last record's `seq` when more follow; null on the last page |
 
 **Paging.** `after` is a `seq` (exclusive), an integer ≥ 0; omit it for the first page. A

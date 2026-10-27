@@ -196,6 +196,10 @@ func layerCandidates(lit litSets, threadIDs, keys []string, nearThreads, nearVal
 // each once, by id only; the read keeps those its View shows. Items name
 // the items each block shows, in order (Consolidation's ids: "d<i>", thread
 // ids, "e<i>", keys).
+// instructionsBlock is the kind and id of the block of the user's standing
+// instructions, which leads the layer.
+const instructionsBlock = "1-instructions"
+
 func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSets) []IndexItem {
 	_, by := eventThreads(m)
 	blocks := []IndexItem{}
@@ -222,7 +226,7 @@ func composeLayer(m timelineMemory, threadOrder, valueOrder []string, lit litSet
 		items = append(items, itemID("d", i))
 	}
 	if shown > 0 {
-		add("1-instructions", text, items, linked)
+		add(instructionsBlock, text, items, linked)
 	}
 
 	type span struct {
@@ -428,6 +432,7 @@ func (r *simpleRun) layer(ctx context.Context, view View) (View, error) {
 		r.traceLayer(layerTrace{memory: m, anchors: anchors, lit: lit, threadIDs: ids, topics: topics, values: values,
 			nearThreads: nearThreads, nearValues: nearValues, threadTexts: threadTexts, valueTexts: valueTexts, scores: scores})
 	}
+	r.layerNeeded = slices.ContainsFunc(scores, func(score float64) bool { return score >= 0.5 })
 	threadScore, valueScore := map[string]float64{}, map[string]float64{}
 	for i, id := range topics {
 		threadScore[id] = scores[i]

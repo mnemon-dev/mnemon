@@ -44,7 +44,10 @@ type simpleRun struct {
 	// trace records the read for the inspect service (trace.go); nil, the
 	// read records nothing.
 	trace *ReadTrace
-	mu    sync.Mutex // guards stats during concurrent model calls
+	// layerNeeded reports that JEV called a block of the consolidated layer
+	// needed.
+	layerNeeded bool
+	mu          sync.Mutex // guards stats during concurrent model calls
 }
 
 // simpleItem is one pooled record and what the models said about it.
@@ -136,8 +139,20 @@ func (a *Agent) readSimple(ctx context.Context, req ReadRequest, revision string
 	if err != nil {
 		return View{}, err
 	}
+	view.NoEvidence = r.noEvidence(scored)
 	// With view.order "time" the composed View is listed in time order.
 	return r.orderView(ctx, view)
+}
+
+// noEvidence reports whether the read, run whole, found nothing the reply
+// needs: no stage degraded, every shortlisted record judged, none of them
+// current and needed, and no layer block needed. A read that fell back
+// somewhere has not found that nothing is needed.
+func (r *simpleRun) noEvidence(scored []*simpleItem) bool {
+	if len(r.statsNow().Degraded) > 0 || r.layerNeeded {
+		return false
+	}
+	return !slices.ContainsFunc(scored, func(item *simpleItem) bool { return !item.Judged || current(item) && item.Needed >= 0.5 })
 }
 
 // screen gives the pool JEV's screen. A spent JEV budget is not an error:

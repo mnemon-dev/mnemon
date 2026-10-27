@@ -76,6 +76,8 @@ type metrics struct {
 	inFlight       *prometheus.GaugeVec     // route
 	shed           *prometheus.CounterVec   // route
 	partialStages  *prometheus.CounterVec   // stage
+	noEvidence     prometheus.Counter
+	maskedValues   *prometheus.CounterVec   // kind
 	attempts       *prometheus.CounterVec   // kind, class, outcome
 	attemptSeconds *prometheus.HistogramVec // kind, class
 	retries        *prometheus.CounterVec   // kind
@@ -158,6 +160,8 @@ func newMetrics(now func() time.Time) *metrics {
 	m.inFlight = factory.NewGaugeVec(gaugeOpts("in_flight", "Requests being served, those queued for a slot included."), []string{"route"})
 	m.shed = factory.NewCounterVec(counterOpts("shed_total", "Requests refused with 503 because no slot freed within the wait."), []string{"route"})
 	m.partialStages = factory.NewCounterVec(counterOpts("search_partial_total", "Stages of a Search's read that fell back, counting each stage once per Search."), []string{"stage"})
+	m.maskedValues = factory.NewCounterVec(counterOpts("search_masked_total", "Sensitive values safety.mask hid in what Searches handed out, by kind: card, ssn, iban, secret, password, email, phone, account, passport, license."), []string{"kind"})
+	m.noEvidence = factory.NewCounter(counterOpts("search_no_evidence_total", "Searches whose read, run whole, found nothing the reply needs: JEV called no record and no consolidated block needed."))
 	m.attempts = factory.NewCounterVec(counterOpts("model_attempts_total", "Attempts of model calls, by provider kind, call class and outcome."), []string{"kind", "class", "outcome"})
 	m.attemptSeconds = factory.NewHistogramVec(histogramOpts("model_attempt_seconds", "Time the caller waited for an attempt that went to the provider."), []string{"kind", "class"})
 	m.retries = factory.NewCounterVec(counterOpts("model_retries_total", "Attempts after a call's first that went to the provider."), []string{"kind"})
@@ -283,6 +287,13 @@ func (m *metrics) added(byRole map[string]int) {
 
 // delivered observes what a Search answered: its items and their
 // characters.
+// masked counts the values safety.mask hid in one item, by kind.
+func (m *metrics) masked(hidden map[string]int) {
+	for kind, n := range hidden {
+		m.maskedValues.WithLabelValues(kind).Add(float64(n))
+	}
+}
+
 func (m *metrics) delivered(items []SearchItem) {
 	chars := 0
 	for _, item := range items {

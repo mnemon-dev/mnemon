@@ -55,7 +55,12 @@ type requestUserKey struct{}
 //
 // roles holds the roles of the messages an Add stores, as "user=3,assistant=2"
 // (nameRoles): its request line carries them, for an audit of what arrived.
-type requestUser struct{ prefix, roles atomic.Pointer[string] }
+// noEvidence is set when a Search's read found nothing the reply needs
+// (nameNoEvidence): its request line carries evidence=none.
+type requestUser struct {
+	prefix, roles atomic.Pointer[string]
+	noEvidence    atomic.Bool
+}
 
 // withRequestUser is ctx with an empty holder of the user its request will
 // name.
@@ -87,6 +92,21 @@ func nameRoles(ctx context.Context, byRole map[string]int) {
 	}
 	roles := strings.Join(parts, ",")
 	holder.roles.Store(&roles)
+}
+
+// nameNoEvidence records that ctx's Search found nothing the reply needs:
+// its lines carry evidence=none from now on. Outside a request it does
+// nothing.
+func nameNoEvidence(ctx context.Context) {
+	if holder, ok := ctx.Value(requestUserKey{}).(*requestUser); ok {
+		holder.noEvidence.Store(true)
+	}
+}
+
+// requestNoEvidence is what nameNoEvidence recorded for ctx's request.
+func requestNoEvidence(ctx context.Context) bool {
+	holder, ok := ctx.Value(requestUserKey{}).(*requestUser)
+	return ok && holder.noEvidence.Load()
 }
 
 // requestRoles is what nameRoles recorded for ctx's request, "" when none.
@@ -154,8 +174,8 @@ func identified(next http.Handler) http.Handler {
 type contextHandler struct{ slog.Handler }
 
 func (h contextHandler) Handle(ctx context.Context, record slog.Record) error {
-	id, user, roles := requestID(ctx), userPrefix(ctx), requestRoles(ctx)
-	if id != "" || user != "" || roles != "" {
+	id, user, roles, none := requestID(ctx), userPrefix(ctx), requestRoles(ctx), requestNoEvidence(ctx)
+	if id != "" || user != "" || roles != "" || none {
 		record = record.Clone()
 	}
 	if id != "" {
@@ -166,6 +186,9 @@ func (h contextHandler) Handle(ctx context.Context, record slog.Record) error {
 	}
 	if roles != "" {
 		record.AddAttrs(slog.String("roles", roles))
+	}
+	if none {
+		record.AddAttrs(slog.String("evidence", "none"))
 	}
 	return h.Handler.Handle(ctx, record)
 }
