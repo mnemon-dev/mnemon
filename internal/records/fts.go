@@ -3,6 +3,7 @@ package records
 import (
 	"context"
 	"errors"
+	"runtime/debug"
 	"strings"
 	"time"
 )
@@ -13,16 +14,29 @@ func (s *Store) runLexicalWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-s.cache.lexicalWake:
-			buildCtx, stop := context.WithTimeout(ctx, 5*time.Minute)
-			err := s.buildLexical(buildCtx)
-			if err == nil {
-				err = s.prepareSnapshot(buildCtx)
-			}
-			stop()
-			if err != nil && ctx.Err() == nil {
-				s.report("records query preparation: %v", err)
-			}
+			s.prepareQueries(ctx)
 		}
+	}
+}
+
+// prepareQueries is one round of the lexical worker: the index of the new
+// versions, then the snapshot. A panic is reported, not raised, so that the
+// process lives and the worker serves the next wake; a query catches the
+// index up or falls back by itself.
+func (s *Store) prepareQueries(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.report("records query preparation panicked: %v\n%s", r, debug.Stack())
+		}
+	}()
+	buildCtx, stop := context.WithTimeout(ctx, 5*time.Minute)
+	defer stop()
+	err := s.buildLexical(buildCtx)
+	if err == nil {
+		err = s.prepareSnapshot(buildCtx)
+	}
+	if err != nil && ctx.Err() == nil {
+		s.report("records query preparation: %v", err)
 	}
 }
 

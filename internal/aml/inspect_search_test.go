@@ -222,9 +222,11 @@ func TestInspectLexicalTrace(t *testing.T) {
 	if s.Search != 0 || s.Text != "Caroline support group" || s.Kind != "query" || s.Source != "record" || len(s.IDs) != 3 || s.Ranked < 3 || len(s.Scores) != 3 {
 		t.Fatalf("%+v", s)
 	}
-	for i, score := range s.Scores {
-		if score <= 0 || i > 0 && score > s.Scores[i-1] {
-			t.Fatalf("scores %v do not follow the ranking", s.Scores)
+	// The ranking is bm25's; the scores are the frozen rules', one per id,
+	// and their order may differ from it (docs/inspect-api.md).
+	for _, score := range s.Scores {
+		if score <= 0 {
+			t.Fatalf("scores %v", s.Scores)
 		}
 	}
 	var compose struct {

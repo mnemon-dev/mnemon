@@ -79,6 +79,10 @@ func (v *querySelection) prepareRecent() {
 	})
 }
 
+// prepareSnapshot loads the current records into the cache's snapshot, the
+// selection a bm25 query filters by, after the background build. The
+// statistics that only the words rules read (selectionDF) are left to the
+// query that needs them.
 func (s *Store) prepareSnapshot(ctx context.Context) error {
 	rev, hash, err := revision(ctx, s.readDB(), "")
 	if err != nil {
@@ -103,8 +107,7 @@ func (s *Store) prepareSnapshot(ctx context.Context) error {
 		return nil
 	}
 	v.prepareRecent()
-	_, err = s.selectionDF(ctx, v)
-	return err
+	return nil
 }
 
 func newSelection(docs []record) *querySelection {

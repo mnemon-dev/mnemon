@@ -344,9 +344,11 @@ neither, is `field` `key`); an unknown store is `404 store_not_found`.
 - `result` is exactly what `/search` puts in `data`: the same objects, fields and bytes, `score`
   being 1/(position + 1).
   - **lexical** calls no model and costs nothing. It is the raw ranking aml-serve answers a
-    degraded `/search` with (the memory read failed: budget, breaker, provider): `result` is
-    byte-identical to that `data` for the same store, `query` and `top_k` (`options` are not
-    searched, as there).
+    degraded `/search` with (the memory read failed: budget, breaker, provider), by bm25:
+    `result` is byte-identical to that `data` for the same store, `query` and `top_k`
+    (`options` are not searched, as there) once the store's lexical index covers its records.
+    aml-serve catches the index up before it ranks; this reader cannot, and aml-serve's
+    background build indexes a write within moments.
   - **full** runs the read path `/search` runs, with the instance's configuration and models,
     billed to the **debug budget**. Its models send the instance's provider keys: the account's
     own, read from the instance's key file (`--provider-keys-file`) again before each full
@@ -492,9 +494,9 @@ What the searches found, before any judgement.
 - `searches[].ranked` is how many records the search ranked (at most 200); `ids` are the ones
   read here, in rank order: full, the first page of 20; lexical, the first `top_k`.
 - `scores[i]` is `ids[i]`'s words score (BM25, by the frozen rules) for the search's text over
-  the store's records. A lexical search sorts by it; a full search's cue searches sort by
-  SQLite FTS5's own `bm25()` (once the store's index covers its records), so there the order
-  of `ids` can differ from the order of `scores`.
+  the store's records. A lexical search and a full search's cue searches sort by SQLite FTS5's
+  own `bm25()` (once the store's index covers its records), so the order of `ids` can differ
+  from the order of `scores`.
 - `layer[].id` is a thread id (`kind` `topic`) or a fact key (`kind` `value`). `lit` counts the
   composed records linked to it (0 when none); `near` is its rank among those nearest the
   question (0 is the nearest), or null.

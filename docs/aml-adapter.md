@@ -70,9 +70,10 @@ console, Prometheus (ops host) ──WireGuard──▶ aml-serve@<n>, admin <ov
 - **Retrieval is BM25 only.** The cue searches over a user's records, the consolidation
   layer's choice of the topics and values nearest to a question, and the linking of new
   topics and facts to stored ones all rank by shared words (BM25). Nothing is embedded and
-  no embedding service runs. The cue searches rank by SQLite FTS5's own `bm25()` over the
-  store's background-built index (until it covers the records, by the frozen BM25 rules);
-  the raw ranking of a degraded Search, and the rest, keep the frozen rules.
+  no embedding service runs. The cue searches and the raw ranking of a degraded Search rank
+  by SQLite FTS5's own `bm25()` over the store's background-built index, caught up first
+  (by the frozen BM25 rules while it cannot cover the records); the rest keep the frozen
+  rules.
 - Each `user_id` has its own store: `<data-root>/users/<hex(sha256(user_id))[:32]>`. One
   user can never reach another's records. Logs show only the first 8 hex digits.
 
@@ -726,7 +727,14 @@ caps. The evaluation caps are fixed at 600/60: DeepSeek CNY 600 and JEV USD 60.
   admission slot while it waits, so declare the AML concurrency at or below
   `--max-concurrent-adds` and `--max-concurrent-searches`. An Add waits at most until 25
   minutes after it arrived; then it answers 200 all the same (its records are stored and
-  searchable), counted in `addOutran` and logged as `add outran consolidation`.
+  searchable), counted in `addOutran` and logged as `add outran consolidation`. An Add does
+  not wait while its user's consolidation backs off after a failed job (a provider outage or
+  rejection, a spent budget, the budget reserve's pause): no job would lower the backlog
+  before the retry, so it answers at once. That is the trade: the run's Adds go on through an
+  outage, and the backlog grows past the bound meanwhile. The retry's jobs fold it a window
+  at a time; until they have, a Search's flush meets more than one window, folds what its 10
+  minutes allow (from the 10% of a cap kept for Searches when the reserve paused the jobs),
+  and reads a layer that may be partly consolidated (stage `pending`).
 - **Search folds the rest.** Before it reads, a Search folds its user's tail, for at most 10
   minutes; a user with nothing pending pays only a state read. While it does, it holds its
   user: no background job of that user starts (a running one goes on). Its calls are of the
@@ -800,10 +808,10 @@ caps. The evaluation caps are fixed at 600/60: DeepSeek CNY 600 and JEV USD 60.
   the instance starts after the overlay and asks for it, and neither a missing overlay nor a
   stopped one stops it.
 - `WatchdogSec=60`: aml-serve pings every half interval while its liveness probe passes (the
-  in-process `/health` answers 200, the background work's heartbeat ticked within the interval,
-  and the budget file answers); systemd restarts an instance whose pings stop. aml-serve refuses
-  a watchdog interval under 2 s. The probe calls no model, so a slow provider never looks like
-  a dead process; `/ready` reports those.
+  in-process `/health` answers 200 and the background work's heartbeat ticked within the
+  interval); systemd restarts an instance whose pings stop. aml-serve refuses a watchdog
+  interval under 2 s. The probe reads no budget file and calls no model, so a slow disk or a
+  slow provider never looks like a dead process; `/ready` reports those.
 - `Restart=always`, `RestartSec=5`, and `StartLimitIntervalSec=0` in `[Unit]`, so a crash loop
   keeps retrying every 5 s.
 - `TimeoutStopSec=60`, which outlasts the 40 s shutdown (30 s, 5 s, and 5 s for the model
@@ -926,7 +934,8 @@ operator decides otherwise after checking the submission's rules.
   its caps (`AML_INSPECT_DEBUG_CAPS`; DeepSeek in CNY, JEV in USD). The instance's budget file
   is never opened, the model cache is off, and the service has no metrics. Lexical searches,
   the default, call no model and cost nothing: they are the raw ranking aml-serve answers a
-  degraded Search with, byte for byte.
+  degraded Search with, byte for byte once the store's lexical index covers its records
+  (aml-serve catches the index up before it ranks; the inspect service, a reader, cannot).
 - The debug budget has one writer. While it runs, aml-inspect holds
   `/var/lib/mnemon-aml-inspect/<n>/debug-budget.db.lock` beside it, and a second aml-inspect on
   the same debug budget refuses to start (`another aml-inspect holds …`). Whatever a previous
@@ -1022,7 +1031,8 @@ a request's lines. A request that never named a user (a bad body, an unknown pat
 | `degraded search kept rank order (user xxxxxxxx): <error>` | A degraded Search could not read the write positions of its records (a store error), so it delivered the raw ranking in rank order instead of time order. |
 | `partially degraded search N (user …): judge, layer` | The read answered, but the named stages fell back: `lexical-index` (the store's lexical index could not be caught up first, so the records it lacks ranked by the frozen BM25 rules), `judge` (JEV's final judgement failed; its screen stood in), `scan-budget` or `loop-budget` (the read's JEV budget ran out), `layer-state`, `layer` or `expand` (the consolidation layer was left out or not judged), `order` (the write positions could not be read). |
 | `status: adds A, searches S, degraded D, partially degraded P; budget deepseek spent … held … cap …, jev …` | Every 10 minutes: the Adds and Searches answered since the start, the degraded ones, and each budget account in use. |
-| `records query preparation: … (user xxxxxxxx)` | A user's store failed to build its words index or its query snapshot in the background (5 minutes at most); a later write, or the store's next opening, tries again. |
+| `records query preparation: … (user xxxxxxxx)` | A user's store failed to build its lexical index or its query snapshot in the background (5 minutes at most); a later write, or the store's next opening, tries again. `records query preparation panicked: …` with a stack is a bug in that build: it is reported, not raised, and the next write tries again. |
+| `lexical index behind, ranking by words (user xxxxxxxx): <error>` | A degraded Search could not catch its store's lexical index up (a store error), so it ranked by the frozen rules over the records instead of by `bm25()`. |
 | `add outran consolidation (user …)` | An Add waited out its 25-minute window at the lag bound and answered 200; its records are stored and searchable. |
 | `consolidation backlog unreadable (user …): <error>` | WARN: the first Add of a user since the start could not measure the user's backlog (a store read failed); the lag bound holds from the user's first job instead. |
 | `consolidation retries in 1m0s (user …)` | A background job failed; the user backs off (30 s doubling, to at most 8 to 10 minutes, jittered). |
@@ -1299,7 +1309,7 @@ scratch instance first if continuous replication is needed.
 | **502** or **504** from Caddy | The instance is down for longer than Caddy's 30 s of dialing (`systemctl status aml-serve@<n>`), a dedicated instance is suspended, or a proxy timeout is below the platform's 31 minutes: compare the timeouts with `deploy/aml/Caddyfile.dedicated` or the snippet. |
 | `degraded search …` in the log | The planner, JEV or a budget failed for that question, or the read ran past `--search-timeout`. The platform still got a 200 with the raw ranking. Read the error after the colon: `model HTTP 401` or `model HTTP 403` (a wrong, expired or revoked key) and `model HTTP 402` (an empty balance; DeepSeek says `Insufficient Balance`), which also page as `provider-rejected:<kind>` (below); `model HTTP 429` (the provider's rate limit outlasted the call's retries: up to its `Retry-After`, or without one (or with one of 0, an invalid value or a past date) a jittered floor of at most 2, 4, 8 and 16 s, down by up to a quarter, or the class's backoff when that is longer, as after earlier 5xx retries; 30 s in all per model call; a Search makes many calls, so under a long storm it can wait longer in all, up to its `--search-timeout` for the read and up to its own 10-minute flush window for the flush, and no wait is planned past them); `the provider's retry budget is spent` (the provider's retries, patient ones included, used up their budget: 20% of a minute's calls, and always 5 retries starting in any second; a retry is taken from the budget when it starts, after its wait); `model endpoint unreachable` (network or DNS; nothing was sent), `request failed` (network, after sending), `attempt timed out` (an attempt waited past its timeout: 45 s for the planner, 20 s for JEV, 180 s for a flush's extraction), `the reply stopped sending` (a reply sent nothing for 60 s after its headers came), `context deadline exceeded` (the timeout), `spending cap reached` (below). |
 | `provider-rejected:<kind>` alert | The provider refuses the instance's requests: 401 or 403, a wrong, expired or revoked key; 402, an empty balance (DeepSeek: `Insufficient Balance`). They are not retried: Searches degrade or partially degrade, and consolidation backs off with its batches pending (no record is dropped). Check the account's balance in the provider's console and top it up: the next call goes through, with no restart. For a new key of the account, set it in the console (设置 → 模型服务 API key): it is checked and applied without a restart ("An account's own provider keys"). For a new host key, put it into `DEEPSEEK_API_KEY=` or `TYPESAFE_API_KEY=` of `/etc/mnemon-aml/<n>/env` (and of `/etc/mnemon-aml/host.env`, which `new` copies from) with an editor, then `systemctl restart aml-serve@<n>`; it does nothing for a kind that has an account key. `mnemon_aml_model_attempts_total{outcome="rejected"}` shows the call classes affected; the alert resolves once no new rejection has been seen for 10 minutes. |
-| `model spending cap reached, including unresolved reservations` | A budget is exhausted. Searches degrade to the raw ranking. A spent DeepSeek budget stops consolidation (a spent budget never drops records from the index). A spent JEV budget does not: layered consolidation goes on, but links without JEV. Raise the cap from the console (设置 → 预算上限; "Budget caps at runtime"), which applies at once with no restart, or raise `budgets` in `/etc/mnemon-aml/<n>/memory-config.json` and `systemctl restart aml-serve@<n>` (a cap of the settings file wins over it); spent amounts are kept and the new cap applies at once. Check `spent` and `held` first (`mnemon-preflight <n>`): reservations held by calls in flight count against the cap. Those a previous process left held (a crash) are settled at the next start (`settled N budget reservations a previous process left held` in the journal), so a restart clears them; there is nothing to raise the cap by. |
+| `model spending cap reached, including unresolved reservations` | A budget is exhausted. Searches degrade to the raw ranking. A spent DeepSeek budget stops consolidation (a spent budget never drops records from the index). So does a spent JEV budget in background mode: a job keeps the batches it cannot link pending and backs off (on-add consolidation links them without JEV instead). Adds do not wait for a user that backs off ("Bounded lag"). Raise the cap from the console (设置 → 预算上限; "Budget caps at runtime"), which applies at once with no restart, or raise `budgets` in `/etc/mnemon-aml/<n>/memory-config.json` and `systemctl restart aml-serve@<n>` (a cap of the settings file wins over it); spent amounts are kept and the new cap applies at once. Check `spent` and `held` first (`mnemon-preflight <n>`): reservations held by calls in flight count against the cap. Those a previous process left held (a crash) are settled at the next start (`settled N budget reservations a previous process left held` in the journal), so a restart clears them; there is nothing to raise the cap by. |
 | Empty or poor plans, many degraded searches with a DeepSeek planner | The planner has `thinking` on. Remove it (`deepseek-flash` without thinking). |
 | `model credential is unavailable` or a startup error naming a credential environment variable | A `keyEnv` variable is empty or absent in `/etc/mnemon-aml/<n>/env`. |
 | `aml-serve@<n>` restarts in a loop | `journalctl -u aml-serve@<n> -n 50`: an unreadable config (`memory-config.json` must be readable by group `mnemon`), `aml-serve requires a nonempty API key in $AML_API_KEY`, `another aml-serve holds …/.aml-serve.lock`, or the public port in use. An admin address that cannot be bound is not one of them: the instance serves without it ("The admin listener is down" below). |

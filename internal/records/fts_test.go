@@ -203,6 +203,44 @@ func TestPreparedStatisticsCancellationAndConcurrentQueries(t *testing.T) {
 	wg.Wait()
 }
 
+// The build after a write prepares the snapshot that the bm25 ranking reads,
+// and leaves the statistics that only the words rules read to the query that
+// needs them.
+func TestPrepareSnapshotLeavesWordsStatisticsToQueries(t *testing.T) {
+	ctx := context.Background()
+	s := testStore(t)
+	rev, err := s.Put(ctx, PutRequest{Upsert: []Upsert{
+		sample("a", "the weather was nice"), sample("b", "rome rome flights booked"), sample("c", "a hotel in rome"),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.buildLexical(ctx); err != nil {
+		t.Fatal(err)
+	}
+	s.cache = newQueryCache()
+	if err = s.prepareSnapshot(ctx); err != nil {
+		t.Fatal(err)
+	}
+	v := s.cache.allSelection
+	if len(s.cache.snapshot) != 3 || v == nil || !v.ready {
+		t.Fatal("no ready snapshot", len(s.cache.snapshot), v)
+	}
+	if v.df != nil || s.cache.prepared != nil {
+		t.Fatal("the build prepared the words statistics")
+	}
+	for _, match := range []string{"bm25", "words"} {
+		var in map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(`{"query":"rome flights","match":"`+match+`"}`), &in); err != nil {
+			t.Fatal(err)
+		}
+		result, err := s.Query(ctx, QueryRequest{Revision: rev, Input: in})
+		if err != nil || !reflect.DeepEqual(result.IDs, []string{"b", "c"}) {
+			t.Fatal(match, result.IDs, err)
+		}
+	}
+}
+
 func TestPreparedLexicalRemainderUsesWholeCandidateStatistics(t *testing.T) {
 	ctx := context.Background()
 	s := testStore(t)
