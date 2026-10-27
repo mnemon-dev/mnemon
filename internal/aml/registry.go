@@ -6,9 +6,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 
@@ -133,7 +135,7 @@ func (g *registry) acquireKey(ctx context.Context, key string, create bool) (*us
 	g.mu.Unlock()
 	closeEntries(victims)
 
-	entry.store, entry.agent, entry.stop, entry.err = g.openUser(g.dir(key))
+	entry.store, entry.agent, entry.stop, entry.err = g.openKey(key)
 	if entry.err != nil {
 		g.mu.Lock()
 		g.removeLocked(entry) // the next request tries again
@@ -145,6 +147,18 @@ func (g *registry) acquireKey(ctx context.Context, key string, create bool) (*us
 		return nil, entry.err
 	}
 	return entry, nil
+}
+
+// openKey opens key's store by openUser. A panic is the open's error, with
+// its stack, so that the entry's waiters are answered and the next acquire
+// opens the store again.
+func (g *registry) openKey(key string) (store *records.Store, agent *memoryagent.Agent, stop func(), err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			store, agent, stop, err = nil, nil, nil, fmt.Errorf("opening the store panicked: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return g.openUser(g.dir(key))
 }
 
 // release ends a hold. It closes the entry when it was evicted meanwhile,

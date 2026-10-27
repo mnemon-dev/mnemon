@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -180,6 +181,41 @@ func TestRuntimeReportsThroughStoreLogger(t *testing.T) {
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("the failed build was not reported")
+	}
+}
+
+// A panic in a round of the lexical worker is reported, not raised: the
+// process lives, and the worker serves the next wake.
+func TestLexicalWorkerSurvivesAPanic(t *testing.T) {
+	s := testStore(t)
+	lines := make(chan string, 8)
+	var calls atomic.Int32
+	s.SetLogger(func(format string, args ...any) {
+		if calls.Add(1) == 1 {
+			panic("logger bug")
+		}
+		lines <- fmt.Sprintf(format, args...)
+	})
+	failLexicalBuild(t, s)
+	next := func() string {
+		t.Helper()
+		select {
+		case line := <-lines:
+			return line
+		case <-time.After(5 * time.Second):
+			t.Fatal("nothing was reported")
+		}
+		return ""
+	}
+	if line := next(); !strings.HasPrefix(line, "records query preparation panicked: logger bug") {
+		t.Fatalf("%q", line)
+	}
+	// The worker still runs: the next write's failed build is reported.
+	if _, err := s.Put(context.Background(), PutRequest{Upsert: []Upsert{sample("b", "cat")}}); err != nil {
+		t.Fatal(err)
+	}
+	if line := next(); !strings.HasPrefix(line, "records query preparation: ") {
+		t.Fatalf("%q", line)
 	}
 }
 
