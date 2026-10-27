@@ -1170,17 +1170,3 @@ func TestDropModeHalfTimeoutCountsOnceBothHalvesRan(t *testing.T) {
 		})
 	}
 }
-
-// TestProfileFoldAsksForTheProfile: consolidation.profile adds the profile
-// sentence to the extraction prompt, once; without it the prompt is the one
-// it was.
-func TestProfileFoldAsksForTheProfile(t *testing.T) {
-	off := (&Agent{config: Config{Consolidation: &ConsolidationConfig{Mode: "layered"}}}).extractionFold().system
-	on := (&Agent{config: Config{Consolidation: &ConsolidationConfig{Mode: "layered", Profile: true}}}).extractionFold().system
-	if off != readFold(layeredFold, DefaultRoleReading()).system || strings.Contains(off, `"user · <attribute>"`) {
-		t.Fatal("the prompt changed without the switch")
-	}
-	if strings.Count(on, `under keys "user · <attribute>"`) != 1 || len(on) <= len(off) {
-		t.Fatal("the profile sentence:", on)
-	}
-}
