@@ -555,6 +555,42 @@ func TestAddOutranConsolidationAnswers(t *testing.T) {
 	}
 }
 
+func TestAddsDoNotWaitWhileConsolidationBacksOff(t *testing.T) {
+	// A job reads 600 units, the lag bound.
+	settings := memoryagent.ConsolidationConfig{Mode: "layered", BatchCharacters: 300, MaxBatches: 2}
+	h := newHarness(t, func(config *ServerConfig) {
+		config.MemoryConfig.Consolidation = &settings
+		config.Consolidation = ConsolidationBackground
+	})
+	h.consolidator.answer(parityReply)
+	clock := newFakeClock()
+	h.server.sched.now = clock.now
+	h.server.addWindow = time.Second
+	// JEV is down: the job defers the batches it cannot link and backs off
+	// until a retry the fake clock never reaches.
+	h.judge.outage.Store(true)
+	h.run(t)
+	for i := range 8 {
+		h.mustAdd(t, noteAdd(i, "u1"))
+	}
+	eventually(t, func() bool { return h.server.sched.Status().BackingOff == 1 })
+	// No job lowers the backlog before the retry, so an Add past the bound
+	// answers at once instead of waiting out its window.
+	for i := 8; i < 16; i++ {
+		start := time.Now()
+		h.mustAdd(t, noteAdd(i, "u1"))
+		if waited := time.Since(start); waited >= h.server.addWindow/2 {
+			t.Fatalf("Add %d waited %s while consolidation backed off", i, waited)
+		}
+	}
+	if backlog := h.backlog(t, "u1"); backlog.Characters <= h.server.lagBound {
+		t.Fatal("the Adds stayed within the bound", backlog, h.server.lagBound)
+	}
+	if strings.Contains(h.log.String(), "add outran consolidation") {
+		t.Fatal(h.log.String())
+	}
+}
+
 func TestServerConsolidationModes(t *testing.T) {
 	timelines := &memoryagent.ConsolidationConfig{Mode: "layered"}
 	models := func(memoryagent.Config) (memoryagent.Models, error) {

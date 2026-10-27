@@ -207,8 +207,9 @@ func (s *scheduler) Notify(ctx context.Context, key string, addedChars int64) {
 }
 
 // WaitBacklog returns nil once the user's backlog is at most limit, or once
-// the scheduler has stopped or is draining (no job would lower it), and ctx's
-// error if ctx ends first. A user the scheduler does not know has no backlog.
+// the scheduler has stopped or is draining or the user's consolidation backs
+// off after a failed job (no job would lower it before then), and ctx's error
+// if ctx ends first. A user the scheduler does not know has no backlog.
 // Waiting on an idle user queues a job, which measures its backlog, unless no
 // job can be queued.
 func (s *scheduler) WaitBacklog(ctx context.Context, key string, limit int64) error {
@@ -225,7 +226,7 @@ func (s *scheduler) WaitBacklog(ctx context.Context, key string, limit int64) er
 		s.forgetLocked(u)
 		s.mu.Unlock()
 	}()
-	for u.backlog > limit && !s.stopped && !s.draining {
+	for u.backlog > limit && u.state != userBackingOff && !s.stopped && !s.draining {
 		var old chan struct{}
 		if u.state == userIdle {
 			if s.activeLocked() >= s.maxUsers {
