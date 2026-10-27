@@ -494,9 +494,9 @@ What the searches found, before any judgement.
 - `searches[].ranked` is how many records the search ranked (at most 200); `ids` are the ones
   read here, in rank order: full, the first page of 20; lexical, the first `top_k`.
 - `scores[i]` is `ids[i]`'s words score (BM25, by the frozen rules) for the search's text over
-  the store's records. A lexical search sorts by it; a full search's cue searches sort by
-  SQLite FTS5's own `bm25()` (once the store's index covers its records), so there the order
-  of `ids` can differ from the order of `scores`.
+  the store's records. A lexical search and a full search's cue searches sort by SQLite FTS5's
+  own `bm25()` (once the store's index covers its records), so the order of `ids` can differ
+  from the order of `scores`.
 - `layer[].id` is a thread id (`kind` `topic`) or a fact key (`kind` `value`). `lit` counts the
   composed records linked to it (0 when none); `near` is its rank among those nearest the
   question (0 is the nearest), or null.

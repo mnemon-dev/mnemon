@@ -134,9 +134,9 @@ may do (see step 6 below).
 
 Retrieval is BM25 only. The cue searches over the records, the consolidation layer's choice
 of the topics and values nearest to a question, and the linking of new topics and facts to
-stored ones all rank by shared words (BM25). The cue searches rank by SQLite FTS5's own
-`bm25()` over each store's lexical index, which a Search first brings up to date; the raw ranking
-of a degraded Search and the rest keep the frozen BM25 rules. Nothing is embedded and no
+stored ones all rank by shared words (BM25). The cue searches and the raw ranking of a
+degraded Search rank by SQLite FTS5's own `bm25()` over each store's lexical index, which they
+first bring up to date; the rest keep the frozen BM25 rules. Nothing is embedded and no
 embedding service runs.
 
 During a Search, the question, the planner's searches and candidate record texts go to the
