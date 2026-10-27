@@ -466,22 +466,46 @@ func (s *Server) probe() (int, int64, error) {
 // openUser opens a user's store with the query runtime records serve runs
 // (query cache, reader pool, background lexical index), and its agent.
 func (s *Server) openUser(dir string) (*records.Store, *memoryagent.Agent, func(), error) {
+	return openUserStore(dir, s.storeLog(filepath.Base(dir)), func(store *records.Store, dir string) (*memoryagent.Agent, error) {
+		return memoryagent.OpenWithModels(store, dir, s.config.MemoryConfig, false, s.models)
+	})
+}
+
+// openUserStore opens the store in dir with its query runtime, reporting to
+// logf, and the agent openAgent opens on it. An open that fails or panics
+// past the store's open closes what it opened (the registry turns a panic
+// into the open's error: registry.openKey).
+func openUserStore(dir string, logf func(string, ...any), openAgent func(*records.Store, string) (*memoryagent.Agent, error)) (*records.Store, *memoryagent.Agent, func(), error) {
+	var store *records.Store
+	var agent *memoryagent.Agent
+	var stop func()
+	opened := false
+	defer func() {
+		if opened {
+			return
+		}
+		if stop != nil {
+			stop()
+		}
+		if agent != nil {
+			agent.Close()
+		}
+		if store != nil {
+			store.Close()
+		}
+	}()
 	store, err := records.Open(dir, false)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	store.SetLogger(s.storeLog(filepath.Base(dir)))
-	stop, err := store.StartRuntime(context.Background())
-	if err != nil {
-		store.Close()
+	store.SetLogger(logf)
+	if stop, err = store.StartRuntime(context.Background()); err != nil {
 		return nil, nil, nil, err
 	}
-	agent, err := memoryagent.OpenWithModels(store, dir, s.config.MemoryConfig, false, s.models)
-	if err != nil {
-		stop()
-		store.Close()
+	if agent, err = openAgent(store, dir); err != nil {
 		return nil, nil, nil, err
 	}
+	opened = true
 	return store, agent, stop, nil
 }
 
