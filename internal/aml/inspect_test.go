@@ -661,6 +661,48 @@ type recordsAnswer struct {
 	Next *int64 `json:"next"`
 }
 
+// TestInspectRecordLinesCarryRoles: each line of a record comes with the
+// role of its message, a long message's later lines marked continued, and
+// the text without the "role: " prefix only its first line has.
+func TestInspectRecordLinesCarryRoles(t *testing.T) {
+	h := layeredHarness(t)
+	long := strings.TrimSpace(strings.Repeat("the launch moved again ", 60))
+	h.mustAdd(t, AddRequest{RequestID: "r1", UserID: "u1", SessionID: "s1", Messages: []Message{
+		{Role: "user", Content: long, Timestamp: at(0)}, {Role: "assistant", Content: "Noted.", Timestamp: at(1)},
+	}})
+	ih := newInspector(t, h, nil)
+	var answer struct {
+		Records []struct {
+			Content string                   `json:"content"`
+			Lines   []memoryagent.RecordLine `json:"lines"`
+		} `json:"records"`
+	}
+	ih.ok(t, "GET", "/v1/stores/"+userKey("u1")+"/records", nil, &answer)
+	var lines []memoryagent.RecordLine
+	for _, record := range answer.Records {
+		if len(record.Lines) == 0 {
+			t.Fatalf("a record without lines: %q", record.Content)
+		}
+		lines = append(lines, record.Lines...)
+	}
+	if len(lines) < 3 || lines[0].Role != "user" || lines[0].Continued || !strings.HasPrefix(lines[0].Text, "the launch") ||
+		!lines[1].Continued || lines[1].Role != "user" || lines[len(lines)-1] != (memoryagent.RecordLine{Role: "assistant", Text: "Noted."}) {
+		t.Fatalf("lines %+v", lines)
+	}
+	joined := []string{}
+	for _, line := range lines {
+		if strings.HasPrefix(line.Text, "user: ") || strings.HasPrefix(line.Text, "assistant: ") {
+			t.Fatalf("a prefix kept: %q", line.Text)
+		}
+		if line.Role == "user" {
+			joined = append(joined, line.Text)
+		}
+	}
+	if strings.Join(joined, " ") != long {
+		t.Fatalf("the user's lines do not make the message: %q", strings.Join(joined, " "))
+	}
+}
+
 func TestInspectRecords(t *testing.T) {
 	h := layeredHarness(t)
 	talk(t, h, "u1", 3)

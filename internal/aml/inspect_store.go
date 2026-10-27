@@ -277,13 +277,17 @@ func (i *Inspector) rowError(key string, err error) string {
 	return "store_unreadable"
 }
 
-// inspectRecord is a record of GET /v1/stores/{key}/records.
+// inspectRecord is a record of GET /v1/stores/{key}/records: content as
+// stored, and lines, its conversation lines with the role of the message
+// each comes from (left out for a record written without them, before
+// v0.3.1).
 type inspectRecord struct {
-	ID        string `json:"id"`
-	Seq       int64  `json:"seq"`
-	CreatedAt string `json:"created_at"`
-	Session   string `json:"session"`
-	Content   string `json:"content"`
+	ID        string                   `json:"id"`
+	Seq       int64                    `json:"seq"`
+	CreatedAt string                   `json:"created_at"`
+	Session   string                   `json:"session"`
+	Content   string                   `json:"content"`
+	Lines     []memoryagent.RecordLine `json:"lines,omitempty"`
 }
 
 // serveRecords answers GET /v1/stores/{key}/records?after&limit: a page of
@@ -329,7 +333,7 @@ var errUndecodable = errors.New("a stored record does not decode")
 // recordOf is a record of a page as the API lists it.
 func recordOf(raw records.PageRecord) (inspectRecord, bool) {
 	record, ok := memoryagent.DecodeRecord(raw.JSON)
-	return inspectRecord{ID: record.ID, Seq: raw.Seq, CreatedAt: record.Date, Session: record.Session, Content: record.Text}, ok
+	return inspectRecord{ID: record.ID, Seq: raw.Seq, CreatedAt: record.Date, Session: record.Session, Content: record.Text, Lines: record.Lines}, ok
 }
 
 // lookupIDMax bounds the {id} of a lookup, in bytes: a fact's key, which a

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/mnemon-dev/mnemon/internal/records"
 )
@@ -216,7 +217,47 @@ func (a *Agent) Progress(ctx context.Context, scope records.Scope) (Progress, er
 // StoredRecord is a searchable record as the inspect service lists it: its
 // id, the date a read gives it (Evidence.Date, a Search item's created_at),
 // the session it was added under (data.session, "" for none) and its text.
-type StoredRecord struct{ ID, Date, Session, Text string }
+type StoredRecord struct {
+	ID, Date, Session, Text string
+	// Lines is the record's conversation lines with the role of the message
+	// each comes from, as the write kept them (data.lines); nil for a record
+	// written without them.
+	Lines []RecordLine
+}
+
+// RecordLine is one line of a conversation record: the role of its message,
+// whether it continues the message (a long message is cut into lines, and
+// only its first carries the "role: " prefix), and its text without that
+// prefix.
+type RecordLine struct {
+	Role      string `json:"role"`
+	Continued bool   `json:"continued,omitempty"`
+	Text      string `json:"text"`
+}
+
+// recordLines is content's lines under its heading, each with the role
+// data.lines gives it; nil when the record has no such roles or they do not
+// match its lines, as readable reads them.
+func recordLines(content string, data map[string]any) []RecordLine {
+	owners := chunkLines(data)
+	if owners == nil {
+		return nil
+	}
+	_, rest, found := strings.Cut(content, "\n")
+	lines := strings.Split(rest, "\n")
+	if !found || len(lines) != len(owners) {
+		return nil
+	}
+	out := make([]RecordLine, len(lines))
+	for i, line := range lines {
+		owner := owners[i]
+		if owner.offset == 0 {
+			line = strings.TrimPrefix(line, owner.role+": ")
+		}
+		out[i] = RecordLine{Role: owner.role, Continued: owner.offset > 0, Text: line}
+	}
+	return out
+}
 
 // DecodeRecord reads a record's JSON (records.PageRecord.JSON) as reads do,
 // by its exact property names; ok is false when it does not decode.
@@ -225,7 +266,7 @@ func DecodeRecord(raw string) (record StoredRecord, ok bool) {
 	if json.Unmarshal([]byte(raw), &value) != nil {
 		return StoredRecord{}, false
 	}
-	record = StoredRecord{ID: value.ID, Date: evidenceDate(value), Text: value.Content}
+	record = StoredRecord{ID: value.ID, Date: evidenceDate(value), Text: value.Content, Lines: recordLines(value.Content, value.Data)}
 	record.Session, _ = value.Data["session"].(string)
 	return record, true
 }
