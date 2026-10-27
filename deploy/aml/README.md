@@ -32,7 +32,7 @@ dedicated instance `eval`.
 | Field | Value |
 |---|---|
 | System name | Mnemon |
-| Version | v0.3.3: the `VERSION` given to `make build-linux-amd64`, built from the git tag `v0.3.3` |
+| Version | v0.3.4: the `VERSION` given to `make build-linux-amd64`, built from the git tag `v0.3.4` |
 | Track | Industrial (commercial products), textual |
 | Team / organization | Mnemon Team / Mnemon |
 | Contact | `grivn.wang@gmail.com` |
@@ -273,8 +273,28 @@ each number. None is reported in this draft.>`
   (`scripts/aml/load.sh`, as the runbook's "Capacity declaration" describes). The rows now hold
   the final run's local values, marked as such, and the unit limits (16 Adds, 16 Searches) are
   provisional until that test.
-- Done: the release is the git tag `v0.3.3` (`VERSION=v0.3.3`): v0.3.2's memory, unchanged, with
-  what the operators see: the inspect API gives each record line's role (`records[].lines`, from
+- Done: the release is the git tag `v0.3.4` (`VERSION=v0.3.4`): v0.3.3's memory, with what a
+  Full run's load needs.
+  - An Add does not wait while its user's consolidation backs off (a provider outage or
+    rejection, a spent budget).
+  - A degraded Search ranks by `bm25()` over its caught-up index instead of building an
+    in-memory index of the whole store.
+  - The background build no longer prepares the words rules' statistics: a rebuild at 30,000
+    records takes 118 ms instead of 296.
+  - The watchdog's probe reads no budget file.
+  - A panic while a store opens, or in its lexical worker, is now an error. It no longer leaves
+    a stuck user or kills the process.
+
+  A scale run on the evaluation host checked it:
+  - Setup: a scratch instance with fake providers (DeepSeek answers in 5 s, JEV in 0.2 s); 34
+    users and 36.5M characters in 2,643 Adds, 16 at a time; 833 Searches; a 7-minute JEV 402
+    window.
+  - Every request answered 200. Adds took 38 ms at p50 and 21 s at p99; Searches took 6.8 s at
+    p50 and 22 s at p95.
+  - Memory peaked at 1.25 GiB, with no restart.
+  - The backlog the outage left was folded within 8 minutes of its end.
+
+  v0.3.3 (tag `v0.3.3`) was v0.3.2's memory, unchanged, with what the operators see: the inspect API gives each record line's role (`records[].lines`, from
   the roles the write keeps), a Search that found nothing the reply needs counts in
   `mnemon_aml_search_no_evidence_total` and marks its request line `evidence=none`, and the
   privacy mask (`safety.mask`) is in, off. The switches measured and not adopted (an abstain gate,
