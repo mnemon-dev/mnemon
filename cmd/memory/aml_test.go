@@ -3,6 +3,7 @@ package memory
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1764,8 +1765,8 @@ func TestWatchdogStopsBeforeStopping(t *testing.T) {
 	}
 }
 
-// The liveness probe passes while the public handler answers, Run's heartbeat
-// is recent and the budget file answers; it touches no model.
+// The liveness probe passes while the public handler answers and Run's
+// heartbeat is recent; it reads no budget file and touches no model.
 func TestLivenessProbe(t *testing.T) {
 	endpoint := newModelEndpoint(t)
 	config, err := readMemoryConfig(amlTestConfig(t, endpoint.URL, nil))
@@ -1797,10 +1798,26 @@ func TestLivenessProbe(t *testing.T) {
 	if err := amlLive(ctx, server, 10*time.Millisecond); err == nil || !strings.Contains(err.Error(), "the background work last ticked") {
 		t.Fatal(err)
 	}
-	// A closed budget file does not answer.
-	server.Close()
-	if err := amlLive(ctx, server, time.Minute); err == nil || !strings.Contains(err.Error(), "the budget file does not answer") {
+	// A budget file held busy by a writer, as a stalled disk holds it, leaves
+	// the process live: /ready reports the file, not the watchdog.
+	locker, err := sql.Open("sqlite", config.BudgetFile)
+	if err != nil {
 		t.Fatal(err)
+	}
+	defer locker.Close()
+	conn, err := locker.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.ExecContext(ctx, "BEGIN EXCLUSIVE"); err != nil {
+		t.Fatal(err)
+	}
+	defer conn.ExecContext(ctx, "ROLLBACK")
+	probe, cancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	defer cancel()
+	if err := amlLive(probe, server, time.Minute); err != nil {
+		t.Fatal("a busy budget file failed the probe:", err)
 	}
 	if n := endpoint.requests.Load(); n != 0 {
 		t.Fatal("the probe called a model", n)

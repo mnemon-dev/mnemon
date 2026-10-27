@@ -260,8 +260,7 @@ func (s *Server) queueStatus() SchedulerStatus {
 }
 
 // Accounts reads the paid accounts calls have reserved on; none without a
-// budget file. Its error says the budget file does not answer, which
-// systemd's watchdog (aml-serve) checks.
+// budget file. Its error says the budget file does not answer.
 func (s *Server) Accounts(ctx context.Context) ([]memoryagent.BudgetAccount, error) {
 	if s.budget == nil {
 		return []memoryagent.BudgetAccount{}, nil

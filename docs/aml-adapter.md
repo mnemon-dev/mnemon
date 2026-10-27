@@ -804,10 +804,10 @@ caps. The evaluation caps are fixed at 600/60: DeepSeek CNY 600 and JEV USD 60.
   the instance starts after the overlay and asks for it, and neither a missing overlay nor a
   stopped one stops it.
 - `WatchdogSec=60`: aml-serve pings every half interval while its liveness probe passes (the
-  in-process `/health` answers 200, the background work's heartbeat ticked within the interval,
-  and the budget file answers); systemd restarts an instance whose pings stop. aml-serve refuses
-  a watchdog interval under 2 s. The probe calls no model, so a slow provider never looks like
-  a dead process; `/ready` reports those.
+  in-process `/health` answers 200 and the background work's heartbeat ticked within the
+  interval); systemd restarts an instance whose pings stop. aml-serve refuses a watchdog
+  interval under 2 s. The probe reads no budget file and calls no model, so a slow disk or a
+  slow provider never looks like a dead process; `/ready` reports those.
 - `Restart=always`, `RestartSec=5`, and `StartLimitIntervalSec=0` in `[Unit]`, so a crash loop
   keeps retrying every 5 s.
 - `TimeoutStopSec=60`, which outlasts the 40 s shutdown (30 s, 5 s, and 5 s for the model

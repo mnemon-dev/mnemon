@@ -500,11 +500,11 @@ func amlWatchdog(ctx context.Context, interval time.Duration, live func(context.
 }
 
 // amlLive is the watchdog's liveness probe of server: its public /health
-// handler, served in process, answers 200; its background work's heartbeat
-// (aml.Server.Heartbeat: Run runs and the scheduler's and the store
-// registry's locks are free) ticked within interval; and its budget file
-// answers. It opens no store and calls no model, so a slow or failing
-// provider never makes the service look dead: /ready reports those.
+// handler, served in process, answers 200; and its background work's
+// heartbeat (aml.Server.Heartbeat: Run runs and the scheduler's and the store
+// registry's locks are free) ticked within interval. It opens no store, reads
+// no budget file and calls no model, so a slow disk or a failing provider
+// never makes the service look dead: /ready reports those.
 func amlLive(ctx context.Context, server *aml.Server, interval time.Duration) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "/health", nil)
 	if err != nil {
@@ -521,9 +521,6 @@ func amlLive(ctx context.Context, server *aml.Server, interval time.Duration) er
 	}
 	if age := time.Since(beat); age > interval {
 		return fmt.Errorf("the background work last ticked %s ago", age.Round(time.Millisecond))
-	}
-	if _, err := server.Accounts(ctx); err != nil {
-		return fmt.Errorf("the budget file does not answer: %w", err)
 	}
 	return nil
 }
