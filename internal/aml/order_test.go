@@ -2,6 +2,8 @@ package aml
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -66,6 +68,60 @@ func TestSearchDeliversInTimeOrder(t *testing.T) {
 
 // A degraded Search cuts the raw ranking at top_k by rank, then delivers in
 // the same order as a read, scored by position.
+// storeRanking is the user's store's own ranking of query by match, its
+// lexical index caught up first.
+func storeRanking(t *testing.T, h *harness, userID, query, match string) []string {
+	t.Helper()
+	ctx := context.Background()
+	user, err := h.server.users.acquire(ctx, userID, false)
+	if err != nil || user == nil {
+		t.Fatal(err)
+	}
+	defer h.server.users.release(user)
+	if err := user.store.CatchUpLexical(ctx); err != nil {
+		t.Fatal(err)
+	}
+	snapshot, err := user.store.Get(ctx, records.GetRequest{IDs: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text, _ := json.Marshal(query)
+	input := map[string]json.RawMessage{"query": text, "match": json.RawMessage(`"` + match + `"`)}
+	result, err := user.store.Query(ctx, records.QueryRequest{Revision: snapshot.Revision, Input: input, CandidateLimit: 200})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return result.IDs
+}
+
+// A degraded Search ranks as the read's searches do: by bm25 over the
+// lexical index, caught up first.
+func TestDegradedSearchRanksByBM25(t *testing.T) {
+	h := newHarness(t, nil)
+	for i, text := range []string{
+		"camping camping camping lake caroline sunrise",
+		"paris camping rome caroline camping trip melanie group lake",
+		"paris lake camping painted sunrise sunday camping paris",
+		"painted lake rome sunrise sunrise",
+		"caroline paris",
+		"group painted paris",
+		"group painted caroline sunrise group sunrise painted rome lake",
+		"group trip camping sunday melanie",
+	} {
+		h.mustAdd(t, AddRequest{RequestID: fmt.Sprintf("r%d", i), UserID: "u1", SessionID: fmt.Sprintf("s%d", i), Messages: []Message{{Role: "user", Content: text, Timestamp: at(i)}}})
+	}
+	const query = "rome camping"
+	bm25, words := storeRanking(t, h, "u1", query, "bm25"), storeRanking(t, h, "u1", query, "words")
+	if slices.Equal(bm25, words) {
+		t.Fatal("the records no longer tell the two rankings apart", bm25)
+	}
+	h.judge.fail.Store(true)
+	items := h.search(t, SearchRequest{Query: query, UserID: "u1", TopK: 100})
+	if h.server.DegradedSearches() != 1 || !slices.Equal(ids(items), bm25) {
+		t.Fatal(ids(items), "bm25:", bm25, "words:", words)
+	}
+}
+
 func TestDegradedSearchDeliversInTimeOrder(t *testing.T) {
 	ranked, timed := newHarness(t, nil), newHarness(t, timeOrdered)
 	for _, h := range []*harness{ranked, timed} {
