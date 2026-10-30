@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Optional v0.3.4 Memory Agent/AML backend: original records, source-linked
+  consolidation, evidence retrieval, and operational metrics, logs and traces.
+  Existing Memory commands and databases retain the public CLI behavior.
+  The separate hosted frontend and UI/UX are not part of this source snapshot.
 - `npm install --global @mnemon-dev/mnemon` is now the canonical CLI install
   path. Tagged releases publish pinned native artifacts for macOS, Linux, and
   Windows before advancing the npm `latest` or `next` channel.

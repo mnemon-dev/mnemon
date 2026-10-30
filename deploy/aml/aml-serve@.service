@@ -1,0 +1,72 @@
+# systemd template for one engine instance of the memory cloud: the AML
+# Add/Search adapter of one account. Install once per host as
+# /etc/systemd/system/aml-serve@.service; `mnemon-instance new <n>` writes the
+# instance's files and starts aml-serve@<n>. See docs/aml-adapter.md.
+#
+# Everything per instance comes from %i, the instance name:
+#   /etc/mnemon-aml/%i/env                 addresses, flag values and secrets (below)
+#   /etc/mnemon-aml/%i/memory-config.json  the shipped configuration with the instance's caps
+#   /var/lib/mnemon-aml/%i/                the data root (data/), the log files (logs/: every line,
+#                                          a file per hour, 30 days), the model budget file and,
+#                                          once the console sets them, the account's own provider
+#                                          keys (provider-keys.json) and budget caps (settings.json),
+#                                          each mode 0600 and written by aml-serve
+#   aml-serve@%i.service.d/limits.conf     MemoryMax= and CPUQuota=, the instance's limits
+# so this file, ExecStart included, is the same for every instance. One
+# aml-serve holds a data root at a time (<data-root>/.aml-serve.lock).
+[Unit]
+Description=Mnemon AML memory adapter, instance %i
+# The admin listener binds the host's WireGuard address: wg0 starts with
+# the instance and before it. The instance never depends on it (no
+# Requires=): without wg0 aml-serve serves its public listener and binds the
+# admin listener again every 5 s until wg0 is up.
+After=network-online.target wg-quick@wg0.service
+Wants=network-online.target wg-quick@wg0.service
+# Restart=always without a cap: a crash loop keeps retrying every RestartSec.
+StartLimitIntervalSec=0
+
+[Service]
+# READY=1 once the public listener is bound and the background work runs; the
+# admin listener may bind later (After= above), so READY=1 does not wait for
+# it. WATCHDOG=1 while the liveness probe passes. aml-serve refuses a
+# watchdog interval under 2 s.
+Type=notify
+NotifyAccess=main
+WatchdogSec=60
+Restart=always
+RestartSec=5
+# The shutdown, in aml_process.go: the requests in flight and the
+# consolidation scheduler's drain share a 30 s grace; requests still running
+# then are canceled and have 5 s more; the stores and models close within the
+# same 35 s, when the model requests still in flight are cut, and those settle
+# their budget reservations within 5 s more. 30 s + 5 s + 5 s = 40 s, within
+# the 60 s below.
+TimeoutStopSec=60
+User=mnemon
+Group=mnemon
+# AML_API_KEY, MNEMON_ADMIN_TOKEN, the provider keys, AML_LISTEN,
+# AML_ADMIN_LISTEN, AML_MAX_ADDS, AML_MAX_SEARCHES, AML_MAX_OPEN_STORES and
+# AML_WORKERS. Mode 0600, root's: systemd reads it before it drops to
+# User=mnemon.
+EnvironmentFile=/etc/mnemon-aml/%i/env
+ExecStart=/usr/local/bin/mnemon memory-agent aml-serve --listen ${AML_LISTEN} --admin-listen ${AML_ADMIN_LISTEN} --admin-token-env MNEMON_ADMIN_TOKEN --auth-key-env AML_API_KEY --data-root /var/lib/mnemon-aml/%i/data --memory-config /etc/mnemon-aml/%i/memory-config.json --consolidate background --consolidation-workers ${AML_WORKERS} --max-open-stores ${AML_MAX_OPEN_STORES} --max-concurrent-adds ${AML_MAX_ADDS} --max-concurrent-searches ${AML_MAX_SEARCHES} --log-format json --provider-keys-file /var/lib/mnemon-aml/%i/provider-keys.json --settings-file /var/lib/mnemon-aml/%i/settings.json --log-dir /var/lib/mnemon-aml/%i/logs
+# Every open user store holds SQLite files and a reader pool.
+LimitNOFILE=65536
+
+StateDirectory=mnemon-aml/%i
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+
+[Install]
+WantedBy=multi-user.target

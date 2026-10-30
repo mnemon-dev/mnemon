@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "strategy": "simple",
+  "view": {
+    "maxItems": 100,
+    "maxCharacters": 240000,
+    "order": "time"
+  },
+  "consolidation": {
+    "mode": "layered"
+  },
+  "planner": {
+    "kind": "deepseek",
+    "model": "deepseek-flash",
+    "keyEnv": "DEEPSEEK_API_KEY"
+  },
+  "judge": {
+    "kind": "jev",
+    "model": "jev-1.13.0",
+    "keyEnv": "TYPESAFE_API_KEY"
+  },
+  "consolidator": {
+    "kind": "deepseek",
+    "model": "deepseek-flash",
+    "keyEnv": "DEEPSEEK_API_KEY",
+    "timeoutSeconds": 600
+  },
+  "budgetFile": "/var/lib/mnemon-aml/model-budget.db",
+  "budgets": {
+    "jev": 60,
+    "deepseek": 600
+  }
+}

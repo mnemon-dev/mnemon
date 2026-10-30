@@ -44,7 +44,7 @@ export async function stageNpmPackages({
     if (target.platform !== "win32") {
       await chmod(path.join(directory, target.binary), 0o755);
     }
-    await copyFile(path.join(repositoryRoot, "LICENSE"), path.join(directory, "LICENSE"));
+    await copyNotices(repositoryRoot, directory);
     await writeJSON(path.join(directory, "package.json"), platformPackage(target, platformVersion));
     await writeFile(
       path.join(directory, "README.md"),
@@ -75,7 +75,7 @@ export async function stageNpmPackages({
     ]),
   );
   await writeJSON(cliPackagePath, cliPackage);
-  await copyFile(path.join(repositoryRoot, "LICENSE"), path.join(cliDirectory, "LICENSE"));
+  await copyNotices(repositoryRoot, cliDirectory);
   staged.push({
     kind: "cli",
     name: packageName,
@@ -97,6 +97,18 @@ export function normalizeVersion(version) {
     throw new Error(`Invalid npm release version: ${version}`);
   }
   return normalized;
+}
+
+async function copyNotices(repositoryRoot, directory) {
+  await copyFile(path.join(repositoryRoot, "LICENSE"), path.join(directory, "LICENSE"));
+  await copyFile(
+    path.join(repositoryRoot, "internal", "records", "LICENSE.v8"),
+    path.join(directory, "LICENSE.v8"),
+  );
+  await copyFile(
+    path.join(repositoryRoot, "internal", "memoryagent", "LICENSE.memory-agent"),
+    path.join(directory, "LICENSE.memory-agent"),
+  );
 }
 
 export function releaseTag(version) {
@@ -161,7 +173,7 @@ function platformPackage(target, version) {
     description: `Mnemon native binary for ${target.platform}/${target.arch}`,
     os: [target.platform],
     cpu: [target.arch],
-    files: ["bin", "README.md", "LICENSE"],
+    files: ["bin", "README.md", "LICENSE", "LICENSE.v8", "LICENSE.memory-agent"],
     repository: {
       type: "git",
       url: "git+https://github.com/mnemon-dev/mnemon.git",

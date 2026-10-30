@@ -1,0 +1,25 @@
+# WireGuard spoke for an instance host of the memory cloud. The overlay is
+# 10.77.0.0/24: the ops host is its hub, 10.77.0.1, where the console and
+# Prometheus read the instances' admin listeners. Install as
+# /etc/wireguard/wg0.conf (root:root, mode 0600) with the placeholders filled
+# in, then `systemctl enable --now wg-quick@wg0`; see docs/aml-adapter.md
+# ("Private network"). The hub's own wg0.conf is in the console's kit.
+#
+# Only the hub is reachable through it (AllowedIPs = 10.77.0.1/32), and this
+# host does not forward. The firewall lets the hub reach the admin ports only:
+# ufw allow in on wg0 from 10.77.0.1 proto tcp to any port 8091:8600
+
+[Interface]
+# This host's overlay address: eval is 10.77.0.2, beta 10.77.0.3. It is the
+# --admin-ip of every instance on this host.
+Address = 10.77.0.2/24
+ListenPort = 51820
+# The private key stays in its own file (umask 077; wg genkey > /etc/wireguard/wg0.key).
+PostUp = wg set %i private-key /etc/wireguard/wg0.key
+
+[Peer]
+# The hub: the ops host.
+PublicKey = <the hub's public key>
+Endpoint = <the ops host's public address>:51820
+AllowedIPs = 10.77.0.1/32
+PersistentKeepalive = 25

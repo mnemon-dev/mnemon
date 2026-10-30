@@ -1,0 +1,46 @@
+# Caddy for a shared host: many instances under one domain and one
+# certificate, instance <n> at https://beta.example.com/i/<n>. Install once per
+# host as /etc/caddy/Caddyfile and replace beta.example.com with the host's
+# domain; see docs/aml-adapter.md. Only directives Caddy 2.6 has are used.
+#
+# `mnemon-instance new <n>` writes /etc/caddy/mnemon-instances/<n>.caddy, a
+# `handle_path /i/<n>/*` block that strips the prefix (aml-serve sees /add,
+# /search and /health) and proxies to the instance's port, holding requests
+# through a restart for up to 30 s; suspend swaps it for a 403. Caddy accepts
+# the import while no instance exists yet.
+#
+# The platform waits up to 31 minutes for an Add or a Search (its I/O timeout
+# is 1,800 s), so no proxy timeout may be shorter; the snippets set the
+# upstream ones. aml-serve itself limits bodies to 30 MiB and answers /health
+# without a key.
+{
+	servers {
+		timeouts {
+			read_body 35m
+			read_header 30s
+			write 35m
+			idle 5m
+		}
+	}
+}
+
+beta.example.com {
+	# Certificates come from Let's Encrypt (ports 80 and 443 must reach this
+	# host).
+
+	# The adapter's own limit is 30 MiB (31457280 bytes).
+	request_body {
+		max_size 30MiB
+	}
+
+	# One file per instance. The handle blocks exclude one another, and Caddy
+	# tries the longest path first, so the block below answers only what no
+	# instance's prefix matches.
+	import /etc/caddy/mnemon-instances/*.caddy
+
+	# Anything else, in the engine's own error shape.
+	handle {
+		header Content-Type application/json
+		respond `{"error":"not found"}` 404
+	}
+}

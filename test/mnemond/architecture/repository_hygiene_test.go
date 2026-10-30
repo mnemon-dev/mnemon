@@ -95,11 +95,14 @@ func TestRepositoryHygieneRulesAcceptDurableJSONCategories(t *testing.T) {
 		"package.json",
 		"npm/cli/package.json",
 		"npm/cli/targets.json",
+		"internal/records/testdata/golden.json",
+		"internal/records/testdata/bm25-rounding.json",
 		"web/package.json",
 		"web/package-lock.json",
 		"web/tsconfig.json",
 		"internal/memory/setup/assets/openclaw/plugin/openclaw.plugin.json",
 		"internal/memory/setup/assets/openclaw/plugin/package.json",
+		"deploy/aml/memory-config.industrial.json",
 	} {
 		if reason := forbiddenTrackedPathReason(trackedPath); reason != "" {
 			t.Errorf("%s: %s", trackedPath, reason)
@@ -245,10 +248,14 @@ func durableJSONCategory(trackedPath string) string {
 		return "DSH package manifest"
 	case trackedPath == "npm/cli/package.json" || trackedPath == "npm/cli/targets.json":
 		return "npm CLI manifest"
+	case trackedPath == "internal/records/testdata/golden.json" || trackedPath == "internal/records/testdata/bm25-rounding.json":
+		return "TS retrieval golden fixture"
 	case trackedPath == "web/package.json" || trackedPath == "web/package-lock.json" || trackedPath == "web/tsconfig.json":
 		return "web build configuration"
 	case strings.HasPrefix(trackedPath, "internal/memory/setup/assets/"):
 		return "managed asset"
+	case strings.HasPrefix(trackedPath, "deploy/aml/"):
+		return "deployment configuration sample"
 	default:
 		return ""
 	}
