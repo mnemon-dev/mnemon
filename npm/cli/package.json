@@ -12,7 +12,9 @@
     "lib",
     "targets.json",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "LICENSE.v8",
+    "LICENSE.memory-agent"
   ],
   "scripts": {
     "test": "node --experimental-test-module-mocks --test test/*.test.mjs"

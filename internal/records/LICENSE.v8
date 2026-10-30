@@ -1,3 +1,15 @@
+Mnemon's internal/records/jslog.go contains a Go port of the log operation
+from V8's src/base/ieee754.cc, based on fdlibm. The notices for that code are:
+
+Copyright (C) 1993 by Sun Microsystems, Inc. All rights reserved.
+Developed at SunSoft, a Sun Microsystems, Inc. business.
+Permission to use, copy, modify, and distribute this software is freely
+granted, provided that this notice is preserved.
+Modified significantly by Google Inc. Copyright 2016 the V8 project authors.
+All rights reserved.
+
+The upstream V8 license follows.
+
 This license applies to all parts of V8 that are not externally
 maintained libraries.  The externally maintained libraries used by V8
 are:

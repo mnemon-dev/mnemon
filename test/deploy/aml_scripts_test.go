@@ -1123,9 +1123,8 @@ func TestAMLProvenanceCountsUntrackedFiles(t *testing.T) {
 // the evaluation instance's spending caps states the shipped configuration's:
 // the kit's README, the runbook (its defaults, its notes on the configuration,
 // and the sentence that says the evaluation caps are fixed), the instance
-// script's dedicated defaults and usage, and the design's deploy-kit
-// paragraph. The numbers stood in six places, and only the JSON and the
-// command's test were guarded (the final review's parked T2-c).
+// script's dedicated defaults and usage. Internal research documents are not
+// part of the public deployment kit.
 func TestEvaluationCapsAreTheSameEverywhere(t *testing.T) {
 	repo := filepath.Join("..", "..")
 	read := func(path string) string {
@@ -1157,7 +1156,6 @@ func TestEvaluationCapsAreTheSameEverywhere(t *testing.T) {
 			"evaluation caps are fixed at " + deepseek + "/" + jev,
 		}},
 		{"deploy/aml/instance.sh", []string{"DEEPSEEK_CAP=" + deepseek + " JEV_CAP=" + jev, "DeepSeek cap: dedicated " + deepseek + ",", "JEV cap: dedicated " + jev + ","}},
-		{"docs/superpowers/specs/2026-10-24-aml-serve-hardening-design.md", []string{"DeepSeek CNY " + deepseek + ", JEV USD " + jev}},
 	} {
 		// A line may wrap in a document: compare with the white space collapsed.
 		text := strings.Join(strings.Fields(read(c.file)), " ")

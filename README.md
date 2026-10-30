@@ -564,26 +564,25 @@ make help           # show all targets
 
 See [Development and Deployment](docs/DEPLOYMENT.md) for Docker, Compose, Ollama embedding, and release setup.
 
-## Run as a cloud instance
+## Optional Memory Agent and AML backend
 
-Mnemon is also the core runtime engine of a small memory cloud: `mnemon memory-agent
-aml-serve` serves the Agent Memory Leaderboard's Add/Search API over one records store per
-user, with the memory-agent strategy, an admin API (metrics, readiness, status and a store
-overview) and a per-host deploy kit. The website and the console that observes the instances
-live in `mnemon-fe`.
+The [Memory Agent](docs/memory-service.md) exposes the v0.3.4 AML evaluation
+engine through explicit `mnemon memory-agent ...` commands. It stores original
+records, builds a source-linked memory index, and returns evidence for an agent
+to answer from. Reads and consolidation require separately configured models.
 
-One account is one engine instance, with its own process, API key, admin token, data root,
-model budget and limits. On a host with the kit installed, one command opens one:
+Existing `remember`, `recall`, `search`, `setup`, hooks, and the Web library keep
+using native Memory and `mnemon.db`. No automatic migration, model activation,
+or switch of the default engine is performed. Build this branch to use the new
+commands; opening a PR does not update the published CLI or npm release.
 
-```bash
-mnemon-instance new beta-alice --layout shared --public-url https://beta.example.com/i/beta-alice --admin-ip 10.77.0.3
-```
-
-It prints the base URL and the API key for the account holder, and the admin token and a
-registration JSON for the console, once. `mnemon-instance` also suspends, resumes, rotates the
-key of and deletes an instance, and deletes one user's data; `mnemon-preflight` checks an
-instance before a job. See the [AML adapter runbook](docs/aml-adapter.md) and the
-[Admin API](docs/admin-api.md).
+`mnemon memory-agent aml-serve` adds the AML Add/Search API with per-user stores,
+bounded background consolidation, authentication and budgets. Its operational
+surface includes readiness, metrics, redacted logs, traces and read-only
+inspection. See the [AML adapter runbook](docs/aml-adapter.md),
+[Admin API](docs/admin-api.md), and [Inspect API](docs/inspect-api.md).
+The separate hosted console, frontend UI/UX, design prototypes and private
+evaluation data are outside this source snapshot.
 
 ## Documentation
 
@@ -591,6 +590,7 @@ instance before a job. See the [AML adapter runbook](docs/aml-adapter.md) and th
 - [Go Engineering Standard](docs/development/go-engineering-standard.md) — maintainability, concurrency, persistence, testing, and review thresholds
 - [Design & Architecture](docs/DESIGN.md) — current engine architecture, algorithms, integration design
 - [Memory Usage & Reference](docs/USAGE.md) — root Memory commands, import, receipts, and embedding support
+- [Optional Memory Agent](docs/memory-service.md) — v0.3.4 baseline, explicit configuration, records and evidence Views
 - [Memory Import Guide](docs/IMPORT.md) — schema and LLM prompt for importing historical chats
 - [Architecture Diagrams](docs/diagrams/) — system architecture, pipelines, lifecycle management
 - [Memory Agent (experimental)](experimental/memory-agent/) — research preview of Mnemon as a memory agent on DSH, with Jev as its System 1 decision model; paper, code and run records

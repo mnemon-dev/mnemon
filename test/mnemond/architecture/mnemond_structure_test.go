@@ -80,8 +80,9 @@ func assertMnemondPackageGraph(t *testing.T, root string) {
 		"internal/safety":               {},
 		"internal/memory/importdraft":   {"internal/memory/model"},
 		"internal/memory/store":         {"internal/memory/embed", "internal/memory/model"},
+		// Keep native CLI helpers independent from the frozen AML retrieval primitives.
 		"internal/memory/search": {
-			"internal/memory/embed", "internal/memory/internal/topk", "internal/memory/model", "internal/memory/store", "internal/retrieval",
+			"internal/memory/embed", "internal/memory/internal/topk", "internal/memory/model", "internal/memory/store",
 		},
 		"internal/memory/graph": {
 			"internal/memory/embed", "internal/memory/internal/topk", "internal/memory/model", "internal/memory/search",

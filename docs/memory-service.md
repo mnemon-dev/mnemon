@@ -1,5 +1,76 @@
 # Shared Memory service and paper strategy
 
+## v0.3.4 source baseline and compatibility
+
+This branch retains the AML engine from the local evaluation tag `v0.3.4`,
+commit `c09e4a8b1a94b0d8e3bc74259fc40a5cb6ecb4cd`, rebased onto the current
+public CLI. Its 361 original commits retain their authors, author dates,
+messages and internal parent relationships, including three merge commits.
+Internal research documents and UI prototypes are removed throughout the
+public history; commits that become empty are retained. Rebase and history
+cleanup change the public commit IDs. The original evaluation tag remains
+unchanged, and a separate follow-up commit adds public-release integration.
+The Go sources in `internal/memoryagent`, `internal/records`, `internal/aml`,
+`internal/retrieval` and `internal/safety`, the AML command adapters, and
+`deploy/aml/memory-config.industrial.json` retain the evaluation baseline.
+Added third-party notices do not change engine behavior.
+
+The default profile is `simple` retrieval with `layered` consolidation and a
+time-ordered evidence View. Model configuration, prompts and retrieval limits
+are unchanged. Later reasoning/model-switch controls, prompt overrides and
+concise-prompt experiments are not part of this snapshot. Evaluation results
+describe the recorded engine and configuration; this integration is not a new
+AML evaluation or a claim that every user configuration has the same score.
+
+Native Memory retains the current public CLI implementation, including its
+entity filtering, UTF-8 handling and embedding fallback fixes. Its extraction
+and search helpers remain independent of the frozen retrieval primitives used
+by the optional engine. Existing commands, hooks, Web UI and `mnemon.db` are
+not switched or migrated. Only explicit `memory-agent`, `records` or `serve`
+commands open the additional record/service surfaces.
+
+The original method is [Raw Records, Fast Judgments, Slow Thoughts](https://arxiv.org/abs/2609.36059)
+and its [reference implementation](https://github.com/Grivn/mnemon-memory-agent).
+The reference MIT notice is preserved in
+[`LICENSE.memory-agent`](../internal/memoryagent/LICENSE.memory-agent), and the
+records logarithm port retains its V8/fdlibm notices in
+[`LICENSE.v8`](../internal/records/LICENSE.v8). Both notices ship with binary
+and npm packages.
+
+## Explicit use
+
+Build this checkout with `go build -o mnemon .`. `memory-agent write` needs no
+provider credentials; `read` and `consolidate` require an absolute `--config`
+path. The [AML profile](../deploy/aml/memory-config.industrial.json) names the
+required environment variables, models and cumulative budgets. Before local
+use, copy it to a private file and change `budgetFile` to an absolute writable
+path belonging to the intended data directory; review its deployment-sized
+spending caps. Credentials belong in the process environment, not the JSON.
+
+For example, with an already prepared configuration:
+
+```sh
+./mnemon --data-dir /absolute/mnemon-v03 --store journal memory-agent write <<'JSON'
+{"id":"note-1","text":"The project uses SQLite.","source":"user"}
+JSON
+
+./mnemon --data-dir /absolute/mnemon-v03 --store journal memory-agent consolidate \
+  --config /absolute/memory-config.json <<'JSON'
+{"maxBatches":4,"deferLinks":true}
+JSON
+
+./mnemon --data-dir /absolute/mnemon-v03 --store journal memory-agent read \
+  --config /absolute/memory-config.json <<'JSON'
+{"question":"Which database does the project use?","maxItems":10}
+JSON
+```
+
+Local consolidation is explicit and bounded; inspect `remaining` before
+starting another job. Reads return evidence, not a generated answer. The
+AML adapter's background scheduler is started only by `aml-serve`.
+
+## Shared local service
+
 `mnemon serve --data-dir /absolute/data --store journal --socket /tmp/mnemon.sock`
 uses the same local NDJSON runtime as `mnemon records serve`. Existing records
 operations retain their request/response formats. Native reads use the existing

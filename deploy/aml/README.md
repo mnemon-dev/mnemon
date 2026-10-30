@@ -1,10 +1,11 @@
-# AML submission materials (draft)
+# AML v0.3.4 source profile and deployment kit
 
-Draft text for the Agent Memory Challenge 2026 submission, **industrial track (commercial
-products), textual**. Everything in `<angle brackets>` is a placeholder to fill in or confirm
-before submitting. The only measured numbers here are the capacity rows' local ones, marked as
-such; nothing reports a result of the evaluation host or of an evaluation yet. Install and
-operate the system with [`docs/aml-adapter.md`](../../docs/aml-adapter.md).
+This kit documents the v0.3.4 textual industrial evaluation profile and its backend
+deployment. It does not provision access to the evaluation service or include the hosted
+console. Replace deployment placeholders with your own settings. Capacity measurements below
+are local harness results, not correctness scores. For source provenance and CLI compatibility,
+see [`docs/memory-service.md`](../../docs/memory-service.md); for installation and operation,
+see [`docs/aml-adapter.md`](../../docs/aml-adapter.md).
 
 ## Kit contents
 
@@ -32,11 +33,11 @@ dedicated instance `eval`.
 | Field | Value |
 |---|---|
 | System name | Mnemon |
-| Version | v0.3.4: the `VERSION` given to `make build-linux-amd64`, built from the git tag `v0.3.4` |
+| Source baseline | v0.3.4, `c09e4a8b1a94b0d8e3bc74259fc40a5cb6ecb4cd`; the public integration has its own commit identity |
 | Track | Industrial (commercial products), textual |
 | Team / organization | Mnemon Team / Mnemon |
-| Contact | `grivn.wang@gmail.com` |
-| Endpoint | `https://aml.mnemon.dev`, the instance `eval` on its own host, the dedicated 12 vCPU / 48 GB / 387 GB evaluation host (`POST /add`, `POST /search`, `GET /health`) |
+| Contact | `<deployment operator>` |
+| Endpoint | `https://<your-domain>` (`POST /add`, `POST /search`, `GET /health`) |
 | Implementation | Go, one static binary: `mnemon memory-agent aml-serve` |
 | Paper | *Raw Records, Fast Judgments, Slow Thoughts*: Guangren Wang, <https://arxiv.org/abs/2609.36059> (arXiv, 2026) |
 | Reference implementation | <https://github.com/Grivn/mnemon-memory-agent> (MIT; the paper author's own repository) |
@@ -145,8 +146,8 @@ next Search), the conversation text goes to the DeepSeek API, and the events and
 extracts from the conversation (topic titles, dated event texts, fact keys and values) go to
 the JEV API. Raw records stay on the submission host.
 
-Confirmed with the organizers: the consolidation blocks are allowed, the industrial track lets
-participants choose their models, and DeepSeek and JEV retain no data.
+The recorded profile uses consolidation blocks and model-specific configuration. Submission
+eligibility and provider data-handling terms are separate from this source snapshot.
 
 ## Changes from the reference implementation
 
