@@ -1,14 +1,14 @@
 # Inspect API
 
-`mnemon memory-agent aml-inspect` is the inspect service of one engine instance: the read-only
-backend of the console's 检索 (retrieval) tab. It is a process of its own, beside
+`mnemon memory-agent aml-inspect` is the read-only inspection service of one engine
+instance. It is a process of its own, beside
 `aml-serve@<n>`, and never a route of aml-serve. It reads the instance's data root and runs
 retrieval on it **without side effects**: it writes no store, folds no pending record, writes no
 model cache, spends nothing from the instance's budget and moves no metric of the instance. The
 deployment is in the [AML runbook](aml-adapter.md) ("Inspect (检索)").
 
-This document is the contract between the engine and the console (mnemon-fe). Its JSON may gain
-fields; a field is never renamed or repurposed.
+This document defines the API for operational tools. A frontend is not required or
+included. Its JSON may gain fields; a field is never renamed or repurposed.
 
 ## Conventions
 

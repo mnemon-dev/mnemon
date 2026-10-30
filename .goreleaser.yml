@@ -32,6 +32,16 @@ archives:
         formats:
           - zip
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+      - CHANGELOG.md
+      - src: internal/records/LICENSE.v8
+        dst: .
+        strip_parent: true
+      - src: internal/memoryagent/LICENSE.memory-agent
+        dst: .
+        strip_parent: true
 
 checksum:
   name_template: "checksums.txt"

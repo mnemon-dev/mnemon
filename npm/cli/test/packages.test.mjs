@@ -47,6 +47,17 @@ test("GoReleaser binaries become pinned npm platform aliases", async (t) => {
 
   assert.equal(manifest.packages.length, 7);
   assert.equal(manifest.packages.at(-1).kind, "cli");
+  const notice = await readFile(new URL("../../../internal/records/LICENSE.v8", import.meta.url), "utf8");
+  const memoryNotice = await readFile(new URL("../../../internal/memoryagent/LICENSE.memory-agent", import.meta.url), "utf8");
+  assert.match(notice, /Copyright \(C\) 1993 by Sun Microsystems/);
+  assert.match(notice, /Copyright 2014, the V8 project authors/);
+  for (const artifact of manifest.packages) {
+    assert.equal(await readFile(path.join(artifact.directory, "LICENSE.v8"), "utf8"), notice);
+    assert.equal(await readFile(path.join(artifact.directory, "LICENSE.memory-agent"), "utf8"), memoryNotice);
+    const metadata = JSON.parse(await readFile(path.join(artifact.directory, "package.json"), "utf8"));
+    assert.ok(metadata.files.includes("LICENSE.v8"), `${artifact.id ?? "cli"} excludes the notice`);
+    assert.ok(metadata.files.includes("LICENSE.memory-agent"), `${artifact.id ?? "cli"} excludes the memory agent notice`);
+  }
   const cli = JSON.parse(await readFile(path.join(output, "cli", "package.json"), "utf8"));
   assert.equal(cli.version, "1.2.3");
   assert.equal(cli.private, undefined);

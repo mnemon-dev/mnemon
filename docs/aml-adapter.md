@@ -10,10 +10,10 @@ removing the data afterwards.
 
 The kit is in [`deploy/aml/`](../deploy/aml); the submission text is in
 [`deploy/aml/README.md`](../deploy/aml/README.md); the admin listener, its token and its
-routes are in [`docs/admin-api.md`](admin-api.md). The console that reads the instances is
-the memory cloud's other repository, `mnemon-fe`; its design
-(`docs/superpowers/specs/2026-10-24-memory-cloud-design.md` there) is the authority for how
-instances, hosts and the console fit together.
+routes are in [`docs/admin-api.md`](admin-api.md). This repository provides the engine,
+deployment scripts and observability APIs. The separate hosted console and its UI/UX
+are not included or required to operate these APIs. Console references below describe
+optional consumers of the documented backend contracts.
 
 Every command below runs as root on the host (`sudo -i`) unless it says otherwise.
 

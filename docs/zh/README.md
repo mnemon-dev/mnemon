@@ -30,6 +30,12 @@ Memory 命令保存跨会话知识；Preview 阶段的 `mnemon agency ...` 为�
 提供持久、受约束的协作状态。Agency 以 Pi 为首个 Runtime 集成，详情见
 [Agency 指南](AGENCY.md)。
 
+本分支新增可选的 [Memory Agent 与 AML 后端](../memory-service.md)，采用 v0.3.4
+参评实现。现有 `remember`、`recall`、`search`、`setup`、hooks 和 Web 功能继续使用
+原有 Memory 与 `mnemon.db`；新引擎需要显式调用并单独配置，不自动迁移数据或切换默认链路。
+本次公开包含必要的 AML 接口、运行保障及日志、指标、追踪和只读检查能力，不包含独立控制台、
+前端 UI/UX、界面原型或私有评测数据。提交 PR 不会更新已发布的 CLI 或 npm 版本。
+
 > **Claude Max / Pro 订阅用户？** Mnemon 完全通过你现有的订阅运作——不需要额外的 API 密钥。你的 LLM 订阅*本身*就是智能层。两条命令即可完成。
 
 ### 为什么选择 Mnemon？

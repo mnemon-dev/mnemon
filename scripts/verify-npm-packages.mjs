@@ -23,7 +23,7 @@ export async function verifyNpmPackages(manifestPath) {
     const files = new Set(report[0]?.files?.map((entry) => entry.path));
     const expected =
       artifact.kind === "cli" ? "bin/mnemon.js" : nativePackageBinary(artifact.id);
-    if (!files.has(expected) || !files.has("LICENSE") || !files.has("package.json")) {
+    if (!files.has(expected) || !files.has("LICENSE") || !files.has("LICENSE.v8") || !files.has("LICENSE.memory-agent") || !files.has("package.json")) {
       throw new Error(`npm package ${artifact.version} is missing required files`);
     }
   }
