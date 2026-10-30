@@ -155,7 +155,8 @@ func TestProviderKeysFileFlag(t *testing.T) {
 
 // --log-dir names the directory of the log files: an absolute path, or none.
 func TestLogDirFlag(t *testing.T) {
-	if options, err := amlFlags(t, "--log-dir", "/var/lib/x/logs"); err != nil || options.logDir != "/var/lib/x/logs" {
+	directory := filepath.Join(t.TempDir(), "logs")
+	if options, err := amlFlags(t, "--log-dir", directory); err != nil || options.logDir != directory {
 		t.Fatal("--log-dir:", options.logDir, err)
 	}
 	if options, err := amlFlags(t); err != nil || options.logDir != "" {
@@ -1602,7 +1603,22 @@ func TestShutdownCutsAbandonedModelRequests(t *testing.T) {
 		config.Planner.TimeoutSeconds, config.Planner.AttemptTimeoutSeconds, config.Planner.MaxAttempts = 60, 1, 1
 	})
 	run := startAMLServe(t, configPath)
-	waitFor(t, "READY=1", func() bool { return slices.Contains(notified.all(), "READY=1") })
+	// Startup opens real SQLite files and has its own allowance on slower
+	// runners. The shutdown windows and assertions below stay unchanged.
+	readyDeadline := time.NewTimer(30 * time.Second)
+	defer readyDeadline.Stop()
+	readyPoll := time.NewTicker(5 * time.Millisecond)
+	defer readyPoll.Stop()
+	for !slices.Contains(notified.all(), "READY=1") {
+		select {
+		case err := <-run.done:
+			run.once.Do(func() { run.cancel(); run.err = err })
+			t.Fatalf("aml-serve exited before READY=1: %v\n%s", err, run.log.String())
+		case <-readyDeadline.C:
+			t.Fatalf("timed out waiting for READY=1\n%s", run.log.String())
+		case <-readyPoll.C:
+		}
+	}
 	if code, body := run.post(t, "/add", noteAdd("r1", "u1")); code != http.StatusOK {
 		t.Fatal(code, body)
 	}
