@@ -10,10 +10,10 @@ Internal research documents and UI prototypes are removed throughout the
 public history; commits that become empty are retained. Rebase and history
 cleanup change the public commit IDs. The original evaluation tag remains
 unchanged, and a separate follow-up commit adds public-release integration.
-The Go sources in `internal/memoryagent`, `internal/records`, `internal/aml`,
+The production Go sources in `internal/memoryagent`, `internal/records`, `internal/aml`,
 `internal/retrieval` and `internal/safety`, the AML command adapters, and
 `deploy/aml/memory-config.industrial.json` retain the evaluation baseline.
-Added third-party notices do not change engine behavior.
+Test portability fixes and added third-party notices do not change engine behavior.
 
 The default profile is `simple` retrieval with `layered` consolidation and a
 time-ordered evidence View. Model configuration, prompts and retrieval limits
