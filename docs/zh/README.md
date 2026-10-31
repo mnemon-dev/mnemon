@@ -258,6 +258,22 @@ mnemon setup --target hermes --yes
 `on_session_start`、`pre_llm_call`、`post_llm_call`，以及可选的
 `on_session_finalize`。Hermes 可能会在首次运行时提示批准这些 shell hooks。
 
+### [Alma](https://alma.now)
+
+```bash
+mnemon setup --target alma --yes
+```
+
+一条命令将 mnemon skill、`mem` shim 和一个 `app.ready` hook 部署到
+`~/.config/alma/`。Alma 的 hook stdout 不会进入模型上下文——只消费最后一行
+JSON 里的 `decision`、`reason` 和 `updatedInput`——所以这个集成刻意与生命周期
+hook 类的目标不同：hook 只做一件事（刷新 `MEMORY.md` 里由 mnemon 生成的区块，
+Alma 本来就会把它注入每一轮的 system prompt），召回交给模型通过 skill 自行决定。
+区块由 `<!-- mnemon:begin -->` / `<!-- mnemon:end -->` 界定，标记之外的每个字节
+都原样保留，因为 Alma 自己的提示词也会让模型写同一个文件。
+
+Alma 没有项目级 hook 配置，因此该目标仅支持用户级安装。
+
 ### [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 DeepSeek Harness（DSH）通过 [dsh-mnemon](https://github.com/omdsh-dev/dsh-mnemon) 插件集成：该插件把 DSH 的运行时热记忆、受管项目档案与 Mnemon 长期记忆体组织成一套受监督的三层记忆系统。

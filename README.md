@@ -303,6 +303,26 @@ One command deploys the mnemon skill, prompt files, and Hermes shell hooks to
 `on_session_finalize`. Hermes may prompt once to approve the installed shell
 hooks.
 
+### [Alma](https://alma.now)
+
+```bash
+mnemon setup --target alma --yes
+```
+
+One command deploys the mnemon skill, a `mem` shim, and a single `app.ready`
+hook to `~/.config/alma/`. Alma's hook stdout is not injected into the model
+context — only `decision`, `reason`, and `updatedInput` from the last JSON line
+are consumed — so the integration is deliberately shaped differently from the
+lifecycle-hook targets: the hook does one job (refresh a generated block inside
+`MEMORY.md`, which Alma already injects into its system prompt every request),
+and recall is left to the model through the skill. The block is delimited by
+`<!-- mnemon:begin -->` / `<!-- mnemon:end -->` and everything outside those
+markers is preserved byte for byte, because Alma's own prompt tells the model to
+write to the same file.
+
+Alma has no project-local hook configuration, so this target is user-global
+only.
+
 ### [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)
 
 DeepSeek Harness (DSH) integrates through the [dsh-mnemon](https://github.com/omdsh-dev/dsh-mnemon) plugin, which layers DSH's runtime memory, managed project documents, and Mnemon's long-term memory spaces into one supervised three-tier memory system.
@@ -401,7 +421,7 @@ memory is useful.
 
 - **Zero user-side operation** — install once; supported runtimes can use hooks, minimal runtimes can use persistent rules
 - **LLM-supervised** — the host LLM decides what to remember, update, and forget; no embedded LLM, no API keys
-- **Multi-framework support** — Claude Code, Codex, Cursor, ZCode, TRAE/TRAE Work, Qoder/QoderWork, CodeBuddy, WorkBuddy, Kimi Code, OpenCode, and Hermes Agent (hooks/plugins), OpenClaw (plugins), Pi (extensions), MiniMax Code and Nanobot (skills), DeepSeek Harness (via the dsh-mnemon plugin), and more
+- **Multi-framework support** — Claude Code, Codex, Cursor, ZCode, TRAE/TRAE Work, Qoder/QoderWork, CodeBuddy, WorkBuddy, Kimi Code, OpenCode, and Hermes Agent (hooks/plugins), OpenClaw (plugins), Pi (extensions), Alma (skill + `app.ready` hook), MiniMax Code and Nanobot (skills), DeepSeek Harness (via the dsh-mnemon plugin), and more
 - **Runtime-native integration** — runtime-specific `SKILL.md`, shared `guide.md`, and supported hooks or extensions
 - **Four-graph architecture** — temporal, entity, causal, and semantic edges, not just vector similarity
 - **Intent-native protocol** — three primitives (`remember`, `link`, `recall`) map to the LLM's cognitive vocabulary, not database syntax; structured JSON output with signal transparency

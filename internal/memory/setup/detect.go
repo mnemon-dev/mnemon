@@ -9,8 +9,8 @@ import (
 
 // Environment describes a detected LLM CLI environment.
 type Environment struct {
-	Name      string // "claude-code", "codex", "cursor", "zcode", "minimax-code", "trae", "qoder", "qoderwork", "codebuddy", "workbuddy", "kimi", "opencode", "openclaw", "nanobot", "pi", "hermes"
-	Display   string // "Claude Code", "Codex", "Cursor", "ZCode", "MiniMax Code", "Trae", "Qoder", "QoderWork", "CodeBuddy", "WorkBuddy", "Kimi Code", "OpenCode", "OpenClaw", "Nanobot", "Pi", "Hermes Agent"
+	Name      string // "claude-code", "codex", "cursor", "zcode", "minimax-code", "trae", "qoder", "qoderwork", "codebuddy", "workbuddy", "kimi", "opencode", "openclaw", "nanobot", "pi", "hermes", "alma"
+	Display   string // "Claude Code", "Codex", "Cursor", "ZCode", "MiniMax Code", "Trae", "Qoder", "QoderWork", "CodeBuddy", "WorkBuddy", "Kimi Code", "OpenCode", "OpenClaw", "Nanobot", "Pi", "Hermes Agent", "Alma"
 	Detected  bool   // CLI binary or global config dir found
 	BinPath   string // exec.LookPath result
 	Installed bool   // mnemon integration present at ConfigDir
@@ -45,6 +45,7 @@ func DetectEnvironments(global bool) []Environment {
 		detectNanobot(global),
 		detectPi(global),
 		detectHermes(),
+		detectAlma(),
 	}
 }
 
@@ -654,6 +655,34 @@ func detectPi(global bool) Environment {
 		if out, err := exec.Command(env.BinPath, "--version").Output(); err == nil {
 			env.Version = cleanVersion(strings.TrimSpace(string(out)))
 		}
+	}
+
+	return env
+}
+
+func detectAlma() Environment {
+	configDir, _ := AlmaConfigDir(true)
+
+	env := Environment{
+		Name:      "alma",
+		Display:   "Alma",
+		ConfigDir: configDir,
+	}
+
+	if _, err := os.Stat("/Applications/Alma.app"); err == nil {
+		env.Detected = true
+	}
+	if binPath, err := exec.LookPath("alma"); err == nil {
+		env.Detected = true
+		env.BinPath = binPath
+	}
+
+	skillPath := filepath.Join(configDir, "skills", "mnemon", "SKILL.md")
+	hooksPath := filepath.Join(configDir, "hooks.json")
+	if _, err := os.Stat(skillPath); err == nil {
+		env.Installed = true
+	} else if data, err := ReadJSONFile(hooksPath); err == nil && containsMnemon(data) {
+		env.Installed = true
 	}
 
 	return env

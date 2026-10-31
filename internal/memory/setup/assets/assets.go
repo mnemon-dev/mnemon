@@ -188,7 +188,16 @@ var HermesNudgeHook []byte
 //go:embed hermes/compact.sh
 var HermesCompactHook []byte
 
+//go:embed alma/SKILL.md
+var AlmaSkill []byte
+
+//go:embed alma/prime.sh
+var AlmaPrimeHook []byte
+
+//go:embed alma/mem.sh
+var AlmaMemShim []byte
+
 // All returns the embedded filesystem for inspection.
 //
-//go:embed claude codex cursor zcode minimax trae qoder qoderwork codebuddy workbuddy kimi opencode openclaw nanoclaw nanobot pi hermes
+//go:embed claude codex cursor zcode minimax trae qoder qoderwork codebuddy workbuddy kimi opencode openclaw nanoclaw nanobot pi hermes alma
 var All embed.FS
