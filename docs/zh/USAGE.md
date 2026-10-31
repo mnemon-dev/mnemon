@@ -71,6 +71,7 @@ mnemon setup --target openclaw
 mnemon setup --target pi
 mnemon setup --target nanobot --global
 mnemon setup --target hermes
+mnemon setup --target alma
 
 # 自动确认所有提示（CI 友好）
 mnemon setup --yes
@@ -82,8 +83,8 @@ mnemon setup --eject --target claude-code
 
 | 标志 | 默认值 | 说明 |
 |---|---|---|
-| `--global` | `false` | 安装到用户级配置而非项目本地（ZCode 生命周期 hooks 必须使用；MiniMax Code 安装到 `~/.minimax/`；Nanobot 推荐安装到 `~/.nanobot/workspace/`；Pi 安装到 `~/.pi/agent/`；Hermes 安装到 `~/.hermes/`；QoderWork 安装到 `~/.qoderwork/`；Kimi Code 安装到 `~/.kimi-code/` 或 `$KIMI_CODE_HOME/`；OpenCode 安装到 `~/.config/opencode/`） |
-| `--target <name>` | (自动检测) | 目标环境：`claude-code`、`codex`、`cursor`、`zcode`、`minimax-code`、`trae`、`qoder`、`qoderwork`、`codebuddy`、`workbuddy`、`kimi`、`opencode`、`openclaw`、`nanobot`、`pi` 或 `hermes` |
+| `--global` | `false` | 安装到用户级配置而非项目本地（ZCode 生命周期 hooks 必须使用；MiniMax Code 安装到 `~/.minimax/`；Nanobot 推荐安装到 `~/.nanobot/workspace/`；Pi 安装到 `~/.pi/agent/`；Hermes 安装到 `~/.hermes/`；QoderWork 安装到 `~/.qoderwork/`；Kimi Code 安装到 `~/.kimi-code/` 或 `$KIMI_CODE_HOME/`；OpenCode 安装到 `~/.config/opencode/`；Alma 固定使用 `~/.config/alma/`） |
+| `--target <name>` | (自动检测) | 目标环境：`claude-code`、`codex`、`cursor`、`zcode`、`minimax-code`、`trae`、`qoder`、`qoderwork`、`codebuddy`、`workbuddy`、`kimi`、`opencode`、`openclaw`、`nanobot`、`pi`、`hermes` 或 `alma` |
 | `--eject` | `false` | 移除 mnemon 集成 |
 | `--yes` | `false` | 自动确认所有提示 |
 

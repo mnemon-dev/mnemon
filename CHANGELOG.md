@@ -13,6 +13,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   consolidation, evidence retrieval, and operational metrics, logs and traces.
   Existing Memory commands and databases retain the public CLI behavior.
   The separate hosted frontend and UI/UX are not part of this source snapshot.
+- `mnemon setup --target alma` installs a skill, a `mem` shim, and one
+  `app.ready` hook into `~/.config/alma/`. Alma does not inject hook stdout into
+  the model context, so the integration does not use the lifecycle-hook shape:
+  the hook only refreshes a marker-delimited block inside `MEMORY.md`, which
+  Alma already injects into its system prompt each request, and recall stays a
+  decision the host model makes through the skill. The block is rewritten only
+  when its content changes, so an unchanged start does not invalidate Alma's
+  prompt prefix. `mnemon setup --eject --target alma` removes the block, the
+  skill, the shim, and the hook, keeping any backups left in the bridge
+  directory.
 - `npm install --global @mnemon-dev/mnemon` is now the canonical CLI install
   path. Tagged releases publish pinned native artifacts for macOS, Linux, and
   Windows before advancing the npm `latest` or `next` channel.

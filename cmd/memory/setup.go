@@ -2,6 +2,7 @@ package memory
 
 import (
 	"fmt"
+	"os/exec"
 	"runtime"
 	"strings"
 
@@ -25,9 +26,9 @@ var setupCmd = &cobra.Command{
 
 By default, installs to project-local config (.claude/, .codex/, .cursor/, .zcode/, .minimax/, .trae/, .qoder/, .codebuddy/, .workbuddy/, .opencode/, .openclaw/, .nanobot/, .pi/).
 Use --global to install to user-wide config (~/.claude/, ~/.codex/, ~/.cursor/, ~/.zcode/, ~/.minimax/, ~/.trae/, ~/.qoder/, ~/.codebuddy/, ~/.workbuddy/, ~/.config/opencode/, ~/.openclaw/, ~/.nanobot/workspace/, ~/.pi/agent/).
-Hermes Agent, QoderWork, and Kimi Code use native user config at ~/.hermes/, ~/.qoderwork/, and ~/.kimi-code/.
+Hermes Agent, QoderWork, Kimi Code, and Alma use native user config at ~/.hermes/, ~/.qoderwork/, ~/.kimi-code/, and ~/.config/alma/.
 
-Supported environments: Claude Code, Codex, Cursor, ZCode, MiniMax Code, Trae, Qoder, QoderWork, CodeBuddy, WorkBuddy, Kimi Code, OpenCode, OpenClaw, Nanobot, Pi, Hermes Agent.
+Supported environments: Claude Code, Codex, Cursor, ZCode, MiniMax Code, Trae, Qoder, QoderWork, CodeBuddy, WorkBuddy, Kimi Code, OpenCode, OpenClaw, Nanobot, Pi, Hermes Agent, Alma.
 
 Examples:
   mnemon setup                              # Interactive: project-local install
@@ -44,6 +45,7 @@ Examples:
   mnemon setup --target kimi                # Non-interactive: Kimi Code skill and hooks
   mnemon setup --target opencode            # Non-interactive: OpenCode skill and plugin
   mnemon setup --target hermes              # Non-interactive: Hermes Agent only
+  mnemon setup --target alma                # Non-interactive: Alma skill and hook
   mnemon setup --eject                      # Interactive: remove integrations
   mnemon setup --eject --target claude-code # Non-interactive: remove Claude Code only
   mnemon setup --yes                        # Auto-confirm all prompts`,
@@ -51,7 +53,7 @@ Examples:
 }
 
 func init() {
-	setupCmd.Flags().StringVar(&setupTarget, "target", "", "target environment (claude-code, codex, cursor, zcode, minimax-code, trae, qoder, qoderwork, codebuddy, workbuddy, kimi, opencode, openclaw, nanobot, pi, hermes)")
+	setupCmd.Flags().StringVar(&setupTarget, "target", "", "target environment (claude-code, codex, cursor, zcode, minimax-code, trae, qoder, qoderwork, codebuddy, workbuddy, kimi, opencode, openclaw, nanobot, pi, hermes, alma)")
 	setupCmd.Flags().BoolVar(&setupEject, "eject", false, "remove mnemon integrations")
 	setupCmd.Flags().BoolVar(&setupYes, "yes", false, "auto-confirm all prompts (CI-friendly)")
 	setupCmd.Flags().BoolVar(&setupGlobal, "global", false, "install to user-wide config instead of project-local config")
@@ -59,8 +61,8 @@ func init() {
 }
 
 func runSetup(cmd *cobra.Command, args []string) error {
-	if setupTarget != "" && setupTarget != "claude-code" && setupTarget != "codex" && setupTarget != "cursor" && setupTarget != "zcode" && setupTarget != "minimax-code" && setupTarget != "trae" && setupTarget != "qoder" && setupTarget != "qoderwork" && setupTarget != "codebuddy" && setupTarget != "workbuddy" && setupTarget != "kimi" && setupTarget != "opencode" && setupTarget != "openclaw" && setupTarget != "nanobot" && setupTarget != "pi" && setupTarget != "hermes" {
-		return fmt.Errorf("invalid target %q (must be claude-code, codex, cursor, zcode, minimax-code, trae, qoder, qoderwork, codebuddy, workbuddy, kimi, opencode, openclaw, nanobot, pi, or hermes)", setupTarget)
+	if setupTarget != "" && setupTarget != "claude-code" && setupTarget != "codex" && setupTarget != "cursor" && setupTarget != "zcode" && setupTarget != "minimax-code" && setupTarget != "trae" && setupTarget != "qoder" && setupTarget != "qoderwork" && setupTarget != "codebuddy" && setupTarget != "workbuddy" && setupTarget != "kimi" && setupTarget != "opencode" && setupTarget != "openclaw" && setupTarget != "nanobot" && setupTarget != "pi" && setupTarget != "hermes" && setupTarget != "alma" {
+		return fmt.Errorf("invalid target %q (must be claude-code, codex, cursor, zcode, minimax-code, trae, qoder, qoderwork, codebuddy, workbuddy, kimi, opencode, openclaw, nanobot, pi, hermes, or alma)", setupTarget)
 	}
 
 	envs := setup.DetectEnvironments(setupGlobal)
@@ -168,6 +170,13 @@ func installEnv(env *setup.Environment) error {
 		err = installPi(env)
 	case "hermes":
 		err = installHermes(env)
+	case "alma":
+		// Alma's install seeds the MEMORY.md block, which needs a store to read
+		// from. Ensure it exists first, then install.
+		if err = initDefaultStore(); err != nil {
+			return err
+		}
+		return installAlma(env)
 	}
 	if err != nil {
 		return err
@@ -1493,6 +1502,67 @@ func selectHermesOptionalHooks() setup.HookSelection {
 	return sel
 }
 
+// ─── Alma ───────────────────────────────────────────────────────────
+
+func installAlma(env *setup.Environment) error {
+	configDir := env.ConfigDir
+
+	fmt.Printf("\nSetting up Alma (%s)...\n", configDir)
+
+	fmt.Println("\n[1/4] Skill")
+	if path, err := setup.AlmaWriteSkill(configDir); err != nil {
+		setup.StatusError(0, 0, "Skill", err)
+		return err
+	} else {
+		setup.StatusOK(0, 0, "Skill", path)
+	}
+
+	fmt.Println("\n[2/4] Shim")
+	shimPath, err := setup.AlmaWriteShim(configDir)
+	if err != nil {
+		setup.StatusError(0, 0, "Shim", err)
+		return err
+	}
+	setup.StatusOK(0, 0, "Shim: mem", shimPath)
+
+	fmt.Println("\n[3/4] Hook")
+	if path, err := setup.AlmaWriteHook(configDir, "prime.sh", assets.AlmaPrimeHook); err != nil {
+		setup.StatusError(0, 0, "Hook: prime", err)
+		return err
+	} else {
+		setup.StatusOK(0, 0, "Hook: prime", path)
+	}
+
+	fmt.Println("\n[4/4] Config")
+	if path, err := setup.AlmaRegisterHooks(configDir, setup.HookSelection{}); err != nil {
+		setup.StatusError(0, 0, "Hooks config", err)
+		return err
+	} else {
+		setup.StatusUpdated(0, 0, "Hooks config", path)
+	}
+
+	// Seed the block now so a fresh install shows memory on the very first
+	// turn instead of waiting for the next app start. Best effort: the hook
+	// does the same thing and a failure here must not fail the install.
+	if out, syncErr := exec.Command(shimPath, "sync").CombinedOutput(); syncErr != nil {
+		fmt.Printf("  note      hot index not seeded yet (%v); the app.ready hook will retry\n", syncErr)
+		_ = out
+	}
+
+	fmt.Println()
+	fmt.Println("Setup complete!")
+	fmt.Printf("  Skill     %s/skills/mnemon/SKILL.md\n", configDir)
+	fmt.Printf("  Shim      %s/mnemon-bridge/mem\n", configDir)
+	fmt.Printf("  Hook      %s/mnemon-bridge/prime.sh (app.ready)\n", configDir)
+	fmt.Printf("  Hot index %s/MEMORY.md (mnemon block)\n", configDir)
+	fmt.Println()
+	fmt.Println("Restart Alma to activate the mnemon skill and hot-index hook.")
+	fmt.Println("Alma has no project-local hook config; this install is user-global.")
+	fmt.Println("Run 'mnemon setup --eject --target alma' to remove.")
+
+	return nil
+}
+
 // ─── Eject ──────────────────────────────────────────────────────────
 
 func runEjectFlow(envs []setup.Environment) error {
@@ -1663,6 +1733,12 @@ func ejectEnv(env *setup.Environment) error {
 	case "hermes":
 		errs := setup.HermesEject(env.ConfigDir)
 		ejectMarkdown("AGENTS.md", "Remove memory guidance from ./AGENTS.md?")
+		if len(errs) > 0 {
+			return errs[0]
+		}
+
+	case "alma":
+		errs := setup.AlmaEject(env.ConfigDir)
 		if len(errs) > 0 {
 			return errs[0]
 		}
