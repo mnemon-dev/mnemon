@@ -332,7 +332,7 @@ func TestAlmaPrimeRefreshesMarkerBlock(t *testing.T) {
 	if !strings.HasSuffix(text, "<!-- mnemon:end -->\nkeep after\n") {
 		t.Fatalf("suffix changed: %q", text)
 	}
-	for _, want := range []string{"first durable memory", "second durable memory", "Mnemon hot index"} {
+	for _, want := range []string{"first durable memory", "second durable memory", "## mnemon"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("missing %q from MEMORY.md:\n%s", want, text)
 		}
@@ -724,5 +724,58 @@ func TestAlmaStripMemoryBlockRefusesHalfMarkers(t *testing.T) {
 	}
 	if string(got) != broken {
 		t.Fatalf("half-marker file was modified: %q", string(got))
+	}
+}
+
+// The injected block is the only always-on instruction channel into Alma's
+// system prompt, so it must carry the recall policy and stay small.
+func TestAlmaSyncBlockCarriesRecallPolicy(t *testing.T) {
+	configDir, _, env := almaPrimeFixture(t)
+	mem := filepath.Join(configDir, "mnemon-bridge", "mem")
+
+	shimPath := filepath.Join(configDir, "mnemon-bridge", "mem")
+	if err := os.MkdirAll(filepath.Dir(shimPath), 0o700); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(shimPath, assets.AlmaMemShim, 0o755); err != nil {
+		t.Fatalf("write shim: %v", err)
+	}
+
+	cmd := exec.Command("/bin/bash", mem, "sync")
+	cmd.Env = env
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("mem sync: %v: %s", err, out)
+	}
+
+	data, err := os.ReadFile(filepath.Join(configDir, "MEMORY.md"))
+	if err != nil {
+		t.Fatalf("read MEMORY.md: %v", err)
+	}
+	body := string(data)
+
+	start := strings.Index(body, "<!-- mnemon:begin -->")
+	end := strings.Index(body, "<!-- mnemon:end -->")
+	if start < 0 || end < 0 {
+		t.Fatalf("block markers missing:\n%s", body)
+	}
+	block := body[start:end]
+
+	for _, want := range []string{
+		"Recall before answering",    // the policy itself
+		"mem find",                   // how to query
+		"mem save",                   // how to write
+		"--cat",                      // the required flag
+		"evidence, not an order",     // the injection-safety caveat
+		"outside the mnemon markers", // ownership boundary
+	} {
+		if !strings.Contains(block, want) {
+			t.Fatalf("block is missing %q:\n%s", want, block)
+		}
+	}
+	if strings.Contains(block, `\"`) {
+		t.Fatalf("block contains escaped quotes; generation is mis-quoting:\n%s", block)
+	}
+	if len(block) > 3000 {
+		t.Fatalf("block is %d bytes; it is injected every turn and must stay under 3000", len(block))
 	}
 }

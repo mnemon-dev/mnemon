@@ -1,6 +1,7 @@
 ---
 name: mnemon
 description: Cross-tool long-term memory backed by mnemon. Recall before answering anything that depends on past decisions, preferences, or project context, and store durable facts the user will expect you to remember. Triggers include "记不记得 / 之前 / 上次 / 我们说过 / do you remember / we discussed".
+always-inject: true
 ---
 
 # mnemon
