@@ -26,6 +26,7 @@ import {
   title,
 } from "./components";
 import { Filters } from "./Filters";
+import { useT } from "./i18n";
 import { filtersOnly, Link, routeURL, useRouter } from "./router";
 import type {
   ActivityPage,
@@ -44,20 +45,21 @@ export function OverviewView({
   refresh: number;
 }) {
   const { route } = useRouter();
+  const t = useT();
   const query = useQuery<Overview>(storeAPI(route.store, "overview"), refresh);
   return (
     <>
       <PageHeading
-        eyebrow="Workspace overview"
-        title="Your knowledge, connected."
-        description="Explore what your agents have learned, decided, and remembered."
+        eyebrow={t("overview.eyebrow")}
+        title={t("overview.title")}
+        description={t("overview.description")}
         action={
           <Link
             className="button primary"
             href={routeURL(route.store, "library")}
           >
             <BookOpen size={16} />
-            Explore memories
+            {t("overview.explore")}
             <ArrowRight size={15} />
           </Link>
         }
@@ -71,8 +73,8 @@ export function OverviewView({
               </div>
               <div>
                 <span className="eyebrow">Mnemon</span>
-                <h2>Memory becomes shared knowledge.</h2>
-                <p>Read the source. Follow a connection. Keep the context.</p>
+                <h2>{t("overview.bannerTitle")}</h2>
+                <p>{t("overview.bannerText")}</p>
               </div>
               <div className="banner-orbit" aria-hidden="true">
                 <span />
@@ -87,23 +89,23 @@ export function OverviewView({
               <div className="stat-card">
                 <span>
                   <BookOpen size={16} />
-                  Memories
+                  {t("overview.statMemories")}
                 </span>
                 <strong>{data.total.toLocaleString()}</strong>
-                <small>Pieces of durable knowledge</small>
+                <small>{t("overview.statMemoriesHint")}</small>
               </div>
               <div className="stat-card">
                 <span>
                   <Network size={16} />
-                  Connections
+                  {t("overview.statConnections")}
                 </span>
                 <strong>{data.edge_count.toLocaleString()}</strong>
-                <small>Relationships between memories</small>
+                <small>{t("overview.statConnectionsHint")}</small>
               </div>
               <div className="stat-card">
                 <span>
                   <Shapes size={16} />
-                  Categories
+                  {t("overview.statCategories")}
                 </span>
                 <strong>
                   {
@@ -112,10 +114,10 @@ export function OverviewView({
                     ).length
                   }
                 </strong>
-                <small>Different ways of knowing</small>
+                <small>{t("overview.statCategoriesHint")}</small>
               </div>
             </div>
-            <SectionTitle>By category</SectionTitle>
+            <SectionTitle>{t("overview.byCategory")}</SectionTitle>
             <div className="category-grid">
               {[
                 ...new Set([
@@ -143,7 +145,7 @@ export function OverviewView({
             <div className="overview-columns">
               <section>
                 <SectionTitle href={routeURL(route.store, "library")}>
-                  Recently remembered
+                  {t("overview.recentSection")}
                 </SectionTitle>
                 {data.recent?.length ? (
                   <div className="recent-list">
@@ -152,14 +154,14 @@ export function OverviewView({
                     ))}
                   </div>
                 ) : (
-                  <Empty title="A fresh start">
-                    <p>Memories added by your agents will appear here.</p>
+                  <Empty title={t("overview.recentEmptyTitle")}>
+                    <p>{t("overview.recentEmptyText")}</p>
                   </Empty>
                 )}
               </section>
               <aside>
                 <SectionTitle href={routeURL(route.store, "entities")}>
-                  Connected entities
+                  {t("overview.entitiesSection")}
                 </SectionTitle>
                 <div className="entity-panel">
                   {data.entities?.length ? (
@@ -183,15 +185,15 @@ export function OverviewView({
                       </Link>
                     ))
                   ) : (
-                    <p className="muted">No entities recorded yet.</p>
+                    <p className="muted">{t("overview.noEntities")}</p>
                   )}
                   <div className="panel-note">
                     <Network size={19} />
                     <p>
-                      Follow the connections.
+                      {t("overview.followConnections")}
                       <br />
                       <Link href={routeURL(route.store, "graph")}>
-                        See your knowledge graph <ArrowRight size={12} />
+                        {t("overview.seeGraph")} <ArrowRight size={12} />
                       </Link>
                     </p>
                   </div>
@@ -201,7 +203,7 @@ export function OverviewView({
             <OverviewActivity refresh={refresh} />
             <footer className="view-footer">
               <LastUpdated value={data.updated_at} loading={query.loading} />
-              <span>Read-only · Your memories stay yours</span>
+              <span>{t("overview.footerNote")}</span>
             </footer>
           </>
         )}
@@ -211,6 +213,7 @@ export function OverviewView({
 }
 function OverviewActivity({ refresh }: { refresh: number }) {
   const { route } = useRouter();
+  const t = useT();
   const query = useQuery<ActivityPage>(
     storeAPI(route.store, "activity", new URLSearchParams({ limit: "5" })),
     refresh,
@@ -218,7 +221,7 @@ function OverviewActivity({ refresh }: { refresh: number }) {
   return (
     <section className="overview-activity">
       <SectionTitle href={routeURL(route.store, "activity")}>
-        Recent activity
+        {t("overview.activitySection")}
       </SectionTitle>
       <QueryView query={query}>
         {(data) =>
@@ -235,18 +238,18 @@ function OverviewActivity({ refresh }: { refresh: number }) {
                       <ReaderLink id={item.insight_id} />
                     ) : (
                       <span className="unavailable">
-                        Memory unavailable · {item.insight_id}
+                        {t("state.memoryUnavailable")} · {item.insight_id}
                       </span>
                     )}
                   </div>
                   <time dateTime={item.created_at}>
-                    {date(item.created_at, true)}
+                    {date(item.created_at, true) || t("state.unknownDate")}
                   </time>
                 </article>
               ))}
             </div>
           ) : (
-            <p className="muted">No activity recorded yet.</p>
+            <p className="muted">{t("overview.noActivity")}</p>
           )
         }
       </QueryView>
@@ -261,6 +264,7 @@ export function LibraryView({
   refresh: number;
 }) {
   const { route } = useRouter();
+  const t = useT();
   const params = filtersOnly(route.search);
   params.set("limit", "24");
   const query = useQuery<MemoryPage>(
@@ -272,9 +276,9 @@ export function LibraryView({
   return (
     <>
       <PageHeading
-        eyebrow="Collection"
-        title="Memory library"
-        description="Search decisions, discoveries, and context across your memory store."
+        eyebrow={t("library.eyebrow")}
+        title={t("library.title")}
+        description={t("library.description")}
       />
       <Filters meta={meta} facets={facets.data} />
       <QueryView query={query}>
@@ -283,19 +287,14 @@ export function LibraryView({
             <div className="results-line">
               <span>
                 <strong>{data.total.toLocaleString()}</strong>{" "}
-                {data.total === 1 ? "memory" : "memories"}
+                {t(data.total === 1 ? "library.unitOne" : "library.unitMany")}
                 {filtersOnly(route.search).size > 0
-                  ? " matching this view"
-                  : " in this space"}
+                  ? ` ${t("library.matchingView")}`
+                  : ` ${t("library.inThisSpace")}`}
               </span>
               <LastUpdated value={data.updated_at} loading={query.loading} />
             </div>
-            {data.truncated && (
-              <p className="notice">
-                This search uses a bounded candidate set. Narrow your filters to
-                explore more precisely.
-              </p>
-            )}
+            {data.truncated && <p className="notice">{t("library.bounded")}</p>}
             {data.items?.length ? (
               <div className="memory-grid">
                 {data.items.map((memory) => (
@@ -306,15 +305,15 @@ export function LibraryView({
               <Empty
                 title={
                   filtersOnly(route.search).size
-                    ? "No matching memories"
-                    : "Your library is ready"
+                    ? t("library.noMatchTitle")
+                    : t("library.readyTitle")
                 }
                 icon={filtersOnly(route.search).size ? "search" : "empty"}
               >
                 <p>
                   {filtersOnly(route.search).size
-                    ? "Try a different search or clear a filter to open things up."
-                    : "When your agents remember something, you’ll find it here."}
+                    ? t("library.noMatchText")
+                    : t("library.readyText")}
                 </p>
               </Empty>
             )}
@@ -325,12 +324,16 @@ export function LibraryView({
                   onClick={query.loadMore}
                   disabled={query.loading || query.loadingMore}
                 >
-                  {query.loadingMore ? "Loading…" : "Load more memories"}
+                  {query.loadingMore
+                    ? t("state.loadingMore")
+                    : t("library.loadMore")}
                   <ArrowRight size={15} />
                 </button>
                 <span>
-                  Showing {data.items.length} of {data.total} · Live results may
-                  change
+                  {t("library.showing", {
+                    shown: data.items.length,
+                    total: data.total,
+                  })}
                 </span>
               </div>
             )}
@@ -342,6 +345,7 @@ export function LibraryView({
 }
 export function ReaderView({ refresh }: { refresh: number }) {
   const { route } = useRouter();
+  const t = useT();
   const query = useQuery<MemoryDetail>(
     storeAPI(route.store, `memories/${encodeURIComponent(route.id)}`),
     refresh,
@@ -357,7 +361,7 @@ export function ReaderView({ refresh }: { refresh: number }) {
         )}
       >
         <ArrowLeft size={15} />
-        Back to library
+        {t("reader.backToLibrary")}
       </Link>
       <QueryView query={query} unavailable>
         {(data) => (
@@ -365,22 +369,22 @@ export function ReaderView({ refresh }: { refresh: number }) {
             <article className="reader">
               <div className="reader-kicker">
                 <Category value={data.memory.category} />
-                <span>MEMORY</span>
+                <span>{t("reader.kicker")}</span>
               </div>
-              <h1>{title(data.memory.content)}</h1>
+              <h1>{title(data.memory.content) || t("state.untitled")}</h1>
               <div className="reader-meta">
                 <span>
                   <Clock3 size={14} />
-                  {date(data.memory.created_at)}
+                  {date(data.memory.created_at) || t("state.unknownDate")}
                 </span>
-                <span>{data.memory.source || "No source recorded"}</span>
+                <span>{data.memory.source || t("state.noSource")}</span>
                 <Importance value={data.memory.importance} />
               </div>
               {!!data.superseded_by?.length && (
                 <div className="notice warning">
                   <div>
-                    <strong>This memory has been replaced.</strong>
-                    <p>Read the newer memory for the current information.</p>
+                    <strong>{t("reader.replacedTitle")}</strong>
+                    <p>{t("reader.replacedText")}</p>
                     {data.superseded_by.map((id) => (
                       <ReaderLink key={id} id={id} />
                     ))}
@@ -389,10 +393,13 @@ export function ReaderView({ refresh }: { refresh: number }) {
               )}
               <Markdown content={data.memory.content} />
               <div className="reader-actions">
-                <CopyButton value={data.memory.content} label="Copy content" />
-                <CopyButton value={data.memory.id} label="Copy ID" />
+                <CopyButton
+                  value={data.memory.content}
+                  label={t("reader.copyContent")}
+                />
+                <CopyButton value={data.memory.id} label={t("reader.copyId")} />
               </div>
-              <SectionTitle>Related memories</SectionTitle>
+              <SectionTitle>{t("reader.relatedSection")}</SectionTitle>
               {data.related?.length ? (
                 <div className="related-grid">
                   {data.related.map((memory) => (
@@ -400,39 +407,36 @@ export function ReaderView({ refresh }: { refresh: number }) {
                   ))}
                 </div>
               ) : (
-                <p className="muted">No related memories recorded.</p>
+                <p className="muted">{t("reader.noRelated")}</p>
               )}
               {data.truncated && (
-                <p className="notice">
-                  The related memory list is bounded. Explore the graph for more
-                  context.
-                </p>
+                <p className="notice">{t("reader.relatedBounded")}</p>
               )}
             </article>
             <aside className="reader-sidebar">
-              <h2>Memory details</h2>
+              <h2>{t("reader.detailsHeading")}</h2>
               <dl>
-                <dt>Category</dt>
+                <dt>{t("reader.category")}</dt>
                 <dd>
                   <Category value={data.memory.category} />
                 </dd>
-                <dt>Source</dt>
-                <dd>{data.memory.source || "Not recorded"}</dd>
-                <dt>Importance</dt>
+                <dt>{t("reader.source")}</dt>
+                <dd>{data.memory.source || t("state.notRecorded")}</dd>
+                <dt>{t("reader.importance")}</dt>
                 <dd>
                   <Importance value={data.memory.importance} />{" "}
-                  {data.memory.importance} / 5
+                  {t("reader.importanceOf", { value: data.memory.importance })}
                 </dd>
-                <dt>Created</dt>
+                <dt>{t("reader.created")}</dt>
                 <dd>{date(data.memory.created_at, true)}</dd>
-                <dt>Updated</dt>
+                <dt>{t("reader.updated")}</dt>
                 <dd>{date(data.memory.updated_at, true)}</dd>
-                <dt>Access count</dt>
+                <dt>{t("reader.accessCount")}</dt>
                 <dd>{data.memory.access_count}</dd>
-                <dt>Memory ID</dt>
+                <dt>{t("reader.memoryId")}</dt>
                 <dd className="mono">{data.memory.id}</dd>
               </dl>
-              <h2>Entities</h2>
+              <h2>{t("reader.entities")}</h2>
               <div className="chip-list">
                 {data.memory.entities?.length ? (
                   data.memory.entities.map((entity) => (
@@ -449,10 +453,10 @@ export function ReaderView({ refresh }: { refresh: number }) {
                     </Link>
                   ))
                 ) : (
-                  <span className="muted">None recorded</span>
+                  <span className="muted">{t("state.noneRecorded")}</span>
                 )}
               </div>
-              <h2>Tags</h2>
+              <h2>{t("reader.tags")}</h2>
               <div className="chip-list">
                 {data.memory.tags?.length ? (
                   data.memory.tags.map((tag) => (
@@ -468,15 +472,13 @@ export function ReaderView({ refresh }: { refresh: number }) {
                     </Link>
                   ))
                 ) : (
-                  <span className="muted">None recorded</span>
+                  <span className="muted">{t("state.noneRecorded")}</span>
                 )}
               </div>
               {!!data.replaces?.length && (
                 <>
-                  <h2>Replaces</h2>
-                  <p className="muted small">
-                    This memory corrects or supersedes:
-                  </p>
+                  <h2>{t("reader.replaces")}</h2>
+                  <p className="muted small">{t("reader.replacesHint")}</p>
                   <div className="lineage">
                     {data.replaces.map((id) => (
                       <ReaderLink key={id} id={id} />
@@ -486,7 +488,7 @@ export function ReaderView({ refresh }: { refresh: number }) {
               )}
               {!!data.superseded_by?.length && (
                 <>
-                  <h2>Replaced by</h2>
+                  <h2>{t("reader.replacedBy")}</h2>
                   <div className="lineage">
                     {data.superseded_by.map((id) => (
                       <ReaderLink key={id} id={id} />
@@ -503,11 +505,11 @@ export function ReaderView({ refresh }: { refresh: number }) {
                 )}
               >
                 <Network size={15} />
-                Explore neighborhood
+                {t("reader.exploreNeighborhood")}
               </Link>
               {!!data.edges?.length && (
                 <>
-                  <h2>Stored relationships</h2>
+                  <h2>{t("reader.storedRelationships")}</h2>
                   <div className="edge-details">
                     {data.edges.map((edge, index) => (
                       <div key={index}>
@@ -515,7 +517,9 @@ export function ReaderView({ refresh }: { refresh: number }) {
                         <span className="mono">
                           {edge.source_id} → {edge.target_id}
                         </span>
-                        <span>Weight: {edge.weight}</span>
+                        <span>
+                          {t("reader.weight", { value: edge.weight })}
+                        </span>
                         {Object.entries(edge.metadata || {}).map(
                           ([key, value]) => (
                             <span key={key}>
@@ -537,6 +541,7 @@ export function ReaderView({ refresh }: { refresh: number }) {
 }
 export function EntitiesView({ refresh }: { refresh: number }) {
   const { route, navigate } = useRouter();
+  const t = useT();
   const params = new URLSearchParams({ limit: "50" });
   const term = new URLSearchParams(route.search).get("q") || "";
   if (term) params.set("q", term);
@@ -550,9 +555,9 @@ export function EntitiesView({ refresh }: { refresh: number }) {
   return (
     <>
       <PageHeading
-        eyebrow="Connections"
-        title="Entities"
-        description="People, projects, and concepts that bring your memories together."
+        eyebrow={t("entities.eyebrow")}
+        title={t("entities.title")}
+        description={t("entities.description")}
       />
       <form
         className="search-field entity-search"
@@ -571,13 +576,13 @@ export function EntitiesView({ refresh }: { refresh: number }) {
       >
         <Search size={18} />
         <input
-          aria-label="Search entities"
-          placeholder="Find a person, project, or concept…"
+          aria-label={t("entities.searchAria")}
+          placeholder={t("entities.searchPlaceholder")}
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
         <button type="submit" className="search-submit">
-          Search
+          {t("search.submit")}
         </button>
       </form>
       <QueryView query={query}>
@@ -585,7 +590,7 @@ export function EntitiesView({ refresh }: { refresh: number }) {
           <>
             <div className="results-line">
               <span>
-                <strong>{data.total}</strong> entities
+                <strong>{data.total}</strong> {t("entities.unit")}
               </span>
               <LastUpdated value={data.updated_at} loading={query.loading} />
             </div>
@@ -598,8 +603,12 @@ export function EntitiesView({ refresh }: { refresh: number }) {
                     </div>
                     <h2>{entity.name}</h2>
                     <p>
-                      {entity.count}{" "}
-                      {entity.count === 1 ? "memory" : "memories"}
+                      {t(
+                        entity.count === 1
+                          ? "entities.memoryCountOne"
+                          : "entities.memoryCountMany",
+                        { count: entity.count },
+                      )}
                     </p>
                     <div>
                       <Link
@@ -611,11 +620,13 @@ export function EntitiesView({ refresh }: { refresh: number }) {
                           }).toString(),
                         )}
                       >
-                        View memories
+                        {t("entities.viewMemories")}
                         <ArrowRight size={13} />
                       </Link>
                       <Link
-                        aria-label={`Explore ${entity.name} in graph`}
+                        aria-label={t("entities.exploreInGraph", {
+                          name: entity.name,
+                        })}
                         href={routeURL(
                           route.store,
                           "graph",
@@ -632,13 +643,13 @@ export function EntitiesView({ refresh }: { refresh: number }) {
               </div>
             ) : (
               <Empty
-                title={term ? "No matching entities" : "Connections start here"}
+                title={
+                  term ? t("entities.noMatchTitle") : t("entities.emptyTitle")
+                }
                 icon={term ? "search" : "empty"}
               >
                 <p>
-                  {term
-                    ? "Try another name or concept."
-                    : "Entities attached to your memories will appear here."}
+                  {term ? t("entities.noMatchText") : t("entities.emptyText")}
                 </p>
               </Empty>
             )}
@@ -649,7 +660,9 @@ export function EntitiesView({ refresh }: { refresh: number }) {
                   disabled={query.loading || query.loadingMore}
                   onClick={query.loadMore}
                 >
-                  {query.loadingMore ? "Loading…" : "Load more entities"}
+                  {query.loadingMore
+                    ? t("state.loadingMore")
+                    : t("entities.loadMore")}
                 </button>
               </div>
             )}
@@ -661,6 +674,7 @@ export function EntitiesView({ refresh }: { refresh: number }) {
 }
 export function ActivityView({ refresh }: { refresh: number }) {
   const { route } = useRouter();
+  const t = useT();
   const query = useQuery<ActivityPage>(
     storeAPI(route.store, "activity", new URLSearchParams({ limit: "50" })),
     refresh,
@@ -669,15 +683,15 @@ export function ActivityView({ refresh }: { refresh: number }) {
   return (
     <>
       <PageHeading
-        eyebrow="A GROWING BODY OF KNOWLEDGE"
-        title="Activity"
-        description="The recorded operations in this space, as they happened."
+        eyebrow={t("activity.eyebrow")}
+        title={t("activity.title")}
+        description={t("activity.description")}
       />
       <QueryView query={query}>
         {(data) => (
           <>
             <div className="results-line">
-              <span>Operation log</span>
+              <span>{t("activity.operationLog")}</span>
               <LastUpdated value={data.updated_at} loading={query.loading} />
             </div>
             {data.items?.length ? (
@@ -693,19 +707,20 @@ export function ActivityView({ refresh }: { refresh: number }) {
                         <ReaderLink id={item.insight_id} />
                       ) : (
                         <span className="unavailable">
-                          Memory unavailable <code>{item.insight_id}</code>
+                          {t("state.memoryUnavailable")}{" "}
+                          <code>{item.insight_id}</code>
                         </span>
                       )}
                     </div>
                     <time dateTime={item.created_at}>
-                      {date(item.created_at, true)}
+                      {date(item.created_at, true) || t("state.unknownDate")}
                     </time>
                   </article>
                 ))}
               </div>
             ) : (
-              <Empty title="A quiet moment">
-                <p>No operations have been recorded in this space yet.</p>
+              <Empty title={t("activity.quietTitle")}>
+                <p>{t("activity.quietText")}</p>
               </Empty>
             )}
             {data.next_cursor && (
@@ -715,7 +730,9 @@ export function ActivityView({ refresh }: { refresh: number }) {
                   disabled={query.loading || query.loadingMore}
                   onClick={query.loadMore}
                 >
-                  {query.loadingMore ? "Loading…" : "Load earlier activity"}
+                  {query.loadingMore
+                    ? t("state.loadingMore")
+                    : t("activity.loadMore")}
                 </button>
               </div>
             )}

@@ -6,6 +6,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { I18nProvider } from "./i18n";
 import { Router } from "./router";
 import { ActivityView, LibraryView, ReaderView } from "./Views";
 import type { Insight, Meta } from "./types";
@@ -56,9 +57,11 @@ it("renders faithful source and correction direction with filter-preserving read
     ),
   );
   render(
-    <Router>
-      <ReaderView refresh={0} />
-    </Router>,
+    <I18nProvider>
+      <Router>
+        <ReaderView refresh={0} />
+      </Router>
+    </I18nProvider>,
   );
   await screen.findByRole("heading", { level: 1, name: "Preserve the source" });
   expect(screen.getAllByText("custom-producer/string")).toHaveLength(2);
@@ -107,9 +110,11 @@ it("shows unavailable activity as plain IDs and only links available memories", 
     ),
   );
   render(
-    <Router>
-      <ActivityView refresh={0} />
-    </Router>,
+    <I18nProvider>
+      <Router>
+        <ActivityView refresh={0} />
+      </Router>
+    </I18nProvider>,
   );
   expect(await screen.findByText("deleted")).toBeVisible();
   expect(screen.queryByRole("link", { name: "deleted" })).toBeNull();
@@ -135,9 +140,11 @@ it("uses authoritative category options and submits search and date filters thro
   );
   vi.stubGlobal("fetch", fetcher);
   render(
-    <Router>
-      <LibraryView meta={meta} refresh={0} />
-    </Router>,
+    <I18nProvider>
+      <Router>
+        <LibraryView meta={meta} refresh={0} />
+      </Router>
+    </I18nProvider>,
   );
   await screen.findByText("Your library is ready");
   expect(screen.getByRole("option", { name: "New category" })).toBeVisible();
@@ -188,9 +195,11 @@ it("clears visible content and facet metadata when the library changes stores", 
     }),
   );
   render(
-    <Router>
-      <LibraryView meta={meta} refresh={0} />
-    </Router>,
+    <I18nProvider>
+      <Router>
+        <LibraryView meta={meta} refresh={0} />
+      </Router>
+    </I18nProvider>,
   );
   await screen.findByRole("heading", { name: "Preserve the source" });
   fireEvent.click(screen.getByRole("button", { name: "Filters" }));

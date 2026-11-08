@@ -2,15 +2,18 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { APIError } from "./api";
 import { Category, Markdown, QueryView } from "./components";
+import { I18nProvider } from "./i18n";
 
 describe("private Markdown reader", () => {
   it("renders Chinese, GFM tables, code, and safe links without creating HTML or remote image requests", () => {
     const { container } = render(
-      <Markdown
-        content={
-          '# 记忆与 context\n\n**Keep this** and `literal code`.\n\n| Name | Value |\n| --- | --- |\n| 项目 | Mnemon |\n\n![tracking pixel](https://tracker.invalid/pixel.gif)\n\n<script>alert("bad")</script>\n\n<img src="https://tracker.invalid/raw" onerror="alert(1)" />\n\n[Unsafe](javascript:alert%281%29) [Reference](https://example.com)'
-        }
-      />,
+      <I18nProvider>
+        <Markdown
+          content={
+            '# 记忆与 context\n\n**Keep this** and `literal code`.\n\n| Name | Value |\n| --- | --- |\n| 项目 | Mnemon |\n\n![tracking pixel](https://tracker.invalid/pixel.gif)\n\n<script>alert("bad")</script>\n\n<img src="https://tracker.invalid/raw" onerror="alert(1)" />\n\n[Unsafe](javascript:alert%281%29) [Reference](https://example.com)'
+          }
+        />
+      </I18nProvider>,
     );
     expect(
       screen.getByRole("heading", { name: "记忆与 context" }),
@@ -36,19 +39,21 @@ describe("request states", () => {
   it("shows an unavailable reader and retry instead of rendering absent memory data", () => {
     const retry = vi.fn();
     render(
-      <QueryView
-        unavailable
-        query={{
-          key: "/missing",
-          loading: false,
-          loadingMore: false,
-          error: new APIError("Memory no longer exists", 404),
-          refresh: retry,
-          loadMore: vi.fn(),
-        }}
-      >
-        {() => <p>Secret old content</p>}
-      </QueryView>,
+      <I18nProvider>
+        <QueryView
+          unavailable
+          query={{
+            key: "/missing",
+            loading: false,
+            loadingMore: false,
+            error: new APIError("Memory no longer exists", 404),
+            refresh: retry,
+            loadMore: vi.fn(),
+          }}
+        >
+          {() => <p>Secret old content</p>}
+        </QueryView>
+      </I18nProvider>,
     );
     expect(
       screen.getByRole("heading", { name: "Memory unavailable" }),
@@ -60,19 +65,21 @@ describe("request states", () => {
   it("labels retained same-scope data as stale with a usable retry action", () => {
     const retry = vi.fn();
     render(
-      <QueryView
-        query={{
-          key: "/same",
-          data: { content: "Saved result" },
-          error: new Error("Connection lost"),
-          loading: false,
-          loadingMore: false,
-          refresh: retry,
-          loadMore: vi.fn(),
-        }}
-      >
-        {(data) => <p>{data.content}</p>}
-      </QueryView>,
+      <I18nProvider>
+        <QueryView
+          query={{
+            key: "/same",
+            data: { content: "Saved result" },
+            error: new Error("Connection lost"),
+            loading: false,
+            loadingMore: false,
+            refresh: retry,
+            loadMore: vi.fn(),
+          }}
+        >
+          {(data) => <p>{data.content}</p>}
+        </QueryView>
+      </I18nProvider>,
     );
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Showing previously loaded data.",
@@ -82,7 +89,11 @@ describe("request states", () => {
     expect(retry).toHaveBeenCalledOnce();
   });
   it("renders unknown authoritative categories with a neutral fallback", () => {
-    const { container } = render(<Category value="new_category" />);
+    const { container } = render(
+      <I18nProvider>
+        <Category value="new_category" />
+      </I18nProvider>,
+    );
     expect(screen.getByText("New category")).toBeVisible();
     expect(container.querySelector(".category-dot")).toHaveStyle({
       background: "#93918c",
