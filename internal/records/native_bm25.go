@@ -30,7 +30,9 @@ func (s *Store) nativeLexical(ctx context.Context, v *querySelection, query stri
 	if len(terms) == 0 {
 		return ids, true, nil
 	}
-	rows, err := s.readDB().QueryContext(ctx, `SELECT rowid FROM lexical_fts WHERE lexical_fts MATCH ? ORDER BY bm25(lexical_fts)`, strings.Join(terms, " OR "))
+	// rowid breaks bm25() ties, so records of one score keep the write order
+	// whatever the timing of the index's background build (segment layout).
+	rows, err := s.readDB().QueryContext(ctx, `SELECT rowid FROM lexical_fts WHERE lexical_fts MATCH ? ORDER BY bm25(lexical_fts), rowid`, strings.Join(terms, " OR "))
 	if err != nil {
 		return nil, false, err
 	}
