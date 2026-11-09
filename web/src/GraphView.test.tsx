@@ -3,6 +3,7 @@ import { expect, it, vi } from "vitest";
 import { GraphView, graphStyle } from "./GraphView";
 import { Router } from "./router";
 import type { Insight, Meta } from "./types";
+import { I18nProvider } from "./i18n";
 import { ThemeProvider } from "./theme";
 
 vi.mock("cytoscape", () => ({
@@ -107,11 +108,13 @@ it("supports keyboard-equivalent graph selection, reader links, URL focus, and B
     })),
   );
   render(
-    <ThemeProvider>
-      <Router>
-        <GraphView meta={meta} refresh={0} />
-      </Router>
-    </ThemeProvider>,
+    <I18nProvider>
+      <ThemeProvider>
+        <Router>
+          <GraphView meta={meta} refresh={0} />
+        </Router>
+      </ThemeProvider>
+    </I18nProvider>,
   );
   const node = await screen.findByRole("button", {
     name: /A connected thought/,

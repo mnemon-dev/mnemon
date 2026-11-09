@@ -6,6 +6,7 @@ import {
   ChevronRight,
   CircleHelp,
   Hash,
+  Languages,
   LayoutDashboard,
   Menu,
   Monitor,
@@ -17,7 +18,8 @@ import {
   X,
 } from "lucide-react";
 import { useQuery } from "./api";
-import { Empty, humanize, QueryView } from "./components";
+import { Empty, QueryView } from "./components";
+import { useI18n, useT, type Dictionary, type Locale } from "./i18n";
 import { filtersOnly, Link, routeURL, useRouter } from "./router";
 import type { Meta, Page } from "./types";
 import { useTheme, type ThemeMode } from "./theme";
@@ -34,12 +36,16 @@ const GraphView = lazy(() =>
 );
 
 const navigation = [
-  { page: "overview", label: "Overview", icon: LayoutDashboard },
-  { page: "library", label: "Memory library", icon: BookOpen },
-  { page: "graph", label: "Knowledge graph", icon: Network },
-  { page: "entities", label: "Entities", icon: Hash },
-  { page: "activity", label: "Activity", icon: Activity },
-] as const;
+  { page: "overview", label: "nav.overview", icon: LayoutDashboard },
+  { page: "library", label: "nav.library", icon: BookOpen },
+  { page: "graph", label: "nav.graph", icon: Network },
+  { page: "entities", label: "nav.entities", icon: Hash },
+  { page: "activity", label: "nav.activity", icon: Activity },
+] as const satisfies ReadonlyArray<{
+  page: Page;
+  label: keyof Dictionary;
+  icon: typeof LayoutDashboard;
+}>;
 export function App() {
   const meta = useQuery<Meta>("/api/meta");
   return (
@@ -48,6 +54,7 @@ export function App() {
 }
 function Workspace({ meta }: { meta: Meta }) {
   const { route, navigate } = useRouter();
+  const t = useT();
   const stores = useQuery<{ stores: string[] }>("/api/stores");
   const [refresh, setRefresh] = useState(0);
   const [sidebar, setSidebar] = useState(false);
@@ -80,24 +87,24 @@ function Workspace({ meta }: { meta: Meta }) {
     return () => window.removeEventListener("keydown", handler);
   }, []);
   const activePage = route.page === "memories" ? "library" : route.page;
-  const label =
-    navigation.find((item) => item.page === activePage)?.label || "Workspace";
+  const currentNav = navigation.find((item) => item.page === activePage);
+  const label = currentNav ? t(currentNav.label) : t("nav.workspace");
   const storeList = stores.data?.stores || [];
   return (
     <div className="app-shell">
       <a href="#main" className="skip-link">
-        Skip to content
+        {t("shell.skipToContent")}
       </a>
       {sidebar && (
         <button
           className="sidebar-scrim"
-          aria-label="Close navigation"
+          aria-label={t("shell.closeNavigation")}
           onClick={() => setSidebar(false)}
         />
       )}
       <aside
         className={`sidebar ${sidebar ? "open" : ""}`}
-        aria-label="Workspace navigation"
+        aria-label={t("shell.workspaceNavigation")}
       >
         <Link
           href={route.store ? routeURL(route.store, "overview") : "/"}
@@ -113,14 +120,14 @@ function Workspace({ meta }: { meta: Meta }) {
           <span>mnemon</span>
         </Link>
         <div className="workspace-selector">
-          <label htmlFor="store-selector">Workspace</label>
+          <label htmlFor="store-selector">{t("nav.workspace")}</label>
           <div>
             <span className="workspace-avatar">
               {(route.store || "M").slice(0, 1).toUpperCase()}
             </span>
             <select
               id="store-selector"
-              aria-label="Select memory store"
+              aria-label={t("shell.selectStore")}
               value={route.store}
               disabled={!storeList.length}
               onChange={(event) =>
@@ -136,7 +143,7 @@ function Workspace({ meta }: { meta: Meta }) {
             >
               {!storeList.includes(route.store) && (
                 <option value={route.store}>
-                  {route.store || "Choose a space"}
+                  {route.store || t("shell.chooseSpace")}
                 </option>
               )}
               {storeList.map((store) => (
@@ -147,7 +154,7 @@ function Workspace({ meta }: { meta: Meta }) {
             </select>
           </div>
         </div>
-        <div className="nav-label">Knowledge</div>
+        <div className="nav-label">{t("nav.knowledge")}</div>
         <nav>
           {navigation.map((item) => (
             <Link
@@ -167,7 +174,7 @@ function Workspace({ meta }: { meta: Meta }) {
               aria-current={activePage === item.page ? "page" : undefined}
             >
               <item.icon size={18} strokeWidth={1.7} />
-              {item.label}
+              {t(item.label)}
               {activePage === item.page && <span className="nav-active-dot" />}
             </Link>
           ))}
@@ -176,20 +183,20 @@ function Workspace({ meta }: { meta: Meta }) {
           <div className="sidebar-note">
             <div>
               <span className="live-dot" />
-              Local & private
+              {t("shell.localPrivate")}
             </div>
             <p>
-              Your agents’ knowledge,
+              {t("shell.noteLine1")}
               <br />
-              ready to explore.
+              {t("shell.noteLine2")}
             </p>
             <span>
-              Read-only workspace <ArrowUpRight size={12} />
+              {t("shell.readOnlyWorkspace")} <ArrowUpRight size={12} />
             </span>
           </div>
           <button className="help-button" onClick={() => setHelp(true)}>
             <CircleHelp size={17} />
-            About this workspace
+            {t("shell.aboutButton")}
           </button>
           <div className="sidebar-version">
             mnemon <span>{meta.version}</span>
@@ -200,20 +207,20 @@ function Workspace({ meta }: { meta: Meta }) {
         <header className="topbar">
           <button
             className="icon-button mobile-menu"
-            aria-label="Open navigation"
+            aria-label={t("shell.openNavigation")}
             aria-expanded={sidebar}
             onClick={() => setSidebar(true)}
           >
             <Menu size={20} />
           </button>
           <div className="breadcrumbs">
-            <span>{route.store || "Workspace"}</span>
+            <span>{route.store || t("nav.workspace")}</span>
             <ChevronRight size={14} />
             <span>{label}</span>
             {route.page === "memories" && (
               <>
                 <ChevronRight size={14} />
-                <span>Memory</span>
+                <span>{t("nav.memory")}</span>
               </>
             )}
           </div>
@@ -236,19 +243,19 @@ function Workspace({ meta }: { meta: Meta }) {
             >
               <Search size={15} />
               <input
-                aria-label="Search all memories in this store"
-                placeholder="Find a memory…"
+                aria-label={t("search.ariaAllMemories")}
+                placeholder={t("search.placeholder")}
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
               />
-              <button type="submit" aria-label="Search this store">
+              <button type="submit" aria-label={t("search.ariaSubmitStore")}>
                 <ArrowUpRight size={14} />
               </button>
             </form>
             <button
               className="icon-button refresh-button"
-              aria-label="Refresh current view"
-              title="Refresh current view"
+              aria-label={t("topbar.refresh")}
+              title={t("topbar.refresh")}
               onClick={() => {
                 setRefresh((value) => value + 1);
                 stores.refresh();
@@ -257,10 +264,11 @@ function Workspace({ meta }: { meta: Meta }) {
               <RefreshCw size={16} />
             </button>
             <AppearanceControl />
+            <LanguageControl />
             <span className="topbar-divider" />
             <span className="local-status">
               <span className="live-dot" />
-              Local workspace
+              {t("topbar.localStatus")}
             </span>
           </div>
         </header>
@@ -271,27 +279,27 @@ function Workspace({ meta }: { meta: Meta }) {
         >
           {stores.error && (
             <div className="notice warning" role="alert">
-              Store discovery failed: {stores.error.message}
-              <button onClick={stores.refresh}>Retry</button>
+              {t("state.storeDiscoveryFailed", {
+                message: stores.error.message,
+              })}
+              <button onClick={stores.refresh}>{t("state.retry")}</button>
             </div>
           )}
           {route.page === "missing" ? (
-            <Empty title="This page isn’t here">
+            <Empty title={t("missing.title")}>
               <p>
-                Return to your <Link href="/">workspace overview</Link>.
+                {t("missing.return")}{" "}
+                <Link href="/">{t("missing.returnLink")}</Link>.
               </p>
             </Empty>
           ) : !route.store ? (
             <QueryView query={stores}>
               {() => (
-                <Empty title="A home for your memories">
-                  <p>
-                    No memory stores were found. Create a store with Mnemon to
-                    get started, then refresh this workspace.
-                  </p>
+                <Empty title={t("missing.homeTitle")}>
+                  <p>{t("missing.homeText")}</p>
                   <button className="button" onClick={stores.refresh}>
                     <RefreshCw size={15} />
-                    Refresh stores
+                    {t("missing.refreshStores")}
                   </button>
                 </Empty>
               )}
@@ -306,8 +314,8 @@ function Workspace({ meta }: { meta: Meta }) {
           )}
         </main>
         <footer className="app-footer">
-          <span>Knowledge accumulated. Context preserved.</span>
-          <span>Mnemon · Knowledge workspace</span>
+          <span>{t("shell.footerTagline")}</span>
+          <span>{t("shell.footerBrand")}</span>
         </footer>
       </div>
       {help && (
@@ -330,7 +338,7 @@ function Workspace({ meta }: { meta: Meta }) {
             <button
               autoFocus
               className="icon-button dialog-close"
-              aria-label="Close workspace information"
+              aria-label={t("about.close")}
               onClick={() => setHelp(false)}
             >
               <X size={18} />
@@ -342,22 +350,13 @@ function Workspace({ meta }: { meta: Meta }) {
               width="48"
               height="48"
             />
-            <h2 id="about-title">Your memory workspace</h2>
-            <p>
-              Mnemon is a local, read-only window into the memories your agents
-              have stored. Browsing does not change your memories or their
-              access counts.
-            </p>
-            <p>
-              Views refresh every 15 seconds while this tab is visible. You can
-              refresh manually at any time. Source values reflect stored
-              metadata.
-            </p>
-            <p>
-              All application assets are bundled locally. Markdown images stay
-              hidden to keep browsing private.
-            </p>
-            <span className="muted">Version {meta.version}</span>
+            <h2 id="about-title">{t("about.title")}</h2>
+            <p>{t("about.paragraph1")}</p>
+            <p>{t("about.paragraph2")}</p>
+            <p>{t("about.paragraph3")}</p>
+            <span className="muted">
+              {t("about.version", { version: meta.version })}
+            </span>
           </section>
         </div>
       )}
@@ -366,23 +365,51 @@ function Workspace({ meta }: { meta: Meta }) {
 }
 function AppearanceControl() {
   const { mode, setMode } = useTheme();
+  const t = useT();
   const Icon = mode === "system" ? Monitor : mode === "dark" ? Moon : Sun;
   return (
-    <label className="theme-control" title="Appearance">
+    <label className="theme-control" title={t("appearance.label")}>
       <Icon size={16} aria-hidden="true" />
-      <span className="sr-only">Appearance</span>
+      <span className="sr-only">{t("appearance.label")}</span>
       <select
-        aria-label="Appearance"
+        aria-label={t("appearance.label")}
         value={mode}
         onChange={(event) => setMode(event.target.value as ThemeMode)}
       >
-        <option value="system">System</option>
-        <option value="light">Light</option>
-        <option value="dark">Dark</option>
+        <option value="system">{t("appearance.system")}</option>
+        <option value="light">{t("appearance.light")}</option>
+        <option value="dark">{t("appearance.dark")}</option>
       </select>
     </label>
   );
 }
+function LanguageControl() {
+  const { locale, setLocale } = useI18n();
+  const t = useT();
+  return (
+    <label className="theme-control" title={t("language.label")}>
+      <Languages size={16} aria-hidden="true" />
+      <span className="sr-only">{t("language.label")}</span>
+      <select
+        aria-label={t("language.label")}
+        value={locale}
+        onChange={(event) => setLocale(event.target.value as Locale)}
+      >
+        <option value="en">{t("language.en")}</option>
+        <option value="zh">{t("language.zh")}</option>
+      </select>
+    </label>
+  );
+}
+const pageTitles: Record<Page, keyof Dictionary> = {
+  overview: "pages.overview",
+  library: "pages.library",
+  graph: "pages.graph",
+  entities: "pages.entities",
+  activity: "pages.activity",
+  memories: "pages.memories",
+  missing: "missing.title",
+};
 function StoreView({
   page,
   meta,
@@ -392,9 +419,11 @@ function StoreView({
   meta: Meta;
   refresh: number;
 }) {
+  const t = useT();
+  const pageKey = pageTitles[page];
   useEffect(() => {
-    document.title = `${humanize(page === "memories" ? "Memory" : page)} · Mnemon`;
-  }, [page]);
+    document.title = t("doc.title", { page: t(pageKey) });
+  }, [t, pageKey]);
   if (page === "overview")
     return <OverviewView meta={meta} refresh={refresh} />;
   if (page === "library") return <LibraryView meta={meta} refresh={refresh} />;
@@ -404,7 +433,7 @@ function StoreView({
       <Suspense
         fallback={
           <div className="loading-state" role="status">
-            Opening your knowledge graph…
+            {t("state.loadingGraph")}
           </div>
         }
       >

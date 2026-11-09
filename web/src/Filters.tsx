@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Search, SlidersHorizontal, X } from "lucide-react";
+import { useT } from "./i18n";
 import { filtersOnly, routeURL, useRouter } from "./router";
 import type { Meta, Overview } from "./types";
 import { humanize } from "./components";
@@ -14,6 +15,7 @@ export function Filters({
   graph?: boolean;
 }) {
   const { route, navigate } = useRouter();
+  const t = useT();
   const params = new URLSearchParams(route.search);
   const [search, setSearch] = useState(params.get("q") || "");
   const [expanded, setExpanded] = useState(false);
@@ -42,27 +44,27 @@ export function Filters({
         >
           <Search size={18} />
           <input
-            aria-label="Search memories"
-            placeholder="Search your memories…"
+            aria-label={t("filters.searchMemories")}
+            placeholder={t("filters.searchPlaceholder")}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
           <button
             type="submit"
             className="search-submit"
-            aria-label="Submit search"
+            aria-label={t("filters.submitSearch")}
           >
-            Search
+            {t("search.submit")}
           </button>
         </form>
         <label className="select-field">
-          <span className="sr-only">Category</span>
+          <span className="sr-only">{t("filters.category")}</span>
           <select
-            aria-label="Category"
+            aria-label={t("filters.category")}
             value={params.get("category") || ""}
             onChange={(event) => update("category", event.target.value)}
           >
-            <option value="">All categories</option>
+            <option value="">{t("filters.allCategories")}</option>
             {meta.categories.map((category) => (
               <option key={category} value={category}>
                 {humanize(category)}
@@ -72,16 +74,16 @@ export function Filters({
         </label>
         {!graph && (
           <label className="select-field">
-            <span className="sr-only">Sort memories</span>
+            <span className="sr-only">{t("filters.sortMemories")}</span>
             <select
-              aria-label="Sort memories"
+              aria-label={t("filters.sortMemories")}
               value={params.get("sort") || "newest"}
               onChange={(event) => update("sort", event.target.value)}
             >
-              <option value="newest">Newest first</option>
-              <option value="updated">Recently updated</option>
-              <option value="importance">Importance</option>
-              <option value="relevance">Relevance</option>
+              <option value="newest">{t("filters.sortNewest")}</option>
+              <option value="updated">{t("filters.sortUpdated")}</option>
+              <option value="importance">{t("filters.sortImportance")}</option>
+              <option value="relevance">{t("filters.sortRelevance")}</option>
             </select>
           </label>
         )}
@@ -91,7 +93,7 @@ export function Filters({
           onClick={() => setExpanded(!expanded)}
         >
           <SlidersHorizontal size={16} />
-          Filters
+          {t("filters.toggle")}
           {active.length > 0 && (
             <span className="count-badge">{active.length}</span>
           )}
@@ -100,11 +102,11 @@ export function Filters({
       {expanded && (
         <div className="filter-expanded">
           <label>
-            Entity
+            {t("filters.entity")}
             <input
               value={params.get("entity") || ""}
               onChange={(event) => update("entity", event.target.value)}
-              placeholder="Entity name"
+              placeholder={t("filters.entityPlaceholder")}
               list="entity-options"
             />
             <datalist id="entity-options">
@@ -114,11 +116,11 @@ export function Filters({
             </datalist>
           </label>
           <label>
-            Tag
+            {t("filters.tag")}
             <input
               value={params.get("tag") || ""}
               onChange={(event) => update("tag", event.target.value)}
-              placeholder="Any tag"
+              placeholder={t("filters.tagPlaceholder")}
               list="tag-options"
             />
             <datalist id="tag-options">
@@ -128,11 +130,11 @@ export function Filters({
             </datalist>
           </label>
           <label>
-            Source
+            {t("filters.source")}
             <input
               value={params.get("source") || ""}
               onChange={(event) => update("source", event.target.value)}
-              placeholder="Any source"
+              placeholder={t("filters.sourcePlaceholder")}
               list="source-options"
             />
             <datalist id="source-options">
@@ -142,21 +144,21 @@ export function Filters({
             </datalist>
           </label>
           <label>
-            Importance
+            {t("filters.importance")}
             <select
               value={params.get("importance") || ""}
               onChange={(event) => update("importance", event.target.value)}
             >
-              <option value="">Any importance</option>
+              <option value="">{t("filters.anyImportance")}</option>
               {[1, 2, 3, 4, 5].map((number) => (
                 <option key={number} value={number}>
-                  {number} / 5
+                  {t("reader.importanceOf", { value: number })}
                 </option>
               ))}
             </select>
           </label>
           <label>
-            Since
+            {t("filters.since")}
             <input
               type="date"
               value={params.get("since") || ""}
@@ -164,7 +166,7 @@ export function Filters({
             />
           </label>
           <label>
-            Until
+            {t("filters.until")}
             <input
               type="date"
               min={params.get("since") || undefined}
@@ -178,7 +180,7 @@ export function Filters({
         <div className="active-filters">
           {params.get("q") && (
             <button onClick={() => update("q", "")}>
-              Search: {params.get("q")}
+              {t("filters.searchChip", { value: params.get("q")! })}
               <X size={12} />
             </button>
           )}
@@ -197,7 +199,7 @@ export function Filters({
               navigate(routeURL(route.store, route.page, next.toString()));
             }}
           >
-            Clear filters
+            {t("filters.clear")}
           </button>
         </div>
       )}

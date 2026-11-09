@@ -13,6 +13,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Query } from "./api";
+import { useT } from "./i18n";
 import type { Insight } from "./types";
 import { Link, routeURL, useRouter } from "./router";
 
@@ -39,7 +40,7 @@ export function title(content: string) {
       .replace(/[*_`>\[\]]/g, "")
       .split("\n")
       .find((line) => line.trim())
-      ?.slice(0, 110) || "Untitled memory"
+      ?.slice(0, 110) || ""
   );
 }
 export function excerpt(content: string) {
@@ -49,7 +50,7 @@ export function excerpt(content: string) {
     .slice(0, 230);
 }
 export function date(value: string, full = false) {
-  if (!value) return "Unknown date";
+  if (!value) return "";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return new Intl.DateTimeFormat(
@@ -71,12 +72,10 @@ export function Category({ value }: { value: string }) {
   );
 }
 export function Importance({ value }: { value: number }) {
+  const t = useT();
+  const label = t("component.importanceLabel", { value });
   return (
-    <span
-      className="importance"
-      aria-label={`Importance ${value} out of 5`}
-      title={`Importance ${value} out of 5`}
-    >
+    <span className="importance" aria-label={label} title={label}>
       {[1, 2, 3, 4, 5].map((level) => (
         <i key={level} className={level <= value ? "filled" : ""} />
       ))}
@@ -117,11 +116,12 @@ export function QueryView<T>({
   children: (data: T) => ReactNode;
   unavailable?: boolean;
 }) {
+  const t = useT();
   if (!query.data && query.loading)
     return (
       <div className="loading-state" role="status">
         <LoaderCircle className="spin" size={22} />
-        <span>Opening your knowledge…</span>
+        <span>{t("state.loadingKnowledge")}</span>
         <div className="skeleton" />
         <div className="skeleton short" />
         <div className="skeleton" />
@@ -130,13 +130,15 @@ export function QueryView<T>({
   if (!query.data && query.error)
     return (
       <Empty
-        title={unavailable ? "Memory unavailable" : "Unable to open this view"}
+        title={t(
+          unavailable ? "state.memoryUnavailable" : "state.unableToOpen",
+        )}
         icon="error"
       >
         <p>{query.error.message}</p>
         <button className="button" onClick={query.refresh}>
           <RefreshCw size={15} />
-          Try again
+          {t("state.tryAgain")}
         </button>
       </Empty>
     );
@@ -147,10 +149,10 @@ export function QueryView<T>({
         <div className="notice warning" role="alert">
           <TriangleAlert size={17} />
           <div>
-            <strong>Showing previously loaded data.</strong> Refresh failed:{" "}
-            {query.error.message}
+            <strong>{t("state.staleData")}</strong>{" "}
+            {t("state.refreshFailed", { message: query.error.message })}
           </div>
-          <button onClick={query.refresh}>Retry</button>
+          <button onClick={query.refresh}>{t("state.retry")}</button>
         </div>
       )}
       {children(query.data)}
@@ -186,10 +188,13 @@ export function LastUpdated({
   value: string;
   loading?: boolean;
 }) {
+  const t = useT();
   return (
     <span className="last-updated">
       <span className={loading ? "live-dot busy" : "live-dot"} />
-      {loading ? "Refreshing…" : `Updated ${date(value, true)}`}
+      {loading
+        ? t("state.refreshing")
+        : t("state.updated", { date: date(value, true) })}
     </span>
   );
 }
@@ -201,6 +206,7 @@ export function MemoryCard({
   compact?: boolean;
 }) {
   const { route } = useRouter();
+  const t = useT();
   return (
     <Link
       href={routeURL(route.store, "memories", route.search, memory.id)}
@@ -210,13 +216,15 @@ export function MemoryCard({
         <Category value={memory.category} />
         <Importance value={memory.importance} />
       </div>
-      <h3>{title(memory.content)}</h3>
+      <h3>{title(memory.content) || t("state.untitled")}</h3>
       {!compact && <p>{excerpt(memory.content)}</p>}
       <div className="memory-card-bottom">
         <span className="source" title={memory.source}>
-          {memory.source || "No source recorded"}
+          {memory.source || t("state.noSource")}
         </span>
-        <time dateTime={memory.created_at}>{date(memory.created_at)}</time>
+        <time dateTime={memory.created_at}>
+          {date(memory.created_at) || t("state.unknownDate")}
+        </time>
       </div>
       {!compact && !!memory.entities?.length && (
         <div className="card-entities">
@@ -234,18 +242,19 @@ export function MemoryCard({
 export function SectionTitle({
   children,
   href,
-  label = "View all",
+  label,
 }: {
   children: ReactNode;
   href?: string;
   label?: string;
 }) {
+  const t = useT();
   return (
     <div className="section-heading">
       <h2>{children}</h2>
       {href && (
         <Link href={href}>
-          {label}
+          {label ?? t("component.viewAll")}
           <ArrowRight size={14} />
         </Link>
       )}
@@ -253,6 +262,7 @@ export function SectionTitle({
   );
 }
 export function CopyButton({ value, label }: { value: string; label: string }) {
+  const t = useT();
   const [state, setState] = useState<"idle" | "done" | "error">("idle");
   return (
     <button
@@ -269,14 +279,15 @@ export function CopyButton({ value, label }: { value: string; label: string }) {
     >
       {state === "done" ? <Check size={15} /> : <Copy size={15} />}
       {state === "done"
-        ? "Copied"
+        ? t("component.copied")
         : state === "error"
-          ? "Copy unavailable"
+          ? t("component.copyUnavailable")
           : label}
     </button>
   );
 }
 export function Markdown({ content }: { content: string }) {
+  const t = useT();
   return (
     <div className="markdown">
       <ReactMarkdown
@@ -286,7 +297,7 @@ export function Markdown({ content }: { content: string }) {
           h1: ({ children }) => <h2>{children}</h2>,
           img: ({ alt }) => (
             <span className="image-blocked">
-              [Image hidden for privacy{alt ? `: ${alt}` : ""}]
+              {t("component.imageHidden", { alt: alt ? `: ${alt}` : "" })}
             </span>
           ),
           a: ({ href, children }) => (

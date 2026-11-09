@@ -23,6 +23,7 @@ import {
   title,
 } from "./components";
 import { Filters } from "./Filters";
+import { useT } from "./i18n";
 import { filtersOnly, Link, routeURL, useRouter } from "./router";
 import type { GraphData, Insight, Meta } from "./types";
 import { useTheme } from "./theme";
@@ -114,6 +115,9 @@ function GraphCanvas({
   focus: string;
 }) {
   const { resolved } = useTheme();
+  const t = useT();
+  const tRef = useRef(t);
+  tRef.current = t;
   const container = useRef<HTMLDivElement>(null);
   const graph = useRef<Core | null>(null);
   const selectCallback = useRef(onSelect);
@@ -128,7 +132,9 @@ function GraphCanvas({
         ...data.nodes.map((node) => ({
           data: {
             id: node.id,
-            label: title(node.content).slice(0, 36),
+            label:
+              title(node.content).slice(0, 36) ||
+              tRef.current("state.untitled"),
             color: categoryColor(node.category),
             size: 20 + node.importance * 5,
           },
@@ -192,17 +198,17 @@ function GraphCanvas({
         className="graph-canvas"
         ref={container}
         role="img"
-        aria-label="Interactive memory graph. Drag nodes to rearrange, scroll to zoom, and drag the background to pan. The memory list below provides keyboard access."
+        aria-label={t("graph.canvasAria")}
       />
       <div className="graph-instructions">
         <span className="live-dot" />
-        {focus ? "Focused neighborhood" : "Knowledge graph"}
-        <span>Drag to explore · Scroll to zoom</span>
+        {focus ? t("graph.focused") : t("graph.full")}
+        <span>{t("graph.dragHint")}</span>
       </div>
       <div className="graph-controls">
         <button
-          aria-label="Zoom in"
-          title="Zoom in"
+          aria-label={t("graph.zoomIn")}
+          title={t("graph.zoomIn")}
           onClick={() => {
             const cy = graph.current;
             if (cy)
@@ -215,8 +221,8 @@ function GraphCanvas({
           <Plus size={18} />
         </button>
         <button
-          aria-label="Zoom out"
-          title="Zoom out"
+          aria-label={t("graph.zoomOut")}
+          title={t("graph.zoomOut")}
           onClick={() => {
             const cy = graph.current;
             if (cy)
@@ -229,15 +235,15 @@ function GraphCanvas({
           <Minus size={18} />
         </button>
         <button
-          aria-label="Fit graph"
-          title="Fit graph"
+          aria-label={t("graph.fit")}
+          title={t("graph.fit")}
           onClick={() => graph.current?.fit(undefined, 55)}
         >
           <Expand size={17} />
         </button>
         <button
-          aria-label="Reset graph layout"
-          title="Reset graph layout"
+          aria-label={t("graph.resetLayout")}
+          title={t("graph.resetLayout")}
           onClick={() =>
             graph.current
               ?.layout({
@@ -257,6 +263,7 @@ function GraphCanvas({
 }
 export function GraphView({ meta, refresh }: { meta: Meta; refresh: number }) {
   const { route, navigate } = useRouter();
+  const t = useT();
   const params = filtersOnly(route.search);
   const routeParams = new URLSearchParams(route.search);
   const focus = routeParams.get("focus") || "";
@@ -281,20 +288,20 @@ export function GraphView({ meta, refresh }: { meta: Meta; refresh: number }) {
   return (
     <>
       <PageHeading
-        eyebrow="Relationships"
-        title="Knowledge graph"
-        description="Follow the stored relationships between memories."
+        eyebrow={t("graph.eyebrow")}
+        title={t("graph.title")}
+        description={t("graph.description")}
       />
       <Filters meta={meta} graph />
       <div className="graph-toolbar">
         <label>
-          Relationship
+          {t("graph.relationship")}
           <select
-            aria-label="Relationship type"
+            aria-label={t("graph.relationshipAria")}
             value={edgeType}
             onChange={(event) => update("edge_type", event.target.value)}
           >
-            <option value="">All relationships</option>
+            <option value="">{t("graph.allRelationships")}</option>
             {meta.edge_types.map((type) => (
               <option key={type} value={type}>
                 {humanize(type)}
@@ -305,7 +312,7 @@ export function GraphView({ meta, refresh }: { meta: Meta; refresh: number }) {
         {focus && (
           <button className="button subtle" onClick={() => update("focus", "")}>
             <X size={14} />
-            Clear neighborhood focus
+            {t("graph.clearFocus")}
           </button>
         )}
         <div className="graph-legend">
@@ -338,8 +345,11 @@ export function GraphView({ meta, refresh }: { meta: Meta; refresh: number }) {
                 </div>
                 <div className="results-line">
                   <span>
-                    {data.nodes.length} of {data.total} memories ·{" "}
-                    {data.edges?.length || 0} stored connections
+                    {t("graph.resultLine", {
+                      shown: data.nodes.length,
+                      total: data.total,
+                      edges: data.edges?.length || 0,
+                    })}
                   </span>
                   <LastUpdated
                     value={data.updated_at}
@@ -347,14 +357,11 @@ export function GraphView({ meta, refresh }: { meta: Meta; refresh: number }) {
                   />
                 </div>
                 {data.truncated && (
-                  <p className="notice">
-                    Showing a bounded neighborhood (up to 200 memories). Use
-                    filters or expand a selected memory to explore further.
-                  </p>
+                  <p className="notice">{t("graph.bounded")}</p>
                 )}
                 <details className="graph-list" open>
                   <summary>
-                    Browse graph memories <span>{data.nodes.length}</span>
+                    {t("graph.browseMemories")} <span>{data.nodes.length}</span>
                   </summary>
                   <div className="graph-node-list">
                     {data.nodes.map((node) => (
@@ -365,7 +372,9 @@ export function GraphView({ meta, refresh }: { meta: Meta; refresh: number }) {
                         aria-pressed={selectedID === node.id}
                       >
                         <Category value={node.category} />
-                        <span>{title(node.content)}</span>
+                        <span>
+                          {title(node.content) || t("state.untitled")}
+                        </span>
                         <Focus size={14} />
                       </button>
                     ))}
@@ -374,7 +383,8 @@ export function GraphView({ meta, refresh }: { meta: Meta; refresh: number }) {
                 {!!data.edges?.length && (
                   <details className="graph-list">
                     <summary>
-                      Stored relationships <span>{data.edges.length}</span>
+                      {t("graph.storedRelationships")}{" "}
+                      <span>{data.edges.length}</span>
                     </summary>
                     <div className="relationship-list">
                       {data.edges.map((edge, index) => (
@@ -401,7 +411,7 @@ export function GraphView({ meta, refresh }: { meta: Meta; refresh: number }) {
                             {edge.target_id}
                           </Link>
                           <small>
-                            Weight {edge.weight}
+                            {t("graph.weight", { value: edge.weight })}
                             {Object.entries(edge.metadata || {})
                               .map(([key, value]) => ` · ${key}: ${value}`)
                               .join("")}
@@ -413,11 +423,8 @@ export function GraphView({ meta, refresh }: { meta: Meta; refresh: number }) {
                 )}
               </>
             ) : (
-              <Empty title="No connections in this view" icon="search">
-                <p>
-                  Try broader filters, or explore a memory with stored
-                  relationships.
-                </p>
+              <Empty title={t("graph.noConnections")} icon="search">
+                <p>{t("graph.noConnectionsText")}</p>
               </Empty>
             )}
           </>
@@ -436,35 +443,36 @@ function GraphPreview({
   onExpand: () => void;
 }) {
   const { route } = useRouter();
+  const t = useT();
   return (
     <aside className="graph-preview">
       <div className="section-heading">
-        <span className="eyebrow">Selected memory</span>
+        <span className="eyebrow">{t("graph.selectedMemory")}</span>
         <button
           className="icon-button"
-          aria-label="Close selected memory"
+          aria-label={t("graph.closeSelected")}
           onClick={onClose}
         >
           <X size={17} />
         </button>
       </div>
       <Category value={memory.category} />
-      <h2>{title(memory.content)}</h2>
+      <h2>{title(memory.content) || t("state.untitled")}</h2>
       <p>{excerpt(memory.content)}</p>
       <dl>
-        <dt>Source</dt>
-        <dd>{memory.source || "Not recorded"}</dd>
+        <dt>{t("reader.source")}</dt>
+        <dd>{memory.source || t("state.notRecorded")}</dd>
       </dl>
       <Link
         className="button primary"
         href={routeURL(route.store, "memories", route.search, memory.id)}
       >
-        Read full memory
+        {t("graph.readFullMemory")}
         <ArrowRight size={15} />
       </Link>
       <button className="button" onClick={onExpand}>
         <Network size={15} />
-        Expand neighborhood
+        {t("graph.expandNeighborhood")}
       </button>
       {!!memory.entities?.length && (
         <div className="chip-list">
