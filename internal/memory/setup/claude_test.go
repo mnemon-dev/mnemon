@@ -180,7 +180,7 @@ func TestClaudeRegisterHooksCollisionWritesAbsoluteCommands(t *testing.T) {
 	hooks := data["hooks"].(map[string]any)
 	for _, ev := range []string{"SessionStart", "UserPromptSubmit", "Stop"} {
 		entry := hooks[ev].([]any)[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)
-		cmd := entry["command"].(string)
+		cmd := strings.Trim(entry["command"].(string), `"`) // Windows commands are quoted
 		if !filepath.IsAbs(cmd) {
 			t.Fatalf("%s command must be absolute in the user-global file, got %q", ev, cmd)
 		}
@@ -205,5 +205,48 @@ func TestClaudeRegisterHooksProjectLocalStaysRelative(t *testing.T) {
 	entry := hooks["SessionStart"].([]any)[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)
 	if cmd := entry["command"].(string); filepath.IsAbs(cmd) {
 		t.Fatalf("genuine project-local install must keep existing relative form, got %q", cmd)
+	}
+}
+
+func TestAddClaudeHooksSelectiveWindowsQuotesForwardSlashPaths(t *testing.T) {
+	for _, tc := range []struct{ name, dir, prefix string }{
+		{"global", `C:\Users\John Smith\.claude\hooks\mnemon`, "C:/Users/John Smith/.claude/hooks/mnemon"},
+		{"project-local", `.claude\hooks\mnemon`, ".claude/hooks/mnemon"},
+		{"trailing separator", `C:\u\.claude\hooks\mnemon\`, "C:/u/.claude/hooks/mnemon"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			data := map[string]any{}
+			addClaudeHooksSelective(data, tc.dir, HookSelection{Remind: true, Nudge: true, Compact: true}, "windows")
+			hooks := data["hooks"].(map[string]any)
+			for ev, script := range map[string]string{
+				"SessionStart": "prime.sh", "UserPromptSubmit": "user_prompt.sh",
+				"Stop": "stop.sh", "PreCompact": "compact.sh",
+			} {
+				entry := hooks[ev].([]any)[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)
+				want := `"` + tc.prefix + "/" + script + `"`
+				if got := entry["command"].(string); got != want {
+					t.Fatalf("%s command = %q, want %q", ev, got, want)
+				}
+			}
+		})
+	}
+}
+
+func TestAddClaudeHooksSelectiveNonWindowsKeepsBarePaths(t *testing.T) {
+	data := map[string]any{}
+	addClaudeHooksSelective(data, "/home/u/.claude/hooks/mnemon", HookSelection{Remind: true}, "linux")
+	hooks := data["hooks"].(map[string]any)
+	entry := hooks["SessionStart"].([]any)[0].(map[string]any)["hooks"].([]any)[0].(map[string]any)
+	if got, want := entry["command"].(string), filepath.Join("/home/u/.claude/hooks/mnemon", "prime.sh"); got != want {
+		t.Fatalf("non-Windows command = %q, want %q", got, want)
+	}
+}
+
+func TestAddClaudeHooksSelectiveWindowsReplacesQuotedMnemonHooks(t *testing.T) {
+	data := map[string]any{}
+	addClaudeHooksSelective(data, `C:\u\.claude\hooks\mnemon`, HookSelection{}, "windows")
+	addClaudeHooksSelective(data, `C:\u\.claude\hooks\mnemon`, HookSelection{}, "windows")
+	if n := len(data["hooks"].(map[string]any)["SessionStart"].([]any)); n != 1 {
+		t.Fatalf("re-registering must replace the quoted hook, got %d entries", n)
 	}
 }
