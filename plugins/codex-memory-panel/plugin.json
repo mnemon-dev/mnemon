@@ -1,0 +1,7 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "mnemon-memory-panel",
+  "version": "0.2.3",
+  "description": "Local Mnemon project and global memory panel, automatic updates, and verified model memory workflow.",
+  "license": "Apache-2.0"
+}

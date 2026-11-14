@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "mnemon-memory-panel": {
+      "command": "node",
+      "args": ["server/index.mjs"],
+      "cwd": ".",
+      "env_vars": ["MNEMON_UI_STORE", "MNEMON_UI_DATA_DIR", "MNEMON_UI_COMMAND", "MNEMON_UI_PYTHON"],
+      "tool_timeout_sec": 60
+    }
+  }
+}

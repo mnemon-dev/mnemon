@@ -1,0 +1,19 @@
+{
+  "name": "mnemon-memory-panel",
+  "version": "0.2.3",
+  "description": "Inspect project and global memories, associate projects and help models recall verified lessons during development.",
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json",
+  "license": "Apache-2.0",
+  "interface": {
+    "displayName": "Mnemon",
+    "shortDescription": "本地记忆面板 · 自动同步",
+    "longDescription": "Inspect named Mnemon stores, search memories, read their sources and see new memories automatically. Read-only, local-only; does not change the global active store.",
+    "developerName": "Local development preview",
+    "category": "Developer Tools",
+    "capabilities": ["Interactive", "Read", "Write"],
+    "brandColor": "#8BC9AE",
+    "logo": "./assets/icon.svg",
+    "composerIcon": "./assets/icon.svg"
+  }
+}
