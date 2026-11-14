@@ -288,7 +288,7 @@ mnemon setup --target pi --yes
 
 One command deploys the mnemon skill, prompt files, and a Pi TypeScript extension
 to `.pi/`. The extension maps Mnemon's lifecycle reminders onto Pi events
-(`resources_discover`, `before_agent_start`, `agent_end`,
+(`resources_discover`, `before_agent_start`,
 `session_before_compact`). Start a new Pi session or run `/reload` to activate.
 
 ### [Hermes Agent](https://github.com/NousResearch/hermes-agent)

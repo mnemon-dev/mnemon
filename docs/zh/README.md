@@ -244,7 +244,7 @@ mnemon setup --target pi --yes
 
 一条命令将 mnemon skill、prompt 文件和 Pi TypeScript extension 部署到
 `.pi/`。这个 extension 会把 Mnemon 的 lifecycle reminder 映射到 Pi 事件
-（`resources_discover`、`before_agent_start`、`agent_end`、
+（`resources_discover`、`before_agent_start`、
 `session_before_compact`）。启动新的 Pi session 或运行 `/reload` 即可激活。
 
 ### [Hermes Agent](https://github.com/NousResearch/hermes-agent)
