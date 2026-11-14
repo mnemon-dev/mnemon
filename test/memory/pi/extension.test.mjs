@@ -186,3 +186,127 @@ test("legacy control cannot execute the Windows npm shim", async (t) => {
   assert.ok((await p.content()).startsWith("[mnemon] Memory active.\n"));
   assert.equal(p.calls[0].command, "mnemon");
 });
+
+// Pi's context builder includes custom messages whatever `display` says, while
+// its renderer draws only display=true. A hidden message costs the model nothing.
+const piGuide = path.win32.join("C:\\Users\\Pi 中文 home", ".mnemon", "prompt", "pi", "guide.md");
+
+// A session that records entries the way Pi does: each injected message becomes
+// a custom_message entry on the current branch, and the extension may read the
+// branch through ctx.sessionManager.getBranch().
+function session(entries = []) {
+  let next = entries.length;
+  const s = {
+    entries,
+    add(entry) { s.entries.push({ id: `e${++next}`, ...entry }); return `e${next}`; },
+    ctx: {
+      ui: { setStatus() {}, notify() { throw new Error("unexpected notification"); } },
+      sessionManager: { getBranch: () => s.entries },
+    },
+    // What /tree does: the branch is replaced, no session_start, same session id.
+    navigate(branch) { s.entries = branch; },
+    async turn(p) {
+      s.add({ type: "message", message: { role: "user" } });
+      const message = (await p.hooks.get("before_agent_start")({}, s.ctx)).message;
+      s.add({ type: "custom_message", customType: message.customType, content: message.content, display: message.display, details: message.details });
+      s.add({ type: "message", message: { role: "assistant" } });
+      return message;
+    },
+  };
+  return s;
+}
+
+const hasGuide = (message) => /Pi guide/.test(message.content);
+
+test("the injected message is not drawn into the conversation", async (t) => {
+  const p = await load(t, { files: { [piGuide]: "Pi guide" } });
+  assert.equal((await session().turn(p)).display, false);
+});
+
+test("the full guide is injected once per conversation, then a reminder", async (t) => {
+  const p = await load(t, { files: { [piGuide]: "Pi guide" } });
+  const s = session();
+  await p.hooks.get("session_start")({}, s.ctx);
+  const first = await s.turn(p);
+  assert.ok(hasGuide(first));
+  assert.match(first.content, /72 insights, 1106 edges/);
+  for (const again of [await s.turn(p), await s.turn(p)]) {
+    assert.ok(!hasGuide(again));
+    assert.match(again.content, /^\[mnemon\] Memory active/);
+    assert.match(again.content, /recall/);
+    assert.ok(again.content.length < first.content.length);
+  }
+  // A new or empty session gets the guide again.
+  assert.ok(hasGuide(await session().turn(p)));
+});
+
+test("a conversation without a readable branch keeps injecting the full guide", async (t) => {
+  const p = await load(t, { files: { [piGuide]: "Pi guide" } });
+  for (const ctx of [undefined, {}, { sessionManager: { getBranch() { throw new Error("no session"); } } }]) {
+    for (let i = 0; i < 2; i++) assert.match((await p.hooks.get("before_agent_start")({}, ctx)).message.content, /Pi guide/);
+  }
+});
+
+test("the extension does not notify the user after every reply", async (t) => {
+  const p = await load(t);
+  assert.equal(p.hooks.has("agent_end"), false);
+});
+
+test("compaction that summarizes the guide away sends it again", async (t) => {
+  const p = await load(t, { files: { [piGuide]: "Pi guide" } });
+  const s = session();
+  assert.ok(hasGuide(await s.turn(p)));
+  assert.ok(!hasGuide(await s.turn(p)));
+  // Keep only the last turn: the guide falls before firstKeptEntryId.
+  const kept = s.entries[s.entries.length - 3].id;
+  s.add({ type: "compaction", summary: "summary", firstKeptEntryId: kept });
+  assert.ok(hasGuide(await s.turn(p)));
+  assert.ok(!hasGuide(await s.turn(p)));
+});
+
+test("compaction that keeps the guide does not repeat it", async (t) => {
+  const p = await load(t, { files: { [piGuide]: "Pi guide" } });
+  const s = session();
+  assert.ok(hasGuide(await s.turn(p)));
+  s.add({ type: "compaction", summary: "summary", firstKeptEntryId: s.entries[0].id });
+  assert.ok(!hasGuide(await s.turn(p)));
+});
+
+test("navigating the tree re-sends the guide only when it left the branch", async (t) => {
+  const p = await load(t, { files: { [piGuide]: "Pi guide" } });
+  const s = session();
+  assert.ok(hasGuide(await s.turn(p)));
+  const withGuide = [...s.entries];
+  assert.ok(!hasGuide(await s.turn(p)));
+  // /tree back to before the first turn: same session id, no session_start.
+  s.navigate([]);
+  assert.ok(hasGuide(await s.turn(p)));
+  // /tree to a branch that still holds the guide.
+  s.navigate(withGuide);
+  assert.ok(!hasGuide(await s.turn(p)));
+});
+
+test("a guide message from an older extension version is replaced once", async (t) => {
+  const p = await load(t, { files: { [piGuide]: "Pi guide" } });
+  const s = session([{ id: "old", type: "custom_message", customType: "mnemon", content: "Pi guide", display: true }]);
+  assert.ok(hasGuide(await s.turn(p)));
+  assert.ok(!hasGuide(await s.turn(p)));
+});
+
+test("another extension's message is not taken for the guide", async (t) => {
+  const p = await load(t, { files: { [piGuide]: "Pi guide" } });
+  const s = session([{ id: "x", type: "custom_message", customType: "other", content: "Pi guide", display: false, details: { guide: true } }]);
+  assert.ok(hasGuide(await s.turn(p)));
+});
+
+test("a missing guide file is retried instead of being marked as sent", async (t) => {
+  const p = await load(t);
+  const s = session();
+  assert.equal((await s.turn(p)).details, undefined);
+  assert.equal((await s.turn(p)).details, undefined);
+});
+
+test("the compaction instructions hook is kept", async (t) => {
+  const p = await load(t);
+  assert.match((await p.hooks.get("session_before_compact")()).customInstructions, /Before compacting/);
+});
