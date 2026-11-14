@@ -69,6 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- `mnemon setup --target kimi` on Windows registers each hook as
+  `"<Git bash.exe>" "<script.sh>"` instead of a bare `.sh` path. Kimi Code runs
+  hook commands natively on Windows, so the bare path failed under `cmd` or
+  opened a Git Bash window on every hook event. Other platforms are unchanged.
 - The generated Homebrew cask no longer emits the deprecated `postflight`
   stanza. `brew` commands that load the cask printed "Calling `postflight` is
   deprecated! Use `postflight_steps` instead." on every invocation. The
