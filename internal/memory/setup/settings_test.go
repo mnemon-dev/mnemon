@@ -46,7 +46,7 @@ func TestAddClaudeHooksSelectiveReplacesExistingMnemonHooks(t *testing.T) {
 		},
 	}
 
-	addClaudeHooksSelective(data, "/new/hooks", HookSelection{Remind: true, Nudge: false, Compact: true})
+	addClaudeHooksSelective(data, "/new/hooks", HookSelection{Remind: true, Nudge: false, Compact: true}, "linux")
 
 	hooks := data["hooks"].(map[string]any)
 	if len(hooks["SessionStart"].([]any)) != 2 {
