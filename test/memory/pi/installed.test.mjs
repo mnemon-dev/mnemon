@@ -51,7 +51,7 @@ for (const mode of ["native", "npm global", "npm local"]) {
         assert.match(actual.start.message.content, /directly in the main conversation/);
         assert.doesNotMatch(actual.start.message.content, /Task|sonnet|subagent_type/);
         assert.deepEqual(actual.resources.skillPaths, [path.join(agent, "skills", "mnemon", "SKILL.md")]);
-        assert.equal(actual.start.message.display, true);
+        assert.equal(actual.start.message.display, false);
 
         const old = JSON.parse(run(process.execPath, ["--no-warnings", probe, legacy], cwd, env));
         if (process.platform === "win32") {

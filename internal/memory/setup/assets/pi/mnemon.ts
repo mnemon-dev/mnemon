@@ -99,12 +99,41 @@ function memoryStatus(): string {
   }
 }
 
-function visibleMessage(content: string) {
+function memoryMessage(content: string, guide: boolean) {
   return {
     customType: "mnemon",
     content,
-    display: true,
+    // Pi's renderer draws only display=true messages, while its context
+    // builder includes the message either way.
+    display: false,
+    ...(guide ? { details: GUIDE_MARK } : {}),
   };
+}
+
+const GUIDE_REMINDER = "[mnemon] Evaluate: recall needed? After responding, evaluate: remember needed?";
+
+// The guide message sent by before_agent_start carries this marker so it can be
+// found again in the session. Pi keeps the message as a custom_message entry.
+const GUIDE_MARK = { mnemonGuide: true };
+
+// Whether the current branch still holds the guide in the model's context. Pi
+// rebuilds that context from the branch after /tree, and after compaction keeps
+// only the entries from firstKeptEntryId on, so the branch is the one source of
+// truth. Any failure to read it counts as absent.
+function guideInContext(ctx: { sessionManager?: { getBranch(): any[] } } | undefined): boolean {
+  try {
+    const branch = ctx?.sessionManager?.getBranch() ?? [];
+    let start = 0;
+    const compaction = branch.map((entry) => entry.type).lastIndexOf("compaction");
+    if (compaction >= 0) {
+      const kept = branch.findIndex((entry) => entry.id === branch[compaction].firstKeptEntryId);
+      start = kept >= 0 ? kept : compaction + 1;
+    }
+    return branch.slice(start).some((entry) =>
+      entry.type === "custom_message" && entry.customType === "mnemon" && entry.details?.mnemonGuide === true);
+  } catch {
+    return false;
+  }
 }
 
 export default function (pi: ExtensionAPI) {
@@ -119,17 +148,14 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setStatus("mnemon", "mnemon");
   });
 
-  pi.on("before_agent_start", async () => {
-    const guide = readGuide();
-    const content = [memoryStatus(), guide, "[mnemon] Evaluate: recall needed? After responding, evaluate: remember needed?"]
+  pi.on("before_agent_start", async (_event, ctx) => {
+    // Send the full guide whenever the current branch does not hold it.
+    const guide = guideInContext(ctx) ? "" : readGuide();
+    const content = [memoryStatus(), guide, GUIDE_REMINDER]
       .filter(Boolean)
       .join("\n\n");
 
-    return { message: visibleMessage(content) };
-  });
-
-  pi.on("agent_end", async (_event, ctx) => {
-    ctx.ui.notify("[mnemon] Consider whether this exchange warrants durable memory.", "info");
+    return { message: memoryMessage(content, guide !== "") };
   });
 
   pi.on("session_before_compact", async () => {

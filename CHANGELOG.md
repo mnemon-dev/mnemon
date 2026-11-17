@@ -78,6 +78,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   paths, and no longer admits ordinary words written in capitals (`NEVER`,
   `ONLY`, `NOTE`, `FIXED`) as acronyms. Such tokens linked unrelated memories
   through entity edges.
+- The Pi extension no longer draws the full Mnemon guide into the conversation
+  and repeats it on every turn. It injects the guide once per session as a
+  hidden message (Pi still passes it to the model), then a one-line reminder on
+  later turns, and the per-reply "Consider whether this exchange warrants
+  durable memory" notification is gone. The extension looks for the guide in
+  the current session branch, so the full guide is sent again in a new
+  session, after compaction or `/tree` navigation removes it from the
+  conversation, and whenever the branch cannot be read.
 
 ## [0.2.7] - 2026-09-01
 
