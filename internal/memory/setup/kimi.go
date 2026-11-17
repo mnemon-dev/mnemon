@@ -3,7 +3,9 @@ package setup
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/mnemon-dev/mnemon/internal/memory/setup/assets"
@@ -48,7 +50,7 @@ func KimiRegisterHooks(configDir string) (string, error) {
 		return "", err
 	}
 
-	updated := addKimiHooks(string(data), absHooksDir)
+	updated := addKimiHooks(string(data), absHooksDir, runtime.GOOS, kimiWindowsBash)
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return "", err
 	}
@@ -114,17 +116,57 @@ func KimiEject(configDir string) []error {
 	return errs
 }
 
-func addKimiHooks(config, hooksDir string) string {
+func addKimiHooks(config, hooksDir, goos string, findBash func() string) string {
 	cleaned := strings.TrimRight(removeKimiHooks(config), "\n")
+	bash := ""
+	if goos == "windows" {
+		bash = findBash()
+	}
 	blocks := []string{
-		kimiHookBlock("SessionStart", "", filepath.Join(hooksDir, "prime.sh")),
-		kimiHookBlock("UserPromptSubmit", "", filepath.Join(hooksDir, "user_prompt.sh")),
-		kimiHookBlock("Stop", "", filepath.Join(hooksDir, "stop.sh")),
+		kimiHookBlock("SessionStart", "", kimiHookCommand(hooksDir, "prime.sh", goos, bash)),
+		kimiHookBlock("UserPromptSubmit", "", kimiHookCommand(hooksDir, "user_prompt.sh", goos, bash)),
+		kimiHookBlock("Stop", "", kimiHookCommand(hooksDir, "stop.sh", goos, bash)),
 	}
 	if cleaned == "" {
 		return strings.Join(blocks, "\n\n") + "\n"
 	}
 	return cleaned + "\n\n" + strings.Join(blocks, "\n\n") + "\n"
+}
+
+// kimiHookCommand returns the config.toml command for a hook script. Kimi Code
+// on Windows runs the command natively, so a bare .sh path either fails under
+// cmd or opens the .sh file association (a Git Bash window). Run it through an
+// explicit bash.exe instead.
+func kimiHookCommand(hooksDir, filename, goos, bash string) string {
+	if goos != "windows" {
+		return filepath.Join(hooksDir, filename)
+	}
+	script := strings.TrimRight(hooksDir, `\/`) + `\` + filename
+	return `"` + bash + `" "` + script + `"`
+}
+
+// kimiWindowsBash locates the Git for Windows bash.exe. It deliberately skips
+// the System32 bash.exe, which is the WSL launcher and cannot run these scripts.
+func kimiWindowsBash() string {
+	var candidates []string
+	for _, env := range []string{"ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"} {
+		if root := os.Getenv(env); root != "" {
+			candidates = append(candidates, filepath.Join(root, "Git", "bin", "bash.exe"))
+		}
+	}
+	if local := os.Getenv("LocalAppData"); local != "" {
+		candidates = append(candidates, filepath.Join(local, "Programs", "Git", "bin", "bash.exe"))
+	}
+	if git, err := exec.LookPath("git"); err == nil {
+		// <root>/cmd/git.exe or <root>/bin/git.exe -> <root>/bin/bash.exe
+		candidates = append(candidates, filepath.Join(filepath.Dir(filepath.Dir(git)), "bin", "bash.exe"))
+	}
+	for _, c := range candidates {
+		if info, err := os.Stat(c); err == nil && !info.IsDir() {
+			return c
+		}
+	}
+	return "bash.exe"
 }
 
 func kimiHookBlock(event, matcher, command string) string {

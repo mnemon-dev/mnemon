@@ -1,6 +1,7 @@
 package setup
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,5 +111,37 @@ timeout = 3
 	}
 	if !strings.Contains(text, `command = "/keep/custom.sh"`) {
 		t.Fatalf("custom hook should be preserved: %s", text)
+	}
+}
+
+func TestAddKimiHooksWindowsInvokesScriptsThroughBash(t *testing.T) {
+	const bash = `C:\Program Files\Git\bin\bash.exe`
+	hooksDir := `C:\Users\u\.kimi-code\hooks\mnemon`
+
+	text := addKimiHooks("", hooksDir, "windows", func() string { return bash })
+
+	for _, script := range []string{"prime.sh", "user_prompt.sh", "stop.sh"} {
+		want := fmt.Sprintf("command = %q", `"`+bash+`" "`+hooksDir+`\`+script+`"`)
+		if !strings.Contains(text, want) {
+			t.Fatalf("%s should be run through bash.exe, want %s in:\n%s", script, want, text)
+		}
+	}
+}
+
+func TestAddKimiHooksNonWindowsRegistersBareScripts(t *testing.T) {
+	text := addKimiHooks("", "/home/u/.kimi-code/hooks/mnemon", "linux", func() string {
+		t.Fatal("bash lookup should not run off Windows")
+		return ""
+	})
+	if !strings.Contains(text, fmt.Sprintf("command = %q", filepath.Join("/home/u/.kimi-code/hooks/mnemon", "prime.sh"))) {
+		t.Fatalf("non-Windows hooks should stay bare scripts: %s", text)
+	}
+}
+
+func TestRemoveKimiHooksRemovesWindowsBashCommands(t *testing.T) {
+	text := addKimiHooks("model = \"kimi\"\n", `C:\Users\u\.kimi-code\hooks\mnemon`, "windows",
+		func() string { return `C:\Program Files\Git\bin\bash.exe` })
+	if got := removeKimiHooks(text); strings.Contains(got, "mnemon") || !strings.Contains(got, `model = "kimi"`) {
+		t.Fatalf("windows bash hooks should be removed cleanly: %s", got)
 	}
 }
