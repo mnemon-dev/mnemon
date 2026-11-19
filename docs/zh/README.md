@@ -19,6 +19,10 @@
 
 <p align="center"><strong>LLM 智能体的持久记忆系统</strong> — LLM 监督式、钩子集成、四图架构。</p>
 
+<p align="center">
+  <img src="../assets/aml-textual-memory-cycle-2-2026.png" width="640" alt="Mnemon 在 Agent Memory Leaderboard 2026 年第 2 轮文本记忆闭源组获第 6 名，得分 61.65" />
+</p>
+
 ---
 
 LLM 智能体在会话之间会遗忘一切。上下文压缩丢失关键决策，跨会话知识消失，长对话将早期信息推出窗口。
