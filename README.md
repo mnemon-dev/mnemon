@@ -20,7 +20,9 @@
 <p align="center"><strong>LLM-supervised persistent memory for AI agents.</strong></p>
 
 <p align="center">
-  <img src="docs/assets/aml-textual-memory-cycle-2-2026.png" width="640" alt="Mnemon placed sixth with a score of 61.65 in the closed-source Textual Memory track of the 2026 Cycle 2 Agent Memory Leaderboard" />
+  <a href="https://agentmemoryleaderboard.ai/results/cycle-2/#industry-textual">
+    <img src="docs/assets/aml-textual-memory-cycle-2-2026.png" width="250" alt="Mnemon placed sixth with a score of 61.65 in the closed-source Textual Memory track of the 2026 Cycle 2 Agent Memory Leaderboard" />
+  </a>
 </p>
 
 ---
