@@ -427,6 +427,66 @@ func TestExtractEntities_EmphasisWordsAreNotAcronyms(t *testing.T) {
 	}
 }
 
+// --- Model-extracted entities ---
+
+const modelContent = "Jane Rivera briefed the CEO on HttpServer and Athena; notes in docs/plan.md, built with Go"
+
+var modelKnown = map[string]bool{"Athena": true}
+
+func TestResolveEntitiesWithModel_ReplacesAcronymGuessWhenNothingProvided(t *testing.T) {
+	if !toSet(ResolveEntitiesIndexed(modelContent, nil, EntityModeMerge, modelKnown))["CEO"] {
+		t.Fatal("baseline should guess the acronym CEO")
+	}
+	for _, mode := range []EntityMode{EntityModeMerge, EntityModeAuto} {
+		entities := ResolveEntitiesWithModel(modelContent, nil, mode, modelKnown, []string{"Jane Rivera"})
+		has := toSet(entities)
+		for _, want := range []string{"Jane Rivera", "HttpServer", "Athena", "docs/plan.md", "Go"} {
+			if !has[want] {
+				t.Errorf("mode=%s: want %q, got %v", mode, want, entities)
+			}
+		}
+		if has["CEO"] {
+			t.Errorf("mode=%s: model entities replace the acronym guess, got %v", mode, entities)
+		}
+	}
+}
+
+func TestResolveEntitiesWithModel_EmptyModelStillDropsAcronymGuess(t *testing.T) {
+	entities := ResolveEntitiesWithModel(modelContent, nil, EntityModeMerge, modelKnown, []string{})
+	has := toSet(entities)
+	if has["CEO"] || !has["HttpServer"] {
+		t.Errorf("a model that found nothing keeps exact paths only, got %v", entities)
+	}
+}
+
+func TestResolveEntitiesWithModel_AutoModeIgnoresProvided(t *testing.T) {
+	entities := ResolveEntitiesWithModel(modelContent, []string{"zebra"}, EntityModeAuto, modelKnown, []string{"Jane Rivera"})
+	has := toSet(entities)
+	if has["zebra"] || !has["Jane Rivera"] || has["CEO"] {
+		t.Errorf("auto mode should use the model and ignore provided entities, got %v", entities)
+	}
+}
+
+func TestResolveEntitiesWithModel_ProvidedEntitiesBypassTheModel(t *testing.T) {
+	for _, mode := range []EntityMode{EntityModeMerge, EntityModeProvided} {
+		got := ResolveEntitiesWithModel(modelContent, []string{"zebra"}, mode, modelKnown, []string{"Jane Rivera"})
+		want := ResolveEntitiesIndexed(modelContent, []string{"zebra"}, mode, modelKnown)
+		if !equalAsSets(got, want) {
+			t.Errorf("mode=%s: provided entities should bypass the model; got %v want %v", mode, got, want)
+		}
+	}
+}
+
+func TestResolveEntitiesWithModel_NilModelEqualsIndexed(t *testing.T) {
+	for _, mode := range []EntityMode{EntityModeMerge, EntityModeProvided, EntityModeAuto} {
+		got := ResolveEntitiesWithModel(modelContent, nil, mode, modelKnown, nil)
+		want := ResolveEntitiesIndexed(modelContent, nil, mode, modelKnown)
+		if !equalAsSets(got, want) {
+			t.Errorf("mode=%s: nil model should equal ResolveEntitiesIndexed; got %v want %v", mode, got, want)
+		}
+	}
+}
+
 func equalAsSets(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

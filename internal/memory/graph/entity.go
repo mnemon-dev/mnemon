@@ -37,15 +37,20 @@ func ValidEntityMode(mode EntityMode) bool {
 	}
 }
 
-// filePathPattern matches file paths and dotted names (e.g., ./cmd/root.go,
-// /etc/config.yml, example.org). Its matches must also pass looksLikePath.
-var filePathPattern = regexp.MustCompile(`(?:^|[\s"'(])([.\w/-]+\.\w{1,10})(?:[\s"'),.]|$)`)
+var (
+	// acronymPattern matches ALLCAPS acronyms 2-6 chars (e.g., API, HTTP, SQL).
+	// It is the one pattern that guesses whether a token names something, so
+	// model-extracted entities replace it (see ResolveEntitiesWithModel).
+	acronymPattern = regexp.MustCompile(`\b([A-Z]{2,6})\b`)
+	// filePathPattern matches file paths and dotted names (e.g., ./cmd/root.go,
+	// /etc/config.yml, example.org). Its matches must also pass looksLikePath.
+	filePathPattern = regexp.MustCompile(`(?:^|[\s"'(])([.\w/-]+\.\w{1,10})(?:[\s"'),.]|$)`)
+)
 
 var entityPatterns = []*regexp.Regexp{
 	// CamelCase identifiers (e.g., MyClass, HttpServer)
 	regexp.MustCompile(`\b([A-Z][a-z]+(?:[A-Z][a-z]+)+)\b`),
-	// ALLCAPS acronyms 2-6 chars (e.g., API, HTTP, gRPC, SQL)
-	regexp.MustCompile(`\b([A-Z]{2,6})\b`),
+	acronymPattern,
 	filePathPattern,
 	// URLs
 	regexp.MustCompile(`https?://[^\s"'<>)]+`),
@@ -147,11 +152,20 @@ var acronymStopwords = map[string]bool{
 // ExtractEntities extracts named entities from text using regex patterns
 // and a technology dictionary for common terms regex would miss.
 func ExtractEntities(text string) []string {
+	return extractEntities(text, true)
+}
+
+// extractEntities runs the regex and dictionary paths. guessAcronyms selects
+// acronymPattern; callers holding model-extracted entities leave it out.
+func extractEntities(text string, guessAcronyms bool) []string {
 	seen := make(map[string]bool)
 	var entities []string
 
 	// 1. Regex-based extraction
 	for _, pat := range entityPatterns {
+		if pat == acronymPattern && !guessAcronyms {
+			continue
+		}
 		matches := pat.FindAllStringSubmatch(text, -1)
 		for _, m := range matches {
 			entity := m[len(m)-1]
@@ -222,7 +236,13 @@ func ResolveEntities(content string, provided []string, mode EntityMode) []strin
 // ExtractEntities. Callers without DB access can pass nil to get the
 // pre-existing semantics.
 func ExtractEntitiesIndexed(text string, knownEntities map[string]bool) []string {
-	entities := ExtractEntities(text)
+	return extractEntitiesIndexed(text, knownEntities, true)
+}
+
+// extractEntitiesIndexed is ExtractEntitiesIndexed with the acronym guess
+// optional (see extractEntities).
+func extractEntitiesIndexed(text string, knownEntities map[string]bool, guessAcronyms bool) []string {
+	entities := extractEntities(text, guessAcronyms)
 	if len(knownEntities) == 0 {
 		return entities
 	}
@@ -270,6 +290,35 @@ func ResolveEntitiesIndexed(content string, provided []string, mode EntityMode, 
 	default:
 		return mergeEntities(provided, ExtractEntitiesIndexed(content, knownEntities))
 	}
+}
+
+// ReliesOnExtraction reports whether resolving entities for mode and provided
+// uses automatic extraction alone: auto mode, or merge mode with nothing
+// provided. Only then is an extraction model worth asking, because entities a
+// caller provides already name what the memory is about.
+func ReliesOnExtraction(mode EntityMode, provided []string) bool {
+	switch mode {
+	case EntityModeAuto:
+		return true
+	case EntityModeMerge:
+		return len(provided) == 0
+	default:
+		return false
+	}
+}
+
+// ResolveEntitiesWithModel is ResolveEntitiesIndexed for content an extraction
+// model has read. When resolution relies on extraction alone (see
+// ReliesOnExtraction), the model's entities replace the acronym guess, while
+// the exact paths (CamelCase, file paths, URLs, @mentions, title marks,
+// dictionary) and the known-entity index still apply. A nil modelEntities
+// means no model ran and is identical to ResolveEntitiesIndexed; an empty,
+// non-nil one means the model found nothing.
+func ResolveEntitiesWithModel(content string, provided []string, mode EntityMode, knownEntities map[string]bool, modelEntities []string) []string {
+	if modelEntities == nil || !ReliesOnExtraction(mode, provided) {
+		return ResolveEntitiesIndexed(content, provided, mode, knownEntities)
+	}
+	return mergeEntities(modelEntities, extractEntitiesIndexed(content, knownEntities, false))
 }
 
 // splitWords splits text into ASCII-alphanumeric words preserving original casing.
