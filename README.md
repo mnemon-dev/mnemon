@@ -19,6 +19,12 @@
 
 <p align="center"><strong>LLM-supervised persistent memory for AI agents.</strong></p>
 
+<p align="center">
+  <a href="https://agentmemoryleaderboard.ai/results/cycle-2/?lang=en#industry-textual">
+    <img src="docs/assets/aml-textual-memory-cycle-2-2026.png" width="350" alt="Mnemon placed sixth with a score of 61.65 in the closed-source Textual Memory track of the 2026 Cycle 2 Agent Memory Leaderboard" />
+  </a>
+</p>
+
 ---
 
 LLM agents forget everything between sessions. Context compaction drops critical decisions, cross-session knowledge vanishes, and long conversations push early information out of the window.
