@@ -21,7 +21,7 @@
 
 <p align="center">
   <a href="https://agentmemoryleaderboard.ai/results/cycle-2/#industry-textual">
-    <img src="../assets/aml-textual-memory-cycle-2-2026.png" width="250" alt="Mnemon 在 Agent Memory Leaderboard 2026 年第 2 轮文本记忆闭源组获第 6 名，得分 61.65" />
+    <img src="../assets/aml-textual-memory-cycle-2-2026.png" width="350" alt="Mnemon 在 Agent Memory Leaderboard 2026 年第 2 轮文本记忆闭源组获第 6 名，得分 61.65" />
   </a>
 </p>
 
