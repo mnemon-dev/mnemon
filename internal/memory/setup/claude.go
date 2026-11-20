@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/mnemon-dev/mnemon/internal/memory/setup/assets"
 )
@@ -147,7 +148,7 @@ func ClaudeRegisterHooks(configDir string, sel HookSelection) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	addClaudeHooksSelective(data, hooksDir, sel)
+	addClaudeHooksSelective(data, hooksDir, sel, runtime.GOOS)
 	if err := WriteJSONFile(settingsPath, data); err != nil {
 		return "", err
 	}
