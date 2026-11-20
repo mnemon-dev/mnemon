@@ -8,3 +8,4 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 Object.defineProperty(window, "scrollTo", { value: vi.fn(), writable: true });
+HTMLElement.prototype.scrollIntoView = vi.fn();

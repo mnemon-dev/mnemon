@@ -48,6 +48,7 @@
   --graph-selection: #26262b;
   --graph-outline: #f7f7f8;
   --graph-grid: #dcdce1;
+  --graph-highlight: #9fc2f0;
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
@@ -80,6 +81,7 @@
   --graph-selection: #d4d4d8;
   --graph-outline: #1a1a1a;
   --graph-grid: #353539;
+  --graph-highlight: #5478c0;
 }
 * {
   box-sizing: border-box;
@@ -1628,6 +1630,38 @@ button {
   font-size: 11px;
   margin-left: 7px;
 }
+.graph-frame {
+  min-width: 0;
+}
+.graph-relation-summary {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--secondary);
+  font-size: 12px;
+}
+.graph-relation-names {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.graph-relation-summary > strong,
+.graph-relation-summary > span:last-of-type,
+.graph-relation-summary > button {
+  flex-shrink: 0;
+}
+.graph-relation-summary > strong {
+  font-weight: 500;
+}
+.graph-relation-summary > button {
+  width: 24px;
+  height: 24px;
+}
 .graph-controls {
   position: absolute;
   bottom: 18px;
@@ -1647,6 +1681,33 @@ button {
   width: 33px;
   border-radius: 4px;
   color: var(--muted);
+}
+.graph-modes {
+  position: absolute;
+  bottom: 18px;
+  right: 18px;
+  display: flex;
+  gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px var(--shadow);
+  padding: 4px;
+}
+.graph-modes select {
+  border: none;
+  background: transparent;
+  color: var(--secondary);
+  font: inherit;
+  font-size: 12px;
+  height: 31px;
+  border-radius: 4px;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.graph-modes select:hover {
+  background: var(--hover);
+  color: var(--ink);
 }
 .graph-controls button:hover {
   background: var(--hover);
