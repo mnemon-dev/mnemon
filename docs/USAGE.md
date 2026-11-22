@@ -418,7 +418,7 @@ Nodes are colored by category (decision, fact, insight, preference, context); ed
 | `MNEMON_EMBED_API_KEY` | (none) | Bearer token for OpenAI-compatible servers |
 | `MNEMON_EMBED_KEEP_ALIVE` | 30m | How long Ollama keeps the embedding model loaded after each request |
 | `MNEMON_EMBED_DIMENSIONS` | (native) | Embedding dimensions; set to truncate (e.g., `256` for Matryoshka models) |
-| `MNEMON_JUDGE_MODEL` | (empty = disabled) | System One model for `--judge` (`clef`, `clef-flash`, `jev-latest`, ...) |
+| `MNEMON_JUDGE_MODEL` | (empty = disabled) | System One model for `--judge` (`clef`, `clef-flash`, `karpo-decision`, `jev-latest`, ...) |
 | `MNEMON_JUDGE_ENDPOINT` | `http://localhost:11434` | System One base URL; requests go to `{endpoint}/v1/systemone` |
 | `MNEMON_JUDGE_API_KEY` | (none) | Bearer token for cloud System One endpoints |
 | `MNEMON_JUDGE_TIMEOUT` | `15s` | Total time budget for one judgment (Go duration) |

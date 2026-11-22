@@ -205,6 +205,21 @@ func (c *Client) ask(ctx context.Context, state any, questions []wireQuestion) (
 	return answers, nil
 }
 
+// systemOneURL resolves the POST target from endpoint. A base URL gets
+// /v1/systemone appended; an endpoint that already ends with /v1 or
+// /v1/systemone is normalized without duplicating the path.
+func systemOneURL(endpoint string) (string, error) {
+	trimmed := strings.TrimRight(endpoint, "/")
+	switch {
+	case strings.HasSuffix(trimmed, "/v1/systemone"):
+		return trimmed, nil
+	case strings.HasSuffix(trimmed, "/v1"):
+		return url.JoinPath(trimmed, "systemone")
+	default:
+		return url.JoinPath(endpoint, systemOneRoute)
+	}
+}
+
 // post sends one System One request and decodes its answers.
 func (c *Client) post(ctx context.Context, state json.RawMessage, chunk []wireQuestion) (map[string]wireAnswer, error) {
 	questions := make(map[string]wireQuestion, len(chunk))
@@ -215,7 +230,7 @@ func (c *Client) post(ctx context.Context, state json.RawMessage, chunk []wireQu
 	if err != nil {
 		return nil, fmt.Errorf("marshal judge request: %w", err)
 	}
-	endpointURL, err := url.JoinPath(c.endpoint, systemOneRoute)
+	endpointURL, err := systemOneURL(c.endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("join judge endpoint: %w", err)
 	}
@@ -251,14 +266,24 @@ func (c *Client) post(ctx context.Context, state json.RawMessage, chunk []wireQu
 }
 
 // statusError turns a non-200 response into an error, preferring the server's
-// {"error": "..."} message.
+// {"error": "..."} (Ollama) or {"error": {"message": "..."}} (Karpo / TypeSafe)
+// message.
 func statusError(resp *http.Response) error {
 	data, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes))
 	var payload struct {
-		Error string `json:"error"`
+		Error json.RawMessage `json:"error"`
 	}
-	if json.Unmarshal(data, &payload) == nil && payload.Error != "" {
-		return fmt.Errorf("judge server returned status %d: %s", resp.StatusCode, payload.Error)
+	if json.Unmarshal(data, &payload) == nil && len(payload.Error) > 0 {
+		var flat string
+		if json.Unmarshal(payload.Error, &flat) == nil && flat != "" {
+			return fmt.Errorf("judge server returned status %d: %s", resp.StatusCode, flat)
+		}
+		var nested struct {
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(payload.Error, &nested) == nil && nested.Message != "" {
+			return fmt.Errorf("judge server returned status %d: %s", resp.StatusCode, nested.Message)
+		}
 	}
 	return fmt.Errorf("judge server returned status %d", resp.StatusCode)
 }

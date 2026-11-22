@@ -379,7 +379,7 @@ open graph.html
 | `MNEMON_EMBED_API_KEY` | （无） | OpenAI 兼容服务器的 Bearer 令牌 |
 | `MNEMON_EMBED_KEEP_ALIVE` | 30m | 每次请求后 Ollama 保持嵌入模型加载的时长 |
 | `MNEMON_EMBED_DIMENSIONS` | (原生维度) | 嵌入向量维度；可设置截断值（例如 Matryoshka 模型使用 `256`） |
-| `MNEMON_JUDGE_MODEL` | （空 = 禁用） | `--judge` 使用的 System One 模型（`clef`、`clef-flash`、`jev-latest` 等） |
+| `MNEMON_JUDGE_MODEL` | （空 = 禁用） | `--judge` 使用的 System One 模型（`clef`、`clef-flash`、`karpo-decision`、`jev-latest` 等） |
 | `MNEMON_JUDGE_ENDPOINT` | `http://localhost:11434` | System One 基础 URL，请求发往 `{endpoint}/v1/systemone`；云端端点会收到查询以及被判断记忆的文本 |
 | `MNEMON_JUDGE_API_KEY` | （无） | 云端 System One 端点的 Bearer 令牌 |
 | `MNEMON_JUDGE_TIMEOUT` | `15s` | 单次判断的总时间预算（Go duration） |

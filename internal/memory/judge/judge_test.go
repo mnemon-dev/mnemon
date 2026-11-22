@@ -259,6 +259,7 @@ func TestAsk_rejectsBadResponses(t *testing.T) {
 		wantErr string
 	}{
 		{"server error json", 400, `{"error":"unknown model"}`, "status 400: unknown model"},
+		{"server error nested json", 422, `{"error":{"message":"question too long"}}`, "status 422: question too long"},
 		{"server error without json", 500, `oops`, "status 500"},
 		{"malformed json", 200, `{"answers":`, "decode judge response"},
 		{"missing answer", 200, `{"answers":{}}`, "missing an answer"},
@@ -352,5 +353,58 @@ func TestAsk_bypassesProxyForLoopback(t *testing.T) {
 	// Then the proxy is not used
 	if err != nil {
 		t.Fatalf("loopback request went through the proxy: %v", err)
+	}
+}
+
+func TestKarpoDecisionWireCompatibility(t *testing.T) {
+	// Karpo Decision (karpo_decision.serve.server) returns id, model, answers,
+	// and usage with output_tokens: 0 on POST /v1/systemone, and accepts
+	// endpoints configured as base URL, /v1, or /v1/systemone.
+	for _, suffix := range []string{"", "/v1", "/v1/systemone"} {
+		t.Run("endpoint"+suffix, func(t *testing.T) {
+			var gotPath string
+			var gotContentLength int64
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				gotContentLength = r.ContentLength
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"id":"decision-abc123","model":"karpo-decision","answers":{"rel":{"type":"noul","noul":0.91},"edge":{"type":"choice","choice":"supersedes","probabilities":{"supersedes":0.88,"related":0.12},"confidence":0.76}},"usage":{"input_tokens":342,"output_tokens":0}}`))
+			}))
+			t.Cleanup(srv.Close)
+
+			t.Setenv("MNEMON_JUDGE_MODEL", "karpo-decision-31B")
+			t.Setenv("MNEMON_JUDGE_ENDPOINT", srv.URL+suffix)
+			t.Setenv("MNEMON_JUDGE_API_KEY", "")
+			client := NewClient()
+			if client == nil {
+				t.Fatal("NewClient returned nil")
+			}
+
+			noul, err := client.Noul(context.Background(), map[string]string{"text": "switched to postgres"}, []Question{
+				{Name: "rel", Instructions: "Is this memory relevant?"},
+			})
+			if err != nil {
+				t.Fatalf("Noul failed: %v", err)
+			}
+			if gotPath != "/v1/systemone" {
+				t.Fatalf("path = %q, want /v1/systemone", gotPath)
+			}
+			if gotContentLength <= 0 {
+				t.Fatalf("Content-Length = %d, want > 0 (required by Karpo server)", gotContentLength)
+			}
+			if noul["rel"] != 0.91 {
+				t.Fatalf("noul[rel] = %v, want 0.91", noul["rel"])
+			}
+
+			choice, err := client.Choice(context.Background(), "state", []ChoiceQuestion{
+				{Name: "edge", Instructions: "Pick relation", Options: map[string]string{"supersedes": "replaces", "related": "related"}},
+			})
+			if err != nil {
+				t.Fatalf("Choice failed: %v", err)
+			}
+			if choice["edge"].Choice != "supersedes" || choice["edge"].Probability != 0.88 {
+				t.Fatalf("choice[edge] = %+v, want supersedes@0.88", choice["edge"])
+			}
+		})
 	}
 }

@@ -578,7 +578,7 @@ mnemon embed --status
 
 | Environment Variable | Default | Description |
 |---|---|---|
-| `MNEMON_JUDGE_MODEL` | *(empty = disabled)* | System One model name, e.g. `clef` or `clef-flash` (local Ollama), `jev-latest` (TypeSafe) |
+| `MNEMON_JUDGE_MODEL` | *(empty = disabled)* | System One model name, e.g. `clef` or `clef-flash` (local Ollama), `karpo-decision` (self-hosted Karpo Decision), `jev-latest` (TypeSafe) |
 | `MNEMON_JUDGE_ENDPOINT` | `http://localhost:11434` | Base URL of a System One server (`POST {endpoint}/v1/systemone`) |
 | `MNEMON_JUDGE_API_KEY` | *(none)* | Bearer token for cloud endpoints such as `https://api.typesafe.ai` or `https://api.subq.ai` |
 | `MNEMON_JUDGE_TIMEOUT` | `15s` | Total time budget for one judgment, across all of its requests (Go duration) |
