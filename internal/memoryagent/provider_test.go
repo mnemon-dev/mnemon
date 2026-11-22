@@ -1327,3 +1327,80 @@ func TestReleaseSurvivesCanceledCaller(t *testing.T) {
 		t.Fatal("the refused call's reservation was not released", held, spent, attempts)
 	}
 }
+
+func TestSystemOneProviderSupportsKarpoDecision(t *testing.T) {
+	// Karpo Decision serves POST /v1/systemone on loopback with no API key or
+	// paid budget required, defaults its response model name to "karpo-decision",
+	// and reports output_tokens: 0.
+	for _, suffix := range []string{"", "/v1", "/v1/systemone"} {
+		t.Run("endpoint"+suffix, func(t *testing.T) {
+			var gotPath, gotAuth string
+			var gotContentLength int64
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotPath = r.URL.Path
+				gotAuth = r.Header.Get("Authorization")
+				gotContentLength = r.ContentLength
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"id":"decision-01","model":"karpo-decision","answers":{"a":{"type":"noul","noul":0.84}},"usage":{"input_tokens":512,"output_tokens":0}}`))
+			}))
+			defer srv.Close()
+
+			p, err := NewProvider(ModelConfig{
+				Kind:    "systemone",
+				Model:   "karpo-decision-31B",
+				BaseURL: srv.URL + suffix,
+			}, nil)
+			if err != nil {
+				t.Fatalf("NewProvider failed: %v", err)
+			}
+			if p.MaxQuestions() != 128 {
+				t.Fatalf("MaxQuestions = %d, want 128", p.MaxQuestions())
+			}
+			if _, _, err := p.Complete(context.Background(), "s", "p"); err == nil || !strings.Contains(err.Error(), "systemone is a decision model") {
+				t.Fatalf("systemone Complete err = %v, want systemone decision-model error", err)
+			}
+
+			answers, usage, err := p.Decide(context.Background(), "evidence", map[string]Question{"a": binary("Relevant?")})
+			if err != nil {
+				t.Fatalf("Decide failed: %v", err)
+			}
+			if gotPath != "/v1/systemone" {
+				t.Fatalf("path = %q, want /v1/systemone", gotPath)
+			}
+			if gotAuth != "" {
+				t.Fatalf("unexpected Authorization header %q", gotAuth)
+			}
+			if gotContentLength <= 0 {
+				t.Fatalf("Content-Length = %d, want > 0", gotContentLength)
+			}
+			if answers["a"] != 0.84 {
+				t.Fatalf("answers[a] = %v, want 0.84", answers["a"])
+			}
+			if usage.InputTokens != 512 || usage.OutputTokens != 0 || usage.USD != 0 {
+				t.Fatalf("usage = %+v, want input=512 output=0 USD=0", usage)
+			}
+		})
+	}
+
+	// Non-loopback HTTP is rejected; HTTPS with optional KeyEnv works.
+	if _, err := NewProvider(ModelConfig{Kind: "systemone", Model: "karpo-decision-31B", BaseURL: "http://example.com:18440"}, nil); err == nil {
+		t.Fatal("non-loopback HTTP systemone endpoint was accepted")
+	}
+	if _, err := NewProvider(ModelConfig{Kind: "systemone", Model: "karpo-decision-31B", BaseURL: "https://karpo.example", KeyEnv: "UNIT_MISSING_SYSTEMONE_KEY"}, nil); err == nil {
+		t.Fatal("missing credential for explicit keyEnv was accepted")
+	}
+	t.Setenv("UNIT_SYSTEMONE_KEY", "secret-token")
+	p, err := NewProvider(ModelConfig{Kind: "systemone", Model: "karpo-decision-31B", BaseURL: "https://karpo.example", KeyEnv: "UNIT_SYSTEMONE_KEY"}, nil)
+	if err != nil {
+		t.Fatalf("HTTPS systemone provider with keyEnv failed: %v", err)
+	}
+	var gotAuth string
+	p.client.Transport = transportFunc(func(req *http.Request) (*http.Response, error) {
+		gotAuth = req.Header.Get("Authorization")
+		return mockResponse(`{"model":"karpo-decision","answers":{"a":{"type":"noul","noul":0.7}}}`), nil
+	})
+	answers, _, err := p.Decide(context.Background(), "evidence", map[string]Question{"a": binary("Relevant?")})
+	if err != nil || answers["a"] != 0.7 || gotAuth != "Bearer secret-token" {
+		t.Fatalf("HTTPS systemone call failed: answers=%v auth=%q err=%v", answers, gotAuth, err)
+	}
+}

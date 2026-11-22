@@ -129,7 +129,7 @@ func (k *ProviderKeys) Account() map[string]string { return maps.Clone(*k.accoun
 // a key pasted in the wrong place.
 func KindName(kind string) string {
 	switch kind {
-	case "deepseek", "jev", "openai", "local":
+	case "deepseek", "jev", "openai", "local", "systemone":
 		return kind
 	}
 	return "a kind that is not deepseek or jev"
@@ -307,7 +307,7 @@ func (p *Provider) modelsURL() string {
 		return p.endpoint
 	}
 	route := "/chat/completions"
-	if p.config.Kind == "jev" {
+	if isDecisionKind(p.config.Kind) {
 		route = "/systemone"
 	}
 	base, found := strings.CutSuffix(u.Path, route)
@@ -322,7 +322,7 @@ func (p *Provider) modelsURL() string {
 // 1, or a JEV decision of one question.
 func (p *Provider) checkBody() []byte {
 	var body any = map[string]any{"model": p.config.Model, "messages": []map[string]string{{"role": "user", "content": "ping"}}, "max_tokens": 1}
-	if p.config.Kind == "jev" {
+	if isDecisionKind(p.config.Kind) {
 		body = map[string]any{"model": p.config.Model, "state": map[string]any{},
 			"questions": map[string]Question{"check": {Type: "noul", Instructions: "Is this request a check of the API key?"}}}
 	}

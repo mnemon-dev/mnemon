@@ -258,7 +258,7 @@ func checkResilience(config ModelConfig, hard time.Duration) error {
 // kind and resilience settings; hard is its hard timeout.
 func classPolicies(config ModelConfig, hard time.Duration) [3]classPolicy {
 	interactive := interactiveCompletionTimeout
-	if config.Kind == "jev" {
+	if isDecisionKind(config.Kind) {
 		interactive = interactiveDecisionTimeout
 	}
 	if config.AttemptTimeoutSeconds > 0 {

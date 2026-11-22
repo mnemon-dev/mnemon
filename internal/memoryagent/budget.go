@@ -240,7 +240,7 @@ func (b *Budget) reserveAmount(ctx context.Context, kind, hash string, amount fl
 // (Provider.inputEstimate), for SettleHolds; one with no input tokens is
 // none, and the attempt records no estimate.
 func (b *Budget) reserveWithin(ctx context.Context, kind, hash string, amount, share float64, estimate Usage) (string, error) {
-	if kind == "local" {
+	if kind == "local" || kind == "systemone" {
 		return "", nil
 	}
 	if b == nil {
