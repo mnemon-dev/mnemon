@@ -150,6 +150,22 @@ func isLoopbackHost(host string) bool {
 	return host == "127.0.0.1" || host == "localhost" || host == "::1"
 }
 
+func isDecisionKind(kind string) bool {
+	return kind == "jev" || kind == "systemone"
+}
+
+func systemOneEndpoint(baseURL string) string {
+	trimmed := strings.TrimRight(baseURL, "/")
+	switch {
+	case strings.HasSuffix(trimmed, "/v1/systemone"):
+		return trimmed
+	case strings.HasSuffix(trimmed, "/v1"):
+		return trimmed + "/systemone"
+	default:
+		return trimmed + "/v1/systemone"
+	}
+}
+
 // NewProvider is the provider of config, billed to budget, whose credential
 // is the host's: the variable config.KeyEnv names.
 func NewProvider(config ModelConfig, budget *Budget) (*Provider, error) {
@@ -183,6 +199,12 @@ func newProvider(config ModelConfig, budget *Budget, keys *ProviderKeys) (*Provi
 			return nil, errors.New("JEV requires a pinned version and the official endpoint")
 		}
 		p.endpoint = "https://api.typesafe.ai/v1/systemone"
+	case "systemone":
+		u, err := url.Parse(config.BaseURL)
+		if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.Hostname() == "" || u.Scheme != "https" && (u.Scheme != "http" || !isLoopbackHost(u.Hostname())) {
+			return nil, errors.New("systemone model requires an https baseURL, or http on loopback")
+		}
+		p.endpoint = systemOneEndpoint(config.BaseURL)
 	case "deepseek":
 		if config.Model != "deepseek-flash" || config.BaseURL != "" {
 			return nil, errors.New("DeepSeek requires deepseek-flash and the official endpoint")
@@ -219,13 +241,21 @@ func newProvider(config ModelConfig, budget *Budget, keys *ProviderKeys) (*Provi
 		}
 		p.endpoint = strings.TrimRight(config.BaseURL, "/") + "/chat/completions"
 	default:
-		return nil, errors.New("model kind must be jev, deepseek, openai or local")
+		return nil, errors.New("model kind must be jev, systemone, deepseek, openai or local")
 	}
 	if config.TestEndpoint != "" {
 		p.endpoint = config.TestEndpoint
 	}
-	if config.Kind != "local" && (budget == nil || config.KeyEnv == "" || p.credential() == "") {
-		return nil, errors.New("paid model requires a budget and a nonempty credential environment variable (or an account key)")
+	switch config.Kind {
+	case "local":
+	case "systemone":
+		if config.KeyEnv != "" && p.credential() == "" {
+			return nil, errors.New("systemone model keyEnv is set but its credential environment variable is empty")
+		}
+	default:
+		if budget == nil || config.KeyEnv == "" || p.credential() == "" {
+			return nil, errors.New("paid model requires a budget and a nonempty credential environment variable (or an account key)")
+		}
 	}
 	return p, nil
 }
@@ -423,8 +453,12 @@ func (p *Provider) complete(ctx context.Context, system, prompt string, jsonOnly
 // it refuses is invalid, retried once (send). A reply cut at its output
 // limit is not checked; it fails as before.
 func (p *Provider) completion(ctx context.Context, system, prompt string, jsonOnly bool, callLimit int, check func(string) error) (string, Usage, cacheEntry, error) {
-	if p.config.Kind == "jev" {
-		return "", Usage{}, cacheEntry{}, errors.New("JEV is a decision model, not a completer")
+	if isDecisionKind(p.config.Kind) {
+		name := p.config.Kind
+		if name == "jev" {
+			name = "JEV"
+		}
+		return "", Usage{}, cacheEntry{}, fmt.Errorf("%s is a decision model, not a completer", name)
 	}
 	maxTokens := 1024
 	if jsonOnly {
@@ -553,10 +587,10 @@ func (r completionReply) text(callLimit int) (string, error) {
 	return r.content, nil
 }
 
-// MaxQuestions is the most questions one Decide call takes: 128 for JEV,
-// 80 for a completer answering them.
+// MaxQuestions is the most questions one Decide call takes: 128 for System One
+// decision models (JEV, Karpo, etc.), 80 for a completer answering them.
 func (p *Provider) MaxQuestions() int {
-	if p.config.Kind == "jev" {
+	if isDecisionKind(p.config.Kind) {
 		return 128
 	}
 	return 80
@@ -576,7 +610,7 @@ func (p *Provider) Decide(ctx context.Context, state any, questions map[string]Q
 	if len(questions) < 1 || len(questions) > maxQuestions {
 		return nil, Usage{}, fmt.Errorf("decision requires 1–%d binary questions", maxQuestions)
 	}
-	if p.config.Kind != "jev" {
+	if !isDecisionKind(p.config.Kind) {
 		prompt, _ := json.Marshal(map[string]any{"state": state, "questions": questions})
 		// A live reply whose answers fail is invalid, retried once (R61).
 		check := func(text string) error {
@@ -689,10 +723,12 @@ func (p *Provider) parseDecision(raw []byte) (decisionReply, error) {
 	reply := decisionReply{answers: result.Answers}
 	if result.Usage.Input != nil && result.Usage.Output != nil {
 		reply.usage = Usage{InputTokens: *result.Usage.Input, OutputTokens: *result.Usage.Output}
-		reply.usage.USD = float64(reply.usage.InputTokens) * 0.042 / 1e6
+		if p.config.Kind == "jev" {
+			reply.usage.USD = float64(reply.usage.InputTokens) * 0.042 / 1e6
+		}
 		reply.metering = true
 	}
-	if result.Model != p.config.Model || !reply.metering {
+	if p.config.Kind == "jev" && (result.Model != p.config.Model || !reply.metering) {
 		return reply, errInvalidJEV
 	}
 	return reply, nil
