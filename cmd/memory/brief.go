@@ -19,6 +19,7 @@ type briefResult struct {
 	Score      *float64 `json:"score,omitempty"`
 	Confidence string   `json:"confidence,omitempty"`
 	Superseded bool     `json:"superseded,omitempty"`
+	Relevance  *float64 `json:"relevance,omitempty"`
 }
 
 type briefResponse struct {

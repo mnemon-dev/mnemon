@@ -24,6 +24,7 @@ var (
 	remEntities   string
 	remEntityMode string
 	remNoDiff     bool
+	remJudge      bool
 )
 
 var rememberCmd = &cobra.Command{
@@ -253,6 +254,13 @@ var rememberCmd = &cobra.Command{
 			causalCandidates = []graph.CausalCandidate{}
 		}
 
+		var semanticOutput any = semanticCandidates
+		if remJudge {
+			if judged, ok := judgeCandidates(insight.Content, semanticCandidates); ok {
+				semanticOutput = judged
+			}
+		}
+
 		output := map[string]interface{}{
 			"id":                   insight.ID,
 			"content":              insight.Content,
@@ -264,7 +272,7 @@ var rememberCmd = &cobra.Command{
 			"diff_suggestion":      string(diffSuggestion),
 			"created_at":           insight.CreatedAt.Format(time.RFC3339),
 			"edges_created":        edgeStats,
-			"semantic_candidates":  semanticCandidates,
+			"semantic_candidates":  semanticOutput,
 			"causal_candidates":    causalCandidates,
 			"embedded":             embedded,
 			"effective_importance": ei,
@@ -285,5 +293,6 @@ func init() {
 	rememberCmd.Flags().StringVar(&remEntities, "entities", "", "comma-separated entities (LLM-extracted, merged with auto-extraction)")
 	rememberCmd.Flags().StringVar(&remEntityMode, "entity-mode", string(graph.EntityModeMerge), "entity handling mode (merge|provided|auto)")
 	rememberCmd.Flags().BoolVar(&remNoDiff, "no-diff", false, "skip duplicate/conflict detection")
+	rememberCmd.Flags().BoolVar(&remJudge, "judge", false, "classify semantic candidates with the decision-model judge (env: MNEMON_JUDGE_MODEL)")
 	rootCmd.AddCommand(rememberCmd)
 }

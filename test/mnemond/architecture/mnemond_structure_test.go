@@ -72,6 +72,7 @@ func assertMnemondPackageGraph(t *testing.T, root string) {
 		"internal/localrpc":             {},
 		"internal/retrieval":            {},
 		"internal/memory/embed":         {},
+		"internal/memory/judge":         {},
 		"internal/memory/internal/topk": {},
 		"internal/memory/model":         {},
 		"internal/memory/service":       {"internal/memory/graph", "internal/memory/search", "internal/memory/store"},
@@ -102,9 +103,11 @@ func assertMnemondPackageGraph(t *testing.T, root string) {
 		},
 		"cmd/agency": {"internal/agency/attach", "internal/agency/client", "internal/daemon"},
 		"cmd/memory": {
-			"internal/memory/embed", "internal/memory/graph", "internal/memory/importdraft",
-			"internal/memory/model", "internal/memory/search", "internal/memory/setup",
-			"internal/memory/setup/assets", "internal/memory/store", "internal/memory/web", "internal/records", "internal/memory/service", "internal/memoryagent", "internal/aml", "internal/localrpc", "web",
+			"internal/aml", "internal/localrpc", "internal/memory/embed", "internal/memory/graph",
+			"internal/memory/importdraft", "internal/memory/judge", "internal/memory/model",
+			"internal/memory/search", "internal/memory/service", "internal/memory/setup",
+			"internal/memory/setup/assets", "internal/memory/store", "internal/memory/web",
+			"internal/memoryagent", "internal/records", "web",
 		},
 		"web": {},
 	}
