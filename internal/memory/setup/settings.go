@@ -195,9 +195,22 @@ func removeIfEmpty(dir string) {
 	}
 }
 
+// claudeHookCommand returns the settings.json command for a hook script. Claude
+// Code runs the command through Git Bash on Windows, where bash treats the
+// backslashes of a native path as escapes (C:\Users\x\prime.sh becomes
+// C:Usersxprime.sh). On Windows emit forward slashes and quote the path, which
+// also survives spaces in the profile directory. Other platforms are unchanged.
+func claudeHookCommand(hooksDir, filename, goos string) string {
+	if goos != "windows" {
+		return filepath.Join(hooksDir, filename)
+	}
+	dir := strings.TrimRight(strings.ReplaceAll(hooksDir, `\`, "/"), "/")
+	return `"` + dir + "/" + filename + `"`
+}
+
 // addClaudeHooksSelective idempotently sets mnemon hooks in Claude Code settings.
 // Prime (SessionStart) is always registered; Remind and Nudge are conditional.
-func addClaudeHooksSelective(data map[string]interface{}, hooksDir string, sel HookSelection) {
+func addClaudeHooksSelective(data map[string]interface{}, hooksDir string, sel HookSelection, goos string) {
 	RemoveClaudeHooks(data)
 	hooks := ensureHooksMap(data)
 
@@ -206,7 +219,7 @@ func addClaudeHooksSelective(data map[string]interface{}, hooksDir string, sel H
 		"hooks": []interface{}{
 			map[string]interface{}{
 				"type":    "command",
-				"command": filepath.Join(hooksDir, "prime.sh"),
+				"command": claudeHookCommand(hooksDir, "prime.sh", goos),
 			},
 		},
 	}
@@ -219,7 +232,7 @@ func addClaudeHooksSelective(data map[string]interface{}, hooksDir string, sel H
 			"hooks": []interface{}{
 				map[string]interface{}{
 					"type":    "command",
-					"command": filepath.Join(hooksDir, "user_prompt.sh"),
+					"command": claudeHookCommand(hooksDir, "user_prompt.sh", goos),
 				},
 			},
 		}
@@ -233,7 +246,7 @@ func addClaudeHooksSelective(data map[string]interface{}, hooksDir string, sel H
 			"hooks": []interface{}{
 				map[string]interface{}{
 					"type":    "command",
-					"command": filepath.Join(hooksDir, "stop.sh"),
+					"command": claudeHookCommand(hooksDir, "stop.sh", goos),
 				},
 			},
 		}
@@ -247,7 +260,7 @@ func addClaudeHooksSelective(data map[string]interface{}, hooksDir string, sel H
 			"hooks": []interface{}{
 				map[string]interface{}{
 					"type":    "command",
-					"command": filepath.Join(hooksDir, "compact.sh"),
+					"command": claudeHookCommand(hooksDir, "compact.sh", goos),
 				},
 			},
 		}
