@@ -30,6 +30,7 @@ DETERMINISTIC_PKGS := \
 	./internal/aml \
 	./internal/memory/service \
 	./internal/memory/embed \
+	./internal/memory/extract \
 	./internal/memory/graph \
 	./internal/memory/importdraft \
 	./internal/memory/internal/topk \
