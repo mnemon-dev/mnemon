@@ -1,0 +1,19 @@
+{
+  "name": "@mnemon-dev/codex-memory-panel",
+  "version": "0.2.3",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "start": "node server/index.mjs",
+    "preview": "node server/index.mjs --preview",
+    "install:codex": "node scripts/install.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "zod": "3.25.76"
+  }
+}
